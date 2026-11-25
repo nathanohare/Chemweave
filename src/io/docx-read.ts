@@ -195,6 +195,8 @@ interface PProps {
   align?: Justify; before?: number; after?: number; line?: { v: number; rule: string };
   left?: number; right?: number; first?: number; keepNext?: boolean; keepLines?: boolean; /** Widow/Orphan control (on in Word unless a file turns it off). */ widow?: boolean; pageBreak?: boolean; outline?: number; noLineNumbers?: boolean; noHyphen?: boolean;
   numId?: string; ilvl?: number; contextual?: boolean;
+  /** Right to left (w:bidi). */
+  bidi?: boolean;
   /** Paragraph borders (w:pBdr) and shading (w:shd's fill). */
   border?: ParaBorders; shade?: string | null;
   /** Tab stops set (and cleared: kind null) here, added to those of the style it is based on. */
@@ -677,6 +679,7 @@ class DocxReader {
         case 'suppressAutoHyphens': out.noHyphen = this.on(c); break;
         case 'outlineLvl': { const v = Number(this.a(c)); if (v >= 0 && v <= 9) out.outline = v + 1; break; } // (9: body text, which a style can set over a heading's level: 10 here)
         case 'contextualSpacing': out.contextual = this.on(c); break;
+        case 'bidi': out.bidi = this.on(c); break;
         case 'pBdr': {
           const b: ParaBorders = {};
           for (const side of kids(c)) {
@@ -1706,7 +1709,7 @@ class DocxReader {
       // spacing in points stays in points for the paragraph (its style takes the nearest multiple)
       ...(p.line && p.line.rule !== 'auto' ? { linePt: round(p.line.v / 20), lineRule: p.line.rule === 'exact' ? 'exact' as const : 'atLeast' as const } : { line: this.lineOf(p, size) }),
       indent: round(indent), indentRight: p.right ? round(p.right) : undefined, firstLine: list ? undefined : round(p.first ?? 0), keepNext: p.keepNext,
-      keepLines: p.keepLines || undefined, noWidow: p.widow === false || undefined,
+      keepLines: p.keepLines || undefined, noWidow: p.widow === false || undefined, rtl: p.bidi || undefined,
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
       border: cleanBorders(p.border), shade: p.shade && p.shade !== '#ffffff' ? p.shade : undefined,
@@ -3633,7 +3636,7 @@ class DocxReader {
       font: r.font ?? WORD_FONT, size, bold: !!r.bold, italic: !!r.italic, color: r.color ?? undefined,
       align: p.align ?? 'left', spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0), line: this.lineOf(p, size) ?? 1,
       indent: round(p.left ?? 0), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
-      ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
+      ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}), ...(p.bidi ? { rtl: true } : {}),
       // its lines and shading
       ...(cleanBorders(p.border) ? { border: cleanBorders(p.border) } : {}), ...(p.shade && p.shade !== '#ffffff' ? { shade: p.shade } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,

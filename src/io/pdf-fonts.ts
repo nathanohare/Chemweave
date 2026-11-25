@@ -142,7 +142,8 @@ export class EmbeddedFont {
     let hex = '';
     [...text].forEach((ch, i) => {
       const gid = this.font.glyph(ch.codePointAt(0)!);
-      if (!this.used.has(gid)) this.used.set(gid, ch);
+      // (a joined Arabic form gives back its letters, for searching and copying)
+      if (!this.used.has(gid)) this.used.set(gid, /[\ufb50-\ufdff\ufe70-\ufefe]/.test(ch) ? ch.normalize('NFKC') : ch);
       hex += gid.toString(16).padStart(4, '0');
       const want = widths?.[i];
       if (want === undefined || !size || i === text.length - 1) return;

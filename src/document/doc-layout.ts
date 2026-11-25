@@ -1403,9 +1403,16 @@ function paraSpans(lines: LaidLine[], pages: PageBox[], paras: ParaStyle[], bRoo
       const lastOfPara = lines[i + 1]?.para !== l.para;
       const y1 = l.y - (l.above ?? l.ascent) - (firstOfPara ? bRoom?.above[l.para] ?? 0 : 0);
       const y2 = l.y + (l.below ?? l.descent) + (lastOfPara ? bRoom?.below[l.para] ?? 0 : 0);
-      const left = Math.min(firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left, l.marker?.x ?? Infinity);
-      const right = (l.band?.[1] ?? pg.x + pg.w - pg.setup.right) - (ps.indentRight ?? 0);
-      if (cur && cur.para === l.para && cur.col === col) { cur.y2 = y2; cur.x1 = Math.min(cur.x1, left); continue; }
+      let left = Math.min(firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left, l.marker?.x ?? Infinity);
+      let right = (l.band?.[1] ?? pg.x + pg.w - pg.setup.right) - (ps.indentRight ?? 0);
+      // (right to left: the start indent on the right, the end one on the left, the bullet at the right)
+      if (ps.rtl) {
+        const colLeft = l.band?.[0] ?? pg.x + pg.setup.left, colRight = l.band?.[1] ?? pg.x + pg.w - pg.setup.right;
+        const startIn = (firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left) - colLeft;
+        left = colLeft + (ps.indentRight ?? 0);
+        right = Math.max(colRight - startIn, l.marker ? l.marker.x + l.marker.w : -Infinity);
+      }
+      if (cur && cur.para === l.para && cur.col === col) { cur.y2 = y2; cur.x1 = Math.min(cur.x1, left); cur.x2 = Math.max(cur.x2, right); continue; }
       cur = { para: l.para, page: pg.index, col, y1, y2, x1: left, x2: right };
       out.push(cur);
     }

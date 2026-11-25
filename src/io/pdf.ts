@@ -9,6 +9,7 @@ import { zlibSync } from 'fflate';
 import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
 import { hasKana, type FallbackFile, type PdfFallbackSource } from './pdf-fallback';
+import { visualText } from '../text/bidi';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -505,7 +506,9 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         // turned text (degrees anticlockwise): along the line, and up from it, on the page
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
         const own = await faceFonts(it.family, it.bold, it.italic);
-        const text = symbolFontText(it.text, it.family);
+        // (right-to-left text: its letters in the order they are seen, Arabic's joined, as the screen shows them)
+        const seenText = visualText(symbolFontText(it.text, it.family), it.widths, !!it.rtl);
+        const text = seenText.text;
         const extra = await fallbackFonts(text, own);
         const show = (f: string, dx: number, s: string) => {
           usedFonts.add(f);
@@ -513,7 +516,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
           ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
-        for (const piece of keptPieces(text, it.widths, own, extra)) {
+        for (const piece of keptPieces(text, seenText.widths, own, extra)) {
           if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }

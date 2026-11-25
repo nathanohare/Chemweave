@@ -13,6 +13,7 @@ import type { Rect } from '../geom';
 import { formulaRunParts } from '../richtext';
 import { fitParas, laidParas, listMarkers, paraCount } from './paragraphs';
 import { fallbackFonts, lineFactor } from './font-standins';
+import { dirChunks, hasRtl, visualOrder, type Dir } from './bidi';
 
 export const FONT_STACK = "Arial, 'Liberation Sans', Helvetica, sans-serif";
 
@@ -116,6 +117,13 @@ export type InlineBox = { w: number; ascent: number; descent?: number } | { text
 /** A piece of a line in one style. */
 export interface Glyphs {
   text: string;
+  /**
+   * Drawn right to left (Hebrew, Arabic, and spaces or punctuation among them): its first character
+   * at its right end, brackets turned. Set where a line has right-to-left text.
+   */
+  rtl?: boolean;
+  /** Its text's own direction, in a line with right-to-left text: right to left, left to right or digits (unset: spaces and punctuation). */
+  dir?: Exclude<Dir, 'N'>;
   /** Where its first character is in the whole text (line breaks count one). */
   start: number;
   /** Left end of the piece and its width, in points from the origin. */
@@ -182,6 +190,8 @@ export interface LaidLine {
   marker?: Glyphs;
   /** Room given up at the right to a figure beside the line (documents). */
   cutRight?: number;
+  /** Room given up at the left to a figure beside the line (documents: in `left` too; kept for right-to-left lines). */
+  cutLeft?: number;
   /** Documents in columns: the left and right of the line's column (clicks find lines in it). */
   band?: [number, number];
   /** The last line of its paragraph. */
@@ -717,6 +727,28 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         const a = Math.max(pl.start, s0), b = Math.min(pl.end, s1);
         if (b <= a) continue;
         const t = s.text.slice(a - s0, b - s0);
+        // (text with right-to-left letters: a piece for each stretch of one direction)
+        if (s.obj === undefined && !s.tab && !s.hide && (ps.rtl || hasRtl(t))) {
+          for (const [ca, cb, rtl] of dirChunks(t)) {
+            const w = segWidth(s, a - s0 + ca, a - s0 + cb);
+            const g: Glyphs = { text: t.slice(ca, cb), start: paraStart + a + ca, x, w, dy: s.dy, size: s.size, family: s.family, style: s.style, color: s.color, underline: s.underline };
+            if (rtl) g.dir = rtl;
+            if (rtl === 'R') g.rtl = true;
+            if (s.highlight) g.highlight = s.highlight;
+            if (s.strike) g.strike = true;
+            if (s.spacing) g.spacing = s.spacing;
+            if (s.fx) g.fx = s.fx;
+            pieces.push(g);
+            x += w;
+          }
+          size = Math.max(size, s.base);
+          if (f.boxes) single = Math.max(single, lineFactor(s.family) * s.base);
+          if (f.boxes && s.raised) {
+            liftUp = Math.max(liftUp, (lineFactor(s.family) - DESCENT) * s.size - s.dy);
+            liftDown = Math.max(liftDown, DESCENT * s.size + s.dy);
+          }
+          continue;
+        }
         const w = segWidth(s, a - s0, b - s0);
         const g: Glyphs = { text: t, start: paraStart + a, x, w, dy: s.dy, size: s.size, family: s.family, style: s.style, color: s.color, underline: s.underline };
         if (s.highlight) g.highlight = s.highlight;
@@ -750,6 +782,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
         size, left: lineLeft, room: (li === 0 ? room - firstLine : room) - pl.cut.left - pl.cut.right, x: lineLeft, width: pl.width, pieces, marker: li === 0 ? marker : undefined, last,
       };
       if (pl.cut.right) l.cutRight = pl.cut.right;
+      if (pl.cut.left) l.cutLeft = pl.cut.left;
       if (l.marker && pl.cut.left) l.marker = { ...l.marker, x: l.marker.x + pl.cut.left };
       if (f.boxes) {
         // a document's line: the height of single spacing (times the line spacing), or of its tallest figure;
@@ -796,11 +829,13 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
     for (const g of l.pieces) g.x += l.x;
     // a bullet or number moves with its centred or right-aligned text, as in Word
     if (l.marker && shift > 0) l.marker.x += shift;
+    // right to left: the paragraph's lines from the right, and the pieces of either direction in the order they are seen
+    if (paras[l.para].rtl || l.pieces.some((g) => g.rtl)) seenOrder(l, boxWidth, !!paras[l.para].rtl);
   }
   // the area covered
   let x1 = Infinity, x2 = -Infinity;
   for (const l of lines) {
-    if (l.pieces.length) { x1 = Math.min(x1, l.pieces[0].x); x2 = Math.max(x2, l.pieces[0].x + l.width); }
+    if (l.pieces.length) { const lo = Math.min(...l.pieces.map((g) => g.x)); x1 = Math.min(x1, lo); x2 = Math.max(x2, lo + l.width); }
     if (l.marker) { x1 = Math.min(x1, l.marker.x); x2 = Math.max(x2, l.marker.x + l.marker.w); }
   }
   if (x1 > x2) { x1 = x2 = 0; }
@@ -808,6 +843,44 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
   const first = lines[0], lastLine = lines[lines.length - 1];
   const box = { x1, y1: first.y - (first.above ?? first.ascent), x2, y2: lastLine.y + (lastLine.below ?? lastLine.descent) };
   return { lines, boxWidth, box, length: text.length, measure };
+}
+
+/**
+ * A line laid out from the left, as seen: a right-to-left paragraph's turned round in its box of
+ * `boxWidth` (so its start, indents, alignment and bullet are on the right), and the pieces of each
+ * direction in the order they read (visualOrder), in the room the line's pieces take.
+ */
+function seenOrder(l: LaidLine, boxWidth: number, rtl: boolean): void {
+  // (turned round in the room the line has: the box, less what figures beside it take at either side)
+  const left = l.cutLeft ?? 0, right = boxWidth - (l.cutRight ?? 0);
+  if (rtl) {
+    for (const g of l.pieces) g.x = left + right - g.x - (g.hidden ? 0 : g.w);
+    if (l.marker) l.marker.x = left + right - l.marker.x - l.marker.w;
+    l.x = left + right - l.x;
+  }
+  const shown = l.pieces.filter((g) => !g.hidden);
+  if (!shown.length) return;
+  const lo = Math.min(...shown.map((g) => g.x));
+  // (each piece's own direction; a tab the paragraph's, ending a stretch; a figure none)
+  const dir = (g: Glyphs): Dir | 'B' | null => {
+    if (g.tab) return 'B';
+    if (g.dir) return g.dir;
+    if (g.obj !== undefined) return null;
+    return hasRtl(g.text) ? 'R' : /\p{L}/u.test(g.text) ? 'L' : /\p{Nd}/u.test(g.text) ? 'EN' : null;
+  };
+  const { order, levels } = visualOrder(shown.map(dir), rtl);
+  shown.forEach((g, i) => { if (levels[i] % 2 === 1 && !g.tab && g.obj === undefined) g.rtl = true; else delete g.rtl; });
+  let x = lo;
+  for (const i of order) { shown[i].x = x; x += shown[i].w; }
+  // where the line's text is seen to begin: its left end
+  l.x = lo;
+  // (hidden pieces, which take no room, where the next piece in the text is)
+  for (let i = 0; i < l.pieces.length; i++) {
+    const g = l.pieces[i];
+    if (!g.hidden) continue;
+    const next = l.pieces.slice(i + 1).find((h) => !h.hidden) ?? l.pieces.slice(0, i).reverse().find((h) => !h.hidden);
+    if (next) g.x = next.rtl ? next.x + next.w : next.x;
+  }
 }
 
 function trailingSpaces(text: string, a: number, b: number): number {
@@ -853,6 +926,11 @@ export function pieceX(lay: TextLayout, g: Glyphs, k: number): number {
   return w;
 }
 
+/** Where the place before a piece's k-th character is, from the piece's left end: from its right end in right-to-left text. */
+export function placeX(lay: TextLayout, g: Glyphs, k: number): number {
+  return g.rtl ? g.w - pieceX(lay, g, k) : pieceX(lay, g, k);
+}
+
 /** The line a place in the text is on (a place where a line wraps belongs to the next line). */
 export function lineOf(lay: TextLayout, offset: number): number {
   const ls = lay.lines;
@@ -870,11 +948,11 @@ export function caretPos(lay: TextLayout, offset: number): { x: number; line: nu
   const l = lay.lines[li];
   const pieces = textPieces(l);
   for (const g of pieces) {
-    if (offset >= g.start && offset <= g.start + g.text.length) return { x: g.x + pieceX(lay, g, offset - g.start), line: li };
+    if (offset >= g.start && offset <= g.start + g.text.length) return { x: g.x + placeX(lay, g, offset - g.start), line: li };
   }
   // an empty line, or past the end: after the last piece or where the text would start
   const lastPiece = pieces[pieces.length - 1];
-  if (lastPiece && offset > lastPiece.start) return { x: lastPiece.x + lastPiece.w, line: li };
+  if (lastPiece && offset > lastPiece.start) return { x: lastPiece.x + placeX(lay, lastPiece, lastPiece.text.length), line: li };
   return { x: pieces[0]?.x ?? l.x, line: li };
 }
 
@@ -909,7 +987,7 @@ export function offsetInLine(lay: TextLayout, li: number, x: number): number {
   const pieces = textPieces(l);
   if (!pieces.length) return l.start;
   for (const g of pieces) {
-    for (let k = 0; k <= g.text.length; k++) consider(g.start + k, g.x + pieceX(lay, g, k));
+    for (let k = 0; k <= g.text.length; k++) consider(g.start + k, g.x + placeX(lay, g, k));
   }
   return best;
 }
@@ -947,6 +1025,24 @@ export function selectionRects(lay: TextLayout, a: number, b: number, joined = f
     const s = Math.max(a, l.start), e = Math.min(b, l.end);
     const crossesBreak = l.last && b > l.end && a <= l.end && i < lay.lines.length - 1;
     if (e < s || (e === s && !crossesBreak)) return;
+    const band = joined ? joinedBand(lay.lines, i) : { y1: l.y - l.ascent, y2: l.y + l.descent };
+    // (text of both directions: each piece's part, as its letters are seen)
+    if (l.pieces.some((g) => g.rtl) && e > s) {
+      for (const g of textPieces(l)) {
+        const ga = Math.max(s, g.start), gb = Math.min(e, g.start + g.text.length);
+        if (gb <= ga) continue;
+        const p = g.x + placeX(lay, g, ga - g.start), q = g.x + placeX(lay, g, gb - g.start);
+        out.push({ x1: Math.min(p, q), x2: Math.max(p, q), ...band });
+      }
+      // a selected line break: a little space at the end of the line (its left, in a right-to-left paragraph)
+      if (crossesBreak) {
+        const xs = textPieces(l).map((g) => [g.x, g.x + g.w]).flat();
+        const end = l.pieces.some((g) => g.rtl) && caretPos(lay, l.end).x <= Math.min(...xs) + 1e-6 ? Math.min(...xs) : Math.max(...xs);
+        const w = l.ascent * 0.35;
+        out.push(end === Math.min(...xs) ? { x1: end - w, x2: end, ...band } : { x1: end, x2: end + w, ...band });
+      }
+      return;
+    }
     const x1 = caretPos(lay, s).x;
     let x2 = e === s ? x1 : xAt(lay, i, e);
     // a selected line break shows as a little space at the end of the line
@@ -959,9 +1055,9 @@ export function selectionRects(lay: TextLayout, a: number, b: number, joined = f
 /** x of a place on a given line (the end of a wrapped line stays on that line). */
 function xAt(lay: TextLayout, li: number, offset: number): number {
   const pieces = textPieces(lay.lines[li]);
-  for (const g of pieces) if (offset >= g.start && offset <= g.start + g.text.length) return g.x + pieceX(lay, g, offset - g.start);
+  for (const g of pieces) if (offset >= g.start && offset <= g.start + g.text.length) return g.x + placeX(lay, g, offset - g.start);
   const last = pieces[pieces.length - 1];
-  return last ? last.x + last.w : lay.lines[li].x;
+  return last ? last.x + placeX(lay, last, last.text.length) : lay.lines[li].x;
 }
 
 /**

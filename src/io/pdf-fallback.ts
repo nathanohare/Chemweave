@@ -2,8 +2,8 @@
 // Japanese, Hebrew, Arabic and symbols (bullets, check marks, circled numbers), from the free
 // Noto Sans fonts that come with the app (SIL Open Font License, packaged by Fontsource). Each
 // comes cut into files by Unicode range (Chinese and Japanese in about a hundred), so a PDF
-// takes only the files that hold the characters it needs. (Hebrew and Arabic come out letter by
-// letter, left to right: their order and Arabic's joined letters are F-V-02's.)
+// takes only the files that hold the characters it needs. (Right-to-left text comes in the order
+// it is seen, Arabic's letters joined: text/bidi.ts.)
 
 /** A font file to fall back on, by a key that names it, read when it is needed. */
 export interface FallbackFile {
