@@ -845,11 +845,14 @@ export class NmrPanel {
 
   /** Check Data… in the Spectrum window: the Analysis panel shown, and the paste box for a measured
    *  list open in the structure's NMR section (the panel may take a moment to draw it). */
-  private openCheck(i: number, tries = 0): void {
-    if (!tries) this.host.showPanel?.();
+  private openCheck(i: number, tries = 0, molblock = this.items[i]?.molblock): void {
+    // one wait at a time: a second click starts again, and closing the window or another structure stops it
+    if (!tries) { this.stopCheckWait(); this.host.showPanel?.(); }
+    this.checkWait = 0;
+    if (i !== this.winItem || !this.win?.visible || this.items[i]?.molblock !== molblock) return;
     const d = document.querySelector<HTMLDetailsElement>(`details.nmr[data-item="${i}"]`);
     if (!d || !d.getClientRects().length) {
-      if (tries < 30) setTimeout(() => this.openCheck(i, tries + 1), 100);
+      if (tries < 30) this.checkWait = window.setTimeout(() => this.openCheck(i, tries + 1, molblock), 100);
       else this.host.flash('Select a structure to check its NMR data.');
       return;
     }
@@ -862,6 +865,10 @@ export class NmrPanel {
     // (after the click that asked for it has finished, so the box keeps the focus)
     setTimeout(() => document.querySelector<HTMLTextAreaElement>(`details.nmr[data-item="${i}"] .ck-box textarea`)?.focus(), 0);
   }
+
+  /** The wait for the Analysis panel's NMR section (Check Data… in the Spectrum window), 0 when none. */
+  private checkWait = 0;
+  private stopCheckWait(): void { if (this.checkWait) { clearTimeout(this.checkWait); this.checkWait = 0; } }
 
   /** Settings ▸ NMR Prediction was saved: draw the open sections and the window again. */
   settingsChanged(panel: HTMLElement | null): void {
@@ -891,7 +898,7 @@ export class NmrPanel {
 
   /** The popped-out Spectrum window, made on first use. */
   private popOut(i: number, near: DOMRect | null): void {
-    if (this.win && this.winItem !== i) this.win.forget();
+    if (this.win && this.winItem !== i) { this.win.forget(); this.stopCheckWait(); }
     this.winItem = i;
     this.win ??= new SpectrumWindow({
       data: (sf, q) => this.dataFor(this.winItem, sf, q, this.specNuc(this.winItem)),
@@ -899,7 +906,7 @@ export class NmrPanel {
       copyPicture: (png) => (this.host.copyPicture ? this.host.copyPicture(png) : navigator.clipboard.write([new ClipboardItem({ 'image/png': new Blob([png as Uint8Array<ArrayBuffer>], { type: 'image/png' }) })])),
       putOnCanvas: (png) => { if (this.host.placePicture) this.host.placePicture(png); else this.host.flash('Pictures can\'t be placed on this page.'); },
       flash: (t) => this.host.flash(t),
-      closed: () => {},
+      closed: () => this.stopCheckWait(),
       solvent: { ids: NMR_SOLVENTS, label: solventLabel, get: () => this.solvent, set: (v) => this.setSolvent(v) },
       checkData: () => this.openCheck(this.winItem),
       ...this.host.openSettings ? { openSettings: () => this.host.openSettings!() } : {},

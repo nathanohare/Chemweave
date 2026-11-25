@@ -32,10 +32,11 @@ export interface DrawOpts { w: number; h: number; hi: number; lo: number; labels
   measScale?: number;
   /** A vertical line with its ppm at the pointer. */
   cursor?: number | null;
-  /** The Spectrum window's intensity: the tallest peak in `yFit` (the drawn range when left out) is
-   *  drawn at 3/4 of the height times this. Left out: the third-tallest point sets the height. */
+  /** The Spectrum window's intensity: the tallest peak in the drawn range is drawn at 3/4 of the
+   *  height times this. Left out: the third-tallest point sets the height. */
   yZoom?: number;
-  yFit?: PpmRange | null;
+  /** Written in the middle when no peak falls in the range drawn (the zoomed window). */
+  emptyNote?: string;
   /** The range being dragged out (shaded). */
   band?: PpmRange | null;
   /** The trace color (Settings ▸ NMR Prediction when left out). */
@@ -100,12 +101,19 @@ export function tallestIn(spec: PredictedSpectrum, hi: number, lo: number): numb
 /** Per pixel column, the highest point of a sampled spectrum (narrow lines never vanish). With
  *  `tops`, each line's own top is put in its column too, so a peak is drawn at its full height
  *  however far out it is zoomed. */
-function columns(spec: PredictedSpectrum, o: DrawOpts, tops = false): { col: Float64Array; ymax: number; n: number; y: Float64Array } {
+function columns(spec: PredictedSpectrum, o: DrawOpts, tops = false): { col: Float64Array; ymax: number } {
+  // the last columns of each spectrum are kept: while only the pointer moves, nothing is sampled again
+  const key = `${o.hi}|${o.lo}|${o.w}|${tops}`, kept = colCache.get(spec.lines);
+  if (kept?.key === key) return kept.got;
   const n = Math.max(64, Math.round(o.w * 3));
   const { y } = sampleSpectrum(spec, o.hi, o.lo, n);
-  // the third-tallest point sets the height, so one tall singlet does not flatten the rest
-  const sortedY = [...y].sort((a, b) => b - a);
-  const ymax = (sortedY[Math.min(2 * Math.round(n / o.w), n - 1)] || sortedY[0] || 1) * 1.08;
+  // the third-tallest point sets the height, so one tall singlet does not flatten the rest (not
+  // needed with `tops`: the window gives the height itself)
+  let ymax = 1;
+  if (!tops) {
+    const sortedY = [...y].sort((a, b) => b - a);
+    ymax = (sortedY[Math.min(2 * Math.round(n / o.w), n - 1)] || sortedY[0] || 1) * 1.08;
+  }
   const cols = Math.round(o.w), col = new Float64Array(cols);
   for (let c = 0; c < cols; c++) {
     let m = 0;
@@ -119,8 +127,11 @@ function columns(spec: PredictedSpectrum, o: DrawOpts, tops = false): { col: Flo
       if (c >= 0 && c < cols && t[i] > col[c]) col[c] = t[i];
     }
   }
-  return { col, ymax, n, y };
+  const got = { col, ymax };
+  colCache.set(spec.lines, { key, got });
+  return got;
 }
+const colCache = new WeakMap<PredictedSpectrum['lines'], { key: string; got: { col: Float64Array; ymax: number } }>();
 
 /** The text over each peak: one entry per line, as Settings ▸ NMR Prediction asks. */
 function peakLines(d: SpectrumData, p: PeakLabels, sf: number): { ppm: number; row: number; lines: string[] }[] {
@@ -195,11 +206,12 @@ export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }
   const mid = split ? top + (o.h - top - bot) / 2 : 0;
   // predicted band: base line and height (upward; downward under the measured list when inverted)
   // (the baseline sits BASE_GAP px above the x-axis line)
-  const pBase = split && cmp === 'inverted' ? mid + 2 : o.h - bot - BASE_GAP, pH = split ? o.h - bot - BASE_GAP - mid - 4 : o.h - top - bot - BASE_GAP, pDir = split && cmp === 'inverted' ? 1 : -1;
+  // (and, one above the other, BASE_GAP px from the line between the two)
+  const pBase = split && cmp === 'inverted' ? mid + BASE_GAP : o.h - bot - BASE_GAP, pH = split ? o.h - bot - 2 * BASE_GAP - mid : o.h - top - bot - BASE_GAP, pDir = split && cmp === 'inverted' ? 1 : -1;
   const mk = Math.max(0.1, o.measScale ?? 1);
   const xs = (v: number) => ((o.hi - v) / (o.hi - o.lo)) * o.w;
   // the window's intensity: the tallest peak in the fitted range at 3/4 of the height, times yZoom
-  const yz = o.yZoom, fit = o.yFit ?? { hi: o.hi, lo: o.lo };
+  const yz = o.yZoom, fit = { hi: o.hi, lo: o.lo };
   const specTop = (sp: PredictedSpectrum) => fullHeight(tallestIn(sp, fit.hi, fit.lo) || tallestIn(sp, Infinity, -Infinity), yz);
   const stickTop = (ks: { shift: number; n: number }[], maxN: number) => {
     const rel = (k: { n: number }) => 0.55 + 0.45 * (k.n / maxN);
@@ -241,8 +253,14 @@ export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }
     }
   }
   if (pl) s += drawPeakLabels(items, pl, o, xs, top);
+  if (o.emptyNote) {
+    const inRange = (v: number) => v <= o.hi && v >= o.lo;
+    const any = (d.spec ? tallestIn(d.spec, o.hi, o.lo) > 0 : (d.sticks ?? []).some((k) => inRange(k.shift)))
+      || (ov ? (ov.spec ? tallestIn(ov.spec, o.hi, o.lo) > 0 : (ov.sticks ?? []).some((k) => inRange(k.shift))) || ov.marks.some((m) => inRange(m.ppm)) : false);
+    if (!any) s += `<text x="${(o.w / 2).toFixed(1)}" y="${((top + o.h - bot) / 2).toFixed(1)}" text-anchor="middle" class="sp-tick sp-empty">${esc(o.emptyNote)}</text>`;
+  }
   if (ov) {
-    const mBase = split ? mid - 2 : o.h - bot - BASE_GAP, mH = split ? mid - 2 - top : o.h - bot - BASE_GAP - top;
+    const mBase = split ? mid - BASE_GAP : o.h - bot - BASE_GAP, mH = split ? mid - BASE_GAP - top : o.h - bot - BASE_GAP - top;
     if (ov.spec) {
       const { col, ymax: auto } = columns(ov.spec, o, yz !== undefined);
       const ymax = yz !== undefined ? specTop(ov.spec) : auto;
@@ -257,7 +275,7 @@ export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }
     }
     if (split) {
       s += `<line x1="0" x2="${o.w}" y1="${mid}" y2="${mid}" class="sp-ax"/>`;
-      for (const l of ov.links) s += `<path d="M${xs(l.m).toFixed(1)},${mid - 2}L${xs(l.p).toFixed(1)},${mid + 2}" class="sp-link sp-${l.sev}"/>`;
+      for (const l of ov.links) s += `<path d="M${xs(l.m).toFixed(1)},${mid - BASE_GAP}L${xs(l.p).toFixed(1)},${mid + BASE_GAP}" class="sp-link sp-${l.sev}"/>`;
     } else {
       // one baseline: a short tick under each matched pair, measured to predicted
       for (const l of ov.links) s += `<path d="M${xs(l.m).toFixed(1)},${o.h - bot + 1}L${xs(l.p).toFixed(1)},${o.h - bot + 1}" class="sp-link sp-${l.sev}" stroke-width="3"/>`;
@@ -270,7 +288,8 @@ export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }
       placed.push(x);
       s += `<text x="${x.toFixed(1)}" y="12" text-anchor="middle" class="sp-mark sp-${m.sev}">${esc(m.text)}</text>`;
     }
-    if (split) s += `<text x="5" y="${top + 10}" class="sp-tick">Measured</text><text x="5" y="${o.h - bot - 5}" class="sp-tick">Predicted</text>`;
+    // (stacked: "Predicted" at the top of its band, clear of its baseline)
+    if (split) s += `<text x="5" y="${top + 10}" class="sp-tick">Measured</text><text x="5" y="${cmp === 'stacked' ? mid + BASE_GAP + 10 : o.h - bot - BASE_GAP - 4}" class="sp-tick">Predicted</text>`;
     else s += `<line x1="6" x2="20" y1="${top + 7}" y2="${top + 7}" class="sp-meas"/><text x="24" y="${top + 10}" class="sp-tick">Measured</text><line x1="86" x2="100" y1="${top + 7}" y2="${top + 7}" class="sp-line"/><text x="104" y="${top + 10}" class="sp-tick">Predicted</text>`;
   }
   s += `<line x1="0" x2="${o.w}" y1="${o.h - bot + 0.5}" y2="${o.h - bot + 0.5}" class="sp-ax"/>`;
@@ -345,15 +364,17 @@ export function setNmrQuality(v: NmrQuality): void { try { localStorage.setItem(
 export function nmrSpectrumMhz(): number { try { return Number(localStorage.getItem('ci-nmr-mhz')) || 400; } catch { return 400; } }
 export function setNmrSpectrumMhz(v: number): void { try { localStorage.setItem('ci-nmr-mhz', String(v)); } catch { /* not remembered */ } }
 
-/** What a nucleus view of the window shows: the ppm range (null: all of it), the range the peak
- *  heights were fitted to when it was zoomed, and the intensity zoom (1: tallest peak at 3/4). */
-interface View { range: PpmRange | null; fit: PpmRange | null; y: number }
+/** What a nucleus view of the window shows: the ppm range (null: all of it) and the intensity zoom
+ *  (1: the tallest peak in the range shown at 3/4 of the height, refitted as the range moves). */
+interface View { range: PpmRange | null; y: number }
 
 /** What the pointer is doing in the plot. */
 type Gesture =
   | { kind: 'select'; id: number; x0: number; x: number; touch: boolean }
   | { kind: 'pan'; id: number; x: number }
   | { kind: 'y'; id: number; y0: number; z0: number }
+  /** On the left edge, until the drag shows its way: up or down for the height, sideways for a range. */
+  | { kind: 'edge'; id: number; x0: number; y0: number; z0: number }
   | { kind: 'pinch'; d0: number; z0: number };
 
 /** The shifts a spectrum is drawn from: when they change (a new prediction, another structure) the view starts again. */
@@ -392,7 +413,7 @@ export class SpectrumWindow {
   private get view(): View {
     const n = this.d?.nuc ?? '1H';
     let v = this.views.get(n);
-    if (!v) this.views.set(n, (v = { range: null, fit: null, y: 1 }));
+    if (!v) this.views.set(n, (v = { range: null, y: 1 }));
     return v;
   }
   private get range(): PpmRange | null { return this.view.range; }
@@ -405,8 +426,8 @@ export class SpectrumWindow {
     const sol = host.solvent;
     el.innerHTML = `<div class="nmr-spec-hd"><span class="nmr-spec-title"></span><span class="info-icon" tabindex="0" role="img" aria-label="About the spectrum" title="Simulated from the predicted shifts and coupling constants. Coupled protons are simulated exactly, so second-order patterns (roofing, AA'XX') show as they would be measured. Couplings come from the 2D structure, so ring protons use averaged values. ${PLOT_HELP} Hover a peak to find its atoms.">i</span>
       <span class="nmr-spec-tools"><select class="nmr-spec-mhz" title="Spectrometer frequency">${[300, 400, 500, 600, 800].map((m) => `<option value="${m}"${m === this.sf ? ' selected' : ''}>${m} MHz</option>`).join('')}</select><select class="nmr-spec-quality" title="Fast: first-order multiplets. Balanced: exact simulation of up to 8 coupled protons. Accurate: up to 10.">${(['fast', 'balanced', 'accurate'] as const).map((q) => `<option value="${q}"${q === this.quality ? ' selected' : ''}>${q[0].toUpperCase() + q.slice(1)}</option>`).join('')}</select><button type="button" class="nmr-spec-copy" title="Copy the spectrum as a picture">Copy as Picture</button><button type="button" class="nmr-spec-put" title="Put the spectrum on the drawing as a picture">Put on Canvas</button><button type="button" class="nmr-spec-close" aria-label="Close" title="Close">×</button></span></div>
-      <div class="nmr-spec-bar" role="toolbar" aria-label="Spectrum">${sol ? `<select class="nmr-spec-solvent" title="Solvent" aria-label="Solvent">${sol.ids.map((s) => `<option value="${esc(s)}"${s === sol.get() ? ' selected' : ''}>${esc(sol.label(s))}</option>`).join('')}</select>` : ''}${host.checkData ? '<button type="button" class="nmr-spec-check" title="Compare a measured peak list (pasted in SI format) with the prediction">Check Data…</button>' : ''}${host.openSettings ? `<button type="button" class="nmr-spec-gear" title="NMR Settings" aria-label="NMR Settings">${GEAR}</button>` : ''}<span class="nmr-spec-sep" aria-hidden="true"></span><button type="button" class="nmr-yout" title="Decrease intensity (−, Down arrow, wheel down, or drag down on the left edge)" aria-label="Decrease intensity">−</button><button type="button" class="nmr-yin" title="Increase intensity (+, Up arrow, wheel up, or drag up on the left edge)" aria-label="Increase intensity">+</button><button type="button" class="nmr-fit" title="Show the full spectrum at the standard height (0, or double-click the spectrum)">Reset View</button><span class="nmr-spec-sep" aria-hidden="true"></span><button type="button" class="nmr-prev" title="Previous signal (zooms to it)" aria-label="Previous signal">◀</button><button type="button" class="nmr-next" title="Next signal (zooms to it)" aria-label="Next signal">▶</button><span class="nmr-cmp seg" role="group" aria-label="Measured against predicted">${(['inverted', 'stacked', 'overlay'] as const).map((m) => `<button type="button" data-cmp="${m}" aria-pressed="${m === compareMode()}" title="${{ inverted: 'Inverted: measured above, predicted mirrored below', stacked: 'Stacked: measured above predicted, both upright', overlay: 'Overlay: both on one baseline' }[m]}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</span><input type="range" class="nmr-meas-k" min="-2" max="2" step="0.1" value="0" title="Height of the measured trace against the predicted one (double-click to reset)" aria-label="Measured height"></div>
-      <div class="nmr-spec-plot" tabindex="0" aria-label="Spectrum. ${PLOT_HELP}"><div class="nmr-spec-svg"></div><div class="nmr-yzone" title="Drag up or down to change the peak height"></div><div class="nmr-xzone" title="Drag to move along the spectrum"></div></div>`;
+      <div class="nmr-spec-bar" role="toolbar" aria-label="Spectrum">${sol ? `<select class="nmr-spec-solvent" title="Solvent" aria-label="Solvent">${sol.ids.map((s) => `<option value="${esc(s)}"${s === sol.get() ? ' selected' : ''}>${esc(sol.label(s))}</option>`).join('')}</select>` : ''}${host.checkData ? '<button type="button" class="nmr-spec-check" title="Compare a measured peak list (pasted in SI format) with the prediction">Check Data…</button>' : ''}${host.openSettings ? `<button type="button" class="nmr-spec-gear" title="NMR Settings" aria-label="NMR Settings">${GEAR}</button>` : ''}<span class="nmr-spec-sep" aria-hidden="true"></span><button type="button" class="nmr-yout" title="Decrease Intensity (−, Down arrow, wheel down, or drag down on the left edge)" aria-label="Decrease Intensity">−</button><button type="button" class="nmr-yin" title="Increase Intensity (+, Up arrow, wheel up, or drag up on the left edge)" aria-label="Increase Intensity">+</button><button type="button" class="nmr-fit" title="Reset View: the full spectrum at the standard height (0, or double-click the spectrum)" aria-label="Reset View">Reset View</button><span class="nmr-spec-sep" aria-hidden="true"></span><button type="button" class="nmr-prev" title="Previous Signal (zooms to it)" aria-label="Previous Signal">◀</button><button type="button" class="nmr-next" title="Next Signal (zooms to it)" aria-label="Next Signal">▶</button><span class="nmr-cmp seg" role="group" aria-label="Measured against predicted">${(['inverted', 'stacked', 'overlay'] as const).map((m) => `<button type="button" data-cmp="${m}" aria-pressed="${m === compareMode()}" title="${{ inverted: 'Inverted: measured above, predicted mirrored below', stacked: 'Stacked: measured above predicted, both upright', overlay: 'Overlay: both on one baseline' }[m]}">${m[0].toUpperCase() + m.slice(1)}</button>`).join('')}</span><input type="range" class="nmr-meas-k" min="-2" max="2" step="0.1" value="0" title="Height of the measured trace against the predicted one (double-click to reset)" aria-label="Measured height"></div>
+      <div class="nmr-spec-plot" tabindex="0" aria-label="Spectrum. ${PLOT_HELP}"><div class="nmr-spec-svg"></div><div class="nmr-yzone" role="img" aria-label="Peak height: drag up or down" title="Drag up or down to change the peak height (drag sideways to zoom to a range)"></div><div class="nmr-xzone" role="img" aria-label="Move along: drag the ppm scale" title="Drag to move along the spectrum"></div></div>`;
     this.el = el;
     document.body.appendChild(el);
     const plot = this.plot = el.querySelector<HTMLElement>('.nmr-spec-plot')!;
@@ -437,8 +458,8 @@ export class SpectrumWindow {
     // the wheel (and a trackpad's two-finger scroll and pinch) changes the peak height; sideways moves along
     let lastGesture = 0;
     plot.addEventListener('wheel', (e) => {
-      if (!this.d) return;
       e.preventDefault();
+      if (!this.d) return;
       if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) { this.pan(-e.deltaX * (e.deltaMode === 1 ? 16 : 1)); return; }
       if (e.ctrlKey && performance.now() - lastGesture < 250) return; // Safari sends its pinch as gesture events too
       this.setY(wheelZoom(this.view.y, e.deltaY, e.deltaMode, e.ctrlKey));
@@ -478,6 +499,8 @@ export class SpectrumWindow {
         this.close();
         return;
       }
+      // (Ctrl/Cmd with − + 0 zooms the page, Alt+arrows go back and forward: never the spectrum's)
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
       if ((e.target as HTMLElement).closest('select, input')) return;
       const onPlot = e.target === plot, w = Math.max(200, plot.clientWidth);
       if (onPlot && e.key === 'ArrowLeft') { e.preventDefault(); this.pan(w / 10); }
@@ -486,9 +509,9 @@ export class SpectrumWindow {
       else if (onPlot && e.key === 'ArrowDown') { e.preventDefault(); this.setY(stepZoom(this.view.y, -1)); }
       else if (e.key === 'ArrowLeft') { e.preventDefault(); this.stepTo(-1); }
       else if (e.key === 'ArrowRight') { e.preventDefault(); this.stepTo(1); }
-      else if (e.key === '+' || e.key === '=') this.setY(stepZoom(this.view.y, 1));
-      else if (e.key === '-' || e.key === '−' || e.key === '_') this.setY(stepZoom(this.view.y, -1));
-      else if (e.key === '0') this.resetView();
+      else if (e.key === '+' || e.key === '=') { e.preventDefault(); this.setY(stepZoom(this.view.y, 1)); }
+      else if (e.key === '-' || e.key === '−' || e.key === '_') { e.preventDefault(); this.setY(stepZoom(this.view.y, -1)); }
+      else if (e.key === '0') { e.preventDefault(); this.resetView(); }
     });
     // a new size keeps the ppm range shown (the view is kept in ppm, not pixels)
     this.ro = new ResizeObserver(() => this.draw());
@@ -514,7 +537,7 @@ export class SpectrumWindow {
     try { this.plot.setPointerCapture(e.pointerId); } catch { /* not captured */ }
     this.plot.focus({ preventScroll: true, focusVisible: false } as FocusOptions);
     const t = e.target as HTMLElement;
-    if (t.closest('.nmr-yzone')) this.gesture = { kind: 'y', id: e.pointerId, y0: e.clientY, z0: this.view.y };
+    if (t.closest('.nmr-yzone')) this.gesture = { kind: 'edge', id: e.pointerId, x0: this.px(e), y0: e.clientY, z0: this.view.y };
     else if (t.closest('.nmr-xzone') || e.shiftKey) this.gesture = { kind: 'pan', id: e.pointerId, x: e.clientX };
     else { const x = this.px(e); this.gesture = { kind: 'select', id: e.pointerId, x0: x, x, touch: e.pointerType === 'touch' }; }
     if (e.pointerType !== 'mouse') e.preventDefault();
@@ -530,6 +553,15 @@ export class SpectrumWindow {
       return;
     }
     if (g && 'id' in g && g.id !== e.pointerId) return;
+    if (g?.kind === 'edge') {
+      // the left edge: a drag sideways still selects a range, so the highest ppm can be reached from there
+      const dx = this.px(e) - g.x0, dy = e.clientY - g.y0;
+      if (Math.abs(dx) >= CLICK_PX && Math.abs(dx) > Math.abs(dy)) this.gesture = { kind: 'select', id: g.id, x0: g.x0, x: g.x0, touch: e.pointerType === 'touch' };
+      else if (Math.abs(dy) >= CLICK_PX) this.gesture = { kind: 'y', id: g.id, y0: g.y0, z0: g.z0 };
+      else return;
+      this.move(e);
+      return;
+    }
     if (g?.kind === 'y') { this.setY(dragZoom(g.z0, e.clientY - g.y0)); return; }
     if (g?.kind === 'pan') { this.pan(e.clientX - g.x); g.x = e.clientX; }
     if (g?.kind === 'select') g.x = this.px(e);
@@ -566,7 +598,6 @@ export class SpectrumWindow {
     if (!this.d) return;
     const v = this.view;
     v.range = r ? clampRange(r, autoRange(this.d)) : null;
-    v.fit = v.range;
     v.y = 1;
     this.draw();
   }
@@ -584,8 +615,8 @@ export class SpectrumWindow {
   private pan(dx: number): void {
     const v = this.view;
     if (!this.d || !v.range || !dx) return;
+    // (the height is fitted again to the range now showing, keeping the intensity zoom)
     v.range = panRange(v.range, dx, Math.max(200, this.plot.clientWidth), autoRange(this.d));
-    if (!v.range) v.fit = null;
     this.draw();
   }
 
@@ -618,6 +649,9 @@ export class SpectrumWindow {
     if (this.d) {
       const key = spectrumKey(this.d);
       if (this.keys.get(this.d.nuc) !== key) { this.keys.set(this.d.nuc, key); this.views.delete(this.d.nuc); }
+      // a measured list (Check Data) can change the full range: the view kept stays inside it
+      const v = this.view;
+      if (v.range) v.range = clampRange(v.range, autoRange(this.d));
     }
     const n = this.d?.nuc ?? '1H';
     const nucHtml = `<sup>${n.slice(0, -1)}</sup>${n.slice(-1)}`;
@@ -662,19 +696,27 @@ export class SpectrumWindow {
   highlight(row: number | null): void { if (row !== this.hotRow) { this.hotRow = row; this.draw(); } }
 
   /** What the view draws: the range, the intensity and the range being dragged out. */
-  private viewOpts(): Pick<DrawOpts, 'hi' | 'lo' | 'yZoom' | 'yFit'> {
+  private viewOpts(): Pick<DrawOpts, 'hi' | 'lo' | 'yZoom'> {
     const v = this.view, r = v.range ?? autoRange(this.d!);
-    return { hi: r.hi, lo: r.lo, yZoom: v.y, yFit: v.range ? v.fit : null };
+    return { hi: r.hi, lo: r.lo, yZoom: v.y };
   }
 
+  /** Draws on the next frame: a burst of pointer moves or wheel steps is drawn once. */
   private draw(): void {
+    if (typeof requestAnimationFrame !== 'function') { this.drawNow(); return; }
+    if (this.frame) return;
+    this.frame = requestAnimationFrame(() => { this.frame = 0; this.drawNow(); });
+  }
+  private frame = 0;
+
+  private drawNow(): void {
     if (this.el.hidden) return;
     const box = this.svgBox, plot = this.plot;
     if (!this.d) { box.innerHTML = '<p class="muted small">Select a structure to see its predicted spectrum.</p>'; return; }
     const w = Math.max(200, plot.clientWidth), h = Math.max(120, plot.clientHeight);
     const g = this.gesture, vo = this.viewOpts();
     const band = g?.kind === 'select' && Math.abs(g.x - g.x0) >= CLICK_PX ? { hi: ppmAt(Math.min(g.x0, g.x), w, vo), lo: ppmAt(Math.max(g.x0, g.x), w, vo) } : null;
-    box.innerHTML = spectrumSvg(this.d, { w, h, ...vo, labels: true, hotRow: this.hotRow, overlay: true, peakLabels: peakLabels(), compare: compareMode(), measScale: 2 ** this.measK, cursor: this.cursor, band });
+    box.innerHTML = spectrumSvg(this.d, { w, h, ...vo, labels: true, hotRow: this.hotRow, overlay: true, peakLabels: peakLabels(), compare: compareMode(), measScale: 2 ** this.measK, cursor: this.cursor, band, emptyNote: this.view.range ? 'No peaks in this range. Double-click to show everything.' : undefined });
     plot.classList.toggle('zoomed', !!this.view.range);
   }
 
