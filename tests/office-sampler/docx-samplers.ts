@@ -14,5 +14,4 @@ export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-BRK-01': { finding: 'F-W-015', note: 'a page break inside a paragraph is saved as two paragraphs, the second with pageBreakBefore (looks the same; the w:br is gone)' },
   'W-FLD-22': { finding: 'F-W-016', note: 'a table of figures field (TOC \\c "Figure") in the middle of a paragraph is moved into a paragraph of its own, styled Table of Figures, and marked dirty' },
   'W-FLD-24': { finding: 'F-W-016', note: 'an INDEX field in the middle of a paragraph is moved into a paragraph of its own, styled Index 1, with \\z "1033" added, and marked dirty' },
-  'docx-fields-notes.docx:second-save': { scope: /^word\/(document|styles)\.xml:/, finding: 'F-W-018', note: 'not the same file on a second save: the legacy text form field\'s bookmark (Text1) moves to the start of its paragraph, and the TOC 1 style is rewritten (uiPriority 39 and unhideWhenUsed become uiPriority 29 and qFormat, with keepNext and spacing added)' },
 };

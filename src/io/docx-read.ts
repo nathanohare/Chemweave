@@ -57,7 +57,7 @@ import { parseDesign } from '../document/themes';
 import { linkFromTarget } from '../links';
 import { mathText, ommlToTex } from '../document/math';
 import { CITE_PRESETS, cleanOptions } from '../document/cite-styles';
-import { listIndent, tableText } from './docx-write';
+import { listIndent, ownStyleXml, tableText } from './docx-write';
 import { readChart } from './office-chart';
 import { freshBox, sameBoxData, sizedBox } from '../sheet/chart-box';
 import { chartBoxPng } from '../render/chart-box-paint';
@@ -3601,6 +3601,17 @@ class DocxReader {
 
   // ---------------------------------------------------------------- the document
 
+  /**
+   * Whether a style is one of this program's own for the lines of the contents, figures, index or
+   * authorities exactly as it writes them for a document with none (docx-write's ownStyleXml): left
+   * out of the document's styles, so they look as they did here and a file saved again writes each once, the same.
+   */
+  private ownStyle(wordId: string, ours: string, normal: NamedStyle | undefined): boolean {
+    const el = this.wstyles.get(`paragraph:${wordId}`)?.el;
+    const own = normal === undefined ? null : ownStyleXml(ours, normal);
+    return !!own && !!el && elementXml(el).replace(/ xmlns(?::\w+)?="[^"]*"/g, '') === own;
+  }
+
   private named(wordId: string, ours: string): NamedStyle {
     const ws = this.wstyles.get(`paragraph:${wordId}`);
     const lk = ws ? this.a(kid(ws.el, 'link')) : null;
@@ -3708,6 +3719,26 @@ class DocxReader {
       for (let w: string | undefined = wordId; w && !read.has(w) && this.wstyles.has(`paragraph:${w}`); w = this.wstyles.get(`paragraph:${w}`)?.basedOn) read.add(w);
     }
     for (const [wordId, ours] of this.idMap) if (read.has(wordId)) styles[ours] = this.named(wordId, ours);
+    // (not this program's own styles for the contents', figures', index's and authorities' lines, as it
+    // wrote them: written again on saving; kept when a paragraph of the text has one, as Word keeps the
+    // lines of contents turned into plain text)
+    // (not the paragraph a contents, figures, index or authorities list stands in: it has its first line's style)
+    const lists = (p: OutPara) => p.runs.some((r) => { const k = r.obj !== undefined ? this.objects[r.obj]?.kind : undefined; return k === 'toc' || k === 'tof' || k === 'index' || k === 'toa'; });
+    const inText = new Set(out.filter((p) => !lists(p)).map((p) => p.style));
+    // (and the paragraphs of tables' cells, text boxes, notes and comments: any paragraph list held in the objects)
+    const seen = new Set<object>();
+    const collect = (v: unknown, depth: number): void => {
+      if (!v || typeof v !== 'object' || depth > 12 || seen.has(v)) return;
+      seen.add(v);
+      if (Array.isArray(v)) { for (const x of v) collect(x, depth + 1); return; }
+      for (const [k, x] of Object.entries(v)) {
+        if (k === 'paras' && Array.isArray(x)) for (const p of x) if (p && typeof (p as ParaStyle).style === 'string') inText.add((p as ParaStyle).style!);
+        collect(x, depth + 1);
+      }
+    };
+    collect(this.objects, 0);
+    collect(hf, 0);
+    for (const [wordId, ours] of this.idMap) if (styles[ours] && !BUILT_IN_IDS[ours] && !inText.has(ours) && this.ownStyle(wordId, ours, styles.Normal)) delete styles[ours];
     if (!out.length) out.push({ ps: {}, runs: [], mark: this.runStyle(merge<RProps>(this.docDefaults.r, this.chain('paragraph', this.defaultPara).r)), style: 'Normal', contextual: false });
     const runs: TextRun[] = [];
     out.forEach((p, i) => {

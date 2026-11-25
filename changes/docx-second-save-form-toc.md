@@ -1,0 +1,1 @@
+Fixed: Word: a file with a legacy form field, a table of contents, figures, an index or a table of authorities, opened and saved again here, no longer gets a second bookmark for the form field, a rewritten "toc 1" style or the list styles written twice.
