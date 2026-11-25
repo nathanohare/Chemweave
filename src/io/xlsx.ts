@@ -52,7 +52,7 @@ import { dataUrlBytes, bytesDataUrl, seenObjectId } from '../sheet/sheet-objects
 import { dataTableXml, readDataTable, pivotParts, readPivot, samePivot, PIVOT_CT, PIVOT_REL } from './xlsx-pivot';
 import { type DataTable, seenDataTableId } from '../sheet/what-if';
 import { type PivotTable, seenPivotId } from '../sheet/pivot';
-import { Persons, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
+import { Persons, isGuid, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
 import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, collapsedSummary, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
 import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, withDxfs } from './xlsx-view';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders } from '../sheet/cell-styles';
@@ -2145,7 +2145,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   // the people of threaded comments, with the ids the file gave them (and their sign-in names), to write back the same
   const people = personsDoc ? Array.from(personsDoc.getElementsByTagNameNS('*', 'person')).flatMap((p) => {
     const id = p.getAttribute('id'), userId = p.getAttribute('userId'), providerId = p.getAttribute('providerId');
-    return id ? [{ name: p.getAttribute('displayName') ?? '', id, ...(userId ? { userId } : {}), ...(providerId ? { providerId } : {}) }] : [];
+    return isGuid(id) ? [{ name: p.getAttribute('displayName') ?? '', id, ...(userId ? { userId } : {}), ...(providerId ? { providerId } : {}) }] : [];
   }) : [];
   if (people.length) book.excel = { ...book.excel, persons: people };
   keepFileValues(book, formulaValues);

@@ -284,3 +284,22 @@ describe('threaded comments\' ids through saves (F-X-009)', () => {
     expect(new Set(ids).size).toBe(ids.length);
   });
 });
+
+describe('threaded comments\' ids: the review\'s cases', () => {
+  const ids = (bytes: Uint8Array) => {
+    const f = unzipSync(bytes);
+    return [strFromU8(f['xl/threadedComments/threadedComment1.xml']), strFromU8(f['xl/persons/person.xml'])];
+  };
+  it('gives a comment made here the same ids on every save in a session', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, thread('New here')));
+    expect(ids(await writeXlsx(wb, pictures))).toEqual(ids(await writeXlsx(wb, pictures)));
+  });
+  it('keeps only ids shaped as Excel\'s, so one with odd characters can\'t break the file', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, { ...thread('Odd'), tcIds: { id: 'a"<b', replies: ['&'] } }));
+    const [t] = ids(await writeXlsx(wb, pictures));
+    expect(t).not.toMatch(/a"<b|id="&"/);
+    expect([...t.matchAll(/ id="([^"]+)"/g)].every((m) => /^\{[0-9A-F-]{36}\}$/.test(m[1]))).toBe(true);
+  });
+});

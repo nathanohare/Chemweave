@@ -48,6 +48,24 @@ export function newGuid(): string {
   return `{${hex.toUpperCase()}}`;
 }
 
+/** An id as Excel writes them ({8C3A…-…}): only such ids from a file are kept. */
+export const isGuid = (s: string | null | undefined): s is string => !!s && /^\{[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\}$/.test(s);
+
+/**
+ * An id made from what something is (a comment's cell, author and date; a person's name), the
+ * same on every save while that stays the same, in the shape of Excel's ids.
+ */
+export function stableGuid(seed: string): string {
+  // four FNV-1a hashes of the seed, each started differently: 128 bits
+  const part = (salt: number) => {
+    let h = (0x811c9dc5 ^ salt) >>> 0;
+    for (let i = 0; i < seed.length; i++) h = Math.imul(h ^ seed.charCodeAt(i), 0x01000193) >>> 0;
+    return h.toString(16).padStart(8, '0');
+  };
+  const hex = (part(1) + part(2) + part(3) + part(4)).toUpperCase();
+  return `{${hex.slice(0, 8)}-${hex.slice(8, 12)}-4${hex.slice(13, 16)}-${'89AB'[parseInt(hex[16], 16) & 3]}${hex.slice(17, 20)}-${hex.slice(20, 32)}}`;
+}
+
 /** A date as a threaded comment holds it (no time zone letter: it is UTC, as Excel 365 writes it). */
 const tcDate = (iso: string): string => {
   const d = new Date(iso);
@@ -74,7 +92,7 @@ export class Persons {
   id(name: string): string {
     const key = name || 'Author';
     let id = this.byName.get(key);
-    if (!id) this.byName.set(key, (id = this.kept.find((p) => p.name === key)?.id ?? newGuid()));
+    if (!id) this.byName.set(key, (id = this.kept.find((p) => p.name === key && isGuid(p.id))?.id ?? stableGuid('person:' + key)));
     return id;
   }
   get size(): number { return this.byName.size; }
@@ -107,16 +125,19 @@ export function notesParts(s: Sheet, sheetNo: number, persons: Persons, usedIds 
     const plain = '<rPr><sz val="9"/><color indexed="81"/><rFont val="Tahoma"/><family val="2"/></rPr>';
     if (n.kind === 'comment') {
       // the ids the file gave the comment and its replies, where no other comment in the workbook has taken them (a copy keeps none)
-      const idOf = (kept: string | undefined) => {
-        const id = kept && !usedIds.has(kept) ? kept : newGuid();
+      // (one made here: an id from its cell, author and date, the same on every save; a clash, a new one)
+      const idOf = (kept: string | undefined, seed: string) => {
+        let id = isGuid(kept) && !usedIds.has(kept) ? kept : stableGuid(seed);
+        if (usedIds.has(id)) id = newGuid();
         usedIds.add(id);
         return id;
       };
-      const id = idOf(n.tcIds?.id);
+      const seed = `${sheetNo}:${ref}:${n.author}:${n.date}`;
+      const id = idOf(n.tcIds?.id, seed);
       const one = (note: CommentNote, extra: string, noteId: string) =>
         `<threadedComment ref="${ref}" dT="${tcDate(note.date)}" personId="${persons.id(note.author)}" id="${noteId}"${extra}><text>${xml(note.text)}</text></threadedComment>`;
       threads.push(one(n, '', id).replace('><text>', `${n.done ? ' done="1"' : ''}><text>`));
-      (n.replies ?? []).forEach((rep, j) => threads.push(one(rep, ` parentId="${id}"`, idOf(n.tcIds?.replies[j]))));
+      (n.replies ?? []).forEach((rep, j) => threads.push(one(rep, ` parentId="${id}"`, idOf(n.tcIds?.replies[j], `${seed}:${j}:${rep.author}:${rep.date}`))));
       const body = ['[Threaded comment]', '', 'Your version of Excel shows this comment as a note: changes made to it here are lost in newer versions.', '',
         'Comment:', `    ${n.text}`, ...(n.replies ?? []).flatMap((rep) => ['Reply:', `    ${rep.author ? rep.author + ': ' : ''}${rep.text}`])].join('\n');
       comments.push(`<comment ref="${ref}" authorId="${authorNo(`tc=${id}`)}"><text><r>${plain}${tText(body)}</r></text></comment>`);
@@ -217,7 +238,7 @@ export function readNotes(comments: Document | null, shown: Set<number>, threade
         text: kid(t, 'text')?.textContent ?? '', ...(t.getAttribute('done') === '1' || t.getAttribute('done') === 'true' ? { done: true } : {}),
       };
       const id = t.getAttribute('id') ?? '';
-      if (id) note.tcIds = { id, replies: [] };
+      if (isGuid(id)) note.tcIds = { id, replies: [] };
       tops.set(id, { key: keyOf(R.r1, R.c1), note });
     }
     for (const t of all) {
