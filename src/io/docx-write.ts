@@ -626,6 +626,10 @@ class DocxWriter {
   private markRev: (string | undefined)[] = [];
   /** Each paragraph mark's run (how the mark looks: Word's w:pPr/w:rPr). */
   private markRuns: TextRun[] = [];
+  /** A paragraph mark's look as Word's w:pPr/w:rPr has it: direct formatting only, kerning left to the text. */
+  private markProps(r: TextRun, st: NamedStyle): string {
+    return this.runProps({ ...r, text: '', rev: undefined, fmt: undefined, cmt: undefined, link: undefined, obj: undefined, cstyle: undefined, noKern: undefined }, st, {});
+  }
   // tracked changes count apart from the bookmarks (Word wants each id used once)
   private revId = 10001;
 
@@ -863,8 +867,9 @@ class DocxWriter {
     const nl = ps.list === 'number' ? ps.numLook : undefined;
     const markLook = `${nl?.bold !== undefined ? (nl.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${nl?.italic !== undefined ? (nl.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}`;
     // (else the mark's own look, where it isn't the paragraph style's)
-    const mk = index >= 0 && !markLook ? this.markRuns[index] : undefined;
-    const markOwn = mk ? this.runProps({ ...mk, text: '', rev: undefined, fmt: undefined, cmt: undefined, link: undefined, obj: undefined }, st, { cs: this.charStyleOf(mk) }) : '';
+    // (not a list item's: Word draws its number or bullet in the mark's look, which isn't drawn here)
+    const mk = index >= 0 && !ps.list ? this.markRuns[index] : undefined;
+    const markOwn = mk ? this.markProps(mk, st) : '';
     if (mr || markLook || markOwn) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}${markOwn}</w:rPr>`);
     // the section ending with this paragraph
     if (sectXml) pPr.push(sectXml);
