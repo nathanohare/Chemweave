@@ -109,11 +109,11 @@ import { GO_TO_KINDS, goToOffset, similarRanges, type GoToKind } from '../docume
 import { DocIndexUI } from './doc-index-ui';
 import { lookOfTable } from '../document/table-styles';
 import type { BorderLine, BorderSide, TableLook } from '../model';
-import { BREAK_NAMES, changeSection, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
+import { BREAK_NAMES, changeSection, hasTitlePg, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
   type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
   floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents, traceOf, type TraceLook,
-  WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
+  WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, samePageBorder, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
   type CharStyle, type PageBorder, type Watermark,
   type BreakKind, type DocObject, type DocText, type HeaderFooter, type HfZones, type Embedded, type FigureFrame, type FigureLook, type Float, type LineNumbers, type NoteFormat, type NumberPlace, type PageNumFormat, type PageSetup, type WrapKind,
 } from '../document/document';
@@ -4158,6 +4158,14 @@ export class DocumentMode {
       case 'hf-link': this.hfLink(); return true;
       case 'hf-align-tab': void this.hfAlignTab(); return true;
       case 'hf-first': case 'hf-odd-even': {
+        // a section linked to the one before has its own Different First Page (Word's titlePg); its header and footer stay linked
+        const page = cmd === 'hf-first' && f.box?.hf ? f.layout().pages[f.box.hf.page] : undefined;
+        const mine = page ? sectionsOf(f.t)[page.section] : undefined;
+        if (mine?.linked) {
+          this.hfChange(() => f.ed.update(changeSection(f.t, mine.index, { titlePg: !mine.hf.firstPage }), 'Different First Page'));
+          this.updateRibbon();
+          return true;
+        }
         const hf = this.section().hf;
         const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
         this.setSection({ hf: cmd === 'hf-first' ? { ...hf, firstPage: !hf.firstPage || undefined, first: hf.first ?? blank() } : { ...hf, oddEven: !hf.oddEven || undefined, even: hf.even ?? blank() } }, cmd === 'hf-first' ? 'Different First Page' : 'Different Odd & Even Pages');
@@ -4304,7 +4312,7 @@ export class DocumentMode {
     const own = pages[at.page]?.section ?? 0;
     if (own === 0) { this.host.flash('The first section has no section before it to link to.'); return; }
     const sec = sectionsOf(f.t)[own];
-    this.hfChange(() => f.ed.update(changeSection(f.t, own, sec.linked ? { hf: sec.hf, linked: false } : { linked: true }), 'Link to Previous'));
+    this.hfChange(() => f.ed.update(changeSection(f.t, own, sec.linked ? { hf: sec.hf, linked: false } : { linked: true, titlePg: hasTitlePg(sec.hf) }), 'Link to Previous'));
   }
 
   /** Header ▾ and Footer ▾: ready-made headers and footers, and Edit and Remove. */
@@ -5846,6 +5854,14 @@ export class DocumentMode {
     if (!f) return;
     const t = { ...f.t, ...patch };
     for (const k of ['watermark', 'pageColor', 'pageBorder'] as const) if (t[k] === undefined) delete t[k];
+    // a border round every page: the sections' own borders (from a Word file) give way to it
+    if ('pageBorder' in patch && !samePageBorder(patch.pageBorder, f.t.pageBorder) && t.paras.some((p) => p?.section?.pageBorder !== undefined)) {
+      t.paras = t.paras.map((p) => {
+        if (p?.section?.pageBorder === undefined) return p;
+        const { pageBorder: _b, ...section } = p.section;
+        return { ...p, section };
+      });
+    }
     f.ed.update(t, label);
   }
 
@@ -6300,7 +6316,8 @@ export class DocumentMode {
       if (on) {
         const hs = sec.hf;
         const box = (id: string, v: boolean) => { const el = this.ribbon.querySelector<HTMLInputElement>(id); if (el) el.checked = v; };
-        box('#doc-hf-first', !!hs.firstPage);
+        // (a linked section's own Different First Page: its page's header and footer)
+        box('#doc-hf-first', !!(f.layout().pages[f.box!.hf!.page]?.hf ?? hs).firstPage);
         box('#doc-hf-oddeven', !!hs.oddEven);
         box('#doc-hf-showtext', this.hfShowText);
         const own = f.layout().pages[f.box!.hf!.page]?.section ?? 0;

@@ -17,6 +17,7 @@ import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type
 import { fitParas, laidParas, listMarkers, paraCount, paragraphMarks, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
+import type { PageBorder } from './document';
 import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type HfKey, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
@@ -82,6 +83,8 @@ export interface PageBox {
   hf: HeaderFooter;
   /** That section's index. */
   section: number;
+  /** The border round it (Design ▸ Page Borders, or its section's own), or null for none. */
+  border: PageBorder | null;
   /** The first page of its section, its page number as a number, and that number as written (no prefix), for headers and footers. */
   starts?: boolean;
   n?: number;
@@ -746,7 +749,7 @@ export class DocLayouter {
       const hf = secs[sec].hf;
       const number = `${hf.prefix ?? ''}${pageNumText(num, secs[sec].format)}`;
       const label = hf.numbers === 'none' || (starts && !hf.onFirst) ? '' : number;
-      return { index, top, first: lines.length, end: lines.length, label, number, x: ox, w: page.w, h: page.h, setup: page, hf, section: sec, starts, n: num, num: pageNumText(num, secs[sec].format) };
+      return { index, top, first: lines.length, end: lines.length, label, number, x: ox, w: page.w, h: page.h, setup: page, hf, section: sec, border: secs[sec].border, starts, n: num, num: pageNumText(num, secs[sec].format) };
     };
     pages.push(makePage(0, 0, true));
     /** The next page, in section `to` when given (its first page). */
