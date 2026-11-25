@@ -54,7 +54,7 @@ import { type DataTable, seenDataTableId } from '../sheet/what-if';
 import { type PivotTable, seenPivotId } from '../sheet/pivot';
 import { Persons, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
 import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
-import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes } from './xlsx-view';
+import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, withDxfs } from './xlsx-view';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders } from '../sheet/cell-styles';
 import type { WorkbookTheme } from '../sheet/themes';
 import { themeOf } from '../sheet/themes';
@@ -375,6 +375,11 @@ class Styles {
   /** The number of a highlight look (conditional formatting). */
   dxf(l: CfLook): number {
     return this.index(this.dxfs, dxfXml(l));
+  }
+
+  /** The number of a differential format kept from Excel's file, as its element (a sort by color's). */
+  keptDxf(el: string): number {
+    return this.index(this.dxfs, el);
   }
 
   private index(list: string[], item: string): number {
@@ -946,7 +951,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const tpath = `xl/tables/table${tableNo}.xml`;
       // a table a data query fills: its query table, as the file had it (once, and with the workbook's connections kept)
       const withQuery = connectionsKept && queryHolds(t, tableNames.get(t)!) && !queryParts.has(t.query!.xml);
-      pkg.add(tpath, HEAD + tableXml(withQuery ? t : { ...t, query: undefined }, tableNo, tableNames.get(t)!, totals, af), CT.table);
+      pkg.add(tpath, HEAD + tableXml(withQuery ? t : { ...t, query: undefined }, tableNo, tableNames.get(t)!, totals, af, (d) => styles.keptDxf(d)), CT.table);
       tableIds.push(pkg.relate(path, RELS.table, `../tables/table${tableNo}.xml`));
       if (withQuery) {
         queryParts.add(t.query!.xml);
@@ -1065,7 +1070,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       `<sheetViews><sheetView${sheetViewAttrs(own.viewOpts)}${own.excel?.viewAttrs ?? ''}${si === book.active ? ' tabSelected="1"' : ''} workbookViewId="0">${view}</sheetView></sheetViews>` +
       `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? ptFromPx(DEFAULT_ROW_H)}"${own.fileRowHeight ? (own.fileRowHeight.custom ? ' customHeight="1"' : '') : ' customHeight="1"'}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
       (colXml.length ? `<cols>${colXml.join('')}</cols>` : '') +
-      `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${own.excel?.sortState ?? ''}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
+      `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${withDxfs(own.excel?.sortState, own.excel?.sortDxfs, (d) => styles.keptDxf(d))}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
       `${page.printOptions}${page.pageMargins}${page.pageSetup}${page.headerFooter}${page.breaks}${own.excel?.ignoredErrors ?? ''}${drawingXml}${ole?.oleObjects ?? ''}${tableParts}${sparkExt ? `<extLst>${sparkExt}</extLst>` : ''}</worksheet>`,
       CT.sheet);
     const rid = pkg.relate('xl/workbook.xml', RELS.worksheet, `worksheets/sheet${si + 1}.xml`);
@@ -1568,6 +1573,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   const baseFont = themeOf(workbookTheme).minor;
   const colourOf = (el: Element | null) => readColour(el, theme);
   const dxfs = readDxfs(stylesDoc, colourOf);
+  const dxfEls = stylesDoc ? kids(kid(stylesDoc.documentElement, 'dxfs'), 'dxf') : [];
   const personsPath = relTarget(NOTES_REL.persons);
   const personsDoc = personsPath ? pkg.xml(personsPath) : null;
   const ssPath = relTarget(RELS.sharedStrings);
@@ -1669,7 +1675,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const codeName = kid(ws, 'sheetPr')?.getAttribute('codeName');
       if (codeName) s.codeName = codeName;
       // protection and the like, for Excel
-      s.excel = readSheetKept(ws);
+      s.excel = readSheetKept(ws, dxfEls);
       const sheetView = kid(ws, 'sheetViews', 'sheetView');
       const viewOpts = readSheetViewOpts(sheetView);
       if (viewOpts) s.setViewOpts(viewOpts);
@@ -1914,7 +1920,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         if (r.type !== RELS.table) continue;
         const td = pkg.xml(r.target);
         const queryPath = keepConnections ? queryTableOf(pkg, r.target) : null;
-        const got = td ? readTable(td, tables.length + 1, queryPath ? pkg.text(queryPath) : null) : null;
+        const got = td ? readTable(td, tables.length + 1, queryPath ? pkg.text(queryPath) : null, dxfEls) : null;
         if (!got) continue;
         // (a query table's link holds while the header cells name its columns as its part does, as they do in Excel's files)
         if (got.table.query) {
