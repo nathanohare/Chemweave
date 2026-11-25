@@ -55,9 +55,9 @@ export function readFontFile(path: string): { pkg: string; subset: string; weigh
   return m ? { pkg: m[1], subset: m[2], weight: Number(m[3]), style: m[4] as 'normal' | 'italic' } : null;
 }
 
-// the bundled files (Vite copies the ones listed and gives each its address)
-const FILES = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff2', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const WOFF = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+// the bundled files (Vite copies the ones listed and gives each its address; the Noto fallback fonts' are their own, below)
+const FILES = import.meta.glob(['/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff2', '!/node_modules/@fontsource/noto-sans-*/**'], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const WOFF = import.meta.glob(['/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff', '!/node_modules/@fontsource/noto-sans-*/**'], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
 let registered = false;
 let fontsChanged: (() => void) | null = null;
