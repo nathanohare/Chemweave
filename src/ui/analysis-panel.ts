@@ -112,7 +112,7 @@ export function electronsHtml(counts: MetalCount[]): string {
         <tr><td>${esc(c.symbol)}</td><td></td>${neutralOn ? `<td>${c.group}</td>` : ''}${ionicOn ? `<td>d${sup(c.dn)}: ${c.dn}</td>` : ''}</tr>
         ${rows.join('')}
         ${c.charge ? `<tr><td>Charge ${c.charge > 0 ? '+' : '−'}${Math.abs(c.charge)}</td><td></td>${neutralOn ? `<td>${c.charge > 0 ? '−' : '+'}${Math.abs(c.charge)}</td>` : ''}${ionicOn ? `<td>in d${sup(c.dn)}</td>` : ''}</tr>` : ''}
-        <tr class="ec-total"><td>Total</td><td></td>${neutralOn ? `<td>${c.electrons}</td>` : ''}${ionicOn ? `<td>${c.electrons}</td>` : ''}</tr>
+        <tr class="ec-total"><td>Total</td><td></td>${neutralOn ? `<td>${c.electrons}</td>` : ''}${ionicOn ? `<td>${c.ionicTotal}</td>` : ''}</tr>
       </table>${c.notes.map((n) => `<p class="muted small">${esc(n)}</p>`).join('')}`;
   };
   return `<details class="electrons" open><summary title="Green's covalent bond classification: L gives two electrons, X shares one, Z takes two">Electron count</summary>${counts.map(metal).join('')}</details>`;

@@ -5760,8 +5760,11 @@ body.cells-raised .toolbox .tb-cells > .tb-cmd.tb-icon { border: 1px solid var(-
 body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon { border-color: transparent; background: transparent; }
 body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon:hover { background: var(--accent-soft); }
 
+/* a command that is switched on shows it, in every Button Cells look */
+body .toolbox .tb-cells > .tb-cmd[aria-pressed='true'], body .toolbox .tb-cells > .tb-cmd[aria-pressed='true']:hover, body .toolbox .tb-cmd.tb-chip[aria-pressed='true'] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
 /* a floating toolbox's buttons spread across its width, so a title wider than its buttons leaves no blank strip */
-.toolbox.floating .tb-cells { width: 100%; }
+.toolbox.floating .tb-cells { width: 100%; --tb-track: 1fr; }
 body.cells-grid .toolbox.floating .tb-cells { width: 100%; box-sizing: border-box; }
 
 /* ---- Toolbox frames: a bold line in the ribbon's border gray stands in for the padding there was,
@@ -5769,7 +5772,11 @@ body.cells-grid .toolbox.floating .tb-cells { width: 100%; box-sizing: border-bo
    gray than the ribbon's, so it shows on the toolbox's surface. */
 .toolbox { --tb-edge: var(--line); }
 body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
-:root[data-gray] .toolbox { --tb-edge: #b3b8c0; --accent-soft: #aeb5c1; }
+:root[data-gray] .toolbox { --tb-edge: #b3b8c0; }
+/* (only the grids of buttons and the Highlight toolbox take the deeper gray: the Side Panel, Text Formatting, Guides and Colors keep the mode's own soft accent) */
+:root[data-gray] .toolbox :is(.tb-cells, .tb-hl) { --accent-soft: #aeb5c1; }
+/* on that deeper gray an icon is drawn in the text color, so it keeps its contrast (over 3:1) */
+:root[data-gray] .toolbox :is(.tb-cells, .tb-hl) :is(.tool, .tb-cmd):is(:hover, .active, [aria-pressed='true']) { color: var(--text); --ic-ink: var(--text); }
 .toolbox.floating:not([data-id='details']) { padding: 0; gap: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
 .toolbox.floating:not([data-id='details']) > .tb-head { padding: 1px 2px 1px 4px; background: var(--tb-edge); color: var(--text); }
 :root:not([data-shadows='off']) .dock > .toolbox:not(.floating), :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) + .toolbox:not(.floating) { padding: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
@@ -5777,8 +5784,19 @@ body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
 
 /* ---- The Highlight toolbox: its two commands and Save Style, the parts of a highlight as switches
    in three even columns, then the saved styles. */
-.tb-body.tb-hl { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: 196px; padding: 3px; box-sizing: border-box; }
-.toolbox.vertical .tb-body.tb-hl { width: 150px; }
+.tb-body.tb-hl { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: calc(196px * var(--tb-scale)); padding: 3px; box-sizing: border-box; font-size: max(9px, calc(11px * var(--tb-scale))); }
+.tb-hl :is(.tb-chip, .tb-look, .tb-heading) { font-size: inherit !important; }
+/* down a side it is as wide as its dock (at least four buttons), and Save Style goes under the two commands when there is no room beside them */
+.toolbox.vertical .tb-body.tb-hl { width: auto; min-width: calc(var(--tbw) * 4 + 8px); }
+.toolbox.vertical .tb-hl-row { flex-wrap: wrap; }
+.toolbox.vertical .tb-hl-row > .tb-chip { margin-left: 0; flex: 1 1 auto; }
+/* along the top or bottom its parts stand side by side, and the list of styles is short, so the dock stays low */
+.dock-h .tb-body.tb-hl { flex-direction: row; align-items: flex-start; width: auto; }
+.dock-h .tb-body.tb-hl > * { width: auto; }
+.dock-h .tb-hl-row { flex-direction: row; flex-wrap: wrap; width: calc(var(--tbw) * 2 + 2px) !important; }
+.dock-h .tb-hl-row > .tb-chip { margin-left: 0; white-space: normal; line-height: 1.1; flex: 1 1 100%; }
+.dock-h .tb-hl-chips { width: calc(160px * var(--tb-scale)) !important; }
+.dock-h .tb-hl .tb-looks { width: calc(190px * var(--tb-scale)) !important; max-height: calc(60px * var(--tb-scale)); border-top: 0; border-left: 1px solid var(--line); }
 .tb-hl-row { display: flex; align-items: center; gap: 2px; }
 .tb-hl-row > .tb-chip { margin-left: auto; flex: 0 0 auto; }
 .tb-hl-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; min-width: 0; }
@@ -5787,5 +5805,12 @@ body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
 .tb-hl .tb-look-dot { display: inline-block; margin-right: 5px; vertical-align: -1px; }
 .toolbox.vertical .tb-hl-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .toolbox .tb-cmd.tb-chip { max-width: none; min-width: 0; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); text-align: center; border-color: var(--tb-edge, var(--line)); }
-.tb-hl .tb-looks { max-height: 168px; border-top: 1px solid var(--line); }
+.tb-hl .tb-looks { max-height: calc(168px * var(--tb-scale)); max-width: none; border-top: 1px solid var(--line); }
 .toolbox:not(.floating) > .tb-body.tb-hl { padding: 3px; }
+
+/* toolboxes that hold something other than a grid of buttons (Text Formatting, Guides, Colors) keep a little room inside the frame */
+.toolbox:not([data-id='details']) > .tb-body:not(:has(.tb-cells)):not(.tb-hl) { padding: 3px 4px; }
+/* the Settings preview's buttons, at the toolboxes' size */
+.tbp-tools { grid-template-columns: repeat(2, var(--tbw)); }
+.tbp-tool { width: var(--tbw); height: var(--tbh); }
+.tbp .tbp-tool > svg { width: var(--tbi); height: var(--tbi); }

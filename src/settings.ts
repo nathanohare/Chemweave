@@ -370,7 +370,7 @@ export const DEFAULT_SETTINGS: Settings = {
 };
 
 /** The smallest and largest Toolbox Button Size, in percent. */
-export const TOOLBOX_SCALE_MIN = 60, TOOLBOX_SCALE_MAX = 250;
+export const TOOLBOX_SCALE_MIN = 75, TOOLBOX_SCALE_MAX = 250;
 /** A Toolbox Button Size as typed or stored: a whole percent within the limits (100 when it is no number). */
 export function toolboxScaleOf(v: unknown): number {
   const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN;

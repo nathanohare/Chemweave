@@ -932,7 +932,7 @@ Five more toolboxes stay hidden until you open them, and come out on their own w
 - Every change shows at once in the toolbox itself. **Undo** (or Ctrl+Z) takes changes back one at a time, and **Reset This Toolbox** puts a toolbox back as it came, grid and all. The grids are kept with your settings, so **Edit ▸ Settings File ▸ Export Settings** takes them to another computer.
 - Clear **Jiggle icons** to keep them still. They never jiggle when Windows is set to show fewer animations (Settings ▸ Accessibility ▸ Visual effects ▸ Animation effects off), or the same setting on a Mac.
 
-The toolboxes come with only the commands that make or act on things: a command that edits or sets up one selected object (Edit Energy Diagram, Depth Shading Settings, Convert Diagram to Shapes and so on) is on that object's right-click menu and in the Side Panel. Each fills its grid, with no empty cells; Customize Toolboxes can add any command back.
+The toolboxes come with only the commands that make or act on things: a command that edits or sets up one selected object (Edit Energy Diagram, Depth Shading Settings, Convert Diagram to Shapes and so on) is on that object's right-click menu. Each fills its grid, with no empty cells; Customize Toolboxes can put any command in My Toolbox or a toolbox of your own.
 
 The Highlight, Colors and side panel toolboxes are laid out by the app; they can be renamed, hidden, moved in the list and (except the side panel) deleted.
 

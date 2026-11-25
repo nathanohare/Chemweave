@@ -24,3 +24,14 @@ export const BOX_DEFAULTS: Readonly<Record<string, readonly string[]>> = {
 
 /** Commands kept out of the toolboxes: each edits or sets up one selected object, and is offered where that object is. */
 export const NOT_IN_TOOLBOXES: readonly string[] = ['edit-energy', 'edit-torsion', 'copy-torsion-data', 'edit-newman', 'unlink-newman', 'edit-diagram', 'diagram-to-shapes', 'edit-chart', 'edit-plate', 'depth-shading-settings', 'clean-up-options', 'scheme-settings'];
+
+/**
+ * How many columns to give `n` buttons so they fill whole rows: `prefer` when that divides them
+ * evenly, else the nearest width from 3 to 8 that does (the narrower of two as near), else `prefer`
+ * (a count nothing divides, such as 13, leaves its last row short).
+ */
+export function fullCols(n: number, prefer: number): number {
+  if (n <= prefer || n % prefer === 0) return prefer;
+  for (let d = 1; d <= 5; d++) for (const c of [prefer - d, prefer + d]) if (c >= 3 && c <= 8 && n % c === 0) return c;
+  return prefer;
+}

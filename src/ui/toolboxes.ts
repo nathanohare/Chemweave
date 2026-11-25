@@ -3,7 +3,7 @@
 // and commands. Unlocked, a toolbox is dragged by its title to float anywhere, or to an edge of
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
-import { BOX_COLS } from './toolbox-defaults';
+import { BOX_COLS, fullCols } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
 import { COMMAND_NAMES } from '../editor/keymap';
@@ -931,7 +931,7 @@ export function slotAt(boxes: readonly Box[], x: number, y: number): number {
 // ---------------------------------------------------------------- grids of buttons (Customize Toolboxes)
 
 /** How wide a toolbox's grid is when made from a list (the drawing tools: two columns, as on the bar). */
-const LIST_COLS: Record<string, number> = { main: 2, ...BOX_COLS };
+const LIST_COLS: Record<string, number> = { main: 2 };
 
 /** The drawing tools are never more than this many columns wide, in any mode or dock (they scroll instead). */
 export const MAIN_COLS = 2;
@@ -944,7 +944,11 @@ export function boxGrid(st: ToolboxState, id: string, given: readonly string[] =
   const list = boxItems(st, id, given);
   // a new toolbox of your own starts as an empty 4 × 3
   if (!list.length) return { cols: 4, rows: 3, cells: Array(12).fill(null) };
-  return listToGrid(list, LIST_COLS[id]);
+  // (as wide as the toolbox comes, or the nearest width that leaves no cell empty when buttons were added or taken away)
+  // a list you chose yourself before toolboxes had grids keeps the width it had: as wide as its longest group
+  const own = id === 'custom' ? st.custom.join() !== defaultToolboxes().custom.join() : !!st.items?.[id];
+  const cols = own ? LIST_COLS[id] : BOX_COLS[id] && !list.includes('sep') ? fullCols(list.length, BOX_COLS[id]) : LIST_COLS[id];
+  return listToGrid(list, cols);
 }
 
 /** A toolbox's grid changed. */

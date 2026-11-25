@@ -223,7 +223,7 @@ export class StylePanel {
     if (force) this.key = '';
     const s = this.wholeMoDiagram(this.sel());
     const tp = this.tables?.part();
-    const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}|${[...s.shapes].map((id) => this.plate?.moLevel?.(id) ?? '').join(',')}`;
+    const key = `${electronPrefs.method}|${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}|${[...s.shapes].map((id) => this.plate?.moLevel?.(id) ?? '').join(',')}`;
     if (key === this.key) return;
     this.key = key;
     const focused = this.body.contains(document.activeElement) ? document.activeElement!.closest('.style-row')?.textContent : null;

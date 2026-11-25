@@ -12955,7 +12955,7 @@ async function personalPreferences(): Promise<void> {
   editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
   electronPrefs.method = ELECTRON_METHODS.includes(r.electronMethod as ElectronMethod) ? r.electronMethod as ElectronMethod : 'both';
-  stylePanel.refresh();
+  stylePanel.refresh(true);
   scheduleAnalysis(true);
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
@@ -15848,7 +15848,7 @@ function buildBox(body: HTMLElement, id: string, vertical: boolean): void {
   const s = shownGrid(g, dock);
   const cells = document.createElement('div');
   cells.className = 'tb-cells';
-  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(var(--tbw), 1fr))`;
+  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(var(--tbw), var(--tb-track, auto)))`;
   const make = (k: string): HTMLElement | null => {
     const name = k.slice(k.indexOf(':') + 1);
     // the drawing tools' buttons are the tool bar's own (it shows the one in use, and each palette's last pick)
@@ -16063,7 +16063,7 @@ function layCells(cells: HTMLElement, fit?: number): void {
   const blocks = starts.length;
   // the longest block sets how many rows (columns, along the top or bottom) there are
   const len = Math.max(...starts.map((st, b) => (starts[b + 1] ?? full) - st));
-  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(var(--tbw), 1fr))`;
+  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(var(--tbw), var(--tb-track, auto)))`;
   cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(var(--tbh), auto))`;
   cells.querySelectorAll('.tb-line').forEach((l) => l.remove());
   // a line where a block starts is not needed: the blocks stand apart

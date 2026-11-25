@@ -537,6 +537,37 @@ describe('Settings ▸ Preferences ▸ Electron Counting Method', () => {
     } finally { reset(); }
   });
 
+  it('a plain refresh after the method changes redraws the panel (the selection and drawing are the same)', () => {
+    const { doc, m } = complex(45, ['PPh3', 'PPh3', 'PPh3', 'Cl']);
+    const section = document.createElement('section'), body = document.createElement('div');
+    const ids = [...doc.fragmentOf(m)];
+    const p = new StylePanel(section, body, doc, () => sel(ids), () => {});
+    const shown = () => [...body.querySelectorAll('.ec-panel-table th')].map((t) => t.textContent);
+    try {
+      p.refresh(true);
+      expect(shown()).toEqual(['Ligand', 'Type', 'Neutral', 'Ionic']);
+      electronPrefs.method = 'neutral';
+      p.refresh();
+      expect(shown()).toEqual(['Ligand', 'Type', 'Neutral']);
+    } finally { reset(); }
+  });
+
+  it('the Analysis panel\'s Ionic total is the ionic count when an oxidation state set by hand makes the two differ', async () => {
+    const { electronsHtml } = await import('../src/ui/analysis-panel');
+    const { doc, m } = complex(45, ['PPh3', 'PPh3', 'PPh3', 'Cl']);
+    doc.edit('set', () => doc.updateAtom(m, { ecount: { ox: 3 } }));
+    // neutral 9 + 6 + 1 = 16; ionic d⁶ + 6 + 2 = 14 (the case in the test above)
+    const c = one(doc, m);
+    const total = (html: string) => { const d = document.createElement('div'); d.innerHTML = html; return [...d.querySelectorAll('.ec-total td')].map((t) => t.textContent); };
+    try {
+      expect(total(electronsHtml([c]))).toEqual(['Total', '', '16', '14']);
+      electronPrefs.method = 'ionic';
+      expect(total(electronsHtml([c]))).toEqual(['Total', '', '14']);
+      electronPrefs.method = 'neutral';
+      expect(total(electronsHtml([c]))).toEqual(['Total', '', '16']);
+    } finally { reset(); }
+  });
+
   it('is a setting that defaults to both, is kept, and ignores a bad value', async () => {
     const { parseSettings, DEFAULT_SETTINGS } = await import('../src/settings');
     expect(DEFAULT_SETTINGS.electronMethod).toBe('both');
