@@ -123,9 +123,9 @@ The same commands are in the **File** menu, under **File ▸ New** (**Blank canv
 
 <!-- index: Ribbon, Ribbon tabs -->
 
-The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry**, **Arrange** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
+The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
 
-In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come the chemistry groups: **Format Favorites**, **Schemes**, **Diagrams**, **Mechanism**, **Insert**, **NMR** (where NMR prediction is offered) and **Look Up**. Two boxes on the canvas ribbon report on the drawing:
+In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come **Format Favorites**, **Smart Clean** and **Number Compounds**, and **Align**, **Rotate**, **Order** and **Focal Point**, each a button that drops its commands down (see [The Canvas ribbon](drawing.md#the-canvas-ribbon)). **Insert** has the structure sources, **Schemes**, **Diagrams** (a pane of pictures to choose from), Mechanism and Lab; **Chemistry** has Structure, Reaction, **Predict NMR** and Look Up. The **Lab Calculator** sits at the right end of the tabs, on every tab. Two boxes on the canvas ribbon report on the drawing:
 
 - **Warnings**, at the right end of the row of tabs, says **No problems** or counts the possible problems in the structures, such as a carbon with five bonds. Click it for the list (see [Warnings](drawing.md#warnings)).
 - **Analysis**, at the right end of the buttons, shows the formula and masses of the selected structure. Click it for everything else (see [The Analysis panel](drawing.md#the-analysis-panel)).

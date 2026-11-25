@@ -1959,6 +1959,45 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .rb-tabs button.cr-warnings.none, .rb-tabs button.cr-warnings:disabled { opacity: 0.45; cursor: default; }
 .rb-tabs button.cr-warnings:disabled .cr-ok { color: inherit; }
 .cr-warnings .cr-chev { font-size: var(--fs-sm); line-height: 1; }
+/* the Lab Calculator, left of the warnings on every Canvas tab: a picture and its name, the picture only in a narrow window */
+.rb-tabs button.cr-calc { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin-right: 6px; padding: 0 6px 0 4px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; box-shadow: none; color: var(--text); font-size: var(--fs-sm); white-space: nowrap; }
+.rb-tabs button.cr-calc:hover, .rb-tabs button.cr-calc:focus-visible { border-color: var(--line); background: var(--accent-soft); }
+.rb-tabs button.cr-calc svg { width: 16px; height: 16px; flex: none; color: var(--accent); }
+@media (max-width: 1100px) { .rb-tabs button.cr-calc { padding: 0 3px; margin-right: 4px; } .rb-tabs button.cr-calc .cr-calc-name { display: none; } }
+/* the Canvas ribbon's flyouts (canvas-ribbon.ts; opened by ribbon-flyout.ts): a large button three rows tall, its ▾ after its name */
+.canvas-ribbon .cr-rows > .rb-fly { grid-row: span 3; }
+.canvas-ribbon .cr-fly > button.cr-major { flex: 1 1 auto; }
+.canvas-ribbon .cr-fly .cr-caret { margin-left: 3px; font-size: 9px; color: var(--muted); vertical-align: 1px; }
+.canvas-ribbon.cr-simple .cr-rows > .rb-fly { grid-row: auto; }
+.canvas-ribbon.cr-simple .rb-group.rb-small > .rb-row { grid-template-rows: 26px; }
+.canvas-ribbon .rb-group.rb-small > .rb-row > .rb-fly { grid-row: auto; }
+.canvas-ribbon .rb-group.rb-small button.cr-major .cr-line { display: inline; }
+.canvas-ribbon .rb-group.rb-compact button.cr-major .cr-name { display: none; }
+/* (a group of flyouts only, short of room: two rows of pictures, each keeping a small ▾) */
+.canvas-ribbon.cr-classic .rb-group.rb-small > .rb-row:not(:has(> :not(.rb-fly))) { grid-template-rows: repeat(2, auto); }
+.canvas-ribbon .rb-group.rb-compact .cr-fly > button.cr-major { flex-direction: row; gap: 0; }
+.canvas-ribbon .rb-group.rb-compact .cr-fly > button.cr-major::after { content: '▾'; font-size: 8px; color: var(--muted); }
+.canvas-ribbon .rb-fly-btn[aria-expanded='true'] { border-color: var(--line); background: var(--accent-soft); }
+.cr-fly-menu { max-height: calc(100vh - 140px); overflow-y: auto; overscroll-behavior: contain; }
+.ribbon .cr-fly-menu > button { white-space: nowrap; }
+.cr-fly-menu .rb-icon svg { width: 18px; height: 18px; color: var(--accent); }
+.ribbon .cr-fly-menu > button.cr-has-drop { width: 100%; padding-right: 2px; }
+.ribbon .cr-fly-menu > button .cr-drop { margin-left: auto; padding: 3px 5px; }
+.ribbon .cr-fly-menu > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* a template pane: labeled pictures, in rows under their headings, to look over before picking one */
+.cr-tpl-pane { min-width: 0; padding: 4px 6px 6px; }
+.cr-tpl-pane .rb-fly-head { padding: 4px 2px 2px; }
+.cr-tpl-grid { display: grid; grid-template-columns: repeat(5, 92px); gap: 4px; }
+.ribbon .cr-tpl-pane button.cr-tpl { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: auto; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); line-height: 1.2; text-align: center; white-space: normal; font-size: var(--fs-xs); }
+.cr-tpl-pic { display: flex; align-items: center; justify-content: center; height: 54px; padding: 2px; box-sizing: border-box; border-radius: 2px; background: #fff; color: #2b2b2b; overflow: hidden; }
+.cr-tpl-pic svg { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; }
+/* (a picture the drawing code drew at small size: its lines kept a pixel wide, so they don't fade away) */
+.cr-tpl-pic[data-drawn] svg * { vector-effect: non-scaling-stroke; }
+.cr-tpl-pic[data-drawn] svg [stroke]:not([stroke='none']) { stroke-width: 1px; }
+.cr-tpl-name { min-height: 2.4em; display: flex; align-items: center; justify-content: center; }
+.ribbon .cr-tpl-pane button.cr-tpl:hover, .ribbon .cr-tpl-pane button.cr-tpl:focus-visible { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); outline: none; background: var(--panel); }
+.ribbon .cr-tpl-pane button.cr-tpl:disabled { opacity: 0.55; }
+@media (max-width: 560px) { .cr-tpl-grid { grid-template-columns: repeat(3, 92px); } }
 .cr-file-warnings { padding: 6px 10px 8px; max-width: 380px; }
 .cr-file-warnings h2 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .cr-file-warnings .warn-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; }
@@ -4043,6 +4082,8 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .rb-fly { position: relative; display: flex; align-items: stretch; }
 .rb-fly-menu { position: fixed; z-index: 60; min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 1px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16); }
 .rb-fly-menu[hidden] { display: none; }
+/* (the ribbon's panel is a layer of its own, under the floating toolboxes and the Side Panel: an open list lifts it over them) */
+.ribbon > .rb-panel:has(.rb-fly-menu:not([hidden])) { z-index: 61; }
 .ribbon .rb-fly-menu button, .ribbon .rb-fly-menu button.rb-big { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; width: 100%; padding: 4px 8px 4px 6px; text-align: left; line-height: 20px; font-size: var(--fs-sm); }
 .rb-fly-menu .rb-icon { height: 20px; line-height: 20px; font-size: 16px; width: 20px; flex: none; }
 .rb-fly-menu .rb-icon .ci-ic { width: 20px; height: 20px; }

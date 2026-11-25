@@ -30,6 +30,38 @@ function show(menu: HTMLElement, by: HTMLElement): void {
   menu.querySelector<HTMLElement>('button:not([disabled])')?.focus({ preventScroll: true });
 }
 
+/**
+ * Where an arrow key goes in a list or a pane of pictures (`grid`): in a list, up and down, round
+ * from the ends; in a grid, left and right along the reading order, and up and down to the picture
+ * nearest above or below. Home and End go to the first and last. Null: the key does nothing here.
+ */
+export function moveIn(items: HTMLElement[], at: number, key: string, grid: boolean): number | null {
+  const n = items.length;
+  if (key === 'Home') return 0;
+  if (key === 'End') return n - 1;
+  if (at < 0) return key === 'ArrowUp' || key === 'ArrowLeft' ? n - 1 : 0;
+  if (!grid) {
+    if (key === 'ArrowDown') return (at + 1) % n;
+    if (key === 'ArrowUp') return (at + n - 1) % n;
+    return null;
+  }
+  if (key === 'ArrowRight') return (at + 1) % n;
+  if (key === 'ArrowLeft') return (at + n - 1) % n;
+  // the nearest picture in the next row up or down (by where each sits on the screen)
+  const here = items[at].getBoundingClientRect();
+  const cx = here.left + here.width / 2;
+  const down = key === 'ArrowDown';
+  let best: number | null = null, score = Infinity;
+  items.forEach((b, i) => {
+    const r = b.getBoundingClientRect();
+    const dy = down ? r.top - here.bottom : here.top - r.bottom;
+    if (i === at || dy < -1) return;
+    const s = dy * 1000 + Math.abs(r.left + r.width / 2 - cx);
+    if (s < score) { score = s; best = i; }
+  });
+  return best ?? (down ? 0 : n - 1);
+}
+
 /** Wire every ribbon dropdown and split button (once, for the whole page). */
 export function installRibbonFlyouts(): void {
   for (const b of document.querySelectorAll<HTMLElement>('.rb-fly-btn')) {
@@ -53,15 +85,20 @@ export function installRibbonFlyouts(): void {
   });
   document.addEventListener('keydown', (e) => {
     if (!openMenu) return;
-    if (e.key === 'Escape') {
+    if (e.key === 'Escape' || e.key === 'Tab') {
       const by = openMenu.parentElement?.querySelector<HTMLElement>(':scope > .rb-fly-btn');
       close();
       by?.focus();
       e.stopPropagation();
-    } else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+      // (Tab: back to the button, as Esc, rather than lost with the closed list)
+      e.preventDefault();
+    } else if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
       const items = [...openMenu.querySelectorAll<HTMLElement>('button:not([disabled])')];
+      if (!items.length) return;
       const at = items.indexOf(document.activeElement as HTMLElement);
-      items[(at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length]?.focus();
+      const next = moveIn(items, at, e.key, openMenu.hasAttribute('data-grid'));
+      if (next === null) return;
+      items[next]?.focus();
       e.preventDefault();
     }
   }, true);

@@ -1,0 +1,5 @@
+Changed: Canvas: the ribbon is reorganized into four tabs. Home now has Smart Clean, Number Compounds and four drop-down buttons, Align, Rotate, Order and Focal Point, in place of the Arrange tab; Insert has Structure From…, Schemes, Diagrams, Mechanism and Lab; Chemistry has Structure, Reaction, Predict NMR and Look Up; the 3-D group moved to View.
+Changed: Canvas: Insert ▸ Diagrams opens a pane of pictures (energy diagrams, transition state brackets, torsional energy charts, Newman projections, text diagrams, MO diagrams of two atoms, water and ammonia, d-orbital splitting and orbitals) to look over first; nothing is put on the page until you choose one.
+Added: Canvas: the Lab Calculator has a button at the right end of the ribbon's tabs, on every tab.
+Added: Canvas: Chemistry ▸ NMR in the menus (desktop app), with every NMR command (Predict NMR, ¹H and ¹³C, Show on Drawing, Spectrum Window, Solvent…, Check Data… and NMR Settings…).
+Removed: Canvas: the ribbon's Arrange tab, and the Rings and Arrows groups on the Chemistry tab. Their commands are still on the right-click menus, in the menus and in Search.

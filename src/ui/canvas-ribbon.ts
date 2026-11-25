@@ -5,16 +5,54 @@
 // have no names shown); the rest are pictures, named in their tooltips. Settings ▸ Ribbon offers
 // the one-row Simplified look.
 //
+// Families of commands sit behind one large button each, a flyout: a click drops a list of the
+// commands (Align, Rotate, Order, Focal Point, Schemes, Structure From…, Predict NMR) or a pane of
+// pictures to look over and pick from (Diagrams) under it. The list is the ribbon's own buttons,
+// kept inside the ribbon (src/ui/ribbon-flyout.ts opens it, as the other modes' dropdowns), so a
+// click on one runs its command as any ribbon button does, and Search still finds it.
+//
 // The tabs stay put whatever is drawn or selected: the Canvas has no tabs that come and go with an
-// object (the arrow commands are on Chemistry, the ring and bond tools in the toolbox, and all of
-// them on the right-click menu). The right end of the tab row holds the warnings, and the right
-// end of the buttons a one-line Analysis drop-down (see canvas-ribbon-boxes.ts).
+// object (the arrow and ring commands are on the right-click menu and in the menus). The right end
+// of the tab row holds the Lab Calculator and the warnings, and the right end of the buttons a
+// one-line Analysis drop-down (see canvas-ribbon-boxes.ts).
 
-/** A command button (data-cmd, run as the menus run it) or a drawing tool. */
-export type RibbonItem =
-  /** `menu`: a small ▾ on the button opens its options (CanvasRibbonHost.itemMenu). */
-  | { cmd: string; label: string; major?: boolean; tip?: string; menu?: boolean }
-  | { tool: string; label: string; major?: boolean; tip?: string };
+import { DIAGRAM_THUMBS } from './diagram-thumbs';
+
+/** A command button (data-cmd, run as the menus run it). */
+export interface RibbonCmd {
+  cmd: string;
+  label: string;
+  major?: boolean;
+  tip?: string;
+  /** A small ▾ on the button opens its options (CanvasRibbonHost.itemMenu). */
+  menu?: boolean;
+  /** Passed with the command (a ready-made form of it: the MO diagram of water). */
+  arg?: string;
+  /** In a template pane: its picture (a DIAGRAM_THUMBS key), until the host draws a better one. */
+  thumb?: string;
+}
+/** A drawing tool's button. */
+export interface RibbonTool { tool: string; label: string; major?: boolean; tip?: string }
+/** One button of the ribbon: a command or a tool. */
+export type RibbonButton = RibbonCmd | RibbonTool;
+/** What a flyout holds: buttons, a heading over the ones after it, or a line between (null). */
+export type FlyoutEntry = RibbonButton | { head: string } | null;
+/**
+ * A flyout: one large button that drops its commands under it, as a list with pictures and names
+ * (`pane` 'list') or as a pane of labeled pictures to look over and pick from ('templates').
+ * Nothing runs until one is picked.
+ */
+export interface RibbonFlyout {
+  /** Its slug (data-cr-fly). */
+  fly: string;
+  label: string;
+  /** The command whose picture the large button shows. */
+  icon: string;
+  tip: string;
+  pane?: 'list' | 'templates';
+  items: FlyoutEntry[];
+}
+export type RibbonItem = RibbonButton | RibbonFlyout;
 /**
  * A group: its buttons, or one built specially: the Format Favorites gallery, the Clipboard (Paste,
  * Cut, Copy and Format Painter, as the Spreadsheet's Home tab has them), or the Font and Paragraph
@@ -23,7 +61,12 @@ export type RibbonItem =
 export interface RibbonGroup { name: string; items: RibbonItem[]; gallery?: 'favorites'; special?: 'clipboard' | 'font' | 'paragraph' }
 export interface RibbonTab { id: string; title: string; groups: RibbonGroup[] }
 
-const c = (cmd: string, label: string, major = false): RibbonItem => ({ cmd, label, major });
+const c = (cmd: string, label: string, major = false): RibbonCmd => ({ cmd, label, major });
+/** A picture in a template pane. */
+const t = (cmd: string, label: string, thumb: string, tip: string, arg?: string): RibbonCmd => ({ cmd, label, thumb, tip, ...(arg ? { arg } : {}) });
+export const isFlyout = (it: RibbonItem): it is RibbonFlyout => 'fly' in it;
+/** Every button of a group, those in its flyouts too. */
+export const buttonsOf = (g: RibbonGroup): RibbonButton[] => g.items.flatMap((it) => (isFlyout(it) ? it.items.filter((x): x is RibbonButton => !!x && !('head' in x)) : [it]));
 
 /** What the Canvas ribbon holds. Home is the essentials; the other tabs take the rest. */
 export const CANVAS_TABS: RibbonTab[] = [
@@ -35,68 +78,108 @@ export const CANVAS_TABS: RibbonTab[] = [
       { name: 'Paragraph', items: [], special: 'paragraph' },
       // (filled by the shared Format Favorites gallery, as on every mode's Home tab)
       { name: 'Format Favorites', items: [], gallery: 'favorites' },
-      { name: 'Schemes', items: [c('smart-scheme', 'Smart Scheme', true), c('show-roles', 'Show Reaction Roles'), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…')] },
-      { name: 'Diagrams', items: [c('energy-diagram', 'Energy Diagram', true), c('mo-diagram', 'MO Diagram'), c('d-orbital-splitting', 'd-Orbital Splitting'), c('orbital', 'Orbital…'), c('ts-brackets', 'Transition State Brackets ‡'), c('torsion-chart', 'Torsional Energy Chart…')] },
-      { name: 'Mechanism', items: [c('animate-reaction', 'Animate', true), c('check-arrows', 'Check Arrows'), c('draw-from-arrows', 'Draw Next Intermediate'), c('homolysis-arrows', 'Homolysis Arrows'), c('model-3d', '3-D Model…')] },
-      { name: 'Insert', items: [c('name-to-structure', 'Name to Structure…'), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'), c('tlc-plate', 'TLC Plate…'), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…')] },
-      // (one button with a menu; the Chemistry tab has the whole NMR group. Left out where NMR isn't offered)
-      { name: 'NMR', items: [{ cmd: 'nmr-menu', label: 'NMR', major: true, tip: 'NMR: predict, the spectrum window, shifts on the drawing, Check Data, settings' }] },
-      { name: 'Look Up', items: [c('structure-to-name', 'Structure to Name'), c('find-cas', 'Find CAS RN'), c('pubchem-lookup', 'Look Up on PubChem'), c('knowledge-base', 'Knowledge Base…'), c('compound-library', 'Compound Library…'), c('periodic-table', 'Periodic Table…'), c('lab-calculator', 'Lab Calculator…')] },
+      // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected; both are on Chemistry too)
+      { name: 'Scheme', items: [c('smart-clean', 'Smart Clean', true), c('number-compounds', 'Number Compounds', true)] },
+      // lining up, turning and stacking, four flyouts (the Arrange toolbox has them all as buttons)
+      { name: 'Arrange', items: [
+        { fly: 'align', label: 'Align', icon: 'align-left', tip: 'Align and distribute the selected objects, or arrange them in a row, column or grid', items: [
+          c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), null,
+          c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom'), null,
+          { ...c('distribute-h', 'Distribute Horizontally'), menu: true }, { ...c('distribute-v', 'Distribute Vertically'), menu: true }, null,
+          c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…'),
+        ] },
+        { fly: 'rotate', label: 'Rotate', icon: 'rotate-cw', tip: 'Rotate or flip the selected objects', items: [
+          c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…'), null,
+          c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'),
+        ] },
+        { fly: 'order', label: 'Order', icon: 'shape-front', tip: 'Bring the selected objects forward or send them back', items: [
+          c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward'),
+        ] },
+        { fly: 'focal', label: 'Focal Point', icon: 'set-focal-point', tip: 'Focal points: the spot each structure lines up by when aligned, distributed or arranged', items: [
+          c('set-focal-point', 'Set as Focal Point'), c('match-focal-points', 'Match Focal Points'), c('reset-focal-point', 'Reset Focal Point'), null, c('show-focal-points', 'Show Focal Points'),
+        ] },
+      ] },
     ],
   },
   {
     id: 'insert', title: 'Insert', groups: [
-      { name: 'Structures', items: [c('name-to-structure', 'Name to Structure', true), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'), c('crystal-structure', 'Crystal Structure (CIF)…'), c('ligand-library', 'Ligand Library…'), c('compound-library', 'Compound Library…')] },
-      { name: 'Projections', items: [c('newman-projection', 'Newman Projection', true), c('model-3d', '3-D Model…'), c('turn-3d', '3-D Rotation…')] },
-      { name: 'Lab', items: [c('tlc-plate', 'TLC Plate', true), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…'), c('stoichiometry-table', 'Stoichiometry Table…'), c('lab-calculator', 'Lab Calculator…')] },
+      { name: 'Structures', items: [
+        { fly: 'structure-from', label: 'Structure From…', icon: 'name-to-structure', tip: 'Structure From: a name or SMILES, a picture or PDF, or a peptide or nucleic acid sequence', items: [
+          c('name-to-structure', 'Name to Structure…'), c('import-picture', 'Structures from Picture…'), c('sequence-to-structure', 'Structure from Sequence…'),
+        ] },
+        c('crystal-structure', 'Crystal Structure (CIF)…'), c('ligand-library', 'Ligand Library…'), c('compound-library', 'Compound Library…'),
+      ] },
+      { name: 'Schemes', items: [
+        { fly: 'schemes', label: 'Schemes', icon: 'smart-scheme', tip: 'Schemes: Smart Scheme, reaction roles, stoichiometry, balance and atom maps', items: [
+          c('smart-scheme', 'Smart Scheme'), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('show-roles', 'Show Reaction Roles'), null,
+          c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…'),
+        ] },
+      ] },
+      { name: 'Diagrams', items: [
+        { fly: 'diagrams', label: 'Diagrams', icon: 'energy-diagram', pane: 'templates', tip: 'Diagrams: energy diagrams, MO and d-orbital diagrams, orbitals, Newman projections and more. Look them over, then choose one', items: [
+          // (two rows of five: reactions, conformations and text diagrams; then the orbitals)
+          t('energy-diagram', 'Energy Diagram', 'energy', 'Energy Diagram: a reaction energy diagram from a table of energies (opens its window)'),
+          t('ts-brackets', 'Transition State Brackets', 'ts', 'Transition State Brackets: square brackets with ‡ around the selected transition state'),
+          t('torsion-chart', 'Torsional Energy Chart', 'torsion', 'Torsional Energy Chart: the energy of rotation about the selected single bond (opens its window)'),
+          t('newman-projection', 'Newman Projection', 'newman', 'Newman Projection: the selected single bond seen end on (opens its window)'),
+          t('insert-diagram', 'Diagram', 'diagram', 'Diagram: lists, processes, cycles, hierarchies and Venn diagrams drawn from lines of text (opens its window)'),
+          t('mo-diagram', 'MO Diagram', 'mo', 'MO Diagram: two atoms (H₂ to start); choose the atoms in the Side Panel'),
+          t('mo-diagram', 'MO Diagram: H₂O', 'mo', 'MO Diagram of water (H₂O), with its group orbitals', 'H2O'),
+          t('mo-diagram', 'MO Diagram: NH₃', 'mo', 'MO Diagram of ammonia (NH₃), with its group orbitals', 'NH3'),
+          t('d-orbital-splitting', 'd-Orbital Splitting', 'dsplit', 'd-Orbital Splitting: a metal ion\'s five d orbitals and the levels they split into; choose the geometry in the Side Panel'),
+          t('orbital', 'Orbital', 'orbital', 'Orbital: an s, p, d or hybrid orbital on each selected atom (opens its window)'),
+        ] },
+      ] },
+      { name: 'Mechanism', items: [c('animate-reaction', 'Animate', true), c('check-arrows', 'Check Arrows'), c('draw-from-arrows', 'Draw Next Intermediate'), c('homolysis-arrows', 'Homolysis Arrows'), c('model-3d', '3-D Model…')] },
+      { name: 'Lab', items: [c('tlc-plate', 'TLC Plate', true), c('insert-table', 'Table'), c('rgroup-table', 'R-Group Table…')] },
     ],
   },
   {
     id: 'chemistry', title: 'Chemistry', groups: [
-      // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected)
       { name: 'Structure', items: [c('smart-clean', 'Smart Clean', true), c('clean-up', 'Clean Up Structure'), c('check-structure', 'Check Structure'), c('expand-label', 'Expand Label'), c('contract-label', 'Contract Label'), c('stereo-labels', 'Stereo Labels')] },
       { name: 'Reaction', items: [c('number-compounds', 'Number Compounds', true), c('clean-up-reaction', 'Clean Up Reaction'), c('show-roles', 'Show Reaction Roles'), c('link-steps', 'Link Steps in Order'), c('add-frame', 'Add Frame'), c('attach-descriptors', 'Attach Descriptors')] },
-      { name: 'NMR', items: [c('predict-nmr', 'Predict NMR', true), { cmd: 'nmr-1h', label: '¹H', tip: 'Show the ¹H prediction' }, { cmd: 'nmr-13c', label: '¹³C', tip: 'Show the ¹³C prediction' }, { cmd: 'nmr-solvent', label: 'Solvent…', tip: 'Solvent for the prediction' }, c('nmr-window', 'Spectrum Window'), c('nmr-marks', 'Show on Drawing'), c('nmr-check', 'Check Data…'), c('nmr-settings', 'NMR Settings…')] },
-      { name: 'Rings', items: [c('aromatic-circles', 'Aromatic Circles'), c('fill-rings', 'Fill Rings'), c('hapto-bond', 'Add Hapto Bond (η)')] },
-      // (once on an Arrow tab that came up with a selected arrow)
-      { name: 'Arrows', items: [c('clean-up-arrow', 'Clean Up Arrow', true), c('arrow-reverse', 'Reverse Direction'), c('flip-arrow-bend', 'Flip Bend'), c('arrow-single-curve', 'Single Curve'), c('arrow-s-shape', 'S-Shape'), c('arrow-shape-u', 'U-Turn'), c('arrow-shape-loop', 'Loop'), c('arrow-add-bend', 'Add Bend'), c('arrow-remove-bend', 'Remove Bend'), c('arrow-smooth-path', 'Smooth Path'), c('arrow-simplify-path', 'Simplify Path'), c('attach-arrow', 'Attach to Structure'), c('detach-arrow', 'Detach from Structure')] },
-    ],
-  },
-  {
-    id: 'arrange', title: 'Arrange', groups: [
-      { name: 'Align', items: [c('align-left', 'Align Left'), c('align-hcenter', 'Align Center'), c('align-right', 'Align Right'), c('align-top', 'Align Top'), c('align-vcenter', 'Align Middle'), c('align-bottom', 'Align Bottom')] },
-      { name: 'Distribute', items: [{ ...c('distribute-h', 'Distribute Horizontally'), menu: true }, { ...c('distribute-v', 'Distribute Vertically'), menu: true }, c('arrange-row', 'Arrange in a Row'), c('arrange-column', 'Arrange in a Column'), c('arrange-grid', 'Arrange in a Grid…')] },
-      { name: 'Focal Point', items: [c('set-focal-point', 'Set as Focal Point', true), c('match-focal-points', 'Match Focal Points'), c('reset-focal-point', 'Reset Focal Point'), c('show-focal-points', 'Show Focal Points')] },
-      { name: 'Rotate', items: [c('flip-h', 'Flip Horizontal'), c('flip-v', 'Flip Vertical'), c('rotate-cw', 'Rotate Right 90°'), c('rotate-ccw', 'Rotate Left 90°'), c('rotate-dialog', 'Rotate…')] },
-      // (turning in 3-D: the two Perspective tools drag a structure round; 3-D Rotation… turns it by angles typed in)
-      { name: '3-D', items: [
-        { tool: 'perspective', label: 'Perspective', major: true, tip: 'Perspective: drag a structure to tilt it in 3-D as a flat sheet (Shift: 15° steps)' },
-        { tool: 'perspective-3d', label: '3-D Perspective', tip: '3-D Perspective: drag a structure to rotate its real 3-D shape (Shift: 15° steps)' },
-        c('turn-3d', '3-D Rotation…'), c('flatten-3d', 'Flatten'),
+      // (left out where NMR isn't offered; Solvent, Check Data and NMR Settings are in Chemistry ▸ NMR and the spectrum window)
+      { name: 'NMR', items: [
+        { fly: 'nmr', label: 'Predict NMR', icon: 'predict-nmr', tip: 'Predict NMR: ¹H or ¹³C shifts for the selected structure, on the drawing or in the spectrum window', items: [
+          { cmd: 'nmr-1h', label: 'Predict ¹H NMR', tip: 'Predict the ¹H NMR spectrum of the selected structure' },
+          { cmd: 'nmr-13c', label: 'Predict ¹³C NMR', tip: 'Predict the ¹³C NMR spectrum of the selected structure' }, null,
+          c('nmr-marks', 'Show on Drawing'), c('nmr-window', 'Spectrum Window'),
+        ] },
       ] },
-      { name: 'Order', items: [c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward')] },
+      { name: 'Look Up', items: [c('structure-to-name', 'Structure to Name'), c('find-cas', 'Find CAS RN'), c('pubchem-lookup', 'Look Up on PubChem'), c('knowledge-base', 'Knowledge Base…'), c('compound-library', 'Compound Library…'), c('periodic-table', 'Periodic Table…'), c('lab-calculator', 'Lab Calculator…')] },
     ],
   },
   {
     id: 'view', title: 'View', groups: [
       { name: 'Zoom', items: [c('zoom-fit', 'Fit', true), c('focus-view', 'Focus View')] },
       { name: 'Show', items: [c('navigator', 'Document Map'), c('dark-page', 'Reading Mode'), c('show-stereo', 'Stereo Labels'), c('show-focal-points', 'Focal Points'), c('show-roles', 'Reaction Roles')] },
+      // (turning in 3-D: the two Perspective tools drag a structure round; 3-D Rotation… turns it by angles typed in)
+      { name: '3-D', items: [
+        { tool: 'perspective', label: 'Perspective', major: true, tip: 'Perspective: drag a structure to tilt it in 3-D as a flat sheet (Shift: 15° steps)' },
+        { tool: 'perspective-3d', label: '3-D Perspective', tip: '3-D Perspective: drag a structure to rotate its real 3-D shape (Shift: 15° steps)' },
+        c('turn-3d', '3-D Rotation…'), c('flatten-3d', 'Flatten'),
+      ] },
     ],
   },
 ];
+
+/** The tab a saved or asked-for tab id comes to: itself, or Home for a tab there is no more (Arrange). */
+export const canvasTabFor = (id: string | null | undefined): string => (id && CANVAS_TABS.some((x) => x.id === id) ? id : 'home');
 
 export type RibbonLook = 'classic' | 'simple';
 export type GroupNames = 'top' | 'side' | 'none';
 
 export interface CanvasRibbonHost {
-  /** Run a menu command. */
-  command(cmd: string): void;
+  /** Run a menu command (with `arg`: a ready-made form of it, from a template pane). */
+  command(cmd: string, arg?: string): void;
   /** Pick a drawing tool. */
   pickTool(name: string): void;
   /** Is there such a tool (the ribbon leaves out tools this build lacks)? */
   hasTool(name: string): boolean;
   /** A command's or tool's picture (24×24 SVG), if it has one. */
-  icon(item: RibbonItem): string | undefined;
+  icon(item: RibbonButton): string | undefined;
+  /** A template pane's picture drawn by the drawing code (an SVG), where it can be; undefined keeps the plain one. */
+  thumb?(item: RibbonCmd): string | undefined;
   /** Fill the Font and Paragraph groups' rows with the text formatting bar's buttons and boxes. */
   textGroups(font: HTMLElement, paragraph: HTMLElement): void;
   /** Paste's ▾: its menu, under the button. */
@@ -134,6 +217,16 @@ export class CanvasRibbon {
     this.tabRow.append(tabList);
     this.tabEnd = document.createElement('div');
     this.tabEnd.className = 'cr-tab-end';
+    // the Lab Calculator, on every tab, left of the warnings (words only where the window has room)
+    const calc = document.createElement('button');
+    calc.type = 'button';
+    calc.className = 'cr-calc';
+    calc.dataset.cmd = 'lab-calculator';
+    calc.title = 'Lab Calculator: mass, mmol and volume, solutions and dilutions (uses the selected structure\'s MW)';
+    calc.setAttribute('aria-label', 'Lab Calculator');
+    calc.innerHTML = `${host.icon({ cmd: 'lab-calculator', label: 'Lab Calculator' }) ?? ''}<span class="cr-calc-name">Lab Calculator</span>`;
+    calc.addEventListener('click', () => host.command('lab-calculator'));
+    this.tabEnd.append(calc);
     this.bodyEnd = document.createElement('div');
     this.bodyEnd.className = 'cr-body-end';
     for (const tab of CANVAS_TABS) {
@@ -156,9 +249,14 @@ export class CanvasRibbon {
     this.el.addEventListener('click', (e) => {
       const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button[data-cmd], button[data-cr-tool]');
       if (!b || !this.el.contains(b)) return;
-      if ((e.target as HTMLElement).closest('.cr-drop') && b.dataset.cmd) { host.itemMenu?.(b.dataset.cmd, b.getBoundingClientRect()); return; }
+      if ((e.target as HTMLElement).closest('.cr-drop') && b.dataset.cmd) {
+        const r = b.getBoundingClientRect();
+        // (in a flyout's list the options open beside the row, not over the rows under it)
+        host.itemMenu?.(b.dataset.cmd, b.closest('.rb-fly-menu') ? new DOMRect(r.right - 2, r.top - 2, 0, 0) : r);
+        return;
+      }
       if (b.dataset.crTool) host.pickTool(b.dataset.crTool);
-      else if (b.dataset.cmd && !b.closest('.cr-body-end, .cr-tab-end')) host.command(b.dataset.cmd);
+      else if (b.dataset.cmd && !b.closest('.cr-body-end, .cr-tab-end')) host.command(b.dataset.cmd, b.dataset.arg);
     });
   }
 
@@ -194,7 +292,7 @@ export class CanvasRibbon {
         host.dataset.favoritesGallery = '';
         row.append(host);
       }
-      for (const it of items) row.append(this.button(it));
+      for (const it of items) row.append(isFlyout(it) ? this.flyout(it) : this.button(it));
       const label = document.createElement('div');
       label.className = 'rb-label';
       label.textContent = g.name;
@@ -250,7 +348,96 @@ export class CanvasRibbon {
     row.append(paste, col);
   }
 
-  private button(it: RibbonItem): HTMLButtonElement {
+  /** A flyout: its large button, and the list or pane it drops (hidden until the button is clicked; ribbon-flyout.ts opens it). */
+  private flyout(f: RibbonFlyout): HTMLDivElement {
+    const wrap = document.createElement('div');
+    wrap.className = 'rb-fly cr-fly';
+    wrap.dataset.crFly = f.fly;
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'rb-big cr-major rb-fly-btn';
+    b.title = f.tip;
+    b.setAttribute('aria-label', f.label.replace(/…$/, ''));
+    b.setAttribute('aria-haspopup', 'menu');
+    b.setAttribute('aria-expanded', 'false');
+    const words = f.label.split(' ');
+    const half = Math.ceil(words.length / 2);
+    // (the ▾ follows the last word, on its line, so the button stays three rows tall)
+    const name = words.length > 1
+      ? `<span class="cr-line">${esc(words.slice(0, half).join(' '))}</span> <span class="cr-line">${esc(words.slice(half).join(' '))}<span class="cr-caret" aria-hidden="true">▾</span></span>`
+      : `<span class="cr-line">${esc(f.label)}<span class="cr-caret" aria-hidden="true">▾</span></span>`;
+    b.innerHTML = `<span class="rb-icon">${this.host.icon({ cmd: f.icon, label: f.label }) ?? ''}</span><span class="cr-name">${name}</span>`;
+    const menu = document.createElement('div');
+    menu.className = `rb-fly-menu cr-fly-menu${f.pane === 'templates' ? ' cr-tpl-pane' : ''}`;
+    menu.setAttribute('role', 'menu');
+    menu.setAttribute('aria-label', f.label.replace(/…$/, ''));
+    menu.hidden = true;
+    let grid: HTMLElement | null = null;
+    for (const x of f.items) {
+      if (x === null) { menu.append(document.createElement('hr')); grid = null; continue; }
+      if ('head' in x) {
+        const h = document.createElement('div');
+        h.className = 'rb-fly-head';
+        h.textContent = x.head;
+        menu.append(h);
+        grid = null;
+        continue;
+      }
+      if ('tool' in x && !this.host.hasTool(x.tool)) continue;
+      if (f.pane === 'templates' && 'cmd' in x) {
+        if (!grid) { grid = document.createElement('div'); grid.className = 'cr-tpl-grid'; menu.append(grid); }
+        grid.append(this.template(x));
+      } else menu.append(this.menuItem(x));
+    }
+    if (f.pane === 'templates') {
+      menu.dataset.grid = '';
+      // the pictures the drawing code can draw are drawn the first time the pane opens
+      menu.addEventListener('rb-fly-open', () => {
+        for (const tile of menu.querySelectorAll<HTMLElement>('.cr-tpl:not([data-drawn])')) {
+          tile.dataset.drawn = '';
+          const it = f.items.find((x): x is RibbonCmd => !!x && 'cmd' in x && x.cmd === tile.dataset.cmd && (x.arg ?? '') === (tile.dataset.arg ?? ''));
+          const svg = it && this.host.thumb?.(it);
+          if (!svg) continue;
+          const pic = tile.querySelector<HTMLElement>('.cr-tpl-pic')!;
+          pic.innerHTML = svg;
+          pic.dataset.drawn = '';
+        }
+      });
+    }
+    wrap.append(b, menu);
+    return wrap;
+  }
+
+  /** A row of a flyout's list: picture and name. */
+  private menuItem(it: RibbonButton): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.setAttribute('role', 'menuitem');
+    if ('cmd' in it) b.dataset.cmd = it.cmd; else b.dataset.crTool = it.tool;
+    b.title = it.tip ?? it.label;
+    b.innerHTML = `<span class="rb-icon">${this.host.icon(it) ?? ''}</span><span class="cr-fly-name">${esc(it.label)}</span>`;
+    if ('cmd' in it && it.menu) {
+      b.classList.add('cr-has-drop');
+      b.insertAdjacentHTML('beforeend', '<span class="cr-drop" aria-hidden="true">▸</span>');
+    }
+    return b;
+  }
+
+  /** A template pane's tile: its picture over its name. */
+  private template(it: RibbonCmd): HTMLButtonElement {
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'cr-tpl';
+    b.setAttribute('role', 'menuitem');
+    b.dataset.cmd = it.cmd;
+    if (it.arg) b.dataset.arg = it.arg;
+    b.title = it.tip ?? it.label;
+    b.setAttribute('aria-label', it.label);
+    b.innerHTML = `<span class="cr-tpl-pic" aria-hidden="true">${(it.thumb && DIAGRAM_THUMBS[it.thumb]) ?? this.host.icon(it) ?? ''}</span><span class="cr-tpl-name">${esc(it.label)}</span>`;
+    return b;
+  }
+
+  private button(it: RibbonButton): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
     if ('cmd' in it) b.dataset.cmd = it.cmd; else b.dataset.crTool = it.tool;
@@ -298,8 +485,9 @@ export class CanvasRibbon {
     return [...this.tabs].find(([, b]) => b.getAttribute('aria-selected') === 'true')?.[0] ?? 'home';
   }
 
-  /** Open a tab. */
+  /** Open a tab (one there is no more, such as Arrange, opens Home). */
   pick(id: string): void {
+    id = canvasTabFor(id);
     if (!this.tabs.has(id)) return;
     for (const [k, b] of this.tabs) b.setAttribute('aria-selected', String(k === id));
     for (const [k, p] of this.panels) p.hidden = k !== id;

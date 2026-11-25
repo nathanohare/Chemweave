@@ -303,7 +303,8 @@ export function watchRibbons(collapseChanged: (on: boolean) => void = () => {}):
         for (const r of document.querySelectorAll('.ribbon.rb-peek')) if (r !== ribbon) r.classList.remove('rb-peek');
         ribbon.classList.add('rb-peek');
         fitRibbons();
-      } else if (!ribbon || t.closest('.rb-panel button:not(.rb-fold-btn)')) {
+      } else if (!ribbon || t.closest('.rb-panel button:not(.rb-fold-btn, .rb-fly-btn)')) {
+        // (a flyout's button opens its list over the work and keeps the tab down; a command in the list puts both away)
         for (const r of document.querySelectorAll('.ribbon.rb-peek')) r.classList.remove('rb-peek');
       }
     }

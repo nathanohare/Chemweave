@@ -1,12 +1,16 @@
 import { describe, expect, it } from 'vitest';
-import { CANVAS_TABS } from '../src/ui/canvas-ribbon';
+import { readFileSync } from 'node:fs';
+import { CANVAS_TABS, buttonsOf, canvasTabFor, isFlyout } from '../src/ui/canvas-ribbon';
 import { RIBBON_ONLY_ICONS, commandIcon } from '../src/ui/command-icons';
 import { CONTEXT_BOXES, TOOLBOX_IDS, defaultToolboxes } from '../src/ui/toolboxes';
 
 describe('Canvas ribbon', () => {
   it('gives every command button a picture (only group names and major commands carry words)', () => {
-    const bare = CANVAS_TABS.flatMap((t) => t.groups.flatMap((g) => g.items)).filter((it) => 'cmd' in it && !(commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd])).map((it) => ('cmd' in it ? it.cmd : ''));
+    // (the commands in the flyouts too, and the command each flyout's large button borrows its picture from)
+    const bare = CANVAS_TABS.flatMap((t) => t.groups.flatMap(buttonsOf)).filter((it) => 'cmd' in it && !(commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd])).map((it) => ('cmd' in it ? it.cmd : ''));
     expect(bare).toEqual([]);
+    const flyIcons = CANVAS_TABS.flatMap((t) => t.groups.flatMap((g) => g.items.filter(isFlyout))).filter((f) => !(commandIcon(f.icon) ?? RIBBON_ONLY_ICONS[f.icon])).map((f) => f.fly);
+    expect(flyIcons).toEqual([]);
   });
 
   it('has Home first, opening with Clipboard, Font and Paragraph (as the Spreadsheet does), then Format Favorites', () => {
@@ -18,10 +22,58 @@ describe('Canvas ribbon', () => {
     expect(favs.gallery).toBe('favorites');
   });
 
-  it('has no tabs that come and go with the selection, and keeps the arrow commands those tabs had', () => {
-    expect(CANVAS_TABS.map((t) => t.id)).toEqual(['home', 'insert', 'chemistry', 'arrange', 'view']);
-    const cmds = new Set(CANVAS_TABS.flatMap((t) => t.groups.flatMap((g) => g.items)).flatMap((it) => ('cmd' in it ? [it.cmd] : [])));
-    for (const c of ['clean-up-arrow', 'arrow-reverse', 'flip-arrow-bend', 'arrow-single-curve', 'arrow-s-shape', 'arrow-shape-u', 'arrow-shape-loop', 'arrow-add-bend', 'arrow-remove-bend', 'arrow-smooth-path', 'arrow-simplify-path', 'attach-arrow', 'detach-arrow', 'check-arrows', 'aromatic-circles', 'fill-rings', 'hapto-bond']) expect(cmds).toContain(c);
+  it('has no tabs that come and go with the selection, and no Arrange tab (its groups moved to Home and View)', () => {
+    expect(CANVAS_TABS.map((t) => t.id)).toEqual(['home', 'insert', 'chemistry', 'view']);
+    // a tab there is no more (saved, or asked for by name) opens Home
+    expect(canvasTabFor('arrange')).toBe('home');
+    expect(canvasTabFor(undefined)).toBe('home');
+    expect(canvasTabFor('view')).toBe('view');
+  });
+
+  it('lays the tabs out as the owner asked (Canvas ribbon cleanup)', () => {
+    const tab = (id: string) => CANVAS_TABS.find((t) => t.id === id)!.groups.map((g) => g.name);
+    expect(tab('home')).toEqual(['Clipboard', 'Font', 'Paragraph', 'Format Favorites', 'Scheme', 'Arrange']);
+    expect(tab('insert')).toEqual(['Structures', 'Schemes', 'Diagrams', 'Mechanism', 'Lab']);
+    expect(tab('chemistry')).toEqual(['Structure', 'Reaction', 'NMR', 'Look Up']);
+    expect(tab('view')).toEqual(['Zoom', 'Show', '3-D']);
+    const flies = (id: string) => CANVAS_TABS.find((t) => t.id === id)!.groups.flatMap((g) => g.items.filter(isFlyout)).map((f) => f.label);
+    expect(flies('home')).toEqual(['Align', 'Rotate', 'Order', 'Focal Point']);
+    expect(flies('insert')).toEqual(['Structure From…', 'Schemes', 'Diagrams']);
+    expect(flies('chemistry')).toEqual(['Predict NMR']);
+    // Smart Clean and Number Compounds on Home
+    const home = CANVAS_TABS[0].groups.flatMap(buttonsOf).flatMap((it) => ('cmd' in it ? [it.cmd] : []));
+    for (const c of ['smart-clean', 'number-compounds', 'align-left', 'distribute-h', 'arrange-grid', 'flip-h', 'rotate-dialog', 'shape-front', 'set-focal-point']) expect(home).toContain(c);
+    // Structure From… holds the three ways of making a structure from something else
+    const from = CANVAS_TABS[1].groups[0].items.find(isFlyout)!;
+    expect(from.items.map((x) => (x && 'cmd' in x ? x.cmd : x))).toEqual(['name-to-structure', 'import-picture', 'sequence-to-structure']);
+    // the Diagrams pane: a picture for each kind of diagram, Diagram… among them, and nothing else
+    const pane = CANVAS_TABS[1].groups.find((g) => g.name === 'Diagrams')!.items.find(isFlyout)!;
+    expect(pane.pane).toBe('templates');
+    const kinds = pane.items.flatMap((x) => (x && 'cmd' in x ? [x.cmd] : []));
+    for (const c of ['energy-diagram', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'ts-brackets', 'torsion-chart', 'newman-projection', 'insert-diagram']) expect(kinds).toContain(c);
+    for (const x of pane.items) if (x && 'cmd' in x) expect(x.thumb, x.label).toBeTruthy();
+    // Predict NMR's list: the two nuclei, Show on Drawing and the spectrum window; nothing else of NMR on the ribbon
+    const nmr = CANVAS_TABS[2].groups.find((g) => g.name === 'NMR')!;
+    expect(buttonsOf(nmr).map((x) => ('cmd' in x ? x.cmd : ''))).toEqual(['nmr-1h', 'nmr-13c', 'nmr-marks', 'nmr-window']);
+  });
+
+  it('has no command twice on one tab, but the Lab Calculator stays in Look Up', () => {
+    for (const t of CANVAS_TABS) {
+      const cmds = t.groups.flatMap(buttonsOf).flatMap((it) => ('cmd' in it ? [`${it.cmd} ${it.arg ?? ''}`] : []));
+      expect(cmds.filter((x, i) => cmds.indexOf(x) !== i), t.id).toEqual([]);
+    }
+    expect(CANVAS_TABS[2].groups.find((g) => g.name === 'Look Up')!.items.some((it) => 'cmd' in it && it.cmd === 'lab-calculator')).toBe(true);
+  });
+
+  it('keeps every command it no longer shows in the menus (and so in Search)', () => {
+    const html = readFileSync('index.html', 'utf8');
+    const gone = ['clean-up-arrow', 'arrow-reverse', 'flip-arrow-bend', 'arrow-single-curve', 'arrow-s-shape', 'arrow-shape-u', 'arrow-shape-loop', 'arrow-add-bend', 'arrow-remove-bend', 'arrow-smooth-path', 'arrow-simplify-path', 'attach-arrow', 'detach-arrow', 'aromatic-circles', 'fill-rings', 'hapto-bond',
+      'predict-nmr', 'nmr-solvent', 'nmr-check', 'nmr-settings'];
+    const shown = new Set(CANVAS_TABS.flatMap((t) => t.groups.flatMap(buttonsOf)).flatMap((it) => ('cmd' in it ? [it.cmd] : [])));
+    for (const c of gone) {
+      expect(shown.has(c), c).toBe(false);
+      expect(html.includes(`data-cmd="${c}"`), c).toBe(true);
+    }
   });
 });
 

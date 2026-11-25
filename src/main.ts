@@ -165,7 +165,7 @@ import { fillTemplate, templateSize } from './design/templates';
 import { putDiagram, type DiagramData } from './design/diagrams';
 import type { EnergyData } from './design/energy';
 import { newDSplitPlate, newPlate, type PlateData, type PlateKind } from './design/plates';
-import { fitWidth, toRich, withLevel } from './design/mo';
+import { fitWidth, fromMolecule, toRich, withLevel } from './design/mo';
 import { editMoName } from './ui/mo-name-pop';
 import { refreshZooms, summaryParts, zoomGrid, zoomShape } from './deck/zoom';
 import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng, filmPng } from './deck/media';
@@ -834,7 +834,7 @@ const toolbar = new Toolbar($<HTMLDivElement>('#tools'), TOOL_GROUPS, (name) => 
 let canvasTextRows: { font: HTMLElement; paragraph: HTMLElement } | null = null;
 let canvasFont: { refresh(): void } | null = null;
 // (NMR prediction is desktop only: its ribbon groups are left out elsewhere)
-if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR');
+if (!nmrHere) { for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR'); document.getElementById('nmr-submenu')?.remove(); }
 /** Focal point settings (Preferences, the Distribute menu's choice). */
 const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
 
@@ -854,8 +854,26 @@ async function pasteTextOnly(): Promise<void> {
 for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'slides'));
 for (const b of document.querySelectorAll<HTMLButtonElement>('#design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'design'));
 
+/** A template pane's ready-made MO diagram (`molecule`: an MO_MOLECULES id; none: two atoms), or a d-orbital splitting diagram. */
+function moTemplate(cmd: string, molecule?: string): PlateData {
+  const L = doc.style.bondLength;
+  if (cmd === 'd-orbital-splitting') return newDSplitPlate(L);
+  const plate = newPlate('mo', L);
+  const spec = molecule ? fromMolecule(molecule) : null;
+  return spec ? { ...plate, mo: { ...spec, labelBack: 'white' } } : plate;
+}
+
 const canvasRibbon = new CanvasRibbon({
-  command: (cmd) => { command(cmd); },
+  // (a template pane's ready-made MO diagram is put on the page as MO Diagram puts its own, in one step)
+  command: (cmd, arg) => {
+    if (cmd === 'mo-diagram' && arg) { finishTyping(); editor.putPlateAt(moTemplate(cmd, arg), pasteCentre(), undefined, deckNow()?.size); return; }
+    command(cmd);
+  },
+  // the Diagrams pane's MO and d-orbital pictures, drawn by the drawing code at small size
+  thumb: (it) => {
+    if (it.cmd !== 'mo-diagram' && it.cmd !== 'd-orbital-splitting') return undefined;
+    try { return drawingSvg(editor.platePreview(moTemplate(it.cmd, it.arg)).doc, null) ?? undefined; } catch { return undefined; }
+  },
   pickTool: (name) => pickTool(name),
   hasTool: (name) => name in TOOLS,
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
@@ -869,6 +887,8 @@ const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
 canvasRibbon.tabEnd.append(warningsBox.button);
 canvasRibbon.el.addEventListener('cr-tab', () => { fitRibbons(); refreshCanRun(); });
+// a flyout's commands are greyed as the ribbon's are, once it opens (its list was hidden till now)
+canvasRibbon.el.addEventListener('rb-fly-open', () => requestAnimationFrame(refreshCanRun), true);
 
 // (the Canvas ribbon's tabs stay put; what is selected brings out its context toolbox)
 const showRibbonContext = () => { contextBoxes.follow(); };
@@ -1536,7 +1556,8 @@ const NEW_CYCLE_LOOK: CycleLook = { names: 'short', reagentArrows: true };
  */
 async function smartGallery(): Promise<void> {
   finishTyping();
-  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"]')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
+  // (from the Schemes flyout, under its button: the list has closed)
+  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"], .ribbon .rb-fly:has(.rb-fly-menu [data-cmd="smart-scheme"]) > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
   const work = $('#work').getBoundingClientRect();
   const { showSmartGallery } = await import('./ui/smart-gallery');
   const pick = await showSmartGallery({
@@ -4446,7 +4467,7 @@ function align(how: Align): void {
   if (tip) {
     focalPrefs.tipShown = true;
     storeSettings();
-    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Home ▸ Focal Point ▸ Match Focal Points.', 9000);
   }
 }
 
@@ -13802,16 +13823,17 @@ function nmrRibbon(act: Parameters<NmrPanel['ribbon']>[0]): void {
   go();
 }
 
-/** Home > NMR: its commands in a menu under the button. */
+/** The NMR commands in a menu, under the ribbon's Predict NMR button (or at the top left of the drawing). */
+const nmrAnchor = () => [...document.querySelectorAll<HTMLElement>('#canvas-ribbon [data-cr-fly="nmr"] > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0);
 function nmrMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-menu"]');
+  const b = nmrAnchor();
   const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
   popupMenu(r.left, r.bottom + 2, [['Predict NMR', () => nmrRibbon('predict')], ['Spectrum Window', () => nmrRibbon('window')], ['Show on Drawing', () => nmrRibbon('marks')], ['Check Data…', () => nmrRibbon('check')], null, ['NMR Settings…', () => command('nmr-settings')]]);
 }
 
-/** Chemistry > NMR > Solvent…: the solvents in a menu under the button. */
+/** Chemistry ▸ NMR ▸ Solvent…: the solvents in a menu, under the ribbon's Predict NMR button. */
 function nmrSolventMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-solvent"]');
+  const b = nmrAnchor();
   const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
   popupMenu(r.left, r.bottom + 2, NMR_SOLVENTS.map((x) => [`${x === nmrPanel.solvent ? '✓ ' : ''}${solventLabel(x)}`, () => nmrRibbon({ solvent: x })] as [string, () => void]));
 }
@@ -16405,7 +16427,7 @@ const onScreen = (el: Element) => el.getClientRects().length > 0;
 /** A ribbon button's name: its own words, or its tool tip's first phrase when it only shows a sign. */
 function ribbonLabel(b: HTMLElement): string {
   const t = b.cloneNode(true) as HTMLElement;
-  t.querySelectorAll('.rb-icon, .sw, svg, kbd').forEach((x) => x.remove());
+  t.querySelectorAll('.rb-icon, .sw, svg, kbd, .cr-caret, .cr-drop').forEach((x) => x.remove());
   const own = t.textContent!.replace(/\s+/g, ' ').trim();
   const tip = (b.dataset.tip ?? b.title ?? b.getAttribute('aria-label') ?? '').replace(/\s*\(.*?\)/g, '').split(/[.:;,] /)[0].trim();
   return own.length > 2 ? own : tip || own;
@@ -16450,7 +16472,8 @@ function commandItems(): CommandItem[] {
   for (const rib of document.querySelectorAll<HTMLElement>('.ribbon')) {
     if (rib.hidden || !onScreen(rib)) continue;
     for (const b of rib.querySelectorAll<HTMLButtonElement>('button')) {
-      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel)')) continue;
+      // (a flyout's commands are found too, though its list is closed)
+      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel, .rb-fly-menu)')) continue;
       const panel = b.closest<HTMLElement>('.rb-panel');
       const tabAttr = panel && [...panel.attributes].find((a) => /^data-.*-panel$/.test(a.name));
       const tab = tabAttr ? rib.querySelector<HTMLButtonElement>(`[${tabAttr.name.replace(/-panel$/, '-tab')}="${tabAttr.value}"]`) : null;
