@@ -4566,7 +4566,7 @@ export class Editor {
   private clickMoLevel(frame: number, level: number): void {
     const mo = this.doc.shapes.get(frame)?.plate?.mo, l = mo?.levels[level];
     if (!mo || !l) return;
-    if (!electronsFree(l)) { this.onNotice(mo.molecule ? 'These electrons are set by the molecule. Choose Custom for Molecule in the Side Panel to change them.' : 'An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
+    if (!electronsFree(l)) { this.onNotice(mo.dsplit ? 'The free ion\'s electrons follow d Electrons in the Side Panel.' : mo.molecule ? 'These electrons are set by the molecule. Choose Custom for Molecule in the Side Panel to change them.' : 'An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
     this.setMo(frame, withLevel(mo, level, { electrons: nextElectrons(l) }), l.electrons >= 2 * hund(l.n, 0).length ? 'Remove Electrons' : 'Add Electron');
   }
 
@@ -4639,7 +4639,7 @@ export class Editor {
   putPlateAt(d: PlateData, at: Vec, id?: number, page?: { w: number; h: number }): void {
     const m = this.fullMeasure();
     let frame = id;
-    const what = d.kind === 'tlc' ? 'TLC Plate' : d.kind === 'gel' ? 'Gel' : d.kind === 'crystal' ? 'Crystal Structure' : 'MO Diagram';
+    const what = d.kind === 'tlc' ? 'TLC Plate' : d.kind === 'gel' ? 'Gel' : d.kind === 'crystal' ? 'Crystal Structure' : d.mo?.dsplit ? 'd-Orbital Splitting' : 'MO Diagram';
     this.doc.edit(id === undefined ? what : `Edit ${what}`, () => {
       const s = id !== undefined ? this.doc.shapes.get(id) : undefined;
       const corner = s?.plate ? plateFromBox(shapeBox(s), s.plate, this.doc.style.bondLength).at : { x: at.x - d.w / 2, y: at.y - d.h / 2 };

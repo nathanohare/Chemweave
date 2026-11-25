@@ -617,6 +617,22 @@ On the diagram itself:
 
 The number of orbitals in a level, and what a molecular orbital is made from, follow from the atoms and can't be changed while a side is an atom. Choose **Custom** for a side to set its levels by hand: the Side Panel then shows Degeneracy and Made From for the level you pressed, and levels can be deleted. A diagram made in an earlier version opens as Custom on both sides and looks as it did. The Side Panel also has the energy axis, orbital pictures, the electron arrows' size, the dashed lines' color and **Fit Width**.
 
+### d-Orbital splitting diagrams
+
+<!-- index: Crystal field splitting diagrams -->
+
+**Chemistry ▸ Orbitals ▸ d-Orbital Splitting** (also in the Diagrams group of the Home tab) puts a crystal field splitting diagram on the page: on the left the metal ion's five d orbitals as in the free ion (labeled 3d, 4d or 5d by the metal's row), on the right the levels they split into, joined by dashed lines, with the energy arrow and a title under each column. It starts as Co³⁺ in an octahedral field, low spin. Select it to change it in the Side Panel:
+
+- **Geometry**: Octahedral (t<sub>2g</sub> below e<sub>g</sub>), Tetrahedral (e below t<sub>2</sub>) or Square Planar (dx²−y² far above dz², then dxz and dyz, then dxy). The square-planar order depends on the ligands; this is a common order, and the levels can be dragged. Changing the geometry draws the levels again (one step to undo).
+- **Metal Ion**: type it with its charge (Co3+, Fe²⁺, Ni(II)). A d-block ion sets **d Electrons** from its group and charge (group number less the charge) and the free ion's d shell.
+- **d Electrons**: d⁰ to d¹⁰, filled in from the ion; choose another count to change it by hand.
+- **Spin**: High Spin puts one electron in each orbital before pairing any; Low Spin fills the lower levels first. It is turned off where both give the same filling (octahedral d⁰ to d³ and d⁸ to d¹⁰). Tetrahedral diagrams start as high spin.
+- **Splitting Label**: Δ<sub>o</sub>, Δ<sub>t</sub> or Δ<sub>1</sub> to start with; type your own (typing Δo gives Δ<sub>o</sub>).
+- The readout below them is calculated from the electrons drawn: the **Configuration** (t<sub>2g</sub><sup>6</sup> e<sub>g</sub><sup>0</sup>), **Unpaired Electrons**, the **LFSE** in fifths of the splitting (−12/5 Δ<sub>o</sub> for low-spin d⁶, as in Miessler, Fischer and Tarr, *Inorganic Chemistry*, 5th ed., Table 10.7; not given for square planar) and the **Spin-Only Moment**, √(n(n + 2)) μB.
+- **Energy Axis**, **Splitting Arrow** (a double-headed arrow with the splitting's name between the top level and the one below it), **Readouts on Diagram** (two short lines under the levels) and **Barycenter Line** (a dotted line across the split levels at their average energy, weighted by the number of orbitals) turn those parts on and off. The electron arrows and dashed lines are set as for an MO diagram.
+
+On the page it works as an MO diagram does: drag a level, click a split level to add an electron (the readout follows), double-click a name or title to change it, and right-click to add a level. The pairing energy is not shown: Miessler, Fischer and Tarr split it into a Coulombic part and an exchange part (Table 10.7), so no single number would be right for every case.
+
 ### Crystal structures
 
 <!-- index: CIF files, ORTEP, X-ray structures -->

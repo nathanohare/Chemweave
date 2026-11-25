@@ -3,7 +3,7 @@
 // bond (label, charge, atom number; order and style).
 // Anything the drawing tools set automatically can be changed here by hand.
 
-import { addInfo, setInfo } from './info-tip';
+import { addInfo, infoIcon, setInfo } from './info-tip';
 import { Doc, Arrow, Shape, Caption, Atom, Bond, PICTURE_STYLES, turnsFreely, isDataFrame, type PictureLook, type StepRoles, type ArrowTextSide, type ArrowKind, type Pattern, type AttachSide, type Attachment, type DescriptorKey, type HighlightEnds, type HighlightFill, type HighlightLine, type HighlightShape, type HighlightSoftSide, type HighlightStyle } from '../model';
 import { fullStyle, tidyStyle } from '../render/highlight';
 import type { HighlightLookPreset } from './highlight-looks';
@@ -18,7 +18,8 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moPlain, moSides, setElectrons, setMolecule, setSides, sources, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moPlain, parseMarkup, moSides, setElectrons, setMolecule, setSides, sources, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { D_GEOMETRIES, deltaMarkup, dGeometry, dReadout, lfseMarkup, setDSplit, spinMatters, splitLevels, type DGeometry, type DSplit } from '../design/dsplit';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -771,11 +772,8 @@ export class StylePanel {
     const facts = whole !== undefined || mo.molecule ? [`Charge ${sign}`, `${counts.unpaired} Unpaired`] : [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
     this.note(facts.join(' · '));
     const name = (l: MoLevel, into: HTMLElement, first = false) => {
-      const parts = moParts(mo, l.label);
-      if (!parts.length) { into.append(first ? 'A level with no name' : 'a level with no name'); return; }
-      for (const p of parts) {
-        if (p.sub || p.sup) { const x = document.createElement(p.sub ? 'sub' : 'sup'); x.textContent = p.text; into.append(x); } else into.append(p.text);
-      }
+      if (!l.label.trim()) { into.append(first ? 'A level with no name' : 'a level with no name'); return; }
+      richInto(mo, l.label, into);
     };
     for (const bad of fillProblems(mo.levels).slice(0, 2)) {
       const w = document.createElement('p');
@@ -804,7 +802,31 @@ export class StylePanel {
       w.append(mark, text);
       this.body.appendChild(w);
     }
-    // the level last pressed, dragged or right-clicked
+    this.moLevelRows(sh, mo, name);
+    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
+    // (the pictures show two atoms' orbitals mixing, so they are for two atoms only)
+    if (!molecule) this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
+    if (mo.pictures && !molecule) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
+    if (mo.pictures && !molecule) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
+    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
+    this.check('Names Avoid Dashed Lines', !!mo.labelClear, (v) => set({ ...mo, labelClear: v || undefined }));
+    this.moLineRows(sh, d, mo);
+    if (this.plate?.moFit) {
+      const row = document.createElement('div');
+      row.className = 'style-buttons';
+      const b = document.createElement('button');
+      b.type = 'button';
+      b.textContent = 'Fit Width';
+      b.title = 'Make the diagram just wide enough to keep the molecule\'s orbitals, names and pictures clear of each atom\'s';
+      b.addEventListener('click', () => this.plate?.moFit?.(sh.id));
+      row.append(b);
+      this.body.appendChild(row);
+    }
+  }
+
+  /** The level of an MO diagram (or d-orbital splitting diagram) last pressed, dragged or right-clicked: its energy, degeneracy, what it is made from, Rename and Delete; then the Look heading. */
+  private moLevelRows(sh: Shape, mo: MoSpec, name: (l: MoLevel, into: HTMLElement, first?: boolean) => void): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
     const at = this.plate?.moLevel?.(sh.id) ?? null;
     const l = at !== null ? mo.levels[at] : undefined;
     if (l && at !== null) {
@@ -842,13 +864,11 @@ export class StylePanel {
       look.textContent = 'Look';
       this.body.appendChild(look);
     }
-    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
-    // (the pictures show two atoms' orbitals mixing, so they are for two atoms only)
-    if (!molecule) this.check('Orbital Pictures', !!mo.pictures, (v) => set({ ...mo, pictures: v || undefined }), 'Each atomic orbital\'s shape beside it, and each molecular orbital\'s in-phase or out-of-phase combination');
-    if (mo.pictures && !molecule) this.number('Picture Size (%)', Math.round((mo.pictureSize ?? 1) * 100), 10, 20, 400, (v) => set({ ...mo, pictureSize: v / 100 }));
-    if (mo.pictures && !molecule) this.select('Phases', ORBITAL_LOOK_NAMES.map((k): Opt<OrbitalLook> => [k.value, k.label]), mo.pictureLook ?? 'shaded', (v) => set({ ...mo, pictureLook: v }));
-    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
-    this.check('Names Avoid Dashed Lines', !!mo.labelClear, (v) => set({ ...mo, labelClear: v || undefined }));
+  }
+
+  /** The electron arrows' size and the dashed lines' color, as an MO diagram and a d-orbital splitting diagram both have them. */
+  private moLineRows(sh: Shape, d: PlateData, mo: MoSpec): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
     const now = electronLook(mo, this.doc.style, d.w, d.h);
     const r1 = (x: number) => Math.round(x * 10) / 10;
     this.number('Arrow Height (pt)', r1(now.tall), 0.5, 2, 48, (v) => set(setElectrons(mo, { ...now, tall: v }, d.w, d.h)), 'How tall the electron arrows are');
@@ -856,22 +876,84 @@ export class StylePanel {
     this.number('Arrow Gap (pt)', r1(now.lift), 0.5, 0, 24, (v) => set(setElectrons(mo, { ...now, lift: v }, d.w, d.h)), 'How far above the level line the electron arrows start');
     this.color('Dashed Lines', mo.lineColor, (v) => set({ ...mo, lineColor: v }));
     this.number('Line Transparency (%)', Math.round((mo.lineTransparency ?? 0) * 100), 5, 0, 90, (v) => set({ ...mo, lineTransparency: v ? v / 100 : undefined }));
-    if (this.plate?.moFit) {
-      const row = document.createElement('div');
-      row.className = 'style-buttons';
+  }
+
+  /**
+   * A d-orbital splitting diagram (dsplit.ts): the geometry, the metal ion, its d electrons and
+   * spin, the splitting's name, what the drawn electrons add up to, and how it is drawn. Every
+   * value filled in can be changed: the d count by hand here, the levels dragged, clicked and
+   * renamed on the page.
+   */
+  private dsplitControls(sh: Shape, d: PlateData, mo: MoSpec, ds: DSplit): void {
+    const set = (next: MoSpec) => this.plate?.restyle(sh.id, { mo: next });
+    const change = (patch: Partial<DSplit>) => set(setDSplit(mo, patch));
+    this.help('Drag a level up or down. Click a split level to add an electron (a full level empties). Double-click a name or title to change it; right-click to add a level.');
+    const geos: Opt<DGeometry>[] = D_GEOMETRIES.map((g): Opt<DGeometry> => [g.id, g.name]);
+    this.select('Geometry', geos, ds.geometry, (v) => change({ geometry: v }));
+    if (ds.geometry === 'sq') this.tipOnLast('The order of the lower levels depends on the ligands. This is a common order: dx²−y² far above dz², then dxz and dyz, then dxy lowest. Drag the levels to change it. No LFSE is shown for square planar.');
+    this.text('Metal Ion', supText(ds.ion), 'Co³⁺', (v) => change({ ion: v }));
+    this.tipOnLast('Type the ion with its charge, such as Co³⁺, Fe²⁺ or Ni(II); a charge typed on the line is read too. Its group and charge set d Electrons, and its row the d shell (3d, 4d or 5d).');
+    const counts: Opt<string>[] = Array.from({ length: 11 }, (_, k): Opt<string> => [String(k), `d${supText(`^{${k}}`)}`]);
+    this.select('d Electrons', counts, String(ds.d), (v) => change({ d: Number(v) }));
+    this.tipOnLast('Set automatically from the metal ion; choose another count to change it by hand.');
+    // high or low spin: two buttons, disabled with the reason where both fill the levels alike
+    const split = splitLevels(mo);
+    const matters = spinMatters(split, ds.d);
+    const seg = document.createElement('div');
+    seg.className = 'seg';
+    seg.setAttribute('role', 'radiogroup');
+    seg.setAttribute('aria-label', 'Spin');
+    for (const [v, text] of [['high', 'High Spin'], ['low', 'Low Spin']] as const) {
       const b = document.createElement('button');
       b.type = 'button';
-      b.textContent = 'Fit Width';
-      b.title = 'Make the diagram just wide enough to keep the molecule\'s orbitals, names and pictures clear of each atom\'s';
-      b.addEventListener('click', () => this.plate?.moFit?.(sh.id));
-      row.append(b);
-      this.body.appendChild(row);
+      b.textContent = text;
+      b.setAttribute('role', 'radio');
+      b.setAttribute('aria-checked', String(matters && ds.spin === v));
+      b.disabled = !matters;
+      b.addEventListener('click', () => { if (v !== ds.spin) change({ spin: v }); });
+      seg.append(b);
     }
+    if (!matters) seg.title = `High and low spin fill these levels the same way for d${supText(`^{${ds.d}}`)}`;
+    this.row('Spin', seg);
+    this.tipOnLast('Low spin fills the lower levels before the upper ones; high spin puts one electron in each orbital before pairing any. Which one a complex takes depends on the splitting against the pairing energy.');
+    this.text('Splitting Label', supText(ds.label), dGeometry(ds.geometry).delta.replace(/_\{(.*)\}/, '$1'), (v) => change({ label: deltaMarkup(v) }));
+    // what the electrons drawn add up to
+    const r = dReadout(mo);
+    const value = (label: string, markup: string, tip?: string) => {
+      const v = document.createElement('span');
+      v.className = 'ds-value';
+      richInto(mo, markup, v);
+      this.row(label, v);
+      this.body.lastElementChild?.classList.add('ds-read');
+      if (tip) this.tipOnLast(tip);
+    };
+    value('Configuration', r.config || '–');
+    value('Unpaired Electrons', String(r.unpaired));
+    if (r.lfse !== null) value('LFSE', lfseMarkup(r.lfse, ds.label || 'Δ'), 'Ligand field stabilization energy: the d electrons\' energy compared with the same electrons in five orbitals at their average energy, from the electrons drawn. Pairing energy is not included.');
+    value('Spin-Only Moment', `${r.moment.toFixed(2)} μ_{B}`, 'μ = √(n(n + 2)) μB for n unpaired electrons, leaving out any orbital contribution.');
+    this.moLevelRows(sh, mo, (l, into, first) => { if (!l.label.trim()) into.append(first ? 'A level with no name' : 'a level with no name'); else richInto(mo, l.label, into); });
+    this.check('Energy Axis', mo.axis, (v) => set({ ...mo, axis: v }));
+    this.check('Splitting Arrow', ds.arrow, (v) => change({ arrow: v }));
+    this.check('Readouts on Diagram', ds.readouts, (v) => change({ readouts: v }));
+    this.check('Barycenter Line', !!ds.barycenter, (v) => change({ barycenter: v || undefined }), 'A dotted line across the split levels at their average energy, weighted by the number of orbitals');
+    this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
+    this.moLineRows(sh, d, mo);
+  }
+
+  /** An "i" with `tip` beside the label of the row just added. */
+  private tipOnLast(tip: string): void {
+    const span = this.body.lastElementChild?.querySelector<HTMLElement>(':scope > span');
+    if (span) span.append(' ', infoIcon(tip));
   }
 
   /** A TLC plate or gel: its stain or dye and what is written, and the window with its lanes. */
   private plateControls(sh: Shape): void {
     const d = sh.plate!;
+    if (d.kind === 'mo' && d.mo?.dsplit) {
+      this.heading('d-Orbital Splitting');
+      this.dsplitControls(sh, d, d.mo, d.mo.dsplit);
+      return;
+    }
     if (d.kind === 'mo') {
       this.heading('MO Diagram');
       if (d.mo) this.moControls(sh, d, d.mo);
@@ -2106,6 +2188,20 @@ function scripted(text: string): DocumentFragment {
     f.append(el);
   }
   return f;
+}
+
+/** Rich text (markup, or an older diagram's text) put into an element with real subscripts and superscripts. */
+function richInto(mo: MoSpec, text: string, into: HTMLElement): void {
+  for (const p of moParts(mo, text)) {
+    if (p.sub || p.sup) { const x = document.createElement(p.sub ? 'sub' : 'sup'); x.textContent = p.text; into.append(x); } else into.append(p.text);
+  }
+}
+
+const SUP_DIGITS: Record<string, string> = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹', '+': '⁺', '−': '⁻', '-': '⁻' };
+
+/** Markup as plain text for a box or a list: superscript digits and signs as Unicode superscripts (Co³⁺), the rest as plain letters. */
+function supText(markup: string): string {
+  return parseMarkup(markup).map((p) => (p.sup && [...p.text].every((c) => c in SUP_DIGITS) ? [...p.text].map((c) => SUP_DIGITS[c]).join('') : p.text)).join('');
 }
 
 /** A picture's kind, from its data, as people know it. */

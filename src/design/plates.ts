@@ -12,6 +12,7 @@ import { shapeBox } from '../objects';
 import { chemRuns } from '../text/chemtext';
 import { labelParts, type LabelPart } from './energy';
 import { drawMo, fromAtoms, type MoSpec } from './mo';
+import { newDSplit } from './dsplit';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
 import { isInkId } from './geo';
@@ -231,6 +232,11 @@ export function newPlate(kind: PlateKind, L: number): PlateData {
   };
 }
 
+/** A new d-orbital splitting diagram (an MO diagram with MoSpec.dsplit): Co³⁺, octahedral and low spin to start with; the Side Panel changes it. */
+export function newDSplitPlate(L: number): PlateData {
+  return { kind: 'mo', look: '', w: Math.round(20 * L), h: Math.round(14 * L), rf: false, lines: false, labels: true, note: '', unit: 'bp', sizes: false, lanes: [], mo: newDSplit() };
+}
+
 /**
  * Draw the plate or gel with its top left corner at `at`. Returns what was made (the caller puts
  * it in a frame). Call inside an edit.
@@ -421,7 +427,7 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
   const b = frameBox(doc, frame, m) ?? { x1: at.x, y1: at.y, x2: at.x + d.w, y2: at.y + d.h };
   const r = (v: number) => Math.round(v * 100) / 100;
   const plate: PlateData = { ...d, margins: { l: r(at.x - b.x1), t: r(at.y - b.y1), r: r(b.x2 - at.x - d.w), b: r(b.y2 - at.y - d.h) } };
-  const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : 'MO diagram';
+  const name = d.kind === 'tlc' ? 'TLC plate' : d.kind === 'gel' ? 'Gel' : d.mo?.dsplit ? 'd-Orbital splitting diagram' : 'MO diagram';
   // (looks set on its labels by hand stay)
   const madeLabels = keepLabels(doc, was, frame);
   if (old) { doc.updateShape(old.id, { ...b, frame, plate, madeLabels, editedOutside: undefined }); return old.id; }

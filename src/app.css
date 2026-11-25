@@ -4068,6 +4068,10 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .style-row .seg button { flex: 1 1 auto; min-width: 0; border: 0; border-radius: 0; padding: 2px 5px; background: transparent; font-size: var(--fs-xs); }
 .style-row .seg button + button { border-left: 1px solid var(--line); }
 .style-row .seg button[aria-checked='true'] { background: var(--accent-soft); color: var(--accent); }
+.style-row .seg button:disabled { color: var(--muted); cursor: default; }
+/* a d-orbital splitting diagram's readout: what the drawn electrons add up to, the value at the right */
+.style-row.ds-read { margin: 1px 0; }
+.style-row .ds-value { text-align: right; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .shape-pick { display: inline-flex; align-items: center; gap: 6px; padding: 2px 8px 2px 4px; }
 .shape-pick canvas { width: 20px; height: 20px; }
 

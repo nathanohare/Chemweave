@@ -10,6 +10,7 @@ import type { Rect, Vec } from '../geom';
 import type { Measure } from '../editor/arrange';
 import { chemRuns } from '../text/chemtext';
 import { orbitalShapes, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
+import { readoutLines, type DSplit } from './dsplit';
 
 export type MoColumn = 'left' | 'middle' | 'right';
 
@@ -33,6 +34,8 @@ export interface MoLevel {
   fromSide?: 'left' | 'right' | 'each';
   /** Filled in from the diagram's atoms (see MoSpec.atoms): how many orbitals, their electrons and what they are made from follow from the atoms. Not set: a level added by hand. */
   auto?: boolean;
+  /** A d-orbital splitting diagram's split level: its energy in units of the splitting (−0.4 for t2g in an octahedral field), for the LFSE (dsplit.ts). */
+  lf?: number;
 }
 
 export interface MoSpec {
@@ -84,6 +87,12 @@ export interface MoSpec {
   pictureLook?: OrbitalLook;
   /** The pictures' size, as a part of the usual (1 = 100%); either way they grow and shrink with the diagram. */
   pictureSize?: number;
+  /**
+   * A d-orbital splitting diagram (dsplit.ts): the free ion's d orbitals on the left, the levels
+   * they split into in the middle column, with the choices they were filled in from. Not set: an
+   * MO diagram (every diagram saved before this).
+   */
+  dsplit?: DSplit;
 }
 
 /** A piece of rich text: plain, subscript or superscript. */
@@ -801,7 +810,17 @@ export function setElectrons(spec: MoSpec, now: ElectronLook, w: number, h: numb
 }
 
 /** Where the three columns are in a diagram w wide with its left edge at `at.x`, and each level's ends (from its first orbital's left to its last one's right). */
-export function moColumns(spec: Pick<MoSpec, 'pictures' | 'molecule'>, at: Vec, w: number, L: number): { colX: Record<MoColumn, number>; one: number; gapX: number; span(l: MoLevel): [number, number] } {
+export function moColumns(spec: Pick<MoSpec, 'pictures' | 'molecule' | 'dsplit'>, at: Vec, w: number, L: number): { colX: Record<MoColumn, number>; one: number; gapX: number; span(l: MoLevel): [number, number] } {
+  // a d-orbital splitting diagram has two columns (the free ion's five orbitals, the split levels) and the splitting arrow at the right
+  if (spec.dsplit) {
+    const colX: Record<MoColumn, number> = { left: at.x + w * 0.26, middle: at.x + w * 0.64, right: at.x + w * 0.9 };
+    const one = Math.min(w * 0.06, 1.1 * L), gapX = one * 0.3;
+    const span = (l: MoLevel): [number, number] => {
+      const k = hund(l.n, 0).length, total = k * one + (k - 1) * gapX;
+      return [colX[l.column] - total / 2, colX[l.column] + total / 2];
+    };
+    return { colX, one, gapX, span };
+  }
   const colX: Record<MoColumn, number> = moPictures(spec)
     ? { left: at.x + w * 0.24, middle: at.x + w * 0.5, right: at.x + w * 0.76 }
     : { left: at.x + w * 0.14, middle: at.x + w * 0.5, right: at.x + w * 0.86 };
@@ -1029,7 +1048,9 @@ export function drawMo(doc: Doc, m: Measure, spec: MoSpec, at: Vec, w: number, h
   }
   if (pics) drawPictures();
   out.room = roomBeside(mid, levels.filter((x) => x.column === 'left').map(levelBox), levels.filter((x) => x.column === 'right').map(levelBox));
-  const bottom = at.y + h + 1.2 * L;
+  // (a d-orbital splitting diagram's readout lines go between the levels and the titles)
+  const ds = spec.dsplit, lineH = 1.45 * doc.style.captionSize;
+  const bottom = at.y + h + 1.2 * L + (ds?.readouts ? 2 * lineH + 0.3 * L : 0);
   (['left', 'middle', 'right'] as const).forEach((c, i) => { if (spec.titles[i]?.trim()) caption(spec.titles[i].trim(), { x: colX[c], y: bottom }, 'below'); });
   if (spec.axis) {
     const ax = Math.min(at.x, leftmost) - 0.4 * L;
@@ -1039,7 +1060,36 @@ export function drawMo(doc: Doc, m: Measure, spec: MoSpec, at: Vec, w: number, h
     }).id);
     caption('E', { x: ax - gap, y: at.y - 0.4 * L }, 'left', { runs: [{ text: 'E', italic: true }] });
   }
+  // a d-orbital splitting diagram's own parts, after everything moCaptionRoles names
+  if (ds) drawSplitting(ds);
   return out;
+
+  /** The splitting arrow and its name, the barycenter line and the readout lines. */
+  function drawSplitting(ds: DSplit): void {
+    const split = levels.filter((l) => l.column === 'middle').sort((a, b) => a.e - b.e);
+    if (ds.barycenter && split.length) {
+      const n = split.reduce((t, l) => t + l.n, 0) || 1;
+      const yy = y(split.reduce((t, l) => t + l.n * l.e, 0) / n);
+      const x0 = Math.min(...split.map((l) => span(l)[0])) - 0.3 * L, x1 = Math.max(...split.map((l) => span(l)[1])) + 0.3 * L;
+      line(x0, yy, x1, yy, { dashed: true, lineWidth: lw * 0.7, color: '#808080' });
+    }
+    const top = split[split.length - 1], below = [...split].reverse().find((l) => l.e < (top?.e ?? 0));
+    if (ds.arrow && top && below) {
+      // right of the split levels and their names
+      let right = colX.middle;
+      for (const l of split) right = Math.max(right, span(l)[1], labelBox.get(l)?.x2 ?? -Infinity);
+      const ax = Math.max(right + 0.8 * L, at.x + w * 0.9), y1 = y(top.e), y2 = y(below.e);
+      const head = { headStyle: 'full' as const, tailStyle: 'full' as const, headType: 'solid' as const, line: 'solid' as const, noGo: false, equilibrium: false, sweep: 0, headLength: lw * 7, headWidth: lw * 2.2 };
+      out.arrows.push(doc.addArrow({ tail: { x: ax, y: y2 - lw }, head: { x: ax, y: y1 + lw }, ...head }).id);
+      if (ds.label.trim()) caption(ds.label.trim(), { x: ax + gap, y: (y1 + y2) / 2 }, 'right');
+    }
+    if (ds.readouts) {
+      const [a, b] = readoutLines(spec);
+      const top0 = at.y + h + 0.8 * L;
+      caption(a, { x: colX.middle, y: top0 }, 'below');
+      caption(b, { x: colX.middle, y: top0 + lineH }, 'below');
+    }
+  }
 
   /**
    * Each atomic orbital's picture outside its name, and each molecular orbital's beside its name,

@@ -159,7 +159,7 @@ import { CommandSearch, uniqueCommands, type CommandItem } from './ui/command-se
 import { fillTemplate, templateSize } from './design/templates';
 import { putDiagram, type DiagramData } from './design/diagrams';
 import type { EnergyData } from './design/energy';
-import { newPlate, type PlateData, type PlateKind } from './design/plates';
+import { newDSplitPlate, newPlate, type PlateData, type PlateKind } from './design/plates';
 import { fitWidth, toRich, withLevel } from './design/mo';
 import { editMoName } from './ui/mo-name-pop';
 import { refreshZooms, summaryParts, zoomGrid, zoomShape } from './deck/zoom';
@@ -1685,7 +1685,7 @@ function moMenu(): MenuItem[] {
     { label: 'Edit Title', run: () => renameMo(c.frame, { title: c.column === 'left' ? 0 : c.column === 'middle' ? 1 : 2 }), title: 'The title under this column (also: double-click it)' },
     ...(l ? [
       { label: 'Rename Level', run: () => renameMo(c.frame, { level: c.level! }) },
-      { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? (mo.molecule ? 'This level comes from the molecule. Choose Custom for Molecule in the Side Panel to delete it.' : 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.') : undefined },
+      { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? (mo.dsplit ? 'This level comes from the geometry. Choose another Geometry in the Side Panel, or drag the level.' : mo.molecule ? 'This level comes from the molecule. Choose Custom for Molecule in the Side Panel to delete it.' : 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.') : undefined },
     ] : []),
     null,
   ];
@@ -10813,6 +10813,8 @@ const COMMANDS: Record<string, () => unknown> = {
   'energy-diagram': () => void energyDiagram(null),
   'tlc-plate': () => void plateFigure('tlc', null),
   'mo-diagram': () => void plateFigure('mo', null),
+  // (an MO diagram with MoSpec.dsplit: changed on the page and in the Side Panel, as an MO diagram is)
+  'd-orbital-splitting': () => editor.putPlateAt(newDSplitPlate(doc.style.bondLength), pasteCentre(), undefined, deckNow()?.size),
   'p-orbitals': () => void insertOrbital(true),
   orbital: () => void insertOrbital(false),
   gel: () => void plateFigure('gel', null),
@@ -15296,7 +15298,7 @@ const BOX_ITEMS: Record<string, readonly string[]> = {
   highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
   custom: defaultToolboxes().custom,
   schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
-  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
+  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
   tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
   biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
   perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
