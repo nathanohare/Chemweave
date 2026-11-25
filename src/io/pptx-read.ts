@@ -1901,12 +1901,15 @@ class Reader {
     const vert = kid(sp, 'txBody', 'bodyPr')?.getAttribute('vert');
     const quarter = vert === 'vert' || vert === 'eaVert' ? 90 : vert === 'vert270' ? -90 : 0;
     const tbox = quarter ? { ...box, ...swapBox(box), rot: box.rot + quarter } : box;
-    let c = this.ourText(tags[TAG.text], sp, tbox, ph, from) ?? turned(this.text(sp, tbox, ph, from), tbox);
+    const ours = this.ourText(tags[TAG.text], sp, tbox, ph, from);
+    // (as this program saved it: not one PowerPoint changed, whose text is read as PowerPoint has it)
+    const asSaved = !!ours && this.savedCaptions.has(ours);
+    let c = ours ?? turned(this.text(sp, tbox, ph, from), tbox);
     if (c && quarter) c = { ...c, dir: quarter > 0 ? 'vert' : 'vert270' };
     // a text box or placeholder of PowerPoint's: its frame as the file had it (size, place, anchor
     // and margins), kept while it isn't resized here (a placeholder placed by its layout has none of
     // its own, and one saved here is placed as before)
-    if (c && !c.pbox && (!ph || !tags[TAG.text])) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
+    if (c && !c.pbox && (!ph || !asSaved)) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
     if (c && !c.pbox) delete c.pbox;
     // a table's title or footnotes, saved here as a text box beside it
     const part = (() => {
@@ -2560,6 +2563,9 @@ class Reader {
    * formatted in PowerPoint (bold, a colour, a size) is read as PowerPoint has it, keeping what
    * PowerPoint has no place for. Null: read the text as PowerPoint's own.
    */
+  /** Captions read back as this program saved them (their text and look unchanged in PowerPoint). */
+  private savedCaptions = new WeakSet<object>();
+
   private ourText(tag: string | undefined, sp: Element, box: Rect & { rot: number }, ph: PhInfo | null, from: Element[]): Omit<Caption, 'id'> | null {
     if (!tag) return null;
     let saved: { c: Caption; plain: string; at?: number[]; o?: number[]; pr?: string };
@@ -2576,12 +2582,11 @@ class Reader {
       // what PowerPoint has no place for: groups, order, steps, ties to structures, chemistry
       const own: Partial<Caption> = {};
       for (const k of OWN_CAPTION_KEYS) if (saved.c?.[k] !== undefined) (own as Record<string, unknown>)[k] = saved.c[k];
-      // (its frame as PowerPoint has it now, as for a text box or placeholder of PowerPoint's)
-      const pbox = keptFrame(sp, theirs);
-      return { ...theirs, ...own, runs: this.ownLinks(theirs.runs, saved.c?.runs), ...(pbox ? { pbox } : {}) };
+      return { ...theirs, ...own, runs: this.ownLinks(theirs.runs, saved.c?.runs) };
     }
     const c: Omit<Caption, 'id'> & { id?: number } = { ...saved.c };
     delete c.id;
+    this.savedCaptions.add(c);
     if (Array.isArray(c.runs)) c.runs = this.relink(c.runs, sp, now);
     if (saved.at?.length === 4 && saved.o?.length === 2) {
       // where the text starts in its box, turned with the box about the box's middle (as PowerPoint turns it)
@@ -2595,7 +2600,7 @@ class Reader {
       const nw = box.x2 - box.x1, nh = box.y2 - box.y1;
       // (a kept frame's text is narrower than the frame by its insets: widened by as much as the frame)
       if (c.wrap !== undefined && Math.abs(nw - w) > 0.5) c.wrap = c.pbox ? c.wrap + nw - w : nw;
-      if ((c.ph || c.fit) && Math.abs(nh - h) > 0.5) c.boxH = nh;
+      if ((c.ph || c.fit) && Math.abs(nh - h) > 0.5) c.boxH = c.pbox && c.boxH !== undefined ? c.boxH + nh - h : nh;
     } else if (saved.at?.length === 4) {
       const [x, y, w, h] = saved.at;
       c.x += box.x1 - x;
