@@ -141,7 +141,9 @@ export function wordBuiltInName(name: string, more?: ReadonlyMap<string, string>
 
 const PRIORITY: Record<string, number> = { Normal: 0, Title: 10, Caption: 35, ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`Heading${n}`, 9])) };
 /** Word's own character styles, by id: their names, and where Word lists them. */
-const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20], Strong: ['Strong', 22], SubtleEmphasis: ['Subtle Emphasis', 19], IntenseEmphasis: ['Intense Emphasis', 21] };
+const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20], Strong: ['Strong', 22], SubtleEmphasis: ['Subtle Emphasis', 19], IntenseEmphasis: ['Intense Emphasis', 21], Hyperlink: ['Hyperlink', 99], FollowedHyperlink: ['FollowedHyperlink', 99] };
+/** Word's link styles: not in its Quick Styles gallery, shown in its lists once used (as Word writes them). */
+const WORD_LINK_CHAR: Record<string, string> = { Hyperlink: '<w:unhideWhenUsed/>', FollowedHyperlink: '<w:semiHidden/><w:unhideWhenUsed/>' };
 const JC: Record<Justify, string> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
 
 /** What a paragraph looks like apart from what is only its own (its line break above, bookmarks, index entries). */
@@ -2603,7 +2605,7 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
   // (its underline's kind, as a run's)
   if (s.underline) rPr.push(underlineXml({ text: '', underline: true, ukind: s.ukind })); else if (off('underline')) rPr.push('<w:u w:val="none"/>');
   return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="${chained ? xml(s.basedOn!) : 'DefaultParagraphFont'}"/>` +
-    `<w:uiPriority w:val="${own?.[1] ?? 29}"/><w:qFormat/>${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
+    `<w:uiPriority w:val="${own?.[1] ?? 29}"/>${WORD_LINK_CHAR[s.id] ?? '<w:qFormat/>'}${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
 }
 
 /** A named style, with all its settings written out. */
