@@ -1735,10 +1735,13 @@ export class Renderer {
   private drawFlatShape(ctx: CanvasRenderingContext2D, s: Shape, lw: number, labelSize = 10): void {
     const x = Math.min(s.x1, s.x2), y = Math.min(s.y1, s.y2);
     const w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1);
-    ctx.lineWidth = s.bold ? lw * 2.5 : lw;
+    // (a box or oval from a PowerPoint file: its outline's own width)
+    const own = (s.kind === 'rect' || s.kind === 'oval') && s.lineWidth !== undefined ? s.lineWidth : undefined;
+    ctx.lineWidth = own ?? (s.bold ? lw * 2.5 : lw);
     ctx.strokeStyle = s.color ?? '#000';
     ctx.fillStyle = s.color ?? '#000';
-    ctx.setLineDash(s.dotted ? [0.01, lw * 2.6] : s.dashed ? (s.hashSpacing ? [s.hashSpacing, s.hashSpacing] : [lw * 3, lw * 3]) : []);
+    const dw = own ?? lw;
+    ctx.setLineDash(s.dotted ? [0.01, dw * 2.6] : s.dashed ? (s.hashSpacing ? [s.hashSpacing, s.hashSpacing] : [dw * 3, dw * 3]) : []);
     if (s.dotted) ctx.lineCap = 'round';
     ctx.beginPath();
     switch (s.kind) {

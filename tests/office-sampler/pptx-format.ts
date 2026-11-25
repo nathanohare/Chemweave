@@ -88,8 +88,8 @@ lin('Dash type Dash', 'supported', '§20.1.8.48 prstDash dash; Line ▸ Dash typ
 for (const d of ['sysDot', 'sysDash', 'dashDot', 'lgDash', 'lgDashDot', 'lgDashDotDot', 'sysDashDot', 'sysDashDotDot']) {
   lin(`Dash type ${d}`, 'loss', `§20.1.10.49 ST_PresetLineDashVal ${d}; Line ▸ Dash type`, ln(`<a:prstDash val="${d}"/>`), (e) => a(kid(lnOf(e), 'a:prstDash'), 'val') === d, 'pptx-read.ts or pptx-write.ts, not traced to a line: dashes collapse to dash (or sysDot on boxes)');
 }
-lin('Round Dot on a plain box (no text)', 'supported', '§20.1.10.49 sysDot', ln('<a:prstDash val="sysDot"/>'), (e) => a(kid(lnOf(e), 'a:prstDash'), 'val') === 'sysDot', 'pptx-read.ts:2632 dotted; pptx-write.ts:2143', prst('rect'), false);
-lin('Outline width 3 pt on a plain box (no text)', 'loss', '§20.1.2.2.24 ln@w', ln('', 3), (e) => a(lnOf(e), 'w') === '38100', 'pptx-read.ts:1886 (plain box: only a bold flag, set when wider than 1.75 line widths)', prst('rect'), false);
+lin('Round Dot on a plain box (no text)', 'supported', '§20.1.10.49 sysDot', ln('<a:prstDash val="sysDot"/>'), (e) => a(kid(lnOf(e), 'a:prstDash'), 'val') === 'sysDot', 'pptx-read.ts plain box (dotted); pptx-write.ts shapeXml', prst('rect'), false);
+lin('Outline width 3 pt on a plain box (no text)', 'supported', '§20.1.2.2.24 ln@w', ln('', 3), (e) => a(lnOf(e), 'w') === '38100', 'pptx-read.ts plain box (Shape.lineWidth); pptx-write.ts shapeXml', prst('rect'), false);
 lin('Custom dash (custDash)', 'loss', '§20.1.8.21 custDash', ln('<a:custDash><a:ds d="300000" sp="100000"/><a:ds d="100000" sp="100000"/></a:custDash>'), (e) => !!kid(lnOf(e), 'a:custDash'), 'not read');
 lin('Cap type Round', 'loss', '§20.1.2.2.24 ln@cap rnd; Line ▸ Cap type', ln('<a:prstDash val="dash"/>', 4, ' cap="rnd"'), (e) => a(lnOf(e), 'cap') === 'rnd', 'not read');
 lin('Cap type Square', 'loss', '§20.1.10.31 ST_LineCap sq', ln('<a:prstDash val="dash"/>', 4, ' cap="sq"'), (e) => a(lnOf(e), 'cap') === 'sq', 'not read');
