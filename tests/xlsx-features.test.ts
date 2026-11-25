@@ -344,3 +344,90 @@ describe('sheet views and settings (X20)', () => {
     expect(again).toContain('<pane ySplit="2" topLeftCell="A3" activePane="bottomLeft" state="frozen"/><selection pane="bottomLeft" activeCell="A3" sqref="A3"/>');
   });
 });
+
+describe('a sort by color (F-X-010)', () => {
+  // ECMA-376 Part 1, §18.3.1.92 sortState, §18.3.1.91 sortCondition (sortBy="cellColor" names a
+  // dxf), §18.8.17 dxf. The writer makes its own list of dxfs: a sort kept with the file's number
+  // pointed at a format that wasn't there, and Excel refused the whole workbook.
+  const GREEN = '<fill><patternFill patternType="solid"><bgColor rgb="FF8AB17D"/></patternFill></fill>';
+  const ORANGE = '<fill><patternFill patternType="solid"><bgColor rgb="FFF2A541"/></patternFill></fill>';
+  const styles = '<fonts count="1"><font><sz val="11"/><name val="Calibri"/></font></fonts><fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders><cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/></cellXfs>' +
+    // 0 and 1 unused here, 2 the conditional format's bold, 3 the sheet's sort, 4 the table's sort
+    `<dxfs count="5"><dxf><font><i/></font></dxf><dxf><font><u/></font></dxf><dxf><font><b/></font></dxf><dxf>${GREEN}</dxf><dxf>${ORANGE}</dxf></dxfs>`;
+  const rows = (n: number, col = 'A') => Array.from({ length: n }, (_, i) => `<row r="${i + 1}"><c r="${col}${i + 1}"><v>${i + 1}</v></c><c r="${String.fromCharCode(col.charCodeAt(0) + 1)}${i + 1}"><v>${10 - i}</v></c></row>`).join('');
+  const file = () => excelBook([
+    ['Sorted', `<sheetData>${rows(4)}</sheetData><sortState ref="A1:B4"><sortCondition sortBy="cellColor" ref="B1:B4" dxfId="3"/></sortState>` +
+      '<conditionalFormatting sqref="A1:A4"><cfRule type="cellIs" dxfId="2" priority="1" operator="greaterThan"><formula>2</formula></cfRule></conditionalFormatting>'],
+    ['Table', `<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>No</t></is></c><c r="B1" t="inlineStr"><is><t>Value</t></is></c></row>${rows(4).replace(/r="(\d+)"/g, (_, r) => `r="${Number(r) + 1}"`).replace(/r="([AB])(\d+)"/g, (_, c, r) => `r="${c}${Number(r) + 1}"`)}</sheetData>`],
+  ], {
+    parts: [
+      { path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` },
+      { path: 'xl/tables/table1.xml', from: 'xl/worksheets/sheet2.xml', rel: `${R}/table`, target: '../tables/table1.xml', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+        xml: `<table xmlns="${MAIN}" id="1" name="Table1" displayName="Table1" ref="A1:B5" totalsRowShown="0"><autoFilter ref="A1:B5"/>` +
+          '<sortState ref="A2:B5"><sortCondition sortBy="cellColor" ref="B2:B5" dxfId="4"/></sortState>' +
+          '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>' },
+    ],
+  });
+  const dxfsOf = (saved: Uint8Array) => /<dxfs count="(\d+)">(.*?)<\/dxfs>/.exec(part(saved, 'xl/styles.xml'))!;
+  const sortDxf = (xmlText: string, dxfs: RegExpExecArray) => {
+    const id = Number(/<sortCondition [^>]*dxfId="(\d+)"/.exec(xmlText)![1]);
+    const list = dxfs[2].match(/<dxf>.*?<\/dxf>/g)!;
+    expect(list.length).toBe(Number(dxfs[1]));
+    return list[id];
+  };
+
+  it('points the sheet\'s and a table\'s sort at the formats they had, written in the styles part', async () => {
+    let { book } = await readXlsx(file());
+    for (let i = 0; i < 2; i++) {
+      const saved = await writeXlsx(book, pictures);
+      const dxfs = dxfsOf(saved);
+      expect(sortDxf(part(saved, 'xl/worksheets/sheet1.xml'), dxfs)).toBe(`<dxf>${GREEN}</dxf>`);
+      const table = Object.keys(unzipSync(saved)).find((n) => /^xl\/tables\/table\d+\.xml$/.test(n))!;
+      expect(sortDxf(part(saved, table), dxfs)).toBe(`<dxf>${ORANGE}</dxf>`);
+      // the conditional format keeps its own bold look
+      const cf = Number(/<cfRule [^>]*dxfId="(\d+)"/.exec(part(saved, 'xl/worksheets/sheet1.xml'))![1]);
+      expect(dxfs[2].match(/<dxf>.*?<\/dxf>/g)![cf]).toContain('<b/>');
+      // and the next save, from this one, says the same
+      ({ book } = await readXlsx(saved));
+    }
+  });
+
+  it('leaves out a sort that names a format the file doesn\'t have, rather than point at another', async () => {
+    const bytes = excelBook([['Sorted', `<sheetData>${rows(4)}</sheetData><sortState ref="A1:B4"><sortCondition sortBy="cellColor" ref="B1:B4" dxfId="9"/></sortState>`]],
+      { parts: [{ path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` }] });
+    const { book } = await readXlsx(bytes);
+    expect(part(await writeXlsx(book, pictures), 'xl/worksheets/sheet1.xml')).not.toContain('<sortState');
+  });
+
+  it('keeps a sort by font color, and two conditions naming one format, pointing at that format', async () => {
+    // §18.3.1.91 sortCondition@sortBy fontColor: its dxf's font color is the one sorted on
+    const bytes = excelBook([['Sorted', `<sheetData>${rows(4)}</sheetData><sortState ref="A1:B4">` +
+      '<sortCondition sortBy="fontColor" ref="A1:A4" dxfId="3"/><sortCondition sortBy="cellColor" ref="B1:B4" dxfId="3"/></sortState>']],
+    { parts: [{ path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` }] });
+    const saved = await writeXlsx((await readXlsx(bytes)).book, pictures);
+    const sheet = part(saved, 'xl/worksheets/sheet1.xml');
+    const ids = [...sheet.matchAll(/<sortCondition [^>]*dxfId="(\d+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    expect(sheet).toContain('sortBy="fontColor"');
+    expect(sortDxf(sheet, dxfsOf(saved))).toBe(`<dxf>${GREEN}</dxf>`);
+  });
+
+  it('leaves out a table\'s sort that names a format the file doesn\'t have', async () => {
+    const bytes = excelBook([['Table', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>No</t></is></c><c r="B1" t="inlineStr"><is><t>Value</t></is></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>2</v></c></row></sheetData>']], {
+      parts: [
+        { path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` },
+        { path: 'xl/tables/table1.xml', from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: '../tables/table1.xml', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+          xml: `<table xmlns="${MAIN}" id="1" name="Table1" displayName="Table1" ref="A1:B2" totalsRowShown="0"><autoFilter ref="A1:B2"/>` +
+            '<sortState ref="A2:B2"><sortCondition sortBy="cellColor" ref="B2:B2" dxfId="7"/></sortState>' +
+            '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>' },
+      ],
+    });
+    const saved = await writeXlsx((await readXlsx(bytes)).book, pictures);
+    const table = Object.keys(unzipSync(saved)).find((n) => /^xl\/tables\/table\d+\.xml$/.test(n))!;
+    expect(part(saved, table)).toContain('<autoFilter');
+    expect(part(saved, table)).not.toContain('<sortState');
+  });
+});

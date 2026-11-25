@@ -117,8 +117,8 @@ hf.push([]);
 // Section 5: even page, page borders, vertical center, line numbers
 const s5 = sec('Section break (even page)', 'supported', '§17.6.22 type evenPage', (v) => val(sectOf(v, s5), 'w:type') === 'evenPage');
 const pgBorder = sec('Page border box, double, 3 pt', 'supported', '§17.6.10 pgBorders; Design ▸ Page Borders', (v) => at(kid(kid(sectOf(v, s5), 'w:pgBorders'), 'w:top'), 'w:val') === 'double');
-const pgBorderMixed = sec('Page border with different sides', 'loss', '§17.6.10 pgBorders (each side its own)', (v) => at(kid(kid(sectOf(v, s5), 'w:pgBorders'), 'w:left'), 'w:val') === 'dotted', 'docx-read.ts:3566 (one style from the first side)');
-const pgBorderArt = sec('Page border offset from page edge', 'loss', '§17.6.10 pgBorders@offsetFrom', (v) => at(kid(sectOf(v, s5), 'w:pgBorders'), 'w:offsetFrom') === 'page', 'docx-read.ts:3566');
+const pgBorderMixed = sec('Page border with different sides', 'loss', '§17.6.10 pgBorders (each side its own)', (v) => at(kid(kid(sectOf(v, s5), 'w:pgBorders'), 'w:left'), 'w:val') === 'dotted', 'docx-read.ts pageBorderOf (one style from the first side)');
+const pgBorderArt = sec('Page border offset from page edge', 'loss', '§17.6.10 pgBorders@offsetFrom', (v) => at(kid(sectOf(v, s5), 'w:pgBorders'), 'w:offsetFrom') === 'page', 'docx-read.ts pageBorderOf');
 const vCenter = sec('Vertical alignment center', 'loss', '§17.6.23 vAlign; Page Setup ▸ Layout ▸ Vertical alignment', (v) => val(sectOf(v, s5), 'w:vAlign') === 'center', 'section reader (vAlign not read)');
 const lineNums = sec('Line numbers, continuous, every 5', 'supported', '§17.6.8 lnNumType; Layout ▸ Line Numbers', (v) => { const l = kid(sectOf(v, s5), 'w:lnNumType'); return at(l, 'w:countBy') === '5' && at(l, 'w:restart') === 'continuous'; });
 sections.push({ first: s5, text: [s5, pgBorder, pgBorderMixed, pgBorderArt, vCenter, lineNums].join(', '), sect: () => '<w:type w:val="evenPage"/><w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/>'

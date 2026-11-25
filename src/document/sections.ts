@@ -9,7 +9,7 @@
 import type { ParaStyle } from '../model';
 import * as rt from '../richtext';
 import { fitParas, paraCount } from '../text/paragraphs';
-import { noteLabel, type BreakKind, type DocText, type HeaderFooter, type LineNumbers, type PageNumFormat, type PageSetup, type SectionBreak } from './document';
+import { noteLabel, type BreakKind, type DocText, type HeaderFooter, type LineNumbers, type PageBorder, type PageNumFormat, type PageSetup, type SectionBreak } from './document';
 
 /** A section as laid out: its paragraphs and its settings, with those it takes from the section before filled in. */
 export interface Section {
@@ -23,6 +23,12 @@ export interface Section {
   hf: HeaderFooter;
   /** Its header and footer are the section before's (Word's Link to Previous). */
   linked: boolean;
+  /** A linked section's own Different First Page (see SectionBreak.titlePg). */
+  titlePg?: boolean;
+  /** Its own page border, or null for none, where it isn't the document's (see SectionBreak.pageBorder). */
+  ownBorder?: PageBorder | null;
+  /** The border round its pages: its own, or the document's. */
+  border: PageBorder | null;
   /** Its first page's number when numbering starts again here (always for the first section). */
   restart?: number;
   format: PageNumFormat;
@@ -33,23 +39,54 @@ export interface Section {
 export const BREAK_NAMES: Record<BreakKind, string> = { nextPage: 'Next Page', continuous: 'Continuous', evenPage: 'Even Page', oddPage: 'Odd Page' };
 
 /** The document's sections, in order (always at least one). */
-export function sectionsOf(t: Pick<DocText, 'runs' | 'paras' | 'page' | 'hf'> & Partial<Pick<DocText, 'numFormat' | 'lineNumbers'>>): Section[] {
+export function sectionsOf(t: Pick<DocText, 'runs' | 'paras' | 'page' | 'hf'> & Partial<Pick<DocText, 'numFormat' | 'lineNumbers' | 'pageBorder'>>): Section[] {
   const n = paraCount(rt.plainText(t.runs));
   const out: Section[] = [{
     index: 0, first: 0, end: n, kind: 'nextPage', page: t.page, hf: t.hf, linked: false,
-    restart: t.hf.start ?? 1, format: t.numFormat ?? 'decimal', lines: t.lineNumbers,
+    restart: t.hf.start ?? 1, format: t.numFormat ?? 'decimal', lines: t.lineNumbers, border: t.pageBorder ?? null,
   }];
+  // the header and footer linked sections show: the last section's with its own (Word links each to the one before, through to it)
+  let owner = t.hf;
   for (let p = 1; p < n; p++) {
     const s = t.paras[p]?.section;
     if (!s) continue;
     const prev = out[out.length - 1];
+    if (s.hf) owner = s.hf;
     prev.end = p;
+    const titlePg = !s.hf ? s.titlePg : undefined;
     out.push({
-      index: out.length, first: p, end: n, kind: s.kind, page: s.page ?? prev.page, hf: s.hf ?? prev.hf, linked: !s.hf,
+      index: out.length, first: p, end: n, kind: s.kind, page: s.page ?? prev.page, hf: s.hf ?? linkedHf(owner, titlePg), linked: !s.hf,
       restart: s.restart, format: s.format ?? 'decimal', lines: s.lines,
+      ...(titlePg !== undefined ? { titlePg } : {}),
+      ...(s.pageBorder !== undefined ? { ownBorder: s.pageBorder } : {}),
+      border: s.pageBorder !== undefined ? s.pageBorder : t.pageBorder ?? null,
     });
   }
   return out;
+}
+
+/** Whether a header and footer give the section's first page its own (Word's titlePg): Different First Page, or a first page without its number. */
+export function hasTitlePg(hf: HeaderFooter): boolean {
+  return !!hf.firstPage || (hf.numbers !== 'none' && !hf.onFirst);
+}
+
+/**
+ * The header and footer of a section linked to the ones before, `owner` the header and footer of
+ * the last of them with its own, with its own Different First Page (`titlePg`, left out: the
+ * owner's). Without it, its first page shows the usual header and footer, page number and all;
+ * with it, the owner's first page header and footer (which Word keeps even where the owner has no
+ * first page of its own), or none where there are none.
+ */
+export function linkedHf(owner: HeaderFooter, titlePg?: boolean): HeaderFooter {
+  if (titlePg === undefined) return owner;
+  if (!titlePg) {
+    if (!hasTitlePg(owner)) return owner;
+    const { firstPage: _f, ...rest } = owner;
+    return { ...rest, onFirst: true };
+  }
+  // (an owner whose first page only leaves off its number has no first page header of its own: the linked section's first page shows the owner's kept one, or none)
+  if (owner.firstPage) return owner;
+  return { ...owner, firstPage: true, first: owner.first ?? { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
 }
 
 /** The section a paragraph is in. */
@@ -67,12 +104,14 @@ export function sectionOfParas(secs: Section[]): number[] {
 }
 
 /** What can be changed about a section (`restart: undefined` makes its numbers carry on from the section before). */
-export type SectionPatch = Partial<Pick<Section, 'kind' | 'page' | 'hf' | 'linked' | 'restart' | 'format' | 'lines'>>;
+export type SectionPatch = Partial<Pick<Section, 'kind' | 'page' | 'hf' | 'linked' | 'restart' | 'format' | 'lines' | 'titlePg' | 'ownBorder'>>;
 
 /** The section break that gives a section (after the first) these settings. */
 function breakOf(s: Section): SectionBreak {
   const out: SectionBreak = { kind: s.kind, page: s.page };
   if (!s.linked) out.hf = s.hf;
+  else if (s.titlePg !== undefined) out.titlePg = s.titlePg;
+  if (s.ownBorder !== undefined) out.pageBorder = s.ownBorder;
   if (s.restart !== undefined) out.restart = s.restart;
   if (s.format !== 'decimal') out.format = s.format;
   if (s.lines) out.lines = s.lines;
@@ -89,6 +128,8 @@ export function changeSection(t: DocText, index: number, patch: SectionPatch): D
   if (patch.hf && !('linked' in patch)) next.linked = false;
   if (index === 0) {
     const out: DocText = { ...t, page: next.page, hf: next.restart !== undefined ? { ...next.hf, start: next.restart } : next.hf };
+    // (the first section's border is the document's)
+    if ('ownBorder' in patch) { if (patch.ownBorder) out.pageBorder = patch.ownBorder; else delete out.pageBorder; }
     if (next.format !== 'decimal') out.numFormat = next.format; else delete out.numFormat;
     if (next.lines) out.lineNumbers = next.lines; else delete out.lineNumbers;
     return out;
@@ -111,7 +152,8 @@ export function changeAllSections(t: DocText, patch: (s: Section) => SectionPatc
  * the one before, its numbers carrying on.
  */
 export function newBreak(s: Section, kind: BreakKind): SectionBreak {
-  const out: SectionBreak = { kind, page: s.page };
+  const out: SectionBreak = { kind, page: s.page, titlePg: hasTitlePg(s.hf) };
+  if (s.ownBorder !== undefined) out.pageBorder = s.ownBorder;
   if (s.format !== 'decimal') out.format = s.format;
   if (s.lines) out.lines = s.lines;
   return out;

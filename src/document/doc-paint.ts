@@ -105,7 +105,7 @@ export function drawPageLook(ctx: CanvasRenderingContext2D, t: DocText, p: PageB
     ctx.fillRect(p.x, p.top, p.w, p.h);
   }
   if (t.watermark?.text) drawWatermark(ctx, t.watermark, p, t.pageColor ?? '#ffffff');
-  if (t.pageBorder) drawPageBorder(ctx, t.pageBorder, p);
+  if (p.border) drawPageBorder(ctx, p.border, p);
 }
 
 function drawWatermark(ctx: CanvasRenderingContext2D, w: Watermark, p: PageBox, paper: string): void {
@@ -155,6 +155,11 @@ export function turnAbout(ctx: CanvasRenderingContext2D, o: { x: number; y: numb
   ctx.translate(-cx, -cy);
 }
 
+/** The smallest box holding these points. */
+const boxOf = (ps: { x: number; y: number }[]) => ({
+  x1: Math.min(...ps.map((p) => p.x)), y1: Math.min(...ps.map((p) => p.y)), x2: Math.max(...ps.map((p) => p.x)), y2: Math.max(...ps.map((p) => p.y)),
+});
+
 /** A figure's drawn items turned and flipped about its middle, as `turnAbout` turns a canvas. */
 export function turnItems(items: Item[], o: { x: number; y: number; w: number; h: number }, turn: { rot: number; flipH: boolean; flipV: boolean }): Item[] {
   const cx = o.x + o.w / 2, cy = o.y + o.h / 2;
@@ -165,7 +170,10 @@ export function turnItems(items: Item[], o: { x: number; y: number; w: number; h
     return { x: cx + dx * cos - dy * sin, y: cy + dx * sin + dy * cos };
   };
   const mirrored = turn.flipH !== turn.flipV;
-  return items.map((it): Item => {
+  return items.map((one): Item => {
+    // a clip rectangle turned with it: the box round its turned corners (the same rectangle when turned a quarter at a time)
+    const c = one.clip;
+    const it = c ? { ...one, clip: boxOf([at(c.x1, c.y1), at(c.x2, c.y1), at(c.x2, c.y2), at(c.x1, c.y2)]) } : one;
     if (it.kind === 'path') {
       return { ...it, segs: it.segs.map((s) => {
         if (s.k === 'Z') return s;
@@ -407,7 +415,9 @@ export function placeItems(pic: Picture, at: { x: number; y: number; w: number; 
   const k = Math.min(kx, ky);
   const X = (x: number) => at.x + (x - b.x1) * kx;
   const Y = (y: number) => at.y + (y - b.y1) * ky;
-  return pic.items.map((it): Item => {
+  return pic.items.map((one): Item => {
+    const c = one.clip;
+    const it = c ? { ...one, clip: { x1: X(c.x1), y1: Y(c.y1), x2: X(c.x2), y2: Y(c.y2) } } : one;
     if (it.kind === 'text') return { ...it, x: X(it.x), y: Y(it.y), size: it.size * k, widths: it.widths.map((w) => w * k) };
     if (it.kind === 'image') return { ...it, x: X(it.x), y: Y(it.y), w: it.w * kx, h: it.h * ky };
     return {

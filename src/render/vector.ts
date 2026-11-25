@@ -14,9 +14,16 @@ export type Seg =
 
 export interface StrokeStyle { color: string; width: number; cap: CanvasLineCap; join: CanvasLineJoin }
 
+/**
+ * A rectangle that cuts off what is drawn outside it (what a canvas's clip() to a rectangle does,
+ * as a table row of exact height cuts off its text), in the recorded coordinates.
+ */
+export interface ClipBox { x1: number; y1: number; x2: number; y2: number }
+
 /** A picture: its image data, where it shows (x, y, w, h), and the part of it cut off on each side. */
 export interface ImageItem {
   kind: 'image';
+  clip?: ClipBox;
   src: string;
   x: number; y: number; w: number; h: number;
   crop?: { l: number; t: number; r: number; b: number };
@@ -31,8 +38,8 @@ export interface ImageItem {
 }
 
 export type Item =
-  | { kind: 'path'; segs: Seg[]; fill?: string; stroke?: StrokeStyle }
-  | { kind: 'text'; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
+  | { kind: 'path'; segs: Seg[]; fill?: string; stroke?: StrokeStyle; clip?: ClipBox }
+  | { kind: 'text'; clip?: ClipBox; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
   | ImageItem;
 
 /** A path that remembers its segments (stands in for the browser's Path2D). */
@@ -157,6 +164,8 @@ interface State {
   dash: number[];
   /** Turned and moved (translate and rotate only): [a, b, c, d, e, f] as a canvas has it. */
   m: number[] | null;
+  /** What is drawn is cut off outside this rectangle (clip()). */
+  clip?: ClipBox;
 }
 
 /**
@@ -221,6 +230,25 @@ export class VectorContext {
     });
   }
 
+  /**
+   * Cuts off what is drawn after it outside the current path, until restore(), as a canvas does.
+   * Only a rectangle (a table row of exact height): every vector format can say that, and the
+   * renderer draws other shapes cut another way; any other path throws.
+   */
+  clip(): void {
+    const box = rectOf(this.moved(this.path.segs));
+    if (!box) throw new Error('A vector picture clips only to a rectangle');
+    const c = this.st.clip;
+    if (!c) { this.st.clip = box; return; }
+    const x1 = Math.max(c.x1, box.x1), y1 = Math.max(c.y1, box.y1);
+    this.st.clip = { x1, y1, x2: Math.max(x1, Math.min(c.x2, box.x2)), y2: Math.max(y1, Math.min(c.y2, box.y2)) };
+  }
+
+  /** An item drawn now, cut off by the clip rectangle there is. */
+  private put(it: Item): void {
+    this.items.push(this.st.clip ? { ...it, clip: this.st.clip } : it);
+  }
+
   beginPath(): void { this.path = new VecPath(); }
   moveTo(x: number, y: number): void { this.path.moveTo(x, y); }
   lineTo(x: number, y: number): void { this.path.lineTo(x, y); }
@@ -235,20 +263,20 @@ export class VectorContext {
 
   fill(p?: VecPath | Path2D): void {
     const segs = ((p as VecPath | undefined) ?? this.path).segs;
-    if (segs.length) this.items.push({ kind: 'path', segs: this.moved(segs), fill: this.st.fillStyle });
+    if (segs.length) this.put({ kind: 'path', segs: this.moved(segs), fill: this.st.fillStyle });
   }
 
   stroke(p?: VecPath | Path2D): void {
     const segs = ((p as VecPath | undefined) ?? this.path).segs;
     if (!segs.length) return;
     const stroke: StrokeStyle = { color: this.st.strokeStyle, width: this.st.lineWidth, cap: this.st.lineCap, join: this.st.lineJoin };
-    this.items.push({ kind: 'path', segs: this.moved(this.st.dash.length ? dashed(segs, this.st.dash) : segs), stroke });
+    this.put({ kind: 'path', segs: this.moved(this.st.dash.length ? dashed(segs, this.st.dash) : segs), stroke });
   }
 
   fillRect(x: number, y: number, w: number, h: number): void {
     const p = new VecPath();
     p.rect(x, y, w, h);
-    this.items.push({ kind: 'path', segs: this.moved(p.segs), fill: this.st.fillStyle });
+    this.put({ kind: 'path', segs: this.moved(p.segs), fill: this.st.fillStyle });
   }
 
   strokeRect(x: number, y: number, w: number, h: number): void {
@@ -267,7 +295,7 @@ export class VectorContext {
     const at = this.pt(x, y);
     // (a turn clockwise on the page is an angle anticlockwise taken away)
     const turned = m ? -Math.atan2(m[1], m[0]) / (Math.PI / 180) : 0;
-    this.items.push({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}) });
+    this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}) });
   }
 
   /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
@@ -293,8 +321,33 @@ export class VectorContext {
     const m = this.st.m;
     const mid = this.pt((s.x1 + s.x2) / 2, (s.y1 + s.y2) / 2);
     const rot = m ? Math.atan2(m[1], m[0]) / (Math.PI / 180) : 0;
-    this.items.push({ kind: 'image', src: s.src, x: mid.x - w / 2, y: mid.y - h / 2, w, h, crop: s.crop, px: s.px, ...(radius > 0 ? { radius } : {}), ...(Math.abs(rot) > 1e-9 ? { rot } : {}) });
+    this.put({ kind: 'image', src: s.src, x: mid.x - w / 2, y: mid.y - h / 2, w, h, crop: s.crop, px: s.px, ...(radius > 0 ? { radius } : {}), ...(Math.abs(rot) > 1e-9 ? { rot } : {}) });
   }
+}
+
+/** The rectangle a path traces (one shape of straight lines along the axes), or null when it traces anything else. */
+export function rectOf(segs: Seg[]): ClipBox | null {
+  const pts: { x: number; y: number }[] = [];
+  for (const [i, s] of segs.entries()) {
+    if (s.k === 'Z') continue;
+    if (s.k === 'C' || (s.k === 'M' && i > 0 && segs.slice(0, i).some((g) => g.k !== 'M'))) return null;
+    pts.push({ x: s.x, y: s.y });
+  }
+  if (pts.length < 2) return null;
+  const near = (a: number, b: number) => Math.abs(a - b) < 1e-6;
+  const xs: number[] = [], ys: number[] = [];
+  for (const p of pts) {
+    if (!xs.some((x) => near(x, p.x))) xs.push(p.x);
+    if (!ys.some((y) => near(y, p.y))) ys.push(p.y);
+  }
+  if (xs.length > 2 || ys.length > 2) return null;
+  // each step goes along an axis, back to the start too (a diagonal across the box isn't the box),
+  // and it goes round every corner (two sides and a diagonal home make a triangle)
+  const step = (a: { x: number; y: number }, b: { x: number; y: number }) => near(a.x, b.x) || near(a.y, b.y);
+  for (let i = 1; i < pts.length; i++) if (!step(pts[i - 1], pts[i])) return null;
+  if (!step(pts[pts.length - 1], pts[0])) return null;
+  if (xs.length === 2 && ys.length === 2 && !xs.every((x) => ys.every((y) => pts.some((p) => near(p.x, x) && near(p.y, y))))) return null;
+  return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
 }
 
 /** "italic bold 7.5px Arial, 'Liberation Sans', sans-serif" → its parts. */
@@ -392,8 +445,14 @@ export function dashed(segs: Seg[], pattern: number[]): Seg[] {
 /** Smallest box holding everything drawn (text boxes estimated from their font size). */
 export function itemBounds(items: Item[]): { x1: number; y1: number; x2: number; y2: number } | null {
   let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
-  const grow = (x: number, y: number) => { if (x < x1) x1 = x; if (y < y1) y1 = y; if (x > x2) x2 = x; if (y > y2) y2 = y; };
+  let cut: ClipBox | undefined;
+  // (a point of something cut off counts where the clip rectangle ends)
+  const grow = (px: number, py: number) => {
+    const x = cut ? Math.min(cut.x2, Math.max(cut.x1, px)) : px, y = cut ? Math.min(cut.y2, Math.max(cut.y1, py)) : py;
+    if (x < x1) x1 = x; if (y < y1) y1 = y; if (x > x2) x2 = x; if (y > y2) y2 = y;
+  };
   for (const it of items) {
+    cut = it.clip;
     if (it.kind === 'text') {
       const w = it.widths.reduce((a, b) => a + b, 0);
       if (it.angle) {

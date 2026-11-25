@@ -15,13 +15,11 @@ const TAGS = 'the second save differs only in Chemweave\'s own tag parts (ppt/ta
 export const PPTX_FINDINGS: Record<string, Finding> = {
   // masters, layouts, presentation
   'pptx-masters.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
-  'P-MST-13': { finding: 'F-P-002', note: 'a title placeholder at x 100, y 300, 500 × 80 pt (bodyPr anchor b) is saved at x 107.2, y 355.4, 485.6 × 80 pt: the box is written where its text starts (inside the default 7.2/3.6 pt insets and moved down by the bottom anchor) with zero insets and anchor t' },
   'P-MST-48': { finding: 'F-P-003', note: 'slide size A4 (sldSz cx 10692000, cy 7560000) is saved as cx 10693400, cy 7556500 (rounded to whole points, 842 × 595 pt); type="A4" is kept' },
   // text
   'pptx-text.pptx:second-save': { scope: /^ppt\/(tags\/tag\d+|slides\/slide\d+)\.xml:/, finding: 'F-P-004', note: 'the second save moves the text box with vert="vert" (P-TXT-17) from off 304800,292100 ext 2819400×1003300 to off 305562,2836418 ext 2910840×1186180 (200 pt down, larger); another box moves 6 EMU (y 2451100 → 2451094); slide number fields get new ids ({…000000000001} → {…000000000003}); and the tag parts differ as in F-P-001' },
   // shapes
   'pptx-shapes.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-005', note: TAGS },
-  'P-GEO-36': { finding: 'F-P-006', note: 'a flowChartConnector shape (a circle) is saved as a straight line: <p:cxnSp> with prstGeom "line", its text split off into a separate text box ("TextBox 31")' },
   'P-GEO-68': { finding: 'F-P-007', note: 'a roundRect with <a:gd name="adj" fmla="val 30000"/> is saved with an empty <a:avLst/>: the corner size goes back to the default 16667' },
   'P-CXN-04': { finding: 'F-P-008', note: 'every line or connector with an arrowhead is saved as an arrow named "Straight Arrow Connector N": its cNvPr name (with the item id) is lost, so the item cannot be found again (its tailEnd triangle is written)' },
   'P-CXN-05': { finding: 'F-P-008', note: 'arrow connector saved as "Straight Arrow Connector N" (name lost; see F-P-008)' },

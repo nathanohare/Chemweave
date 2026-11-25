@@ -6,7 +6,7 @@
 // Written from the published PDF 1.7 specification (ISO 32000-1).
 
 import { zlibSync } from 'fflate';
-import { Item, Seg, parseColor } from '../render/vector';
+import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
 
 export interface PdfPage {
@@ -389,12 +389,15 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
       const k = parseColor(c);
       return { v: `${num(k.r / 255)} ${num(k.g / 255)} ${num(k.b / 255)}`, a: k.a };
     };
+    // what an item is cut off by (a table row of exact height), inside its own q … Q
+    const clipOps = (c: ClipBox | undefined) => { if (c) ops.push(`${num(c.x1)} ${num(c.y1)} ${num(c.x2 - c.x1)} ${num(c.y2 - c.y1)} re W n`); };
     for (const it of page.items) {
       if (it.kind === 'path') {
         if (!it.segs.some((s) => s.k !== 'M')) continue;
         const paint = it.fill ? rgb(it.fill) : rgb(it.stroke!.color);
         if (paint.a <= 0) continue;
         ops.push('q');
+        clipOps(it.clip);
         if (paint.a < 1) {
           const g = it.fill ? alphaRef(paint.a, 1) : alphaRef(1, paint.a);
           usedStates.add(g);
@@ -409,7 +412,9 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
       } else if (it.kind === 'text') {
         const paint = rgb(it.color);
         if (paint.a <= 0 || !it.text) continue;
-        ops.push('q', `${paint.v} rg`);
+        ops.push('q');
+        clipOps(it.clip);
+        ops.push(`${paint.v} rg`);
         // turned text (degrees anticlockwise): along the line, and up from it, on the page
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
         const kept = await faceFonts(it.family, it.bold, it.italic);
@@ -429,6 +434,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         const c = it.crop ?? { l: 0, t: 0, r: 0, b: 0 };
         const W = it.w / Math.max(0.01, 1 - c.l - c.r), H = it.h / Math.max(0.01, 1 - c.t - c.b);
         ops.push('q');
+        clipOps(it.clip);
         if (it.rot) {
           // turned about its middle (in the page's points from the top left, as recorded)
           const a = (it.rot * Math.PI) / 180, cx = it.x + it.w / 2, cy = it.y + it.h / 2;
