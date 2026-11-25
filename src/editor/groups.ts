@@ -70,10 +70,11 @@ export function groupSelection(doc: Doc, sel: Selection): number | null {
   let top = 0;
   for (const m of [doc.atoms, doc.captions, doc.arrows, doc.shapes] as Map<number, { grp?: number }>[]) for (const e of m.values()) if (e.grp !== undefined && e.grp > top) top = e.grp;
   const grp = top + 1;
-  for (const id of atoms) doc.updateAtom(id, { grp });
-  for (const id of all.captions) doc.updateCaption(id, { grp });
-  for (const id of all.arrows) doc.updateArrow(id, { grp });
-  for (const id of all.shapes) doc.updateShape(id, { grp });
+  // (a new group: none of the names of the groups it took in)
+  for (const id of atoms) doc.updateAtom(id, { grp, grpName: undefined });
+  for (const id of all.captions) doc.updateCaption(id, { grp, grpName: undefined });
+  for (const id of all.arrows) doc.updateArrow(id, { grp, grpName: undefined });
+  for (const id of all.shapes) doc.updateShape(id, { grp, grpName: undefined });
   return grp;
 }
 
@@ -83,10 +84,10 @@ export function ungroupSelection(doc: Doc, sel: Selection): boolean {
   if (!groups.size) return false;
   for (const g of groups) {
     const m = groupMembers(doc, g);
-    for (const id of m.atoms) doc.updateAtom(id, { grp: undefined });
-    for (const id of m.captions) doc.updateCaption(id, { grp: undefined });
-    for (const id of m.arrows) doc.updateArrow(id, { grp: undefined });
-    for (const id of m.shapes) doc.updateShape(id, { grp: undefined });
+    for (const id of m.atoms) doc.updateAtom(id, { grp: undefined, grpName: undefined });
+    for (const id of m.captions) doc.updateCaption(id, { grp: undefined, grpName: undefined });
+    for (const id of m.arrows) doc.updateArrow(id, { grp: undefined, grpName: undefined });
+    for (const id of m.shapes) doc.updateShape(id, { grp: undefined, grpName: undefined });
   }
   return true;
 }

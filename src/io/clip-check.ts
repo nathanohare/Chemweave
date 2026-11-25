@@ -126,7 +126,7 @@ const bevel = { kind: '', w: 0, h: 0 } satisfies Record<keyof ShapeBevel, Spec>;
 const reflection = { size: 0, opacity: 0, dist: 0, blur: 0 } satisfies Record<keyof ShapeReflection, Spec>;
 const picFill = { src: '', px: { w: 0, h: 0 }, transparency: 0 } satisfies Record<keyof PicFill, Spec>;
 const math = { tex: '', size: length, color: '', font: '' } satisfies Record<keyof ShapeMath, Spec>;
-const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids, stack: 0 };
+const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids, grpName: '', stack: 0 };
 
 const atom = {
   ...common, x: 0, y: 0, z: (v: unknown) => num(v) && (v as number) >= 0 && (v as number) < 200, label: orNull(str), charge: 0, isotope: 0,

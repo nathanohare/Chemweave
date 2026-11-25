@@ -1201,7 +1201,7 @@ class Writer {
       let e = k + 1;
       while (g !== undefined && e < out.length - first && grpOf[e] === g) e++;
       const box = g !== undefined && e - k > 1 && !animated.has(g) ? groupBox(doc, g) : null;
-      if (box) wrapped.push(groupXml(id++, `Group ${id - 2}`, box, out.slice(first + k, first + e).join('')));
+      if (box) wrapped.push(groupXml(id++, groupName(doc, g!) ?? `Group ${id - 2}`, box, out.slice(first + k, first + e).join('')));
       else wrapped.push(...out.slice(first + k, first + e));
       k = e;
     }
@@ -2058,6 +2058,19 @@ export function geoSpPr(s: Shape, lw: number, clr: ColourXml = srgbXml): { box: 
 }
 
 /** A group of shapes, its box the same inside as out (so the shapes keep their places). */
+/** A group's name, where every member has the same one. */
+function groupName(doc: Doc, g: number): string | undefined {
+  let name: string | undefined, seen = false;
+  for (const m of [doc.atoms, doc.captions, doc.arrows, doc.shapes] as Map<number, { grp?: number; grpName?: string }>[]) {
+    for (const x of m.values()) {
+      if (x.grp !== g) continue;
+      const n = typeof x.grpName === 'string' ? x.grpName.trim() : '';
+      if (!seen) { name = n; seen = true; } else if (n !== name) return undefined;
+    }
+  }
+  return name || undefined;
+}
+
 export function groupXml(id: number, name: string, box: Rect, kids: string, nvPr = ''): string {
   const off = `<a:off x="${emu(box.x1)}" y="${emu(box.y1)}"/>`, ext = `<a:ext cx="${Math.max(0, emu(box.x2 - box.x1))}" cy="${Math.max(0, emu(box.y2 - box.y1))}"/>`;
   return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${id}" name="${xml(name)}"/><p:cNvGrpSpPr/><p:nvPr>${nvPr}</p:nvPr></p:nvGrpSpPr>` +
