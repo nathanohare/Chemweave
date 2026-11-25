@@ -3611,10 +3611,8 @@ class DocxReader {
     // the style it is based on (read as a style too: see where the styles are made)
     const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) : undefined;
     // its numbering (its own, or from the styles it is based on)
-    let numPr: Element | null = null;
-    for (let w = ws, seen = new Set<string>(); w && !numPr && !seen.has(w.id); w = w.basedOn ? this.wstyles.get(`paragraph:${w.basedOn}`) : undefined) { seen.add(w.id); numPr = kid(w.el, 'pPr', 'numPr'); }
-    const numId = this.a(kid(numPr, 'numId'));
-    const ilvl = Number(this.a(kid(numPr, 'ilvl')) ?? NaN);
+    const numId = ch.p.numId;
+    const ilvl = ch.p.ilvl ?? NaN;
     return {
       id: ours,
       name: dflt?.name ?? ws?.name ?? ours,

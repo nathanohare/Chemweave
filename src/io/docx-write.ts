@@ -1107,6 +1107,8 @@ class DocxWriter {
         const paras = fitParas(o.paras, paraCount(rt.plainText(o.runs)));
         const ps = paras.map((p, i) => {
           const pPr: string[] = [`<w:pStyle w:val="${style}"/>`];
+          // (a note style with numbering: not on the notes, as here)
+          if (this.styleNum(st)) pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
           const align = p.align ?? 'left';
           if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
           // the note's number, and the space after it (or what the note had there in Word)
@@ -2558,6 +2560,9 @@ const unxml = (s: string) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").r
 function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): string {
   return k.xml.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/g, (m) => {
     const id = /<w:numId w:val="([^"]+)"/.exec(m)?.[1];
+    // (Word's "no numbering", which a style says over the one it is based on, and a level alone, on
+    // the list of the one it is based on: as they are)
+    if (id === '0' || id === undefined) return m;
     const to = id === undefined ? undefined : numIds.get(id);
     return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
   });

@@ -15,8 +15,12 @@ const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
 const deps: DocxDeps = { async picture() { return { png: PNG, w: 10, h: 10 }; }, async svgToPng() { return PNG; } };
 
 const STYLES = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
-  `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Numbered"><w:name w:val="Numbered"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:numId w:val="200"/></w:numPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:style>`;
-const NUMBERING = `<w:abstractNum w:abstractNumId="7"><w:nsid w:val="1A2B3C4D"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="200"><w:abstractNumId w:val="7"/></w:num>`;
+  `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Numbered"><w:name w:val="Numbered"/><w:basedOn w:val="Normal"/><w:pPr><w:numPr><w:numId w:val="200"/></w:numPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:style>` +
+  // one based on it that takes its numbering off (an unnumbered heading), not used: kept as the file had it
+  `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Unnumbered"><w:name w:val="Unnumbered"/><w:basedOn w:val="Numbered"/><w:pPr><w:numPr><w:numId w:val="0"/></w:numPr></w:pPr></w:style>` +
+  // one based on it that sets only its level: the list from Numbered, level 2
+  `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Second"><w:name w:val="Second"/><w:basedOn w:val="Numbered"/><w:pPr><w:numPr><w:ilvl w:val="1"/></w:numPr></w:pPr></w:style>`;
+const NUMBERING = `<w:abstractNum w:abstractNumId="7"><w:nsid w:val="1A2B3C4D"/><w:lvl w:ilvl="0"><w:start w:val="1"/><w:numFmt w:val="decimal"/><w:lvlText w:val="%1."/><w:pPr><w:ind w:left="720" w:hanging="360"/></w:pPr></w:lvl><w:lvl w:ilvl="1"><w:start w:val="1"/><w:numFmt w:val="lowerLetter"/><w:lvlText w:val="%2."/><w:pPr><w:ind w:left="1440" w:hanging="360"/></w:pPr></w:lvl></w:abstractNum><w:num w:numId="200"><w:abstractNumId w:val="7"/></w:num>`;
 
 function docx(body: string): Uint8Array {
   return zipSync({
@@ -49,6 +53,8 @@ describe("a paragraph style's numbering", () => {
     const back = (await readDocx(once)).doc as DocText;
     expect(back.paras.slice(0, 2).map((p) => p.list)).toEqual(['number', 'number']);
     const twice = unzipSync(await writeDocx(back, deps));
+    // (a style based on it that sets only its level, not used: kept with its level)
+    expect(styleOf(strFromU8(files['word/styles.xml']), 'Second')).toContain('<w:numPr><w:ilvl w:val="1"/></w:numPr>');
     for (const part of ['word/document.xml', 'word/styles.xml']) expect(strFromU8(twice[part])).toBe(strFromU8(files[part]));
   });
 
@@ -61,6 +67,19 @@ describe("a paragraph style's numbering", () => {
     const back = (await readDocx(once)).doc as DocText;
     expect(back.paras[0].list).toBe('number');
     expect(back.paras[1].list).toBeUndefined();
+  });
+
+  it("keeps a style based on it that takes its numbering off; one that sets its level has the list and level", async () => {
+    const t = (await readDocx(docx(para('one') + '<w:p><w:pPr><w:pStyle w:val="Second"/></w:pPr><w:r><w:t>sub</w:t></w:r></w:p><w:p/>'))).doc as DocText;
+    expect(t.styles.Second?.wnum).toEqual({ num: '200', ilvl: 1 });
+    const files = unzipSync(await writeDocx(t, deps));
+    const sx = strFromU8(files['word/styles.xml']);
+    expect(styleOf(sx, 'Unnumbered')).toContain('<w:numPr><w:numId w:val="0"/></w:numPr>');
+    // (the style's list is the paragraphs' list)
+    const styleId = /<w:numId w:val="(\d+)"/.exec(styleOf(sx, 'Numbered'))?.[1];
+    const paraId = /<w:pStyle w:val="Numbered"\/><w:numPr><w:ilvl w:val="0"\/><w:numId w:val="(\d+)"/.exec(strFromU8(files['word/document.xml']))?.[1];
+    expect(styleId).toBe(paraId);
+    expect(styleOf(sx, 'Second')).toMatch(new RegExp(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${styleId}"/></w:numPr>`));
   });
 
   it("isn't taken by a style made from one of its paragraphs (New Style)", async () => {
