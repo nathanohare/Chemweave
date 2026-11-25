@@ -843,8 +843,9 @@ dialog {
 input, progress, meter { accent-color: var(--accent); }
 dialog::backdrop { background: rgba(0, 0, 0, 0.35); }
 /* a modal window sits below the title strip and inside the part of the program on the screen, so
-   its heading and buttons can be reached; each has its own copy of the title strip (src/ui/modal-guard.ts) */
-dialog:modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0px) var(--dlg-bottom, 0px) var(--dlg-left, 0px); }
+   its heading and buttons can be reached; each has its own copy of the title strip (src/ui/modal-guard.ts,
+   which marks modal windows .is-modal: older Safari engines don't know :modal) */
+dialog.is-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0px) var(--dlg-bottom, 0px) var(--dlg-left, 0px); }
 .modal-title-strip { position: fixed; top: 0; left: 0; right: 0; height: var(--title-h, 32px); margin: 0; padding: 0; z-index: 1; }
 .modal-title-strip .win-controls { position: absolute; top: 0; right: 0; height: 100%; margin: 0; }
 dialog h2 { margin: 0 0 6px; font-size: var(--fs-lg); }

@@ -25,8 +25,8 @@ let offScreen = { top: 0, right: 0, bottom: 0, left: 0 };
 const open: HTMLDialogElement[] = [];
 /** The title strip each modal window was given. */
 const strips = new WeakMap<HTMLDialogElement, HTMLElement>();
-/** A max-height this code set on a window (so it can take it back off). */
-const fitted = new WeakSet<HTMLDialogElement>();
+/** The size limits this code set on a window (so it can take them back off). */
+const fitted = new WeakMap<HTMLDialogElement, { maxHeight?: string; maxWidth?: string }>();
 
 /** The smallest height kept for windows, however little of the program is on the screen. */
 const MIN_ROOM = 160;
@@ -76,52 +76,86 @@ function layout(): void {
   s.setProperty('--dlg-bottom', `${r.bottom}px`);
   s.setProperty('--dlg-left', `${r.left}px`);
   s.setProperty('--title-h', `${titleHeight}px`);
-  // (a window taken off the page while open is no longer modal)
-  for (let i = open.length - 1; i >= 0; i--) if (!open[i].isConnected || !open[i].open) closed(open[i]);
+  // (a window taken off the page, or moved into the Settings window's pages, is no longer modal)
+  for (let i = open.length - 1; i >= 0; i--) if (!stillModal(open[i])) closed(open[i]);
   for (const d of open) fit(d);
 }
 
-/** Keep a modal window's height within its room, so its own buttons stay on the screen. */
-function fit(d: HTMLDialogElement): void {
-  if (fitted.has(d)) { d.style.removeProperty('max-height'); fitted.delete(d); }
-  if (d.style.maxHeight) return;     // (a window that sets its own height keeps it)
-  const r = dialogRoom();
-  const room = (window.innerHeight || 0) - r.top - r.bottom - 2 * EDGE;
-  if (room <= 0) return;
-  const cap = parseFloat(getComputedStyle(d).maxHeight);
-  if (!Number.isFinite(cap) || cap > room) {
-    d.style.maxHeight = `${Math.floor(room)}px`;
-    fitted.add(d);
-  }
+/** Whether a window this code saw opened modal still is. */
+function stillModal(d: HTMLDialogElement): boolean {
+  if (!d.isConnected || !d.open || d.classList.contains('embedded')) return false;
+  return !knowsModal() || d.matches(':modal');
 }
 
-function addStrip(d: HTMLDialogElement): void {
-  if (!makeStrip || strips.has(d)) return;
-  const strip = makeStrip();
-  strip.classList.add('modal-title-strip');
-  d.append(strip);
-  strips.set(d, strip);
+let modalSelector: boolean | null = null;
+/** Whether this browser knows :modal (older Safari engines and jsdom don't: trust showModal there). */
+function knowsModal(): boolean {
+  if (modalSelector === null) {
+    try { modalSelector = typeof CSS !== 'undefined' && typeof CSS.supports === 'function' && CSS.supports('selector(:modal)'); } catch { modalSelector = false; }
+  }
+  return modalSelector;
 }
+
+/** Set (or take back) a size limit this code puts on a window; one the window set itself stays. */
+function limit(d: HTMLDialogElement, prop: 'maxHeight' | 'maxWidth', px: number | null): void {
+  const mine = fitted.get(d) ?? {};
+  if (mine[prop] !== undefined && d.style[prop] === mine[prop]) d.style[prop] = '';
+  delete mine[prop];
+  if (px !== null && !d.style[prop]) {
+    d.style[prop] = `${Math.max(MIN_ROOM - 2 * EDGE, Math.floor(px))}px`;
+    mine[prop] = d.style[prop];
+  }
+  fitted.set(d, mine);
+}
+
+/** Keep a modal window within its room, so its heading and its own buttons stay on the screen. */
+function fit(d: HTMLDialogElement): void {
+  limit(d, 'maxHeight', null);
+  limit(d, 'maxWidth', null);
+  const r = dialogRoom();
+  const h = window.innerHeight || 0, w = window.innerWidth || 0;
+  const roomH = h - r.top - r.bottom - 2 * EDGE, roomW = w - r.left - r.right - 2 * EDGE;
+  const cs = getComputedStyle(d);
+  const capH = parseFloat(cs.maxHeight), capW = parseFloat(cs.maxWidth);
+  if (roomH > 0 && !(capH <= roomH)) limit(d, 'maxHeight', roomH);
+  if (roomW > 0 && !(capW <= roomW)) limit(d, 'maxWidth', roomW);
+  // a window placed lower by its own margin (Rotate in 3D, Arrange) still ends inside the room
+  const box = d.getBoundingClientRect();
+  const overH = box.bottom - (h - r.bottom - EDGE), overW = box.right - (w - r.right - EDGE);
+  if (box.height > 0 && overH > 0.5) limit(d, 'maxHeight', box.height - overH);
+  if (box.width > 0 && overW > 0.5) limit(d, 'maxWidth', box.width - overW);
+}
+
+/** Give a window the title strip, or put it back when the window has redrawn its contents. */
+function addStrip(d: HTMLDialogElement): void {
+  if (!makeStrip) return;
+  let strip = strips.get(d);
+  if (strip?.parentNode === d) return;
+  if (!strip) {
+    strip = makeStrip();
+    strip.classList.add('modal-title-strip');
+    strips.set(d, strip);
+  }
+  d.append(strip);
+}
+
+/** Watches each open modal window for redrawn contents (palette-ui, the assistant's log). */
+const watchers = new WeakMap<HTMLDialogElement, MutationObserver>();
 
 function closed(d: HTMLDialogElement): void {
   const i = open.indexOf(d);
   if (i >= 0) open.splice(i, 1);
+  d.classList.remove('is-modal');
+  watchers.get(d)?.disconnect();
+  watchers.delete(d);
   strips.get(d)?.remove();
   strips.delete(d);
-  if (fitted.has(d)) { d.style.removeProperty('max-height'); fitted.delete(d); }
+  limit(d, 'maxHeight', null);
+  limit(d, 'maxWidth', null);
 }
 
-/** The modal window on top (null: none). */
-export function topModal(): HTMLDialogElement | null {
-  for (let i = open.length - 1; i >= 0; i--) if (open[i].open && open[i].isConnected) return open[i];
-  return null;
-}
-
-/** Whether `d` was opened with showModal() and is still open. */
-export function isOpenModal(d: HTMLDialogElement): boolean {
-  return open.includes(d) && d.open;
-}
-
+/** Windows that already have this code's close listener. */
+const listened = new WeakSet<HTMLDialogElement>();
 let installed = false;
 
 /** Wrap showModal so every modal window gets the title strip and its room. Once, at start-up. */
@@ -133,11 +167,20 @@ export function installModalGuard(): void {
   installed = true;
   proto.showModal = function (this: HTMLDialogElement): void {
     own.call(this);
-    if (!open.includes(this)) {
-      open.push(this);
-      this.addEventListener('close', () => closed(this), { once: true });
+    const d = this;
+    if (!listened.has(d)) {
+      listened.add(d);
+      // (the close event comes a moment later: a window closed and opened again at once is still open)
+      d.addEventListener('close', () => { if (!d.open) closed(d); });
     }
-    addStrip(this);
+    if (!open.includes(d)) open.push(d);
+    d.classList.add('is-modal');
+    addStrip(d);
+    if (!watchers.has(d)) {
+      const mo = new MutationObserver(() => { if (open.includes(d)) addStrip(d); });
+      mo.observe(d, { childList: true });
+      watchers.set(d, mo);
+    }
     layout();
   };
   window.addEventListener('resize', layout);

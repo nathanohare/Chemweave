@@ -127,12 +127,12 @@ describe('modal windows and the title bar', () => {
 
   it('the styles place every modal window in its room, and draw the strip at the top of the program', () => {
     const css = readFileSync(resolve('src/app.css'), 'utf8');
-    expect(css).toMatch(/dialog:modal\s*\{[^}]*inset:\s*var\(--dlg-top/);
+    expect(css).toMatch(/dialog\.is-modal\s*\{[^}]*inset:\s*var\(--dlg-top/);
     expect(css).toMatch(/\.modal-title-strip\s*\{[^}]*position:\s*fixed;[^}]*top:\s*0/);
     // a window placed by its own rule must not go above the room's top either
-    const own = [...css.matchAll(/^dialog[^{]*\{[^}]*\binset:[^;]*;/gm)].map((m) => m[0]);
+    const own = [...css.matchAll(/(?:^|[}\s,>])dialog[^{},]*\{[^}]*(?<![-\w])(?:inset|top):[^;]*;/gm)].map((m) => m[0]).filter((r) => !/embedded|static/.test(r));
     expect(own.length).toBeGreaterThan(0);
-    for (const rule of own) expect(rule, rule.slice(0, 60)).toMatch(/var\(--dlg-top/);
+    for (const rule of own) expect(rule, rule.slice(0, 120)).toMatch(/(?:inset|top):\s*(?:max\([^;]*)?var\(--dlg-top/);
   });
 
   it('the desktop title bar gives modal windows the strip, and the guard loads before anything else', () => {
@@ -143,5 +143,45 @@ describe('modal windows and the title bar', () => {
     const main = readFileSync(resolve('src/main.ts'), 'utf8');
     const first = main.match(/^import .*$/m)?.[0];
     expect(first).toBe("import './ui/modal-guard';");
+  });
+  it('a window that redraws its contents while open gets its strip back', async () => {
+    g.setModalTitleStrip(strip, 32);
+    const d = modal();
+    // (Color Palettes and the assistant's log redraw their window with replaceChildren)
+    d.replaceChildren(document.createElement('p'));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(d.querySelectorAll('.modal-title-strip')).toHaveLength(1);
+  });
+
+  it('a window closed and opened again at once keeps its strip', async () => {
+    g.setModalTitleStrip(strip, 32);
+    const d = modal();
+    // (the browser sends close a moment later; by then the window is open again)
+    d.removeAttribute('open');
+    d.showModal();
+    d.dispatchEvent(new Event('close'));
+    expect(d.querySelectorAll('.modal-title-strip')).toHaveLength(1);
+    expect(d.classList.contains('is-modal')).toBe(true);
+  });
+
+  it('a window placed lower by its own margin still ends inside the room', () => {
+    const h = window.innerHeight;
+    g.setOffScreen({ top: 0, right: 0, bottom: h / 2, left: 0 });
+    const d = document.createElement('dialog');
+    // (jsdom lays nothing out: the box a browser gives a window 64 px down with 400 px of contents)
+    const height = () => Math.min(400, parseFloat(d.style.maxHeight) || Infinity);
+    d.getBoundingClientRect = () => new DOMRect(100, 64, 300, height());
+    document.body.append(d);
+    d.showModal();
+    expect(64 + height()).toBeLessThanOrEqual(h / 2);
+  });
+
+  it("a size limit the window set for itself after opening is never taken off", () => {
+    const h = window.innerHeight;
+    g.setOffScreen({ top: 0, right: 0, bottom: h / 2, left: 0 });
+    const d = modal();
+    d.style.maxHeight = '123px';
+    g.setOffScreen(null);
+    expect(d.style.maxHeight).toBe('123px');
   });
 });

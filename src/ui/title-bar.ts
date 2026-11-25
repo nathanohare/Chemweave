@@ -4,7 +4,7 @@
 // gains a row of height. View > Window and Colours > Title Bar in Menu Row puts the system's title bar back.
 
 import { isTauri } from '@tauri-apps/api/core';
-import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
+import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { setModalTitleStrip, setOffScreen } from './modal-guard';
 
 /** Where the window's title and buttons are: in the menu row ('app') or the system's own bar. */
@@ -21,8 +21,18 @@ const ICONS = {
 let controls: HTMLElement | null = null;
 let place: TitleBarPlace = 'system';
 
+/** Show Maximize or Restore Down on every set of window buttons (the menu bar's and each window's). */
+async function showMaxAll(): Promise<void> {
+  const big = await getCurrentWindow().isMaximized().catch(() => false);
+  for (const max of document.querySelectorAll<HTMLButtonElement>('.win-controls .win-max')) {
+    max.innerHTML = big ? ICONS.restore : ICONS.max;
+    max.title = big ? 'Restore Down' : 'Maximize';
+    max.setAttribute('aria-label', max.title);
+  }
+}
+
 /** A set of the window's buttons: Minimize, Maximize (Restore Down when maximized) and Close. */
-function makeWindowButtons(): { box: HTMLElement; showMax: () => Promise<void> } {
+function makeWindowButtons(): HTMLElement {
   const w = getCurrentWindow();
   const box = document.createElement('div');
   box.className = 'win-controls';
@@ -38,27 +48,20 @@ function makeWindowButtons(): { box: HTMLElement; showMax: () => Promise<void> }
     return b;
   };
   button('win-min', 'Minimize', ICONS.min, () => w.minimize());
-  const max = button('win-max', 'Maximize', ICONS.max, () => w.toggleMaximize().then(() => showMax()));
+  button('win-max', 'Maximize', ICONS.max, () => w.toggleMaximize().then(showMaxAll));
   // closing asks about unsaved work as the system's close button does (onCloseRequested)
   button('win-close', 'Close', ICONS.close, () => w.close());
-  const showMax = async () => {
-    const big = await w.isMaximized().catch(() => false);
-    max.innerHTML = big ? ICONS.restore : ICONS.max;
-    max.title = big ? 'Restore Down' : 'Maximize';
-    max.setAttribute('aria-label', max.title);
-  };
-  void showMax();
-  return { box, showMax };
+  return box;
 }
 
 /** The window buttons in the menu bar, made the first time they are needed. */
 function windowButtons(header: HTMLElement): HTMLElement {
   if (controls) return controls;
-  const { box, showMax } = makeWindowButtons();
-  void getCurrentWindow().onResized(() => { void showMax(); });
-  header.append(box);
-  controls = box;
-  return box;
+  controls = makeWindowButtons();
+  header.append(controls);
+  void getCurrentWindow().onResized(() => { void showMaxAll(); });
+  void showMaxAll();
+  return controls;
 }
 
 /**
@@ -69,7 +72,9 @@ function windowButtons(header: HTMLElement): HTMLElement {
 function modalStrip(): HTMLElement {
   const strip = document.createElement('div');
   strip.setAttribute('data-tauri-drag-region', '');
-  const { box } = makeWindowButtons();
+  const box = makeWindowButtons();
+  // (like the system's title bar, its buttons are for the mouse: Tab stays among the window's own controls)
+  for (const b of box.querySelectorAll('button')) b.tabIndex = -1;
   // (in the menu bar's own colors: a window sets its own colors for what is inside it)
   const header = document.querySelector('header');
   if (header) {
@@ -78,6 +83,7 @@ function modalStrip(): HTMLElement {
     box.style.color = cs.color;
   }
   strip.append(box);
+  void showMaxAll();
   return strip;
 }
 
@@ -97,21 +103,35 @@ function watchScreen(): void {
   watchingScreen = true;
   const w = getCurrentWindow();
   let timer = 0;
+  let asked = 0;
   const measure = async () => {
+    const n = ++asked;
     try {
-      const [pos, size, mon] = await Promise.all([w.innerPosition(), w.innerSize(), currentMonitor()]);
-      if (!mon || !size.width || !size.height) { setOffScreen(null); return; }
+      const [pos, size, mons] = await Promise.all([w.innerPosition(), w.innerSize(), availableMonitors()]);
+      if (n !== asked) return;     // (a later check is on its way)
+      if (!mons.length || !size.width || !size.height) { setOffScreen(null); return; }
+      // the part of the program on some screen: the box round its parts on each screen's work area
+      // (taskbar and dock left out), so a program spread over two screens counts as all on
+      let top = Infinity, left = Infinity, bottom = -Infinity, right = -Infinity;
+      for (const m of mons) {
+        const a = m.workArea ?? { position: m.position, size: m.size };
+        const t = Math.max(pos.y, a.position.y), l = Math.max(pos.x, a.position.x);
+        const b = Math.min(pos.y + size.height, a.position.y + a.size.height), r = Math.min(pos.x + size.width, a.position.x + a.size.width);
+        if (b <= t || r <= l) continue;
+        top = Math.min(top, t); left = Math.min(left, l); bottom = Math.max(bottom, b); right = Math.max(right, r);
+      }
+      if (!Number.isFinite(top)) { setOffScreen(null); return; }
       // (CSS pixels per physical pixel: the screen's scale and View > Interface Size both count)
       const k = window.innerWidth / size.width;
-      const area = mon.workArea ?? { position: mon.position, size: mon.size };
-      const ax = area.position.x, ay = area.position.y;
+      // (a maximized window may hang a few pixels past the work area: not "off the screen")
+      const edge = (px: number) => (px * k < 12 ? 0 : px * k);
       setOffScreen({
-        top: Math.max(0, ay - pos.y) * k,
-        left: Math.max(0, ax - pos.x) * k,
-        bottom: Math.max(0, pos.y + size.height - (ay + area.size.height)) * k,
-        right: Math.max(0, pos.x + size.width - (ax + area.size.width)) * k,
+        top: edge(top - pos.y),
+        left: edge(left - pos.x),
+        bottom: edge(pos.y + size.height - bottom),
+        right: edge(pos.x + size.width - right),
       });
-    } catch { setOffScreen(null); }
+    } catch { if (n === asked) setOffScreen(null); }
   };
   const soon = () => { window.clearTimeout(timer); timer = window.setTimeout(() => void measure(), 120); };
   void w.onMoved(soon).catch(() => {});
