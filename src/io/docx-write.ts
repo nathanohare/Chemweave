@@ -2565,8 +2565,9 @@ function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): 
     if (id === '0' || id === undefined) return m;
     const to = numIds.get(id);
     return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
-  // (and no paragraph settings left at all where that was all there was: the same on a second save)
-  }).replace(/<w:pPr><\/w:pPr>/g, '');
+  // (and paragraph settings left empty by that written as the file's own empty ones read back: the
+  // same on a second save; kept, as a tracked change's old settings need one)
+  }).replace(/<w:pPr><\/w:pPr>/g, '<w:pPr/>');
 }
 
 /** A character style: only what it sets. */
