@@ -230,8 +230,29 @@ describe('matrices', () => {
     // (a short row is filled out to the widest)
     expect(toOmml(String.raw`\begin{matrix} a & b \\ c \end{matrix}`).match(/<m:e>/g)).toHaveLength(4);
   });
-  it('says its entries in plain text', () => {
-    expect(mathText(String.raw`\begin{pmatrix} a & b \\ c & d \end{pmatrix}`)).toContain('[a, b; c, d]');
+  it('says its entries in plain text, in its own brackets', () => {
+    expect(mathText(String.raw`\begin{pmatrix} a & b \\ c & d \end{pmatrix}`)).toContain('(a, b; c, d)');
+    expect(mathText(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`)).toContain('[a, b; c, d]');
+  });
+  it("keeps a Word column's empty last row (2 × 1, 3 × 1)", () => {
+    for (const n of [2, 3]) {
+      const word = ommlEl(`<m:m>${Array.from({ length: n }, (_, i) => `<m:mr><m:e>${i === 0 ? r('1') : ''}</m:e></m:mr>`).join('')}</m:m>`);
+      const tex = ommlToTex(word);
+      expect(toOmml(tex).match(/<m:mr>/g)).toHaveLength(n);
+      expect(roundTrip(tex)).toBe(tex);
+    }
+  });
+  it('is only the matrix environments: others as typed; cases with its brace; a space before the name', () => {
+    expect(parseMath(String.raw`\begin{align} a \end{align}`)).not.toMatchObject({ t: 'matrix' });
+    expect(parseMath(String.raw`\begin{cases} a & x \\ b & y \end{cases}`)).toMatchObject({ t: 'delim', open: '{', close: '', body: { t: 'matrix' } });
+    expect(parseMath(String.raw`\begin {pmatrix} a \end {pmatrix}`)).toMatchObject({ t: 'delim', open: '(', body: { t: 'matrix', rows: [[{ t: 'sym', s: 'a' }]] } });
+    // (\\ outside a matrix is a space, as before)
+    expect(parseMath(String.raw`a \\ b`)).toMatchObject({ t: 'row', kids: [{}, { t: 'space' }, {}] });
+  });
+  it('stops at \\right while its \\end is still to be typed', () => {
+    const p = parseMath(String.raw`\left[\begin{matrix} a & b \right] + x`) as { t: string; body?: { t: string } };
+    expect(p).toMatchObject({ t: 'row' });
+    expect(mathText(String.raw`\left[\begin{matrix} a & b \right] + x`)).toContain('+ x');
   });
 });
 
