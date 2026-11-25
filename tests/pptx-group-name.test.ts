@@ -11,6 +11,8 @@ import { Deck } from '../src/deck/deck';
 import { writePptx, type DeckData, type PptxOptions } from '../src/io/pptx-write';
 import { readPptx } from '../src/io/pptx-read';
 import { groupSelection, ungroupSelection } from '../src/editor/groups';
+import { writeCdxml } from '../src/io/cdxml-write';
+import { readCdxml } from '../src/io/cdxml';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 40, 0, 0, 0, 30]);
 const opts: PptxOptions = { async picture() { return null; }, async svgToPng() { return PNG; } };
@@ -53,6 +55,35 @@ describe("a group's name", () => {
     const renamed = (to: string) => shapesOf(zipSync({ ...p, [SLIDE2]: new Uint8Array(strToU8(strFromU8(p[SLIDE2]).replace(/(<p:grpSp><p:nvGrpSpPr><p:cNvPr id="\d+" name=")[^"]*"/, `$1${to}"`))) }));
     expect(renamed('Mechanism').filter((x) => x.grp !== undefined).map((x) => x.grpName)).toEqual(['Mechanism', 'Mechanism']);
     expect(renamed('Group 12').some((x) => x.grpName !== undefined)).toBe(false);
+  });
+
+  it("gives way to PowerPoint's own when the group was named there after a save here", async () => {
+    const p = await deck(['Old', 'Old']);
+    const x = strFromU8(p[SLIDE2]).replace('name="Old"', 'name="Group 12"');
+    const s = shapesOf(zipSync({ ...p, [SLIDE2]: new Uint8Array(strToU8(x)) }));
+    expect(s.filter((y) => y.grp !== undefined)).toHaveLength(2);
+    expect(s.some((y) => y.grpName !== undefined)).toBe(false);
+  });
+
+  it('leaves a freeform curve in a named group a ChemDraw curve, also after ungrouping (CDXML)', () => {
+    const pts = [{ x: 0, y: 0 }, { x: 10, y: -10 }, { x: 20, y: -10 }, { x: 30, y: 0 }];
+    const bx = { x1: 0, y1: -10, x2: 30, y2: 0 };
+    const q = (v: number) => Math.round(v * 10000);
+    const geo = 'pen:' + pts.map((pt) => `${q((pt.x - bx.x1) / 30)},${q((pt.y - bx.y1) / 10)}`).join(',');
+    const doc = new Doc();
+    doc.edit('x', () => {
+      doc.addShape({ kind: 'geo', geo, ...bx, grp: 1, grpName: 'Scheme' } as never);
+      doc.addShape({ kind: 'rect', x1: 50, y1: 0, x2: 90, y2: 20, grp: 1, grpName: 'Scheme' } as never);
+    });
+    const xml = writeCdxml(doc);
+    expect(xml).toContain('<curve');
+    const back = readCdxml(xml).doc;
+    expect([...back.shapes.values()].map((s) => s.grpName)).toEqual(['Scheme', 'Scheme']);
+    const all = new Set([...back.shapes.keys()]);
+    back.edit('ungroup', () => { ungroupSelection(back, { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: all } as never); });
+    const again = readCdxml(writeCdxml(back)).doc;
+    expect(again.shapes.size).toBe(2);
+    expect([...again.shapes.values()].every((s) => s.grp === undefined && s.grpName === undefined)).toBe(true);
   });
 
   it('is taken off by ungrouping, and by grouping again', () => {

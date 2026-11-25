@@ -3005,7 +3005,7 @@ class CdxmlWriter {
       this.changed = true;
     };
     // (with its group's name, where it has one)
-    const named = (v: Record<string, unknown> | null, x: { grpName?: string }) => (typeof x.grpName === 'string' && x.grpName ? { ...(v ?? {}), gn: x.grpName } : v);
+    const named = (v: Record<string, unknown> | null, x: { grp?: number; grpName?: string }) => (x.grp !== undefined && typeof x.grpName === 'string' && x.grpName ? { ...(v ?? {}), gn: x.grpName } : v);
     // a structure's depths and bond places go in one tag on its <fragment> (fragMore), each atom's and bond's other settings on its own element
     const frags = new Set<Element>();
     const atomAt = new Map<Element, { depth?: number }>();
@@ -3220,12 +3220,13 @@ function moveCdObject(e: Element, map: (x: number, y: number) => [number, number
 export const REF_ATTR = /(ID|IDs|Objects)$/;
 
 /** What a closed curve can hold: a path shape with any other setting is written as a design shape. */
-const PATH_CURVE_KEYS = new Set(['id', 'grp', 'grpPath', 'stack', 'piece', 'kind', 'geo', 'x1', 'y1', 'x2', 'y2', 'color', 'z', 'filled', 'dashed', 'bold', 'lineWidth']);
+const PATH_CURVE_KEYS = new Set(['id', 'grp', 'grpPath', 'grpName', 'stack', 'piece', 'kind', 'geo', 'x1', 'y1', 'x2', 'y2', 'color', 'z', 'filled', 'dashed', 'bold', 'lineWidth']);
 
 function sameExcept(a: object, b: object, skip: string[]): boolean {
   // (which group a thing is in is written by writeGroups, as the file's group elements)
-  const ka = Object.keys(a).filter((k) => k !== 'grp' && !skip.includes(k) && (a as any)[k] !== undefined);
-  const kb = Object.keys(b).filter((k) => k !== 'grp' && !skip.includes(k) && (b as any)[k] !== undefined);
+  // (and its name with the object's other settings: cdxml-more's tag)
+  const ka = Object.keys(a).filter((k) => k !== 'grp' && k !== 'grpName' && !skip.includes(k) && (a as any)[k] !== undefined);
+  const kb = Object.keys(b).filter((k) => k !== 'grp' && k !== 'grpName' && !skip.includes(k) && (b as any)[k] !== undefined);
   if (ka.length !== kb.length) return false;
   for (const k of ka) if (!deepEqual((a as any)[k], (b as any)[k])) return false;
   return true;

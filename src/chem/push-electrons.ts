@@ -296,7 +296,7 @@ export function productDrawing(doc: Doc, reading: PushReading): Drawing | null {
     for (const id of atoms) {
       const a = doc.atoms.get(id)!;
       const copy = structuredClone(a);
-      delete copy.grp; delete copy.xyz; delete copy.alt;
+      delete copy.grp; delete copy.grpName; delete copy.xyz; delete copy.alt;
       if (copy.multi) copy.multi = copy.multi.filter((x) => atoms.has(x));
       out.addAtom(a.x, a.y, a.z, copy);
     }
