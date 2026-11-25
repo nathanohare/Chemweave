@@ -28,8 +28,6 @@ export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-PIC-03': { finding: 'F-W-019', note: 'every drawing\'s name (wp:docPr name, shown in the Selection Pane) is replaced by "Picture N" or "Shape N"; the description (alt text) survives' },
   'W-PIC-05': { finding: 'F-W-020', note: 'a hidden picture (wp:docPr hidden="1") is saved without the hidden flag, so it shows' },
   'W-WRP-02': { finding: 'F-W-021', note: 'every square wrap is saved with wrapText="largest", so "text on the left only" (and bothSides) is lost' },
-  'W-SHP-04': { finding: 'F-W-022', note: 'a shape in line with text is saved as a floating shape (wp:anchor, wrap top and bottom)' },
-  'W-SHP-22': { finding: 'F-W-023', note: 'a shape\'s gradient fill is saved as <a:noFill/>' },
   'W-EQN-06': { finding: 'F-W-024', note: 'an equation matrix (m:m) is flattened: its entries become runs separated by spaces inside the brackets' },
   'W-EQN-08': { finding: 'F-W-025', note: 'a group character above its base (m:groupChr pos top: text over the arrow) is saved with pos left out and vertJc bot, so the text goes below the arrow' },
   'docx-objects.docx:second-save': { scope: /^(word\/document\.xml|customXml\/item1\.xml|word\/embeddings\/Microsoft_Excel_Worksheet\d+\.xlsx):/, finding: 'F-W-026', note: 'not the same file on a second save: floating drawings get new relativeHeight (z-order) numbers, the chart ids in customXml/item1.xml change, and the embedded chart workbooks (word/embeddings/Microsoft_Excel_Worksheet*.xlsx) are written with different bytes' },

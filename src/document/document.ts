@@ -343,6 +343,11 @@ export interface Float {
   /** Hidden from the page in the Selection Pane (still in the document). */
   hidden?: boolean;
   /**
+   * In line with text in Word (a shape or text box read so, shown here on its own line): written
+   * back so while it is still where it was put (at 0, 0, top and bottom wrap).
+   */
+  inline?: boolean;
+  /**
    * Room Word's own effects take round the figure (a border or shadow Word drew, wp:effectExtent),
    * beyond what its look here takes, in points: text keeps clear of it too, as in Word.
    */
@@ -468,7 +473,7 @@ export type DocObject =
    * A text box: text of its own (typed into in place), `w` wide; it grows to fit its text, and is
    * at least `h` tall when that is set. Always placed on the page. `fill` is its background.
    */
-  | { kind: 'textbox'; runs: TextRun[]; paras?: ParaStyle[]; w: number; h?: number; fill?: string; look?: FigureLook; float: Float; /** A shape (Insert > Shapes): the library's outline (design/geo.ts) instead of a plain box, `w` × `h` (it doesn't grow down), its text in the middle; a click picks it and drags it, typing or a double-click goes into its text, as in PowerPoint. */ geo?: string }
+  | { kind: 'textbox'; runs: TextRun[]; paras?: ParaStyle[]; w: number; h?: number; fill?: string; look?: FigureLook; float: Float; /** Word's gradient fill as the file had it (its a:gradFill), shown as `fill` (its first colour) and written back while that is unchanged. */ wfill?: string; /** A shape (Insert > Shapes): the library's outline (design/geo.ts) instead of a plain box, `w` × `h` (it doesn't grow down), its text in the middle; a click picks it and drags it, typing or a double-click goes into its text, as in PowerPoint. */ geo?: string }
   /**
    * A table in the text, typed into in place as in Word: its own paragraph, cells of text that
    * can hold structures and pictures (objects of the document, like those in the text), and
