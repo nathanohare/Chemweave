@@ -144,3 +144,14 @@ describe('what each section has for itself (F-W-013, F-W-014)', () => {
     expect(newBreak(sectionsOf(none)[2], 'nextPage').pageBorder?.style).toBe('double');
   });
 });
+
+describe('Different First Page of a linked section whose owner only leaves off the first page number', () => {
+  it('gives it a first page of its own (an empty one), so the box can be ticked', () => {
+    const owner = { ...defaultHeaderFooter(), numbers: 'footer-center' as const, onFirst: false };
+    expect(hasTitlePg(owner)).toBe(true);
+    const own = linkedHf(owner, true);
+    expect(own.firstPage).toBe(true);
+    expect(own.first).toEqual({ header: ['', '', ''], footer: ['', '', ''] });
+    expect(linkedHf(owner, false).onFirst).toBe(true);
+  });
+});

@@ -78,11 +78,14 @@ export function hasTitlePg(hf: HeaderFooter): boolean {
  * first page of its own), or none where there are none.
  */
 export function linkedHf(owner: HeaderFooter, titlePg?: boolean): HeaderFooter {
-  if (titlePg === undefined || titlePg === hasTitlePg(owner)) return owner;
+  if (titlePg === undefined) return owner;
   if (!titlePg) {
+    if (!hasTitlePg(owner)) return owner;
     const { firstPage: _f, ...rest } = owner;
     return { ...rest, onFirst: true };
   }
+  // (an owner whose first page only leaves off its number has no first page header of its own: the linked section's first page shows the owner's kept one, or none)
+  if (owner.firstPage) return owner;
   return { ...owner, firstPage: true, first: owner.first ?? { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
 }
 
