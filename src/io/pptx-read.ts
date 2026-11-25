@@ -376,6 +376,9 @@ class Reader {
     const sz = kid(root, 'sldSz');
     if (sz) {
       this.size = { w: Math.round(fromEmu(sz.getAttribute('cx'))), h: Math.round(fromEmu(sz.getAttribute('cy'))) };
+      // (and exactly, where that isn't a whole number of points: A4, B5...)
+      const cx = Number(sz.getAttribute('cx')), cy = Number(sz.getAttribute('cy'));
+      if (Number.isInteger(cx) && Number.isInteger(cy) && cx > 0 && cy > 0 && (cx !== this.size.w * 12700 || cy !== this.size.h * 12700)) this.size.emu = { cx, cy };
       // the size's name in Page Setup (Letter, A4...), unless it is the one 10 × 7.5 in is written with anyway
       const type = sz.getAttribute('type');
       if (type && SLIDE_SIZE_TYPES.includes(type) && !(type === 'screen4x3' && this.size.w === 720 && this.size.h === 540)) this.size.type = type;

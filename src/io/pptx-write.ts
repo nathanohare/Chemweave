@@ -622,6 +622,13 @@ const nameAttrs = (name: string, hidden?: boolean): string => ` name="${xml(name
 export const xfrm = (r: Rect, extra = '') => `<a:xfrm${extra}><a:off x="${emu(r.x1)}" y="${emu(r.y1)}"/><a:ext cx="${Math.max(0, emu(r.x2 - r.x1))}" cy="${Math.max(0, emu(r.y2 - r.y1))}"/></a:xfrm>`;
 const GROUP = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>';
 
+/** The slide size in EMU: exactly as the file had it while it is still that size to the nearest point. */
+function sizeEmu(s: SlideSize, w: number, h: number): string {
+  const e = s.emu;
+  const kept = e && Number.isInteger(e.cx) && Number.isInteger(e.cy) && e.cx > 0 && e.cy > 0 && Math.round(e.cx / 12700) === w && Math.round(e.cy / 12700) === h;
+  return kept ? `cx="${e.cx}" cy="${e.cy}"` : `cx="${emu(w)}" cy="${emu(h)}"`;
+}
+
 /** The slide size's type attribute (ECMA-376 Part 1 §19.7.18): the file's own (Letter, A4...), else 4:3's for 10 × 7.5 in. */
 function sizeType(s: SlideSize): string {
   const type = s.type && SLIDE_SIZE_TYPES.includes(s.type) ? s.type : s.w === 720 && s.h === 540 ? 'screen4x3' : '';
@@ -879,7 +886,7 @@ class Writer {
       (hasNotes ? `<p:notesMasterIdLst><p:notesMasterId r:id="${notesMasterRel}"/></p:notesMasterIdLst>` : '') +
       (hasHandout ? `<p:handoutMasterIdLst><p:handoutMasterId r:id="${handoutRel}"/></p:handoutMasterIdLst>` : '') +
       `<p:sldIdLst>${slideRels.map((r, i) => `<p:sldId id="${256 + i}" r:id="${r}"/>`).join('')}</p:sldIdLst>` +
-      `<p:sldSz cx="${emu(w)}" cy="${emu(h)}"${sizeType(deck.size)}/>` +
+      `<p:sldSz ${sizeEmu(deck.size, w, h)}${sizeType(deck.size)}/>` +
       (deck.master.notesPage?.landscape ? `<p:notesSz cx="9144000" cy="6858000"/>` : `<p:notesSz cx="6858000" cy="9144000"/>`) + fontList +
       custShowsXml(deck.settings?.customShows ?? [], (sid) => slideRels[deck.slides.findIndex((x) => x.id === sid)], xml) +
       `<p:custDataLst><p:tags r:id="${masterTags}"/></p:custDataLst>` +
