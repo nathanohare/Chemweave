@@ -49,5 +49,27 @@ describe("Word's kerning size", () => {
     expect(kernOf(doc, 'small')).toBeUndefined();
     // made smaller than its kerning size while still kerned here: Word's usual size too
     expect(kernOf(doc, 'large')).toBeUndefined();
+    // kerning taken off here, or made bigger with it kept off: none
+    const off = t.runs.map((r) => r.text === 'large' ? { ...r, noKern: true } : r.text === 'small' ? { ...r, size: 16 } : r);
+    const doc2 = strFromU8(unzipSync(await writeDocx({ ...t, runs: off }, deps))['word/document.xml']);
+    expect(kernOf(doc2, 'large')).toBe('0');
+    expect(kernOf(doc2, 'small')).toBe('0');
+    // (and a size past Word's own is not written)
+    const huge = t.runs.map((r) => r.text === 'small' ? { ...r, kernAt: 1e300 } : r);
+    expect(kernOf(strFromU8(unzipSync(await writeDocx({ ...t, runs: huge }, deps))['word/document.xml']), 'small')).toBe('0');
+  });
+
+  it("is kept from a paragraph style's kerning (Word's Heading 1), the same on a second save", async () => {
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+      `<w:style w:type="paragraph" w:styleId="Heading1"><w:name w:val="heading 1"/><w:basedOn w:val="Normal"/><w:rPr><w:kern w:val="32"/><w:sz w:val="32"/></w:rPr></w:style>`;
+    const files = unzipSync(docx());
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    files['word/_rels/document.xml.rels'] = new Uint8Array(strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdS" Type="${R}styles" Target="styles.xml"/></Relationships>`));
+    files['word/document.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:document ${W}><w:body><w:p><w:pPr><w:pStyle w:val="Heading1"/></w:pPr><w:r><w:t>Head</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`));
+    const once = await writeDocx((await readDocx(zipSync(files))).doc, deps);
+    const first = strFromU8(unzipSync(once)['word/document.xml']);
+    expect(kernOf(first, 'Head')).toBe('32');
+    const twice = strFromU8(unzipSync(await writeDocx((await readDocx(once)).doc, deps))['word/document.xml']);
+    expect(twice).toBe(first);
   });
 });
