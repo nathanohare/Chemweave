@@ -61,6 +61,8 @@ export const GLOSSARY: GlossaryEntry[] = [
   { term: 'mp', full: 'Melting point', meaning: 'In °C.', kind: 'Property' },
   { term: 'bp', full: 'Boiling point', meaning: 'In °C at 1 atm unless a pressure is given.', kind: 'Property' },
   { term: 'nD', full: 'Refractive index', meaning: 'Measured with the sodium D line, at 20 °C unless stated.', kind: 'Property' },
+  { term: 'eV', full: 'Electronvolt', meaning: 'An energy unit for single atoms and molecules; 1 eV per particle is 96.485 kJ/mol.', kind: 'Property' },
+  { term: 'HSAB', full: 'Hard and soft acids and bases', meaning: 'Pearson\'s rule that hard Lewis acids bind hard bases best and soft acids soft bases.', kind: 'Property' },
   { term: 'logP', full: 'Octanol–water partition coefficient (log)', meaning: 'Higher means more oily; also a guide to skin uptake.', kind: 'Property' },
   { term: 'logS', full: 'Water solubility (log, mol/L)', meaning: '0 is 1 mol/L; −4 is 0.1 mmol/L.', kind: 'Property' },
   { term: 'pKa', full: 'Acid dissociation constant (−log)', meaning: 'Lower is more acidic; depends on the solvent (water, DMSO).', kind: 'Property' },
