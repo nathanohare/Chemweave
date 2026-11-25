@@ -4831,8 +4831,8 @@ details.nmr .nmr-mode { font: inherit; font-size: var(--fs-xs); padding: 0 2px; 
 :root { --nmr-trace-blue: #1b3f9c; --nmr-trace-maroon: #800000; }
 @media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --nmr-trace-blue: #7fb0ff; --nmr-trace-maroon: #f08a96; } }
 :root[data-theme='dark'] { --nmr-trace-blue: #7fb0ff; --nmr-trace-maroon: #f08a96; }
-.nmr-spec { --sp-trace: var(--nmr-trace-blue); }
-.nmr-spec[data-trace='maroon'] { --sp-trace: var(--nmr-trace-maroon); }
+.nmr-spec { --sp-trace: var(--nmr-trace-maroon); }
+.nmr-spec[data-trace='blue'] { --sp-trace: var(--nmr-trace-blue); }
 .nmr-spec .sp-line { fill: none; stroke: var(--sp-trace); stroke-width: 1.5; stroke-linejoin: round; }
 .nmr-spec .sp-hot { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
 .nmr-spec .sp-band { fill: var(--accent); fill-opacity: 0.14; stroke: var(--accent); stroke-opacity: 0.6; stroke-width: 1; }
@@ -5773,7 +5773,7 @@ body .toolbox .tb-cells > .tb-cmd[aria-pressed='true'], body .toolbox .tb-cells 
 .toolbox.floating .tb-cells { width: 100%; --tb-track: 1fr; }
 body.cells-grid .toolbox.floating .tb-cells { width: 100%; box-sizing: border-box; }
 
-/* ---- Toolbox frames: a bold line in the ribbon's border gray stands in for the padding there was,
+/* ---- Toolbox frames: a thin line in the ribbon's border gray stands in for the padding there was,
    and the corners are nearly square. The fill behind a pressed or pointed-at button is a deeper
    gray than the ribbon's, so it shows on the toolbox's surface. */
 .toolbox { --tb-edge: var(--line); }
@@ -5783,9 +5783,9 @@ body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
 :root[data-gray] .toolbox :is(.tb-cells, .tb-hl) { --accent-soft: #aeb5c1; }
 /* on that deeper gray an icon is drawn in the text color, so it keeps its contrast (over 3:1) */
 :root[data-gray] .toolbox :is(.tb-cells, .tb-hl) :is(.tool, .tb-cmd):is(:hover, .active, [aria-pressed='true']) { color: var(--text); --ic-ink: var(--text); }
-.toolbox.floating:not([data-id='details']) { padding: 0; gap: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
+.toolbox.floating:not([data-id='details']) { padding: 0; gap: 0; border: 1px solid var(--tb-edge); border-radius: 2px; }
 .toolbox.floating:not([data-id='details']) > .tb-head { padding: 1px 2px 1px 4px; background: var(--tb-edge); color: var(--text); }
-:root:not([data-shadows='off']) .dock > .toolbox:not(.floating), :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) + .toolbox:not(.floating) { padding: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
+:root:not([data-shadows='off']) .dock > .toolbox:not(.floating), :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) + .toolbox:not(.floating) { padding: 0; border: 1px solid var(--tb-edge); border-radius: 2px; }
 :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) { gap: 0; }
 
 /* ---- The Highlight toolbox: its two commands and Save Style, the parts of a highlight as switches

@@ -231,9 +231,11 @@ describe('the drawing', () => {
   });
   it('carries the trace color', () => {
     const d = sampleSpectrumData(400, false);
-    expect(spectrumSvg(d, { w: 200, h: 100, hi: 5, lo: 0, labels: false, hotRow: null })).toContain('data-trace="blue"');
-    localStorage.setItem('ci-nmr-trace', 'maroon');
     expect(spectrumSvg(d, { w: 200, h: 100, hi: 5, lo: 0, labels: false, hotRow: null })).toContain('data-trace="maroon"');
+    localStorage.setItem('ci-nmr-trace', 'blue');
+    try {
+      expect(spectrumSvg(d, { w: 200, h: 100, hi: 5, lo: 0, labels: false, hotRow: null })).toContain('data-trace="blue"');
+    } finally { localStorage.removeItem('ci-nmr-trace'); }
   });
 });
 

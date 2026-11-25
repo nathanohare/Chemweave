@@ -324,7 +324,7 @@ export function rowAt(d: SpectrumData, ppm: number, tolerance: number): number |
 export async function svgToPng(svg: string, scale = 2): Promise<Uint8Array> {
   const css = getComputedStyle(document.documentElement);
   // pictures go on white paper with dark lines, whatever the theme
-  const ink = TRACE_ON_PAPER[/<svg[^>]*data-trace="maroon"/.test(svg) ? 'maroon' : 'blue'];
+  const ink = TRACE_ON_PAPER[/<svg[^>]*data-trace="blue"/.test(svg) ? 'blue' : 'maroon'];
   const style = `<style>.sp-bg{fill:#fff}.sp-band{display:none}.sp-line{fill:none;stroke:${ink};stroke-width:1.5;stroke-linejoin:round}.sp-hot{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1.8}.sp-lab{font-size:10px;fill:#1d2527}.sp-tick{font-size:9.5px;fill:#5f6b6e}.sp-ax{stroke:#9aa5a7}.sp-meas{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1}.sp-link{fill:none;stroke-width:1.4}.sp-ok{stroke:#3c9a5f;fill:#3c9a5f}.sp-warn{stroke:#d08a1e;fill:#d08a1e}.sp-bad{stroke:#c4483e;fill:#c4483e}.sp-info{stroke:#7b8a8f;fill:#7b8a8f}.sp-mark{stroke:none;font-size:10px;font-weight:600}text{font-family:system-ui,sans-serif}</style>`;
   const solid = svg.replace(/(<svg[^>]*>)/, `$1${style}`);
   const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(solid)!;

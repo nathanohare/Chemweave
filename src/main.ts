@@ -12803,7 +12803,7 @@ function nmrSettingsPreview(v: Record<string, string>, was: PeakLabels): HTMLEle
     size: size >= 6 && size <= 24 ? size : was.size, place: v.plPlace === 'top' || v.plPlace === 'upright' ? v.plPlace : 'above' };
   const sf = Number(v.mhz) > 0 ? Number(v.mhz) : 400;
   const compare: CompareMode = v.compare === 'stacked' || v.compare === 'overlay' ? v.compare : 'inverted';
-  const trace = v.trace === 'maroon' ? 'maroon' : 'blue';
+  const trace = v.trace === 'blue' ? 'blue' : 'maroon';
   const box = document.createElement('div');
   box.className = 'nmr-set-preview';
   const pic = (title: string, svg: string) => { const f = document.createElement('figure'); const c = document.createElement('figcaption'); c.textContent = title; f.innerHTML = svg; f.append(c); f.setAttribute('aria-label', title); return f; };
@@ -12830,7 +12830,7 @@ async function nmrSettings(): Promise<void> {
     { name: 'c13lo', label: '¹³C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
     { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
-    { name: 'trace', label: 'Spectrum color', value: nmrTraceColor(), options: [{ value: 'blue', label: 'Blue' }, { value: 'maroon', label: 'Maroon' }],
+    { name: 'trace', label: 'Spectrum color', value: nmrTraceColor(), options: [{ value: 'maroon', label: 'Maroon' }, { value: 'blue', label: 'Blue' }],
       help: 'The color of the spectrum in the Analysis panel and the Spectrum window (lighter in the Dark theme), and in its pictures.' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
       { value: 'inverted', label: 'Inverted' }, { value: 'stacked', label: 'Stacked' }, { value: 'overlay', label: 'Overlay' }],
@@ -12849,7 +12849,7 @@ async function nmrSettings(): Promise<void> {
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');
-  setNmrTraceColor(r.trace === 'maroon' ? 'maroon' : 'blue');
+  setNmrTraceColor(r.trace === 'blue' ? 'blue' : 'maroon');
   if (r.compare === 'inverted' || r.compare === 'stacked' || r.compare === 'overlay') setCompareMode(r.compare);
   if (r.quality === 'fast' || r.quality === 'balanced' || r.quality === 'accurate') setNmrQuality(r.quality);
   if ((NMR_SOLVENTS as readonly string[]).includes(r.solvent)) nmrPanel.solvent = r.solvent;
