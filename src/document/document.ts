@@ -13,7 +13,7 @@
 import type { TableStyleDef } from './table-styles';
 import type { CommentThread } from './comments';
 import type { Protection } from './protect';
-import type { Contents, Justify, ParaStyle, PictureFx, TableData, TextRun } from '../model';
+import type { Contents, Justify, ParaBorders, ParaStyle, PictureFx, TableData, TextRun } from '../model';
 import type { RichText } from '../text/editing';
 import type { Measure } from '../text/layout';
 import { ACS_1996, type DocStyle } from '../style';
@@ -62,6 +62,9 @@ export interface NamedStyle {
   next?: string;
   /** A heading's level (1 to 9). */
   outline?: number;
+  /** Lines round its paragraphs (Word's w:pBdr in the style), and the colour behind them (w:shd's fill). */
+  border?: ParaBorders;
+  shade?: string;
   /** Made by the person (Styles pane > New Style), so it can be deleted. */
   custom?: boolean;
 }
@@ -719,7 +722,7 @@ export function runStyleOf(s: NamedStyle): rt.RunStyle {
 export function paraFromStyle(s: NamedStyle, keep: ParaStyle): ParaStyle {
   return cleanPara({
     list: keep.list, level: keep.level, cont: keep.cont, pageBreak: keep.pageBreak, colBreak: keep.colBreak, section: keep.section, noLineNumbers: keep.noLineNumbers,
-    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: keep.border, shade: keep.shade,
+    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: s.border ?? keep.border, shade: s.shade ?? keep.shade,
     style: s.id === 'Normal' ? undefined : s.id,
     align: s.align === 'left' ? undefined : s.align,
     spaceBefore: s.spaceBefore, spaceAfter: s.spaceAfter,

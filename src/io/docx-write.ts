@@ -790,7 +790,7 @@ class DocxWriter {
       if (!bodyOnly) { const id = this.bookmarkId++; contMark = `<w:bookmarkStart w:id="${id}" w:name="${CONT_MARK}${twips(listIndent(ps, em).left)}_${id}"/><w:bookmarkEnd w:id="${id}"/>`; }
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
-    pPr.push(paraBorderXml(ps));
+    pPr.push(paraBorderXml(ps, st));
     // (with the bar tabs Word had, which aren't tab stops here)
     if (ps.tabs?.length || raw.bar) pPr.push(`<w:tabs>${raw.bar ?? ''}${(ps.tabs ?? []).map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
     if (ps.noHyphen) pPr.push('<w:suppressAutoHyphens/>');
@@ -2244,22 +2244,28 @@ function fieldStart(rPr: string, instr: string, data?: string): string {
 }
 
 /** A paragraph's borders (w:pBdr, Word's spacing from the text) and shading (w:shd). */
-export function paraBorderXml(ps: ParaStyle): string {
+export function paraBorderXml(ps: ParaStyle, st?: Pick<NamedStyle, 'border' | 'shade'>): string {
   let out = '';
   const b = cleanBorders(ps.border);
+  // (the paragraph's style's: nothing where the paragraph has the same, a side or shading taken away where it hasn't)
+  const sb = cleanBorders(st?.border);
+  const sameLines = !!st && JSON.stringify(b ?? null) === JSON.stringify(sb ?? null);
+  const sameShade = !!st && (ps.shade ?? '').toLowerCase() === (st.shade ?? '').toLowerCase();
+  const off = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => (sb?.[name] && !b?.[name] ? `<w:${name} w:val="nil"/>` : '');
   let keptSpace: Record<string, string> = {};
   try { keptSpace = JSON.parse(keptPPr(ps).bsp ?? '{}') as Record<string, string>; } catch { keptSpace = {}; }
-  if (b) {
+  if (sameLines) { /* the style's */ } else if (b) {
     const side = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => {
       const l = b[name];
-      if (!l) return '';
+      if (!l) return off(name);
       // (each side's own distance as Word had it, else the one used here)
       const space = keptSpace[name] ?? (name === 'left' || name === 'right' ? BORDER_SPACE.x : BORDER_SPACE.y);
       return borderXml(name, l).replace('w:space="0"', `w:space="${space}"`);
     };
     out += `<w:pBdr>${side('top')}${side('left')}${side('bottom')}${side('right')}${side('between')}</w:pBdr>`;
-  }
-  if (ps.shade) out += `<w:shd w:val="clear" w:color="auto" w:fill="${hex6(ps.shade)}"/>`;
+  } else if (sb) out += `<w:pBdr>${off('top')}${off('left')}${off('bottom')}${off('right')}${off('between')}</w:pBdr>`;
+  if (sameShade) { /* the style's */ } else if (ps.shade) out += `<w:shd w:val="clear" w:color="auto" w:fill="${hex6(ps.shade)}"/>`;
+  else if (st?.shade) out += '<w:shd w:val="clear" w:color="auto" w:fill="auto"/>';
   return out;
 }
 
@@ -2474,6 +2480,7 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
   if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
+  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }));
   const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;

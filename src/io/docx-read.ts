@@ -3567,6 +3567,8 @@ class DocxReader {
       align: p.align ?? 'left', spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0), line: this.lineOf(p, size) ?? 1,
       indent: round(p.left ?? 0), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
       ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
+      // its lines and shading
+      ...(cleanBorders(p.border) ? { border: cleanBorders(p.border) } : {}), ...(p.shade && p.shade !== '#ffffff' ? { shade: p.shade } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
       // its theme colour and font, written back while it has the colour and font they gave
