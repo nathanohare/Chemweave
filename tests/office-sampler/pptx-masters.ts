@@ -130,8 +130,8 @@ slides.push({ name: 'Named slide', body: (s) => lbl(s, `${cname} named slide`) }
 
 // header and footer placeholders on a slide
 const ftr = add('Footer placeholder text on a slide', 'supported', '§19.7.10 ph type ftr; Insert ▸ Header & Footer ▸ Footer', (v) => at(phOf(shapeOf(v, ftr)) ?? null, 'type') === 'ftr', 'pptx-read.ts or pptx-write.ts, not traced to a line: dt/ftr/sldNum regenerated from master settings');
-const sldNum = add('Slide number placeholder on a slide', 'supported', '§19.7.10 ph type sldNum; Insert ▸ Header & Footer ▸ Slide number', (v) => { const p = partOf(v, sldNum); return !!p && v.all(new RegExp(`^${p.replace(/[.]/g, '\\.')}$`), 'p:ph').some((x) => at(x, 'type') === 'sldNum'); }, 'pptx-read.ts or pptx-write.ts, not traced to a line');
-const dt = add('Date placeholder (fixed date text) on a slide', 'supported', '§19.7.10 ph type dt; Header & Footer ▸ Date and time ▸ Fixed', (v) => { const p = partOf(v, dt); return !!p && v.all(new RegExp(`^${p.replace(/[.]/g, '\\.')}$`), 'p:ph').some((x) => at(x, 'type') === 'dt'); }, 'pptx-read.ts or pptx-write.ts, not traced to a line');
+const sldNum = add('Slide number placeholder on a slide', 'supported', '§19.7.10 ph type sldNum; Insert ▸ Header & Footer ▸ Slide number', (v) => { const p = partOf(v, sldNum); return !!p && v.inPart(p, 'p:ph').some((x) => at(x, 'type') === 'sldNum'); }, 'pptx-read.ts or pptx-write.ts, not traced to a line');
+const dt = add('Date placeholder (fixed date text) on a slide', 'supported', '§19.7.10 ph type dt; Header & Footer ▸ Date and time ▸ Fixed', (v) => { const p = partOf(v, dt); return !!p && v.inPart(p, 'p:ph').some((x) => at(x, 'type') === 'dt'); }, 'pptx-read.ts or pptx-write.ts, not traced to a line');
 slides.push({ layout: 1, body: (s) => title(s, `${sldNum} ${dt} header and footer`)
   + ph(s.id(), 'Date Placeholder 3', 'type="dt" sz="half" idx="10"', null, txBody(para(r('March 3, 2026')), '<a:bodyPr/>'))
   + ph(s.id(), 'Footer Placeholder 4', 'type="ftr" sz="quarter" idx="11"', null, txBody(para(r(`${ftr} footer text`)), '<a:bodyPr/>'))
