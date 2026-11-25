@@ -420,6 +420,8 @@ describe('implicit intersection and empty text through saves (F-X-005, F-X-006)'
     // @ on a function keeps its call, and @ typed on brackets loses only the extra pair
     expect(fileFormula('=@INDEX(A1:A3,2)', true)).toBe('_xlfn.SINGLE(INDEX(A1:A3,2))');
     expect(fileFormula('=@(A1:A3)+1', true)).toBe('_xlfn.SINGLE(A1:A3)+1');
+    // (commas inside a function in the brackets are its own: the brackets still go)
+    expect(fileFormula('=@(SUM(A1,B1))', true)).toBe('_xlfn.SINGLE(SUM(A1,B1))');
   });
 });
 

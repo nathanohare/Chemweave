@@ -138,8 +138,10 @@ export function fileFormula(text: string, dynamic: boolean): string {
         }
       }
       // (@ on brackets, as SINGLE(x) is read back as @(x): SINGLE's own brackets are enough, so a
-      // save doesn't add a pair each time)
-      const inner = nx.t === '(' && end > j ? all.slice(j + 1, end) : all.slice(j, end + 1);
+      // save doesn't add a pair each time; not round a union, A1,B1, which they would make two arguments)
+      const group = nx.t === '(' && end > j ? all.slice(j + 1, end) : null;
+      const union = !!group && topLevelComma(group);
+      const inner = group && !union ? group : all.slice(j, end + 1);
       out.push('_xlfn.SINGLE(' + fileFormula('=' + untokenize(inner), dynamic) + ')');
       i = end;
       continue;
@@ -149,6 +151,17 @@ export function fileFormula(text: string, dynamic: boolean): string {
     out.push(tok.t === 'ref' ? untokenize([tok]) : tok.s);
   }
   return out.join('');
+}
+
+/** Tokens hold a comma outside any brackets of their own (a union, or arguments). */
+function topLevelComma(toks: { t: string; v?: unknown }[]): boolean {
+  let depth = 0;
+  for (const k of toks) {
+    if (k.t === '(') depth++;
+    else if (k.t === ')') depth--;
+    else if (depth === 0 && (k.t === ',' || (k.t === 'op' && k.v === ','))) return true;
+  }
+  return false;
 }
 
 /**
