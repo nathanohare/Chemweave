@@ -93,7 +93,7 @@ import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
 import type { FileStamp } from './keep/recovery';
 import { NEW_ITEMS } from './ui/new-items';
-import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
+import { Deck, shownSlides, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
 import { NOTE_BULLET, bulletEdits, notesCharLooks, notesLookOf, type NotesLook } from './deck/notes-look';
 import { RichInput } from './ui/rich-input';
 import type { TextFormat } from './text/format';
@@ -8251,22 +8251,31 @@ function slidePages(deck: Deck, i: number): { page: SlidePage; doc: Doc }[] {
   return split.filter((x) => !x.part?.via).map((x) => ({ page: { size: deck.size, master: deck.master, layout: x.layout, index: i, own: x.background, hideGraphics: x.hideGraphics, hf: s.hf }, doc: x.doc }));
 }
 
-/** File > Export > Export PDF: every slide as a page (a canvas slide's keyframes a page each), or the drawing on a page of its own size. */
+/**
+ * File > Export > Export PDF: every slide that isn't hidden as a page (a canvas slide's keyframes a
+ * page each; all of a design's), only the current one with `currentSlide`, or the drawing on a page of its own size.
+ */
 /** What watches a PDF being saved (SI Compile to PDF's progress window): hidden while the Save As window shows, told how far along the writing is. */
 interface PdfWatch { hide(): void; show(): void; progress(done: number, total: number): Promise<void>; readonly cancelled: boolean }
 
-async function exportPdf(watch?: PdfWatch): Promise<void> {
+async function exportPdf(watch?: PdfWatch, currentSlide = false): Promise<void> {
   const tab = ws.active, deck = tab.deck;
   let pages: PdfPage[];
+  // (hidden slides left out, to say so)
+  let left = 0;
   const docFile = docActive() ? tab.document : null;
   if (docFile) {
     // the pages as laid out on screen, figures as shapes and text so they stay sharp
     pages = recordPages(docFile.t, docFile.printLayout(), (c, style) => figures.record(c, style).pic);
   } else if (deck) {
-    pages = deck.slides.flatMap((_s, i) => slidePages(deck, i).map((p) => ({
+    // (not the hidden slides, as PowerPoint's Save as PDF; a design's one page whatever; the current slide when asked)
+    const which = currentSlide ? [deck.index] : tab.mode === 'design' ? deck.slides.map((_s, i) => i) : shownSlides(deck.slides);
+    left = deck.slides.length - which.length;
+    pages = which.flatMap((i) => slidePages(deck, i).map((p) => ({
       w: deck.size.w, h: deck.size.h,
       items: recordSlide(p.page, p.doc),
     })));
+    if (!pages.length) { flash('Every slide is hidden, so there is nothing to put in a PDF. Right-click a slide ▸ Hide Slide to show it again.'); return; }
   } else {
     const pic = recordPicture(doc, 18);
     if (!pic) { flash('There is nothing to put in a PDF yet.'); return; }
@@ -8285,7 +8294,7 @@ async function exportPdf(watch?: PdfWatch): Promise<void> {
     await showError(`Could not save ${target.name}: ${e instanceof Error ? e.message : String(e)}`);
     return;
   }
-  flash(`Saved ${target.name}${pages.length > 1 ? ` (${pages.length} pages)` : ''}`);
+  flash(`Saved ${target.name}${pages.length > 1 ? ` (${pages.length} pages)` : ''}${!currentSlide && left > 0 ? `; ${left} hidden slide${left > 1 ? 's' : ''} left out` : ''}`);
 }
 
 // ---------------------------------------------------------------- printing
@@ -10431,7 +10440,8 @@ const preflightPane = madeLater(async (): Promise<PreflightPane> => {
     exportFor: (r) => {
       finishTab();
       const name = r.journal.name.replace(/ \(.*/, '');
-      if (r.journal.vectorPreferred) { void exportPdf(); return; }
+      // (the slide checked, hidden or not)
+      if (r.journal.vectorPreferred) { void exportPdf(undefined, !!ws.active.deck); return; }
       const raster = r.journal.formats?.find((f) => f === 'tiff' || f === 'png') ?? 'tiff';
       void exportPicture({ format: raster, dpi: r.dpi, note: `The ${name} guidelines ask for ${r.dpi} dpi for this figure${r.journal.formats ? `, as ${r.journal.formats.map((f) => f.toUpperCase()).join(', ')}` : ''}.` });
     },

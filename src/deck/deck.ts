@@ -887,6 +887,11 @@ export interface SectionCount { name: string; count: number }
 /** How things on the slides fit a new slide size: kept as they are (centred), made as big as will fit (Ensure Fit), or as big as the slide allows (Maximize). */
 export type SizeFit = 'centre' | 'fit' | 'max';
 
+/** The slides a deck's PDF has, by their place: not the hidden ones (as PowerPoint's Save as PDF leaves them out). */
+export function shownSlides(slides: readonly { hidden?: boolean }[]): number[] {
+  return slides.flatMap((s, i) => (s.hidden ? [] : [i]));
+}
+
 /** A slide's transition, animations, comments, own background and whether it is hidden, copied (for duplicates and the undo history). */
 export interface Motion { ownItems?: boolean; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; notesKept?: NotesKept; notesLook?: NotesLook }
 
