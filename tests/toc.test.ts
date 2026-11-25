@@ -144,6 +144,17 @@ describe('a Word file saved again here is the same (office sampler F-W-018)', ()
     }
   });
 
+  it('writes them the same again where Normal has lines of its own (they say they haven\'t them)', async () => {
+    const d = sample();
+    d.styles = { ...d.styles, Normal: { ...d.styles.Normal, border: { top: { style: 'single', w: 1, color: '#000000' } } } };
+    const once = await writeDocx(d, deps);
+    expect(styleOf(once, 'TOC1')).toContain('<w:top w:val="nil"/>');
+    const back = (await readDocx(once)).doc;
+    expect(back.styles.TOC1).toBeUndefined();
+    const twice = await writeDocx(back, deps);
+    for (const id of ['TOC1', 'TOC2', 'TOC3']) expect(styleOf(twice, id)).toBe(styleOf(once, id));
+  });
+
   it('keeps a "toc 1" style changed in Word as the document\'s own', async () => {
     const once = await writeDocx(sample(), deps);
     const files = unzipSync(once);
