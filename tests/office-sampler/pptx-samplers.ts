@@ -15,7 +15,6 @@ const TAGS = 'the second save differs only in Chemweave\'s own tag parts (ppt/ta
 export const PPTX_FINDINGS: Record<string, Finding> = {
   // masters, layouts, presentation
   'pptx-masters.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
-  'P-MST-48': { finding: 'F-P-003', note: 'slide size A4 (sldSz cx 10692000, cy 7560000) is saved as cx 10693400, cy 7556500 (rounded to whole points, 842 × 595 pt); type="A4" is kept' },
   // text
   'pptx-text.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-001', note: TAGS },
   // shapes

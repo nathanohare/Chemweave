@@ -49,6 +49,8 @@ export interface SlideSize {
   h: number;
   /** PowerPoint's name for the size (p:sldSz's type: Letter, A4, 16:9...), kept from the file read while the size stays. */
   type?: string;
+  /** The size exactly as the file had it (EMU; A4 isn't a whole number of points), written back while `w` and `h` are it to the nearest point. */
+  emu?: { cx: number; cy: number };
 }
 /** PowerPoint's names for slide sizes (ECMA-376 Part 1 §19.7.18). */
 export const SLIDE_SIZE_TYPES = ['35mm', 'A3', 'A4', 'B4ISO', 'B4JIS', 'B5ISO', 'B5JIS', 'banner', 'custom', 'hagakiCard', 'ledger', 'letter', 'overhead', 'screen16x10', 'screen16x9', 'screen4x3'];
