@@ -11,6 +11,7 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => false, invoke: async () 
 import { unzipSync, strFromU8 } from 'fflate';
 import { openAndSave } from './office-sampler/app';
 import { pptxShapes } from './office-sampler/pptx-shapes';
+import { LINE_PRST } from '../src/io/pptx-read';
 
 /** Every shape (p:sp or p:cxnSp) on every slide, as XML. */
 const shapes = (bytes: Uint8Array) => Object.entries(unzipSync(bytes))
@@ -25,5 +26,16 @@ describe('a flowchart connector through Open and Save (F-P-006)', () => {
     expect(circle[0]).toMatch(/^<p:sp>/);
     expect(circle[0]).toContain('P-GEO-36');
     expect(saved.filter((s) => s.startsWith('<p:cxnSp>') && s.includes('P-GEO-36'))).toHaveLength(0);
+  });
+});
+
+describe('which preset shapes are read as lines', () => {
+  // every ST_ShapeType value (ECMA-376 Part 1, §20.1.10.56) with "line" or "connector" in its name
+  const LINES = ['line', 'lineInv', 'straightConnector1', 'bentConnector2', 'bentConnector3', 'bentConnector4', 'bentConnector5',
+    'curvedConnector2', 'curvedConnector3', 'curvedConnector4', 'curvedConnector5'];
+  const SHAPES = ['flowChartConnector', 'flowChartOffpageConnector', 'flowChartOnlineStorage', 'flowChartOfflineStorage'];
+  it('takes the line and the connectors as lines, and the flowchart shapes named like them as shapes', () => {
+    for (const p of LINES) expect(LINE_PRST.test(p), p).toBe(true);
+    for (const p of SHAPES) expect(LINE_PRST.test(p), p).toBe(false);
   });
 });
