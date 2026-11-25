@@ -180,4 +180,23 @@ describe("Word's arrow over or under its text (group character)", () => {
     expect(roundTrip('\\xrightarrow{a}')).toBe('\\xrightarrow{a}');
     expect(roundTrip('\\xrightarrow[hv]{a}')).toBe('\\xrightarrow[hv]{a}');
   });
+  it('keeps bracketed text under it whole ([O], a concentration), and another arrow (⇌)', () => {
+    const o = ommlToTex(ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:pos m:val="top"/></m:groupChrPr><m:e>${r('[O]')}</m:e></m:groupChr>`));
+    expect(parseMath(o)).toMatchObject({ t: 'arrow' });
+    expect(roundTrip(o)).toBe(o);
+    expect(mathText(o)).toContain('[O]');
+    const eq = ommlToTex(ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="⇌"/><m:pos m:val="top"/></m:groupChrPr><m:e>${r('a')}</m:e></m:groupChr>`));
+    expect(roundTrip(eq)).toBe(eq);
+    expect(eq).toMatch(/\[a\]\{\}$/);
+  });
+  it('says its text in plain text, over or under, and reads the form older saves have', () => {
+    expect(mathText('A \\xrightarrow[a]{} B')).toContain('→ (a)');
+    expect(mathText('A \\xrightarrow{b} B')).toContain('→ (b)');
+    expect(mathText('A \\xrightarrow{} B')).not.toContain('()');
+    // (older saves: a blank group character with the text as its lower limit)
+    const old = ommlEl(`<m:limLow><m:e><m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:vertJc m:val="bot"/></m:groupChrPr><m:e>${r(' ')}</m:e></m:groupChr></m:e><m:lim>${r('hv')}</m:lim></m:limLow>`);
+    const tex = ommlToTex(old);
+    expect(mathText(tex)).toContain('hv');
+    expect(roundTrip(tex)).toBe(roundTrip(roundTrip(tex)));
+  });
 });

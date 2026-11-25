@@ -728,6 +728,9 @@ const val = (e: Element | null, name: string): string | null => {
   return '';
 };
 
+/** An optional argument ([...]) of what may hold a ] of its own (a concentration, [O]): in braces then. */
+const optArg = (t: string): string => (t.includes(']') ? `{${t}}` : t);
+
 /** A Word equation (m:oMath, or m:oMathPara holding them) as LaTeX. */
 export function ommlToTex(el: Element): string {
   return texOf(kidsOf(el)).replace(/\s+/g, ' ').trim();
@@ -799,7 +802,7 @@ function texEl(e: Element): string {
       const long = LONG_OF.get(chr);
       const inner = part('e').replace(/\\quad\s*/g, '').trim();
       // (the arrow over its text, pos top: the text goes under the arrow)
-      if (long) return val(pr, 'pos') === 'top' ? `\\${long}[${inner}]{}` : `\\${long}{${inner}}`;
+      if (long) return val(pr, 'pos') === 'top' ? `\\${long}[${optArg(inner)}]{}` : `\\${long}{${inner}}`;
       return val(pr, 'pos') === 'top' ? `\\overset{${texChars(chr)}}{${inner}}` : `\\underset{${texChars(chr)}}{${inner}}`;
     }
     case 'limUpp': case 'limLow': {
@@ -807,7 +810,7 @@ function texEl(e: Element): string {
       const up = local(e) === 'limUpp';
       // an arrow with conditions under it
       const m = /^\\(x[A-Za-z]+)\{(.*)\}$/.exec(body);
-      if (m && !up) return `\\${m[1]}[${lim}]{${m[2]}}`;
+      if (m && !up) return `\\${m[1]}[${optArg(lim)}]{${m[2]}}`;
       return up ? `\\overset{${lim}}{${body}}` : `\\underset{${lim}}{${body}}`;
     }
     case 'func': return `${part('fName')} ${part('e')}`;
@@ -832,7 +835,11 @@ export function mathText(src: string): string {
       case 'big': return n.op;
       case 'acc': return flat(n.body);
       case 'over': return flat(n.body);
-      case 'arrow': return ` ${n.ch}${n.over ? ` (${flat(n.over)})` : ''} `;
+      case 'arrow': {
+        // (what is over it and what is under it, those there are)
+        const said = [n.over, n.under].map((x) => (x ? flat(x).trim() : '')).filter(Boolean);
+        return ` ${n.ch}${said.length ? ` (${said.join(', ')})` : ''} `;
+      }
     }
   };
   return flat(parseMath(src)).replace(/\s+/g, ' ').trim();
