@@ -7,7 +7,7 @@ import { parseAdduct, ionMz, type Adduct } from '../chem/hrms';
 import { ionCounts, isotopePattern, elementalAnalysis, type IsotopePeak, type JobackResult } from '../chem/analysis';
 import type { PkaSite } from '../chem/pka';
 import { chargeText, hillFormula, withoutCharge } from '../chem/formula';
-import { roman, sup, type MetalCount } from '../chem/electrons';
+import { electronPrefs, roman, sup, type MetalCount } from '../chem/electrons';
 import { nameRuns } from '../chem/namer';
 import type { Compound } from '../chem/pubchem';
 import { readDensity, readTemperature, readPressure, readRefractiveIndex, labCalc, calcName, type LabCalc } from '../chem/bench';
@@ -96,10 +96,11 @@ const ligandHtml = (name: string) => esc(name).replace(/(?<=[A-Za-z)\]])(\d+)/g,
  */
 export function electronsHtml(counts: MetalCount[]): string {
   if (!counts.length) return '';
+  const neutralOn = electronPrefs.method !== 'ionic', ionicOn = electronPrefs.method !== 'neutral';
   const metal = (c: MetalCount) => {
     const plural = (n: number) => (n === 1 ? '' : ` ×${n}`);
     const kind = (r: MetalCount['ligands'][number]) => r.mm ? 'M–M' : [r.l ? 'L' + (r.l > 1 ? sub(r.l) : '') : '', r.x ? 'X' + (r.x > 1 ? sub(r.x) : '') : '', r.z ? 'Z' : ''].join('');
-    const rows = c.ligands.map((r) => `<tr><td>${ligandHtml(r.name)}${plural(r.count)}</td><td>${kind(r)}</td><td>${r.neutral * r.count}</td><td>${r.ionic * r.count}</td></tr>`);
+    const rows = c.ligands.map((r) => `<tr><td>${ligandHtml(r.name)}${plural(r.count)}</td><td>${kind(r)}</td>${neutralOn ? `<td>${r.neutral * r.count}</td>` : ''}${ionicOn ? `<td>${r.ionic * r.count}</td>` : ''}</tr>`);
     const closed = c.electrons === 18 ? ' (a closed shell)' : '';
     // (with a Z ligand, Green's valence number and dⁿ differ from the oxidation state's: both are shown, each named)
     const green = c.green
@@ -107,11 +108,11 @@ export function electronsHtml(counts: MetalCount[]): string {
       : '';
     return `<p class="ec-head"><b>${esc(c.symbol)}(${roman(c.oxidation)})</b>, d${sup(c.dn)}, <b>${c.electrons} electrons</b>${closed} · ${esc(c.classification)}</p>${green}
       <table class="ec-table">
-        <tr><th>Ligand</th><th>Class</th><th title="Neutral (covalent) counting: the metal atom's own electrons, one from each X, two from each L">Neutral</th><th title="Ionic counting: the metal ion's d electrons, two from each X⁻ and each L">Ionic</th></tr>
-        <tr><td>${esc(c.symbol)}</td><td></td><td>${c.group}</td><td>d${sup(c.dn)}: ${c.dn}</td></tr>
+        <tr><th>Ligand</th><th>Class</th>${neutralOn ? `<th title="Neutral (covalent) counting: the metal atom's own electrons, one from each X, two from each L">Neutral</th>` : ''}${ionicOn ? `<th title="Ionic counting: the metal ion's d electrons, two from each X⁻ and each L">Ionic</th>` : ''}</tr>
+        <tr><td>${esc(c.symbol)}</td><td></td>${neutralOn ? `<td>${c.group}</td>` : ''}${ionicOn ? `<td>d${sup(c.dn)}: ${c.dn}</td>` : ''}</tr>
         ${rows.join('')}
-        ${c.charge ? `<tr><td>Charge ${c.charge > 0 ? '+' : '−'}${Math.abs(c.charge)}</td><td></td><td>${c.charge > 0 ? '−' : '+'}${Math.abs(c.charge)}</td><td>in d${sup(c.dn)}</td></tr>` : ''}
-        <tr class="ec-total"><td>Total</td><td></td><td>${c.electrons}</td><td>${c.electrons}</td></tr>
+        ${c.charge ? `<tr><td>Charge ${c.charge > 0 ? '+' : '−'}${Math.abs(c.charge)}</td><td></td>${neutralOn ? `<td>${c.charge > 0 ? '−' : '+'}${Math.abs(c.charge)}</td>` : ''}${ionicOn ? `<td>in d${sup(c.dn)}</td>` : ''}</tr>` : ''}
+        <tr class="ec-total"><td>Total</td><td></td>${neutralOn ? `<td>${c.electrons}</td>` : ''}${ionicOn ? `<td>${c.electrons}</td>` : ''}</tr>
       </table>${c.notes.map((n) => `<p class="muted small">${esc(n)}</p>`).join('')}`;
   };
   return `<details class="electrons" open><summary title="Green's covalent bond classification: L gives two electrons, X shares one, Z takes two">Electron count</summary>${counts.map(metal).join('')}</details>`;

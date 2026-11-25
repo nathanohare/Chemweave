@@ -180,6 +180,7 @@ import { SHEETS } from './io/cdxml-print';
 import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
+import { BOX_DEFAULTS } from './ui/toolbox-defaults';
 import { StylePanel, tidyStyle } from './ui/style-panel';
 import { installCombos } from './ui/combo';
 import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts } from './fonts';
@@ -193,7 +194,7 @@ import { TEMPLATES, Template, templateById, ownTemplates, setOwnTemplates, templ
 import { freeLigandFor, loadFullLigands, placeFreeLigand } from './chem/expand';
 import { centreEnd, haptoLook } from './chem/hapto';
 import { viewNow, viewRingOf, type RingView } from './chem/ring-views';
-import { countElectrons } from './chem/electrons';
+import { countElectrons, electronPrefs, ELECTRON_METHODS, type ElectronMethod } from './chem/electrons';
 import { addNicknames, removeNickname, isBuiltInNickname, builtInNicknames, labelPrefs, alkylPrefs, ALKYL_LOOKS, type AlkylLook, tokenize as tokenizeLabel } from './chem/labels';
 import { restyleAlkyl } from './text/alkyl-restyle';
 import { selectedGroup } from './chem/group-smiles';
@@ -220,7 +221,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -12719,6 +12720,14 @@ function setToolCells(v: Settings['toolCells']): void {
   window.dispatchEvent(new Event('resize'));
 }
 
+/** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size: the toolboxes' buttons alone, in percent (100: the size of the ribbon's small buttons). */
+let toolboxScale = 100;
+function setToolboxScale(v: number): void {
+  toolboxScale = toolboxScaleOf(v);
+  document.documentElement.style.setProperty('--tb-scale', String(toolboxScale / 100));
+  window.dispatchEvent(new Event('resize'));
+}
+
 /** Settings ▸ Toolboxes: how the toolboxes' buttons look and what their tips say. */
 let ribbonLook: Settings['canvasRibbon'] = 'classic';
 function setRibbonLook(look: Settings['canvasRibbon']): void {
@@ -12735,6 +12744,8 @@ async function toolboxPreferences(): Promise<void> {
       help: 'Both keep the tabs. View ▸ Ribbon ▸ Simplified Ribbon also switches between them; the ▴ at the right end of the tabs (or Ctrl+F1) collapses the ribbon to its tabs.' },
     { name: 'cells', label: 'Button cells', value: toolCells, options: [{ value: 'off', label: 'None' }, { value: 'grid', label: 'Grid lines' }, { value: 'raised', label: 'Raised buttons' }, { value: 'both', label: 'Grid lines and raised buttons' }],
       help: 'Gives each toolbox button a cell of its own, so the buttons are easier to tell apart and to hit.' },
+    { name: 'scale', label: 'Toolbox Button Size', type: 'number', unit: '%', value: String(toolboxScale),
+      help: `The size of the toolboxes' buttons alone, from ${TOOLBOX_SCALE_MIN} to ${TOOLBOX_SCALE_MAX}%. At 100% they match the ribbon's small buttons. View ▸ Window and Colors ▸ Interface Size changes everything together.` },
     { name: 'tips', label: 'Detailed tooltips', type: 'checkbox', value: String(toolTip.enabled) },
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => toolboxPreview(v.look === 'simple' ? 'simple' : 'classic', (['grid', 'raised', 'both'].includes(v.cells) ? v.cells : 'off') as ToolCells, {
     ribbon: [...document.querySelectorAll('.canvas-ribbon > .rb-panel svg.ci-ic')].slice(0, 12),
@@ -12742,6 +12753,7 @@ async function toolboxPreferences(): Promise<void> {
   }) } });
   if (!r) return;
   setToolCells((['grid', 'raised', 'both'].includes(r.cells) ? r.cells : 'off') as Settings['toolCells']);
+  setToolboxScale(toolboxScaleOf(r.scale));
   setRibbonLook(r.look === 'simple' ? 'simple' : 'classic');
   showToolTips(r.tips === 'true');
   storeSettings();
@@ -12834,6 +12846,8 @@ async function personalPreferences(): Promise<void> {
       help: 'Everywhere you draw: Canvas, structures in documents and spreadsheets, and text boxes on slides. Ctrl+Enter always finishes, and Shift+Enter always breaks the line.' },
     { name: 'alkylLook', label: 'AutoFormat alkyl isomer prefixes', value: alkylPrefs.look, options: ALKYL_LOOK_CHOICES, short: true, inline: (v) => alkylSwatch(parseAlkylLook(v)),
       help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)₂, nBu, P(t-Bu)₂). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu₃).' },
+    { name: 'electronMethod', label: 'Electron Counting Method', value: electronPrefs.method, short: true, options: [{ value: 'both', label: 'Both' }, { value: 'neutral', label: 'Neutral Ligand' }, { value: 'ionic', label: 'Donor Pair (Ionic)' }],
+      help: 'How the electron count of a metal complex is shown in the Side Panel, the Analysis panel and Insert as Table. Both shows the two columns side by side, which give the same total. Neutral Ligand starts from the metal atom\'s own electrons and adds what each ligand shares. Donor Pair (Ionic) starts from the metal ion\'s d electrons and adds the pair each ligand donates.' },
     { name: 'warnLook', label: 'Mark problems on the drawing with', value: renderer.warnLook, short: true, inline: (v) => problemSwatch((WARN_LOOKS as readonly string[]).includes(v) ? v as WarnLook : 'box', doc.style), options: [
       { value: 'box', label: 'A thin red box' }, { value: 'soft', label: 'A soft red disc' }, { value: 'circle', label: 'A red circle' },
       { value: 'dashed', label: 'A dashed red circle' }, { value: 'corners', label: 'Red corner marks' }],
@@ -12913,6 +12927,9 @@ async function personalPreferences(): Promise<void> {
   setFocalDefault(focalPrefs.dflt);
   editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
+  electronPrefs.method = ELECTRON_METHODS.includes(r.electronMethod as ElectronMethod) ? r.electronMethod as ElectronMethod : 'both';
+  stylePanel.refresh();
+  scheduleAnalysis(true);
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
   alkylPrefs.look = look;
@@ -13071,6 +13088,9 @@ function currentSettings(): Settings {
     arrowEndGap: arrowGaps.end,
     cursorAids: { ...editor.aids },
     haptoDelocalized: haptoLook.delocalized,
+    electronMethod: electronPrefs.method,
+    webLook: 1,
+    toolboxScale,
     superscriptR: labelPrefs.superscriptR,
     superscriptRText: labelPrefs.plainText,
     alkylLook: alkylPrefs.look,
@@ -13279,6 +13299,7 @@ function applySettings(s: Settings): void {
   setShapesInk(s.shapeInk);
   setOneColumnTools(s.oneColumnTools);
   setToolCells(s.toolCells);
+  setToolboxScale(s.toolboxScale);
   setRibbonLook(s.canvasRibbon);
   startView = s.startView;
   templatesOnNew = { ...s.templatesOnNew };
@@ -13320,6 +13341,7 @@ function applySettings(s: Settings): void {
   arrowGaps.end = s.arrowEndGap;
   editor.aids = { ...s.cursorAids };
   haptoLook.delocalized = s.haptoDelocalized;
+  electronPrefs.method = s.electronMethod;
   labelPrefs.superscriptR = s.superscriptR;
   labelPrefs.plainText = s.superscriptRText;
   alkylPrefs.look = s.alkylLook;
@@ -15748,23 +15770,16 @@ const BOX_TITLES: Record<string, string> = {
   main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species Table', details: 'Side Panel',
   schemes: 'Smart Schemes', diagrams: 'Diagrams', tables: 'Tables and Charts', biopolymers: 'Biopolymers', perspective: 'Perspective and 3-D',
 };
-/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"). */
-const cmds = (list: (string | null)[]) => list.map((c) => (c ? `cmd:${c}` : 'sep'));
+/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"): see toolbox-defaults.ts. */
 const BOX_ITEMS: Record<string, readonly string[]> = {
+  ...BOX_DEFAULTS,
   main: MAIN_ITEMS,
-  structure: cmds(['clean-up', 'clean-up-options', 'add-frame', 'fill-rings', 'highlight', 'remove-highlight', null, 'aromatic-circles', 'stereo-labels', null, 'add-id-label', 'add-caption', 'attach-descriptors', 'number-compounds', null, 'contract-label', 'expand-label', 'expand-label-full', 'hapto-bond', 'name-to-structure']),
-  arrange: [...cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw']), 'pal:perspective', 'cmd:turn-3d', ...cmds([null, 'shape-front', 'shape-back'])],
-  highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
+  templates: TOOL_GROUPS.flat().filter((i): i is PaletteDef => 'palette' in i && i.palette.startsWith('tpl-')).map((i) => `pal:${i.palette}`),
   custom: defaultToolboxes().custom,
-  schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
-  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
-  tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
-  biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
-  perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
 };
-/** Short names on toolbox buttons for commands with no icon. */
+/** Short names on the Highlight toolbox's buttons. */
 const SHORT_LABEL: Record<string, string> = {
-  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline only',
+  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline',
   'shadow-highlight': 'Shadow', 'glow-highlight': 'Glow', 'save-highlight-look': 'Save Style…',
 };
 
@@ -15805,7 +15820,7 @@ function buildBox(body: HTMLElement, id: string, vertical: boolean): void {
   const s = shownGrid(g, dock);
   const cells = document.createElement('div');
   cells.className = 'tb-cells';
-  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(34px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(var(--tbw), 1fr))`;
   const make = (k: string): HTMLElement | null => {
     const name = k.slice(k.indexOf(':') + 1);
     // the drawing tools' buttons are the tool bar's own (it shows the one in use, and each palette's last pick)
@@ -15844,19 +15859,21 @@ function sideFold(): HTMLButtonElement {
 }
 /** The toolboxes laid out by the app itself (the rest show buttons chosen in Customize Toolboxes). */
 const SPECIAL_BOXES: Record<string, (body: HTMLElement, vertical: boolean) => void> = {
-  templates: (body, vertical) => {
-    // (many templates: the box scrolls rather than run off the window)
-    body.classList.add('tb-grid', 'tb-scroll');
-    body.style.setProperty('--cols', vertical ? '2' : '12');
-    for (const group of TOOL_GROUPS) for (const item of group) {
-      if (!('palette' in item) || !item.palette.startsWith('tpl-') || item.palette === 'tpl-own') continue;
-      // a heading over each palette's buttons, so the families are easy to find
-      const head = document.createElement('div');
-      head.className = 'tb-heading';
-      head.textContent = head.title = item.title;
-      body.append(head);
-      for (const t of item.items) { const b = toolButton(t.name); if (b) body.append(b); }
-    }
+  // Highlight: the two commands, what a highlight is made of as switches, then the saved styles
+  highlight: (body, vertical) => {
+    body.classList.add('tb-hl');
+    const row = (cls: string, names: string[]) => {
+      const r = document.createElement('div');
+      r.className = cls;
+      for (const n of names) {
+        const b = commandButton(n, runFromToolbox, SHORT_LABEL[n]);
+        if (!b.classList.contains('tb-icon')) b.classList.add('tb-chip');
+        r.append(b);
+      }
+      return r;
+    };
+    body.append(row('tb-hl-row', ['highlight', 'remove-highlight', 'save-highlight-look']),
+      row('tb-hl-chips', ['smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight']), looksList(vertical));
   },
   colours: (body, vertical) => {
     const modes = document.createElement('div');
@@ -16018,8 +16035,8 @@ function layCells(cells: HTMLElement, fit?: number): void {
   const blocks = starts.length;
   // the longest block sets how many rows (columns, along the top or bottom) there are
   const len = Math.max(...starts.map((st, b) => (starts[b + 1] ?? full) - st));
-  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(34px, auto))`;
-  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(32px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(var(--tbw), 1fr))`;
+  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(var(--tbh), auto))`;
   cells.querySelectorAll('.tb-line').forEach((l) => l.remove());
   // a line where a block starts is not needed: the blocks stand apart
   const lineRows = new Set(across ? s.lineRows : s.lineRows.filter((r) => !starts.includes(r)));

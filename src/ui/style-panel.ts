@@ -49,7 +49,7 @@ import { straightenAt } from '../chem/chemgeom';
 import type { EnergyData } from '../design/energy';
 import { TLC_LOOKS, GEL_LOOKS, LOCK_SPOTS_INFO, type PlateData } from '../design/plates';
 import { DIAGRAM_COLOURS, DIAGRAM_LAYOUTS, type DiagramData } from '../design/diagrams';
-import { LIGAND_TYPES, countRows, countSummary, countsDiffer, ligandText, roman, selectedComplex, signed, sup, typeKey, typeText, type MetalCount } from '../chem/electrons';
+import { LIGAND_TYPES, countRows, electronPrefs, countSummary, countsDiffer, ligandText, roman, selectedComplex, signed, sup, typeKey, typeText, type MetalCount } from '../chem/electrons';
 import { ECOUNT_RANGE } from '../chem/ecount-settings';
 import type { ElectronCountSettings } from '../model';
 
@@ -202,10 +202,26 @@ export class StylePanel {
 
   constructor(private section: HTMLElement, private body: HTMLElement, private doc: Doc, private sel: () => Selection, private changed: () => void) {}
 
+  /**
+   * A selection box or Ctrl+A that takes in a whole MO diagram selects its frame and every line and
+   * caption in it. That is the diagram, not a pile of shapes: the selection is then the frame alone,
+   * so its settings show. Anything else selected too (not part of the diagram) leaves it as it is.
+   */
+  private wholeMoDiagram(s: Selection): Selection {
+    if (s.shapes.size < 2 && !s.captions.size) return s;
+    const frames = [...s.shapes].map((id) => this.doc.shapes.get(id)).filter((x): x is Shape => !!x && x.plate?.kind === 'mo' && !!x.frame);
+    if (frames.length !== 1) return s;
+    const f = frames[0], m = frameMembers(this.doc, f.frame!);
+    if (s.atoms.size || s.bonds.size || s.arrows.size) return s;
+    for (const id of s.shapes) if (id !== f.id && !m.shapes.has(id)) return s;
+    for (const id of s.captions) if (!m.captions.has(id)) return s;
+    return { ...s, shapes: new Set([f.id]), captions: new Set() };
+  }
+
   /** Redraw the panel for the current selection, keeping the focus on the same control. */
   refresh(force = false): void {
     if (force) this.key = '';
-    const s = this.sel();
+    const s = this.wholeMoDiagram(this.sel());
     const tp = this.tables?.part();
     const key = `${this.doc.version}|${this.doc.stereo?.version}|${tp ? JSON.stringify(tp) : ''}|${[...s.arrows].join(',')}|${[...s.shapes].join(',')}|${[...s.captions].join(',')}|${[...s.atoms].join(',')}|${[...s.bonds].join(',')}|${[...s.shapes].map((id) => this.plate?.moLevel?.(id) ?? '').join(',')}`;
     if (key === this.key) return;
@@ -1798,7 +1814,9 @@ export class StylePanel {
       this.doc.updateAtom(metal, { ecount: Object.keys(next).length ? next : undefined });
     });
     this.heading('Electron Count');
-    this.help('Two ways of counting that give the same total. Neutral: the metal atom\'s own electrons, two from each L ligand and one from each X, then the charge taken away (or added for an anion). Ionic: the metal ion\'s d electrons (after its oxidation state), two from each L and two from each X counted as an anion. L gives a lone pair, X shares one electron, Z takes two (Green\'s classes). Change a ligand\'s type below when the automatic one is wrong.');
+    const method = electronPrefs.method;
+    const neutralOn = method !== 'ionic', ionicOn = method !== 'neutral';
+    this.help('Two ways of counting that give the same total. Neutral: the metal atom\'s own electrons, two from each L ligand and one from each X, then the charge taken away (or added for an anion). Ionic: the metal ion\'s d electrons (after its oxidation state), two from each L and two from each X counted as an anion. L gives a lone pair, X shares one electron, Z takes two (Green\'s classes). Change a ligand\'s type below when the automatic one is wrong. Settings ▸ Preferences ▸ Electron Counting Method shows only one of the two.');
     const box = document.createElement('div');
     box.className = 'ec-panel';
     const head = document.createElement('p');
@@ -1827,14 +1845,14 @@ export class StylePanel {
       return row;
     };
     const th = document.createElement('tr');
-    for (const [t, tip] of [['Ligand', ''], ['Type', ''], ['Neutral', 'Neutral counting: the metal atom\'s electrons, one from each X, two from each L'], ['Ionic', 'Ionic counting: the metal ion\'s d electrons, two from each X and each L']]) {
+    for (const [t, tip] of [['Ligand', ''], ['Type', ''], ...(neutralOn ? [['Neutral', 'Neutral counting: the metal atom\'s electrons, one from each X, two from each L']] : []), ...(ionicOn ? [['Ionic', 'Ionic counting: the metal ion\'s d electrons, two from each X and each L']] : [])]) {
       const h = document.createElement('th');
       h.textContent = t;
       if (tip) h.title = tip;
       th.append(h);
     }
     table.append(th);
-    tr([c.symbol, 'metal', String(c.group), `d${sup(c.dn)}: ${c.dn}`]).cells[1].className = 'muted';
+    tr([c.symbol, 'metal', ...(neutralOn ? [String(c.group)] : []), ...(ionicOn ? [`d${sup(c.dn)}: ${c.dn}`] : [])]).cells[1].className = 'muted';
     const own = c.settings.types ?? {};
     for (const r of c.ligands) {
       let type: string | HTMLElement = typeText(r.type);
@@ -1862,10 +1880,10 @@ export class StylePanel {
         }));
         type = sel;
       }
-      tr([ligandText(r), type, String(r.neutral * r.count), String(r.ionic * r.count)]);
+      tr([ligandText(r), type, ...(neutralOn ? [String(r.neutral * r.count)] : []), ...(ionicOn ? [String(r.ionic * r.count)] : [])]);
     }
-    if (c.charge) tr([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
-    tr(['Total', '', String(c.electrons), String(c.ionicTotal)], 'ec-total');
+    if (c.charge) tr([`Charge ${signed(c.charge)}`, '', ...(neutralOn ? [signed(-c.charge)] : []), ...(ionicOn ? [`in d${sup(c.dn)}`] : [])]);
+    tr(['Total', '', ...(neutralOn ? [String(c.electrons)] : []), ...(ionicOn ? [String(c.ionicTotal)] : [])], 'ec-total');
     box.append(table);
     // an oxidation state set by hand that the ligand types don't give: the two totals differ, and say why
     const differ = countsDiffer(c);

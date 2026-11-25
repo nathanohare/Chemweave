@@ -3,6 +3,7 @@
 // and commands. Unlocked, a toolbox is dragged by its title to float anywhere, or to an edge of
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
+import { BOX_COLS } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
 import { COMMAND_NAMES } from '../editor/keymap';
@@ -87,8 +88,8 @@ const OWN_ID = /^own-[a-z0-9]{1,16}$/;
 /** A fly-out of your own: its palette name. */
 const OWN_FLY = /^fly-[a-z0-9]{1,16}$/;
 export const isOwnFlyout = (name: string): boolean => OWN_FLY.test(name);
-/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: templates, colours, the side panel). */
-export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'highlight', 'custom'];
+/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: highlight, colours, the side panel). */
+export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'templates', 'custom'];
 /** Toolboxes that can't be deleted (they can still be hidden, except the side panel). */
 export const KEEP: readonly string[] = ['main', 'details'];
 
@@ -930,7 +931,7 @@ export function slotAt(boxes: readonly Box[], x: number, y: number): number {
 // ---------------------------------------------------------------- grids of buttons (Customize Toolboxes)
 
 /** How wide a toolbox's grid is when made from a list (the drawing tools: two columns, as on the bar). */
-const LIST_COLS: Record<string, number> = { main: 2 };
+const LIST_COLS: Record<string, number> = { main: 2, ...BOX_COLS };
 
 /** The drawing tools are never more than this many columns wide, in any mode or dock (they scroll instead). */
 export const MAIN_COLS = 2;

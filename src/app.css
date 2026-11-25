@@ -5663,3 +5663,63 @@ dialog.tabs-dialog { width: min(94vw, 440px); }
 /* G5-34: the SI tab's status bar ends with the zoom every mode has (it zooms the Live Preview) */
 #si-statusbar[hidden], body:not(.si-mode) #si-statusbar { display: none; }
 #si-statusbar.si-zoom-off { opacity: 0.5; }
+
+/* ---- Toolbox buttons: the size of the ribbon's small buttons (26 × 23 with an 18 px icon) as the
+   app comes, times Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size (--tb-scale), which
+   leaves the rest of the interface alone. Density and touch give their own starting sizes. The
+   fly-out palettes keep their own, larger buttons. */
+html { --tb-scale: 1; --tool-w: 26px; --tool-h: 23px; --tool-ic: 18px; }
+html[data-density='standard'] { --tool-w: 32px; --tool-h: 29px; --tool-ic: 21px; }
+html[data-density='large'] { --tool-w: 38px; --tool-h: 35px; --tool-ic: 25px; }
+html.touch-ui { --tool-w: 44px; --tool-h: 42px; --tool-ic: 24px; }
+body {
+  --tbw: calc(var(--tool-w) * var(--tb-scale)); --tbh: calc(var(--tool-h) * var(--tb-scale)); --tbi: calc(var(--tool-ic) * var(--tb-scale));
+}
+/* (whole pixels where the browser can round, so the cells' lines stay sharp at any size) */
+@supports (width: round(1.5px, 1px)) {
+  body { --tbw: round(calc(var(--tool-w) * var(--tb-scale)), 1px); --tbh: round(calc(var(--tool-h) * var(--tb-scale)), 1px); --tbi: round(calc(var(--tool-ic) * var(--tb-scale)), 1px); }
+}
+body .toolbox .tool, body .toolbox .tb-cmd.tb-icon, body .toolbox .tb-cells > .tb-gap { width: var(--tbw); height: var(--tbh); }
+body .toolbox .tool > :is(svg, img), body .toolbox .tb-cmd.tb-icon > svg { width: var(--tbi); height: var(--tbi); }
+body .toolbox .tool .tool-word { font-size: calc(10px * var(--tb-scale)); }
+body .toolbox .palette-wrap .more { width: 50%; height: 50%; }
+body .toolbox .palette-wrap .more::after { right: 1px; bottom: 1px; border-left-width: calc(var(--tbi) * 0.36); border-bottom-width: calc(var(--tbi) * 0.36); }
+body.cells-grid .toolbox .tb-cells > .tool, body.cells-grid .toolbox .tb-cells > .palette-wrap > .tool, body.cells-grid .toolbox .tb-cells > .tb-cmd.tb-icon { width: 100%; height: 100%; min-width: var(--tbw); min-height: var(--tbh); }
+/* every cell is ruled the same way: a command's button fills its cell and has no border of its own */
+body.cells-grid .toolbox .tb-cells > .tb-cmd { border: 0; border-radius: 0; background: transparent; }
+body.cells-grid .toolbox .tb-cells > .tb-cmd:hover { background: var(--accent-soft); }
+body.cells-grid .toolbox .tb-cells > .tb-cell { border-right: 1px solid var(--cell-line); border-bottom: 1px solid var(--cell-line); }
+body.cells-grid .toolbox .tb-cells > .tb-gap { width: auto; height: auto; }
+body.cells-raised .toolbox .tb-cells > .tb-cmd.tb-icon { border: 1px solid var(--line); border-radius: var(--r-control); background: linear-gradient(var(--panel), color-mix(in srgb, var(--bg) 70%, var(--panel))); box-shadow: 0 1px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.5); }
+body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon { border-color: transparent; background: transparent; }
+body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon:hover { background: var(--accent-soft); }
+
+/* a floating toolbox's buttons spread across its width, so a title wider than its buttons leaves no blank strip */
+.toolbox.floating .tb-cells { width: 100%; }
+body.cells-grid .toolbox.floating .tb-cells { width: 100%; box-sizing: border-box; }
+
+/* ---- Toolbox frames: a bold line in the ribbon's border gray stands in for the padding there was,
+   and the corners are nearly square. The fill behind a pressed or pointed-at button is a deeper
+   gray than the ribbon's, so it shows on the toolbox's surface. */
+.toolbox { --tb-edge: var(--line); }
+body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
+:root[data-gray] .toolbox { --tb-edge: #b3b8c0; --accent-soft: #aeb5c1; }
+.toolbox.floating:not([data-id='details']) { padding: 0; gap: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
+.toolbox.floating:not([data-id='details']) > .tb-head { padding: 1px 2px 1px 4px; background: var(--tb-edge); color: var(--text); }
+:root:not([data-shadows='off']) .dock > .toolbox:not(.floating), :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) + .toolbox:not(.floating) { padding: 0; border: 2px solid var(--tb-edge); border-radius: 2px; }
+:root:not([data-shadows='off']) .dock > .toolbox:not(.floating) { gap: 0; }
+
+/* ---- The Highlight toolbox: its two commands and Save Style, the parts of a highlight as switches
+   in three even columns, then the saved styles. */
+.tb-body.tb-hl { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: 196px; padding: 3px; box-sizing: border-box; }
+.toolbox.vertical .tb-body.tb-hl { width: 150px; }
+.tb-hl-row { display: flex; align-items: center; gap: 2px; }
+.tb-hl-row > .tb-chip { margin-left: auto; flex: 0 0 auto; }
+.tb-hl-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; min-width: 0; }
+.tb-body.tb-hl > * { min-width: 0; width: 100%; box-sizing: border-box; }
+.tb-hl .tb-look { overflow: hidden; text-overflow: ellipsis; display: block; flex: 0 0 auto; }
+.tb-hl .tb-look-dot { display: inline-block; margin-right: 5px; vertical-align: -1px; }
+.toolbox.vertical .tb-hl-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.toolbox .tb-cmd.tb-chip { max-width: none; min-width: 0; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); text-align: center; border-color: var(--tb-edge, var(--line)); }
+.tb-hl .tb-looks { max-height: 168px; border-top: 1px solid var(--line); }
+.toolbox:not(.floating) > .tb-body.tb-hl { padding: 3px; }

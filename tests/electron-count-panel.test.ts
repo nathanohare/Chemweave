@@ -21,7 +21,7 @@ import { spotBeside } from '../src/editor/arrange';
 import { Editor } from '../src/editor/editor';
 import { Renderer } from '../src/render/renderer';
 import { plainMeasure } from '../src/chem/reaction';
-import { countElectrons, countRows, countSummary, expectedCount, parseType, selectedComplex, typeCode, type MetalCount } from '../src/chem/electrons';
+import { countElectrons, countRows, electronPrefs, countSummary, expectedCount, parseType, selectedComplex, typeCode, type MetalCount } from '../src/chem/electrons';
 import { bondHapto } from '../src/chem/hapto';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { readCdxml, readEcount } from '../src/io/cdxml';
@@ -492,3 +492,57 @@ function panelFor(doc: Doc, atoms: Iterable<number>) {
   p.refresh(true);
   return { p, body };
 }
+
+describe('Settings ▸ Preferences ▸ Electron Counting Method', () => {
+  // (plumbing: which columns show; the numbers are those of the Wilkinson's catalyst test above, MFT Figure 13.10)
+  const sel = (atoms: Iterable<number>): Selection => ({ atoms: new Set(atoms), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() }) as Selection;
+  const heads = (doc: Doc, m: number) => {
+    const section = document.createElement('section'), body = document.createElement('div');
+    const ids = [...doc.fragmentOf(m)];
+    new StylePanel(section, body, doc, () => sel(ids), () => {}).refresh(true);
+    return [...body.querySelectorAll('.ec-panel-table th')].map((t) => t.textContent);
+  };
+  const reset = () => { electronPrefs.method = 'both'; };
+
+  it('shows both columns unless one method is chosen', () => {
+    reset();
+    const { doc, m } = complex(45, ['PPh3', 'PPh3', 'PPh3', 'Cl']);
+    expect(electronPrefs.method).toBe('both');
+    expect(countRows(one(doc, m))[0]).toEqual(['Ligand', 'Type', 'Neutral', 'Ionic']);
+    expect(heads(doc, m)).toEqual(['Ligand', 'Type', 'Neutral', 'Ionic']);
+  });
+
+  it('Neutral Ligand hides the Ionic column in the rows and the panel, and keeps the total and summary', () => {
+    const { doc, m } = complex(45, ['PPh3', 'PPh3', 'PPh3', 'Cl']);
+    try {
+      electronPrefs.method = 'neutral';
+      const rows = countRows(one(doc, m));
+      expect(rows[0]).toEqual(['Ligand', 'Type', 'Neutral']);
+      expect(rows).toContainEqual(['Total', '', '16']);
+      expect(rows[rows.length - 1]).toEqual(['Rh(I), d⁸, 16 electrons · ML₃X']);
+      expect(heads(doc, m)).toEqual(['Ligand', 'Type', 'Neutral']);
+    } finally { reset(); }
+  });
+
+  it('Donor Pair (Ionic) hides the Neutral column in the rows and the panel, and keeps the total and summary', () => {
+    const { doc, m } = complex(45, ['PPh3', 'PPh3', 'PPh3', 'Cl']);
+    try {
+      electronPrefs.method = 'ionic';
+      const rows = countRows(one(doc, m));
+      expect(rows[0]).toEqual(['Ligand', 'Type', 'Ionic']);
+      expect(rows[1]).toEqual(['Rh', 'metal', 'd⁸: 8']);
+      expect(rows).toContainEqual(['Total', '', '16']);
+      expect(rows[rows.length - 1]).toEqual(['Rh(I), d⁸, 16 electrons · ML₃X']);
+      expect(heads(doc, m)).toEqual(['Ligand', 'Type', 'Ionic']);
+    } finally { reset(); }
+  });
+
+  it('is a setting that defaults to both, is kept, and ignores a bad value', async () => {
+    const { parseSettings, DEFAULT_SETTINGS } = await import('../src/settings');
+    expect(DEFAULT_SETTINGS.electronMethod).toBe('both');
+    expect(parseSettings('{}').electronMethod).toBe('both');
+    expect(parseSettings(JSON.stringify({ electronMethod: 'ionic' })).electronMethod).toBe('ionic');
+    expect(parseSettings(JSON.stringify({ electronMethod: 'neutral' })).electronMethod).toBe('neutral');
+    expect(parseSettings(JSON.stringify({ electronMethod: 'other' })).electronMethod).toBe('both');
+  });
+});
