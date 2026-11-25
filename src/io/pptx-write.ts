@@ -2019,10 +2019,13 @@ export function connectorSpPr(r: Arrow, lw: number, clr: ColourXml = srgbXml): {
 }
 
 /** A library shape's outline `w` × `h` points big: PowerPoint's preset when it has one, else a custom shape with these outlines (as PowerPoint and Word both write them). */
+/** Adjust values as the reader writes them (Shape.adjust.gd): name and a plain value only. */
+const ADJUST_GD = /^(<a:gd name="[A-Za-z0-9]+" fmla="val -?\d+"\/>)+$/;
+
 export function geoGeomXml(geo: string | undefined, w: number, h: number, adjust?: Shape['adjust']): string {
   const def = geoDef(geo);
   // (with the adjust values the file gave this preset, while it is still that preset)
-  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst>${adjust && adjust.prst === def.prst ? adjust.gd : ''}</a:avLst></a:prstGeom>`;
+  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst>${adjust && adjust.prst === def.prst && typeof adjust.gd === 'string' && ADJUST_GD.test(adjust.gd) ? adjust.gd : ''}</a:avLst></a:prstGeom>`;
   const o = def.draw(w, h);
   const ta = textArea(def, 0, 0, w, h);
   // the text's box through guides (LibreOffice ignores a text box given as plain numbers)

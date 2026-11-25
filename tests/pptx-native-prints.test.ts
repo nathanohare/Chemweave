@@ -134,6 +134,25 @@ describe('design shapes changed in PowerPoint', () => {
     expect(unlinked.fillColor?.toLowerCase()).toBe('#4472c4');
   });
 
+  it('keep their adjust values: a handle dragged in PowerPoint, the rest as saved', async () => {
+    const p = await deckWith(geo);
+    // (all between the preset's name and the end of its geometry)
+    const avOf = (x: Parts) => /<a:prstGeom prst="roundRect">(.*?)<\/a:prstGeom>/.exec(strFromU8(x[SLIDE2]))?.[1] ?? '';
+    const dragged = read(edited(p, SLIDE2, (x) => x.replace(/<a:prstGeom prst="roundRect"><a:avLst(\/>|><\/a:avLst>)/, '<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="val 30000"/></a:avLst>')));
+    expect(dragged.adjust).toEqual({ prst: 'roundRect', gd: '<a:gd name="adj" fmla="val 30000"/>' });
+    expect(dragged.link).toBe('https://example.org/a');
+    expect(dragged.fillColor?.toLowerCase()).toBe('#4472c4');
+    // written back; not for another shape; and only as the reader writes them
+    const again = async (s: Partial<Shape>) => avOf(await deckWith((doc) => { doc.addShape({ ...dragged, ...s } as Omit<Shape, 'id'>); }));
+    expect(await again({})).toBe('<a:avLst><a:gd name="adj" fmla="val 30000"/></a:avLst>');
+    expect(await again({ adjust: { prst: 'ellipse', gd: '<a:gd name="adj" fmla="val 30000"/>' } })).toBe('<a:avLst></a:avLst>');
+    expect(await again({ adjust: { prst: 'roundRect', gd: '</a:avLst><x/>' } })).toBe('<a:avLst></a:avLst>');
+    expect(await again({ adjust: { prst: 'roundRect', gd: 5 as unknown as string } })).toBe('<a:avLst></a:avLst>');
+    // (a guide that is a formula, or a bad name, is not kept)
+    const odd = read(edited(p, SLIDE2, (x) => x.replace(/<a:prstGeom prst="roundRect"><a:avLst(\/>|><\/a:avLst>)/, '<a:prstGeom prst="roundRect"><a:avLst><a:gd name="adj" fmla="*/ w 1 2"/><a:gd name="a-b" fmla="val 1"/><a:gd name="adj2" fmla="val 7"/><a:gd name="adj2" fmla="val 9"/></a:avLst>')));
+    expect(odd.adjust).toEqual({ prst: 'roundRect', gd: '<a:gd name="adj2" fmla="val 7"/>' });
+  });
+
   it('see a PowerPoint save that leaves out settings at their defaults as unchanged', () => {
     const spPr = (bevel: string) => fragment(`<p:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="4472c4"/></a:solidFill><a:effectLst><a:reflection stA="50000" stPos="0" endA="0" endPos="55000" dist="0" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst><a:sp3d>${bevel}</a:sp3d></p:spPr>`);
     const ppt = fragment('<p:spPr><a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:solidFill><a:srgbClr val="4472C4"/></a:solidFill><a:effectLst><a:reflection stA="50000" endPos="55000" dir="5400000" sy="-100000" algn="bl" rotWithShape="0"/></a:effectLst><a:sp3d><a:bevelT/></a:sp3d></p:spPr>');
