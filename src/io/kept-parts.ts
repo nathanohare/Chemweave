@@ -224,6 +224,11 @@ export interface CorePropsOptions {
   by?: string;
   /** The time of the save (now). */
   now?: string;
+  /**
+   * No creation or modification time: for a part made afresh from what it shows on every save (a
+   * chart's data workbook), so that the same chart saves the same bytes.
+   */
+  undated?: boolean;
 }
 
 /**
@@ -241,8 +246,10 @@ export function corePropsXml(kept: KeptProps | undefined, opts: CorePropsOptions
   v.lastModifiedBy = by || null;
   // a new file is made by whoever saves it first, as in Office
   if (!kept && by && !v.creator) v.creator = by;
-  v.created = v.created || now;
-  v.modified = now;
+  if (opts.undated) { delete v.created; delete v.modified; } else {
+    v.created = v.created || now;
+    v.modified = now;
+  }
   const body = CORE_PROPS.map(([pre, name]) => {
     const val = v[name];
     if (!val) return '';

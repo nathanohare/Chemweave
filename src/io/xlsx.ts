@@ -608,7 +608,7 @@ class Axis {
  * Save a workbook as Excel's. With `macros` it is a macro-enabled workbook (.xlsm), carrying the
  * VBA project it was opened with, untouched.
  */
-export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean } = {}): Promise<Uint8Array> {
+export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean; undated?: boolean } = {}): Promise<Uint8Array> {
   // a sheet name Excel refuses (however it was made) is put right in a copy, and the formulas that use it follow
   const fixes: [number, string][] = [];
   const names = book.sheets.map((s) => s.name);
@@ -622,7 +622,7 @@ export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macr
   return writeBook(copy, deps, opts);
 }
 
-async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean }): Promise<Uint8Array> {
+async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean; undated?: boolean }): Promise<Uint8Array> {
   const pkg = new Package();
   const vba = opts.macros ? book.macros : null;
   // theme links in fonts kept from the file hold while the theme written is the file's (or, with none, Excel's own still)
@@ -1169,7 +1169,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
   pkg.relate('', REL.coreProps, 'docProps/core.xml');
   pkg.relate('', REL.extendedProps, 'docProps/app.xml');
   // the workbook's properties (File > Info) as the file had them, brought up to date
-  pkg.add('docProps/core.xml', corePropsXml(book.kept?.docProps), CT.core);
+  // (`undated`: no times, for a workbook made afresh on every save, as a chart's data is)
+  pkg.add('docProps/core.xml', corePropsXml(book.kept?.docProps, { undated: opts.undated }), CT.core);
   pkg.add('docProps/app.xml', appPropsXml(book.kept?.docProps), CT.app);
   return pkg.build();
 }
