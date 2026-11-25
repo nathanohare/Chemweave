@@ -36,7 +36,7 @@ import { Package, NS, REL, emu, fromEmu, xml, xmlAttr, hex6, MediaFiles, structu
 import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
 import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
-import { appPropsXml, corePropsXml, writeKeptParts, type KeptParts } from './kept-parts';
+import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, type KeptParts } from './kept-parts';
 import { olePrint, picturePrint, svgWithDrawing, type KeptOle, type KeptPicture } from './ole-kept';
 import { facesToEmbed, toEot, type FontSource } from './font-embed';
 import { dataUrl, fromDataUrl } from '../render/images';
@@ -750,7 +750,8 @@ class Writer {
     const id = slideOfLink(link);
     if (id !== null) {
       const i = this.deck.slides.findIndex((s) => s.id === id);
-      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`)}" action="ppaction://hlinksldjump"/>`;
+      // (from the part it is in: a slide, or a layout or master)
+      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`))}" action="ppaction://hlinksldjump"/>`;
     }
     if (link.startsWith('#')) return '';
     return `<a:hlinkClick r:id="${this.pkg.relate(from, REL.hyperlink, officeTarget(link), true)}"/>`;
@@ -1646,10 +1647,8 @@ class Writer {
     if (!ext) return '';
     const fx = tidyFx(pic?.fx);
     // (and its link, as a shape's: a web page, a file, a slide or a show jump)
-    const was = this.curPath;
-    this.curPath = from;
-    const click = pic?.link && !pic.zoom ? this.hlink(pic.link) : '';
-    this.curPath = was;
+    // (a zoom whose own picture couldn't be written keeps its click to its slide)
+    const click = pic?.link ? this.hlink(pic.link) : '';
     const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic), ...(click ? { click } : {}) };
     const descr = alt?.trim() || undefined;
     // what Office can't show live goes in worked in. PowerPoint keeps the original as the blip's
