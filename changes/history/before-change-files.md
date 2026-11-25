@@ -1,5 +1,29 @@
 <!-- The changelog from before change files: written in November 2026 from every merged pull request (each pull request under the first version that held it). Edit freely; scripts/changelog.mjs adds this below the newer versions in CHANGELOG.md. -->
 
+## 0.1.257 (2026-11-24)
+
+### Added
+
+- Canvas: d-Orbital Splitting diagrams and inorganic reference tables. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
+
+### Changed
+
+- SI Project: projects open and save as one .chemsi file, with AutoSave, crash recovery and File ▸ Convert SI Project Folder. ([#717](https://github.com/nathanohare/Chemweave/pull/717))
+- Canvas: the Orbital window's Pointing box is now a plain Rotation box, and both phase colors can be picked. ([#719](https://github.com/nathanohare/Chemweave/pull/719))
+- Canvas: MO diagrams are placed and edited on the page, with ready-made molecules and electron counts. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
+- Interface: clicking outside a window closes it, asking first if something changed. ([#733](https://github.com/nathanohare/Chemweave/pull/733))
+
+### Fixed
+
+- Interface: drop-down lists and right-click menus show over windows instead of under them. ([#718](https://github.com/nathanohare/Chemweave/pull/718))
+- Desktop app: the title bar stays usable and windows stay on the screen while a window is open. ([#732](https://github.com/nathanohare/Chemweave/pull/732))
+
+### Under the hood
+
+- Checks that pop-ups show over windows. ([#720](https://github.com/nathanohare/Chemweave/pull/720))
+- Word, PowerPoint and Excel sampler files with an ECMA-376 schema check. ([#722](https://github.com/nathanohare/Chemweave/pull/722))
+- Tests are type-checked for duplicate, missing or misspelled names. ([#723](https://github.com/nathanohare/Chemweave/pull/723))
+
 ## 0.1.256 (2026-11-24)
 
 ### Added

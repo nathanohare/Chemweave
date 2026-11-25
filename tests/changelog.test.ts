@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 // @ts-expect-error a plain JavaScript script
-import { parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, TYPES } from '../scripts/changelog.mjs';
+import { parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, isRollUp, TYPES } from '../scripts/changelog.mjs';
 
 describe('change files', () => {
   it('reads one change per line, with its type', () => {
@@ -65,6 +65,14 @@ describe('notes and CHANGELOG.md', () => {
     expect(prOf('Fix a thing (#123)')).toBe(123);
     expect(prOf('Merge pull request #45 from nathanohare/x')).toBe(45);
     expect(prOf('Changelog for 0.1.300')).toBeUndefined();
+  });
+  it('knows a staging roll-up from the pull request that wrote a change file', () => {
+    expect(isRollUp('Staging (#726)')).toBe(true);
+    expect(isRollUp('Checkpoint: NMR prediction (#532)')).toBe(true);
+    expect(isRollUp('Merge pull request #261 from nathanohare/staging')).toBe(true);
+    expect(isRollUp('Merge pull request #260 from nathanohare/claude/project-thread-6tis11')).toBe(false);
+    expect(isRollUp('Staging area for reagents (#900)')).toBe(true); // a title starting "Staging" loses its number: rare, and only the link is lost
+    expect(isRollUp('Fix undo (#740)')).toBe(false);
   });
   it('orders versions by number', () => {
     expect(sortTags(['v0.1.10', 'stable', 'v0.1.9', 'v0.2.0'])).toEqual(['v0.1.9', 'v0.1.10', 'v0.2.0']);

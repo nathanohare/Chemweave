@@ -132,9 +132,10 @@ export function cleanNotes(body: string): string {
 
 /** One line of cleaned notes: a heading for a kind of change ("Fixed"), or one change. */
 export function noteLine(line: string): { heading?: string; text?: string } {
-  const h = /^#{1,6}\s+(.*)$/.exec(line);
+  // only the kinds of change are headings; an older release's other headings read as text
+  const h = /^#{1,6}\s+(Added|Changed|Fixed|Removed|Under the hood)\s*$/i.exec(line);
   if (h) return { heading: h[1] };
-  return { text: line.replace(/^[-*]\s+/, '') };
+  return { text: line.replace(/^#{1,6}\s+|^[-*]\s+/, '') };
 }
 
 /** The first changes in a release's notes, for the small notice (headings left out). */

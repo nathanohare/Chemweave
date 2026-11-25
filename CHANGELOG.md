@@ -2,7 +2,7 @@
 
 <!-- Made by scripts/changelog.mjs from changes/ each time a version is published. Edit the files in changes/, not this one. -->
 
-Every version of Chemweave, newest first: 159 versions and 489 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
+Every version of Chemweave, newest first: 160 versions and 489 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
 
 ## Milestones
 
@@ -28,11 +28,25 @@ Every version of Chemweave, newest first: 159 versions and 489 pull requests so 
 ### Added
 
 - A changelog for every version, from the first line of code to today, linked from the top of the README.
-- Canvas: d-Orbital Splitting diagrams and inorganic reference tables. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
 
 ### Changed
 
 - Help ▸ What's New lists every change in each version under Added, Changed, Fixed and Removed, and names the issue each fix closes.
+
+### Under the hood
+
+- Every pull request now adds a short change file, which becomes the release notes, What's New and CHANGELOG.md.
+
+<!-- The changelog from before change files: written in November 2026 from every merged pull request (each pull request under the first version that held it). Edit freely; scripts/changelog.mjs adds this below the newer versions in CHANGELOG.md. -->
+
+## 0.1.257 (2026-11-24)
+
+### Added
+
+- Canvas: d-Orbital Splitting diagrams and inorganic reference tables. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
+
+### Changed
+
 - SI Project: projects open and save as one .chemsi file, with AutoSave, crash recovery and File ▸ Convert SI Project Folder. ([#717](https://github.com/nathanohare/Chemweave/pull/717))
 - Canvas: the Orbital window's Pointing box is now a plain Rotation box, and both phase colors can be picked. ([#719](https://github.com/nathanohare/Chemweave/pull/719))
 - Canvas: MO diagrams are placed and edited on the page, with ready-made molecules and electron counts. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
@@ -45,12 +59,9 @@ Every version of Chemweave, newest first: 159 versions and 489 pull requests so 
 
 ### Under the hood
 
-- Every pull request now adds a short change file, which becomes the release notes, What's New and CHANGELOG.md.
 - Checks that pop-ups show over windows. ([#720](https://github.com/nathanohare/Chemweave/pull/720))
 - Word, PowerPoint and Excel sampler files with an ECMA-376 schema check. ([#722](https://github.com/nathanohare/Chemweave/pull/722))
 - Tests are type-checked for duplicate, missing or misspelled names. ([#723](https://github.com/nathanohare/Chemweave/pull/723))
-
-<!-- The changelog from before change files: written in November 2026 from every merged pull request (each pull request under the first version that held it). Edit freely; scripts/changelog.mjs adds this below the newer versions in CHANGELOG.md. -->
 
 ## 0.1.256 (2026-11-24)
 

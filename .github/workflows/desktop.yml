@@ -266,5 +266,4 @@ jobs:
       # this workflow makes (the workflow's own token, so it doesn't start another build)
       - name: Update CHANGELOG.md
         run: |
-          node scripts/changelog.mjs write "$VERSION"
           node scripts/retry.mjs -- node scripts/changelog.mjs push "$VERSION"
