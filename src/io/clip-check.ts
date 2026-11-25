@@ -93,7 +93,7 @@ const ids: Spec = [0];
 const pt: Spec = { x: 0, y: 0 };
 const run = { text: str, bold: true, italic: true, underline: true, sub: true, sup: true, formula: true, size: length, font: '', color: '',
   highlight: '', obj: 0, strike: true, rev: '', fmt: '', hide: true, cmt: '', link: '', spacing: 0, field: '', cite: '', lang: '', smallCaps: true,
-  allCaps: true, cstyle: '', cc: '', noKern: true, noFill: true, transparency: 0, outline: '', outlineW: 0, shadow: true, wfx: '', noProof: true,
+  allCaps: true, cstyle: '', cc: '', noKern: true, kernAt: 0, noFill: true, transparency: 0, outline: '', outlineW: 0, shadow: true, wfx: '', noProof: true,
   raise: 0, symbolFont: true, ukind: '', wrx: '', ucolor: '', dstrike: true, pfx: '' } satisfies Record<keyof TextRun, Spec>;
 const para = { list: oneOf('bullet', 'number'), level: 0, cont: true, soft: true, wpx: '', align: oneOf('left', 'center', 'right', 'justify'),
   spaceBefore: 0, spaceAfter: 0, indent: 0, style: '', ppx: '', pageBreak: true, colBreak: true, firstLine: 0, line: 0, keepNext: true,
