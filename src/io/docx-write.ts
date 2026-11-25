@@ -874,7 +874,10 @@ class DocxWriter {
       out.push(`<w:bookmarkStart w:id="${open.id}" w:name="${this.bookmarks.get(seqs[0])}"/>`);
     }
     // the paragraph's bookmarks (Insert > Document > Bookmark), round the whole paragraph
-    const marks = (ps.marks ?? []).map((name) => ({ name, id: this.bookmarkId++ }));
+    // (not one a legacy form field in it writes round itself, under the same name, as Word has it: that
+    // bookmark comes back on the paragraph when the file is read, and is written once, round the field)
+    const formMarks = new Set(runs.flatMap((r) => { const o = r.obj !== undefined ? this.t.objects[r.obj] : undefined; return o?.kind === 'form' ? [formName(o)] : []; }).filter((n) => n && !this.formNames.has(n)));
+    const marks = (ps.marks ?? []).filter((name) => !formMarks.has(name)).map((name) => ({ name, id: this.bookmarkId++ }));
     for (const m of marks) out.push(`<w:bookmarkStart w:id="${m.id}" w:name="${xml(m.name)}"/>`);
     // index entries and marked citations (Word's XE and TA fields, hidden text with no result)
     for (const m of ps.xe ?? []) out.push(markField(xeInstr(m)));
@@ -1926,10 +1929,7 @@ class DocxWriter {
     const latent = new Map([...(t.kept?.latentStyles ?? '').matchAll(/<w:lsdException\b[^>]*\bw:name="([^"]+)"/g)].map((m) => { const n = unxml(m[1]); return [n.toLowerCase(), n]; }));
     const builtIn = (name: string) => wordBuiltInName(name, latent);
     // (a style based on Normal that hasn't Normal's lines or shading: nil sides and no fill, as Word writes it)
-    const reset = paraBorderXml({}, normal);
-    const unNormal = (x: string) => !reset ? x
-      : x.includes('<w:pPr>') ? x.replace(/<w:pPr>(<w:keepNext\/>)?/, (m) => m + reset)
-      : x.replace(/(<w:rPr>|<\/w:style>)/, (m) => `<w:pPr>${reset}</w:pPr>${m}`);
+    const unNormal = (x: string) => unNormalXml(x, normal);
     out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:kern w:val="2"/><w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`);
     // (ECMA-376 part 1, 17.7.4.18: latent styles come after the defaults, before the styles)
@@ -1946,23 +1946,15 @@ class DocxWriter {
       const s = t.styles[id];
       if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars, paras, t.styles, this.styleNum(s)));
     }
-    // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
-    if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
-      for (let n = 1; n <= 3; n++) if (!t.styles[`TOC${n}`]) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
-    }
-    // the table of figures' lines (Word's own "table of figures")
-    if (Object.values(t.objects).some((o) => o.kind === 'tof')) {
-      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`));
-    }
-    // the index's and table of authorities' lines (Word's own "index 1", "index 2", "index heading", "table of authorities", "toa heading")
-    if (Object.values(t.objects).some((o) => o.kind === 'index')) {
-      for (const n of [1, 2]) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
-      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`));
-    }
-    if (Object.values(t.objects).some((o) => o.kind === 'toa')) {
-      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`));
-      out.push(unNormal(`<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`));
-    }
+    // Word's own styles for the lines of the contents ("toc 1" to "toc 3", which Update Field uses), the
+    // table of figures, the index and the table of authorities, where the document has none of its own
+    const own = (kind: string, ids: string[]) => {
+      if (Object.values(t.objects).some((o) => o.kind === kind)) for (const id of ids) if (!t.styles[id]) out.push(ownStyleXml(id, normal)!);
+    };
+    own('toc', ['TOC1', 'TOC2', 'TOC3']);
+    own('tof', ['TableofFigures']);
+    own('index', ['Index1', 'Index2', 'IndexHeading']);
+    own('toa', ['TableofAuthorities', 'TOAHeading']);
     // footnotes and endnotes: Word's own styles for their text and their numbers
     if (Object.values(t.objects).some((o) => o.kind === 'note')) {
       const ns = noteStyle(t);
@@ -2410,13 +2402,53 @@ function protectionXml(p: Protection | undefined): string {
   return `<w:documentProtection w:edit="${p.edit}" w:enforcement="1"${pw}/>`;
 }
 
+/** A style based on Normal that hasn't Normal's lines or shading (`normal`): with nil sides and no fill, as Word writes it. */
+export function unNormalXml(x: string, normal: Pick<NamedStyle, 'border' | 'shade'>): string {
+  const reset = paraBorderXml({}, normal);
+  return !reset ? x
+    : x.includes('<w:pPr>') ? x.replace(/<w:pPr>(<w:keepNext\/>)?/, (m) => m + reset)
+    : x.replace(/(<w:rPr>|<\/w:style>)/, (m) => `<w:pPr>${reset}</w:pPr>${m}`);
+}
+
+/** ownStyleBare as written: saying where it hasn't Normal's (`normal`) lines or shading. */
+export function ownStyleXml(id: string, normal: Pick<NamedStyle, 'size' | 'border' | 'shade'>): string | null {
+  const x = ownStyleBare(id, normal.size);
+  return x === null ? null : unNormalXml(x, normal);
+}
+
+/**
+ * Word's own styles for the lines of the contents ("toc 1" to "toc 3"), the table of figures, the
+ * index ("index 1", "index 2", "index heading") and the table of authorities ("table of authorities",
+ * "toa heading") as this program writes them for a document with none of its own (`normalSize`: the
+ * Normal style's size, in points); null for any other id. The reader leaves a style exactly so out of
+ * the document's styles, so a file saved again writes it once, the same.
+ */
+function ownStyleBare(id: string, normalSize: number): string | null {
+  const toc = /^TOC([1-3])$/.exec(id);
+  if (toc) { const n = Number(toc[1]); return `<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`; }
+  const index = /^Index([12])$/.exec(id);
+  if (index) { const n = Number(index[1]); return `<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`; }
+  switch (id) {
+    case 'TableofFigures': return `<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`;
+    case 'IndexHeading': return `<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normalSize)}" w:after="${twips(normalSize / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`;
+    case 'TableofAuthorities': return `<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`;
+    case 'TOAHeading': return `<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normalSize)}" w:after="${twips(normalSize / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`;
+    default: return null;
+  }
+}
+
+/** A form field's name as written (Word's: letters, digits and _, up to 20), before it is told apart from the others'. */
+function formName(o: Extract<DocObject, { kind: 'form' }>): string {
+  return (o.name ?? '').replace(/[^\w]/g, '').slice(0, 20);
+}
+
 /**
  * A form field as Word's legacy form field: its settings (w:ffData) on the field's start, its
  * name, and a text field's entry or a drop-down's choice as the result.
  */
 function formField(o: Extract<DocObject, { kind: 'form' }>, rPr: string, names: Map<string, number>, mark: number): string {
   const base = o.type === 'check' ? 'Check' : o.type === 'drop' ? 'Dropdown' : 'Text';
-  let name = (o.name ?? '').replace(/[^\w]/g, '').slice(0, 20);
+  let name = formName(o);
   if (!name || names.has(name)) { let n = names.size + 1; while (names.has(`${base}${n}`)) n++; name = `${base}${n}`; }
   names.set(name, 1);
   const help = o.help ? `<w:helpText w:type="text" w:val="${xml(o.help.slice(0, 255))}"/><w:statusText w:type="text" w:val="${xml(o.help.slice(0, 138))}"/>` : '';
