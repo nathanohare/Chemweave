@@ -32,9 +32,32 @@ function webCsp(): Plugin {
   };
 }
 
+// The web version's build: each build has its own id, written to version.json beside the page so a
+// page that is already open can tell a newer version has been published (src/ui/web-update.ts).
+// The web build's files carry a stamp of their contents in their names (app-1a2b3c4d.js), so a page
+// opened before a new version was published keeps loading the files of its own version, which the
+// Web version workflow keeps on the site for a while (scripts/keep-old-web-files.mjs), instead of
+// a same-named file of the new version that no longer fits it. The desktop app keeps plain names:
+// it never has two versions at once.
+const WEB = !process.env.TAURI_ENV_PLATFORM;
+const BUILD_ID = `${(process.env.GITHUB_SHA ?? 'local').slice(0, 12)}-${Date.now().toString(36)}`;
+const STAMP = WEB ? '-[hash]' : '';
+
+function webVersion(): Plugin {
+  return {
+    name: 'web-version',
+    apply: 'build',
+    generateBundle() {
+      if (!WEB) return;
+      this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: BUILD_ID }) + '\n' });
+    },
+  };
+}
+
 export default defineConfig({
   base: './',
-  plugins: [webCsp()],
+  plugins: [webCsp(), webVersion()],
+  define: { __WEB_BUILD__: JSON.stringify(BUILD_ID) },
   // The desktop app's development mode expects this exact port (src-tauri/tauri.conf.json).
   // docs/ holds the README pictures; the picture scripts write there while the page is open, so don't reload it
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/docs/**'] } },
@@ -44,10 +67,10 @@ export default defineConfig({
     rollupOptions: {
       // the app, and the audience's window for presenter view
       input: { app: 'index.html', audience: 'audience.html' },
-      output: { entryFileNames: '[name].js', assetFileNames: '[name][extname]', chunkFileNames: '[name].js' },
+      output: { entryFileNames: `[name]${STAMP}.js`, assetFileNames: `[name]${STAMP}[extname]`, chunkFileNames: `[name]${STAMP}.js` },
     },
   },
-  worker: { format: 'iife', rollupOptions: { output: { entryFileNames: '[name].js' } } },
+  worker: { format: 'iife', rollupOptions: { output: { entryFileNames: `[name]${STAMP}.js` } } },
   // Tests run on UTC, as on the Checks machines, so tests with clock times (Word comment dates)
   // give the same answer on a computer in any time zone. A test about time zones sets its own.
   // The real-file suites (tests/real-files.ts) are counted when skipped, and the count printed at the end.

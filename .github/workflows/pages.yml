@@ -14,7 +14,7 @@ on:
     branches: [main]
   workflow_dispatch:
   pull_request:
-    paths: [.github/workflows/pages.yml, scripts/strip-nmr-data.mjs]
+    paths: [.github/workflows/pages.yml, scripts/strip-nmr-data.mjs, scripts/keep-old-web-files.mjs]
 
 # the build only reads the code; the deploy job asks for what publishing needs
 permissions:
@@ -43,6 +43,11 @@ jobs:
       - run: npm run build
       # NMR prediction is desktop only: leave its data out of the browser version
       - run: node scripts/strip-nmr-data.mjs
+      # a page opened before this version keeps loading its own version's files: copy the last
+      # week's from the live site (it never fails the deploy; a try-out run only reads the site)
+      - run: node scripts/keep-old-web-files.mjs
+        env:
+          WEB_SITE_URL: https://nathanohare.github.io/Chemweave/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist
