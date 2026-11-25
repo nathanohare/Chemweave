@@ -825,7 +825,12 @@ class DocxReader {
     if (!this.usedChar.size) return undefined;
     const own = defaultCharStyles();
     const out: Record<string, CharStyle> = {};
+    // (with the styles they are based on, all the way up, where those are kept as styles: a chain is of styles written here)
+    const ids = new Set<string>();
     for (const id of this.usedChar) {
+      for (let w: string | undefined = id; w && !ids.has(w) && this.keptCharStyle(w); w = this.wstyles.get(`character:${w}`)?.basedOn) ids.add(w);
+    }
+    for (const id of ids) {
       const ws = this.wstyles.get(`character:${id}`);
       const r = this.chain('character', id).r;
       const cs: CharStyle = { id, name: own[id]?.name ?? ws?.name ?? id };
@@ -835,11 +840,13 @@ class DocxReader {
       if (r.bold !== undefined) cs.bold = r.bold;
       if (r.italic !== undefined) cs.italic = r.italic;
       if (r.underline) cs.underline = true;
+      if (r.underline && r.ukind) cs.ukind = r.ukind;
       if (r.color) cs.color = r.color;
       if (r.smallCaps) cs.smallCaps = true;
       if (r.allCaps) cs.allCaps = true;
       if (r.strike) cs.strike = true;
       if (r.thc || r.thf) cs.wth = JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) });
+      if (ws?.basedOn && ws.basedOn !== id && ids.has(ws.basedOn)) cs.basedOn = ws.basedOn;
       out[id] = cs;
     }
     return out;
