@@ -14,17 +14,19 @@ on:
     branches: [main]
   workflow_dispatch:
   pull_request:
-    paths: [.github/workflows/pages.yml, scripts/strip-nmr-data.mjs]
+    paths: [.github/workflows/pages.yml, scripts/strip-nmr-data.mjs, scripts/keep-old-web-files.mjs, scripts/retry.mjs]
 
 # the build only reads the code; the deploy job asks for what publishing needs
 permissions:
   contents: read
 
-# Only the newest merge is published; an older run still going is cancelled. Try-out builds of
-# other branches and pull requests have a group each, so they never cancel a deploy.
+# Deploys of main run one after another: a run still going finishes (each one's build reads the
+# live site's list of earlier versions' files, so it must see the deploy before it), and of the
+# merges waiting behind it only the newest runs. Try-out builds of other branches and pull
+# requests have a group each, are cancelled by a newer one, and never cancel a deploy.
 concurrency:
   group: ${{ github.ref == 'refs/heads/main' && 'pages' || format('pages-{0}', github.ref) }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 jobs:
   # Build and deploy are separate jobs, as in GitHub's own Pages workflow. In one job the deploy
@@ -43,6 +45,11 @@ jobs:
       - run: npm run build
       # NMR prediction is desktop only: leave its data out of the browser version
       - run: node scripts/strip-nmr-data.mjs
+      # a page opened before this version keeps loading its own version's files: copy the last
+      # week's from the live site (a try-out run only reads the site)
+      - run: node scripts/retry.mjs -- node scripts/keep-old-web-files.mjs
+        env:
+          WEB_SITE_URL: https://nathanohare.github.io/Chemweave/
       - uses: actions/upload-pages-artifact@v5
         with:
           path: dist

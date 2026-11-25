@@ -323,6 +323,7 @@ import { smilesPrefs } from './sheet/smiles-cells';
 import { showTemplateWindow, closeTemplateWindow } from './ui/template-window';
 import type { PastedRows } from './io/table-clip';
 import { Keeper } from './keep/keeper';
+import { WebUpdates } from './ui/web-update';
 import { choose as chooseButtons, notice } from './ui/keep-ui';
 import { runZoteroOn, type ZoteroCommand } from './document/zotero-live';
 import { DeckStore, type DeckZoteroHost } from './deck/zotero-deck';
@@ -4733,6 +4734,16 @@ const keeper = new Keeper({
   setPrefs: (p) => { keepPrefs = p; tickAutoSave(); renderTabs(); storeSettings(); },
   flash,
   refresh: () => { renderTabs(); updateTitle(); tickAutoSave(); },
+});
+// The web version: a notice when a newer version is published, and a reload that keeps unsaved work
+/** The page is reloading for a new version with every unsaved tab copied: no "Leave site?" question. */
+let webReloading = false;
+const webUpdates = new WebUpdates({
+  finishTyping: () => finishTyping(),
+  anyDirty: () => ws.anyDirty,
+  recoveryOn: () => keepPrefs.recoveryMinutes > 0,
+  keepForReload: () => keeper.keepForReload(),
+  reloading: () => { webReloading = true; },
 });
 /** File > AutoSave shows whether the tab showing saves itself. */
 function tickAutoSave(): void {
@@ -13597,6 +13608,7 @@ void loadSettings((msg) => flash(msg, 12000)).then((s) => {
   applySettings(s);
   settingsLoaded = true;
   void keeper.start();
+  webUpdates.start();
   void lastClose.then((c) => { if (c) unexpectedCloseNotice(c); });
   void openOutsideFiles();
   void startWordObjects();
@@ -13688,6 +13700,9 @@ if (isTauri()) {
 } else {
   window.addEventListener('beforeunload', (e) => {
     finishTyping();
+    // reloading for a new version: the unsaved tabs were just copied, and are offered when the page is back
+    // (anything changed after the copy, and the question asks again)
+    if (webReloading && keeper.workKept()) { void diagnostics.write(); return; }
     if (ws.anyDirty) e.preventDefault();
     // with nothing unsaved the copies can go; otherwise they stay, in case the page is left
     else void keeper.end();
