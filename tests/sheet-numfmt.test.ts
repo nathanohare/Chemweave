@@ -116,3 +116,23 @@ describe('HRMS m/z', () => {
     expect(ionMz(M, '[M]+')).toBeCloseTo(M - ELECTRON, 9);
   });
 });
+
+describe('fractions and times with tenths', () => {
+  it('shows fractions as Excel does', () => {
+    expect(show(1234.567, '# ?/?')).toBe('1234 4/7');
+    expect(show(3.14159, '# ???/???')).toBe('3  16/113');
+    expect(show(3.375, '# ?/8')).toBe('3 3/8');
+    expect(show(0.3, '# ??/16')).toBe(' 5/16');
+    expect(show(-2.25, '# ?/4')).toBe('-2 1/4');
+    expect(show(0.5, '?/?')).toBe('1/2');
+    // (no fraction left: its room blank; a fraction of a whole one rounded up to the next)
+    expect(show(5, '# ?/?')).toBe('5    ');
+    expect(show(2.9999, '# ?/?')).toBe('3    ');
+    // (a / in quoted text is text)
+    expect(show(1, '"a/b" 0')).toBe('a/b 1');
+  });
+  it('shows minutes and seconds with tenths (Excel format 47) and elapsed seconds with hundredths', () => {
+    expect(show(0.0005, 'mm:ss.0')).toBe('00:43.2');
+    expect(show(0.00123, '[ss].00')).toBe('106.27');
+  });
+});
