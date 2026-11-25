@@ -271,7 +271,7 @@ function check(base, labels = '') {
   if (diff('AM').includes('CHANGELOG.md')) errors.push('CHANGELOG.md is made on main each time a version is published; change the files in changes/ instead.');
   // a change file that a release already holds stays (CHANGELOG.md is made from it); one not
   // released yet can still be taken out
-  const released = (f) => lines(git('tag', '--list', 'v*')).some((t) => { try { git('cat-file', '-e', `${t}:${f}`); return true; } catch { return false; } });
+  const released = (f) => !!git('log', '--tags=v*', '-1', '--format=%H', '--', f);
   const removed = changeFiles(diff('D')).filter(released);
   if (removed.length) errors.push(`Change files are kept once released (they make CHANGELOG.md); put these back: ${removed.join(', ')}`);
   const skip = labels.split(',').map((l) => l.trim().toLowerCase()).includes(SKIP_LABEL);
