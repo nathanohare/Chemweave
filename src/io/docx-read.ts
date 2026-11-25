@@ -206,6 +206,10 @@ function mergeP(...ps: (PProps | undefined)[]): PProps {
   const out = merge<PProps>(...ps);
   const tabs = ps.flatMap((p) => p?.tabs ?? []);
   if (tabs.length) out.tabs = tabs; else delete out.tabs;
+  // (borders side by side, as Word takes them: a style's or paragraph's own side over the one it is
+  // based on, the others its; a side turned off is "none" until the end, where cleanBorders drops it)
+  const borders = ps.flatMap((p) => (p?.border ? [p.border] : []));
+  if (borders.length) out.border = Object.assign({}, ...borders);
   return out;
 }
 
@@ -679,7 +683,8 @@ class DocxReader {
             const name = side.localName === 'start' ? 'left' : side.localName === 'end' ? 'right' : side.localName;
             if (!['top', 'bottom', 'left', 'right', 'between'].includes(name)) continue;
             const line = readBorder(side, (e, n) => this.a(e, n));
-            if (line) b[name as keyof ParaBorders] = line;
+            // (one turned off, nil or none, is kept as such: it takes away the side of the style it is based on)
+            b[name as keyof ParaBorders] = line ?? { style: 'none', w: 0, color: '#000000' };
           }
           out.border = b;
           break;

@@ -106,3 +106,28 @@ describe("a paragraph style's chain", () => {
     expect(made.t.styles[made.id].basedOn).toBeUndefined();
   });
 });
+
+describe("a style based on another, and its lines (with #763's paragraph-style borders)", () => {
+  it('says it has no border where the style it is based on has one, and keeps its own', async () => {
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Boxed"><w:name w:val="Boxed"/><w:basedOn w:val="Normal"/><w:pPr><w:pBdr><w:top w:val="single" w:sz="8" w:space="1" w:color="000000"/><w:bottom w:val="single" w:sz="8" w:space="1" w:color="000000"/></w:pBdr></w:pPr></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Open"><w:name w:val="Open"/><w:basedOn w:val="Boxed"/><w:pPr><w:pBdr><w:top w:val="nil"/></w:pBdr></w:pPr></w:style>`;
+    const file = docx(para('Boxed', 'boxed') + para('Open', 'open')).slice();
+    const parts = unzipSync(file);
+    parts['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    const t = (await readDocx(zipSync(parts))).doc as DocText;
+    expect(t.styles.Open.basedOn).toBe('Boxed');
+    // (as Word shows it: Boxed's bottom line, its own top taken away)
+    expect(t.styles.Open.border?.top).toBeFalsy();
+    expect(t.styles.Open.border?.bottom).toBeTruthy();
+    const x = strFromU8(unzipSync(await writeDocx(t, deps))['word/styles.xml']);
+    expect(basedOf(x, 'Open')).toBe('Boxed');
+    // (Open: no top line, Boxed's bottom one; it says the top is off, not that it is based on Normal's nothing)
+    expect(styleOf(x, 'Open')).toContain('<w:top w:val="nil"/>');
+    expect(styleOf(x, 'Open')).not.toMatch(/<w:bottom w:val="nil"\/>/);
+    // (read back: Boxed's bottom line, its own top taken away, as Word shows it)
+    const back = (await readDocx(await writeDocx(t, deps))).doc as DocText;
+    expect(back.styles.Open.border?.top).toBeFalsy();
+    expect(back.styles.Open.border?.bottom).toBeTruthy();
+  });
+});
