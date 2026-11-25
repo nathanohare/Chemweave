@@ -1703,7 +1703,16 @@ class Writer {
     const height = c.ph && c.boxH ? Math.max(c.boxH, lay.box.y2 - lay.box.y1) : c.fit && c.boxH ? Math.max(c.boxH, c.fit === 'shrink' ? 0 : grown) : grown;
     let box = { x1: c.x, y1: top, x2: c.x + Math.max(width, 1), y2: top + height };
     // a PowerPoint text box: its own frame (size, anchor, margins), moved with its text and resized as it was here
-    const frame = frameNow(c, emu, {
+    let ph = '';
+    if (c.ph) {
+      const k = c.ph === 'title' ? 'title' : 'body';
+      const i = (this.phAt.get(c) ?? (phCount[k] = (phCount[k] ?? 0) + 1)) - 1;
+      const forms = layoutPh(layoutDef(this.deck.master, layout));
+      ph = k === 'title' ? (i === 0 && forms.title) || '<p:ph type="title"/>' : forms.bodies[i] ?? ''; // more text boxes than the layout has: plain text boxes
+    }
+    // (a placeholder written as a plain text box, with no layout placeholder to take what its frame
+    // leaves to it, is placed afresh)
+    const frame = c.ph && !ph ? null : frameNow(c, emu, {
       h: grown, w: lay.boxWidth, top,
       // (for a box the file says doesn't wrap, the text on one line per paragraph, as PowerPoint lays it out)
       free: () => {
@@ -1733,7 +1742,7 @@ class Writer {
       : '<a:spAutoFit/>';
     const cols = c.cols && c.cols > 1 && c.wrap !== undefined ? ` numCol="${Math.round(c.cols)}"${c.colGap ? ` spcCol="${emu(c.colGap)}"` : ''}` : '';
     const vert = c.dir ? ` vert="${c.dir}"` : '';
-    const bodyPr = frame?.bodyPr ?? `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
+    const bodyPr = (frame && c.ph ? noShrink(frame.bodyPr) : frame?.bodyPr) ?? `<a:bodyPr wrap="${wrap}"${vert} lIns="0" tIns="0" rIns="0" bIns="0"${cols} rtlCol="0" anchor="t">${fit}</a:bodyPr>`;
     // the caption's exact settings, used when it comes back unchanged from PowerPoint
     const plain = c.runs.map((r) => r.text).join('');
     const at = [box.x1, box.y1, box.x2 - box.x1, box.y2 - box.y1].map((v) => +v.toFixed(2));
@@ -1741,13 +1750,6 @@ class Writer {
     // and a print of the text as written (how each piece looks), to tell whether PowerPoint changed it (native-print.ts)
     const pr = textPrint(fragment(txBody));
     const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
-    let ph = '';
-    if (c.ph) {
-      const k = c.ph === 'title' ? 'title' : 'body';
-      const i = (this.phAt.get(c) ?? (phCount[k] = (phCount[k] ?? 0) + 1)) - 1;
-      const forms = layoutPh(layoutDef(this.deck.master, layout));
-      ph = k === 'title' ? (i === 0 && forms.title) || '<p:ph type="title"/>' : forms.bodies[i] ?? ''; // more text boxes than the layout has: plain text boxes
-    }
     const name = c.name?.trim() || (c.ph === 'title' ? `Title ${id - 1}` : c.ph ? `Text Placeholder ${id - 1}` : `TextBox ${id - 1}`);
     const nvSp = ph
       ? `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`
@@ -2441,4 +2443,19 @@ function slideLinks(doc: Doc): string | null {
     }
   }
   return out.length ? JSON.stringify(out) : null;
+}
+
+/**
+ * A placeholder's kept bodyPr with no AutoFit of its own or from its layout (noAutofit, as written
+ * for a placeholder made here): its text is written at the size the file's shrinking gave it.
+ */
+export function noShrink(bodyPr: string): string {
+  const fit = /<a:(?:noAutofit|normAutofit|spAutoFit)\b[^>]*?(?:\/>|>.*?<\/a:(?:normAutofit|spAutoFit)>)/;
+  if (fit.test(bodyPr)) return bodyPr.replace(fit, '<a:noAutofit/>');
+  if (/^<a:bodyPr[^>]*\/>$/.test(bodyPr)) return bodyPr.replace(/\/>$/, '><a:noAutofit/></a:bodyPr>');
+  // (after a text warp, where the schema puts it)
+  const warp = /<\/a:prstTxWarp>|<a:prstTxWarp[^>]*\/>/;
+  return warp.test(bodyPr)
+    ? bodyPr.replace(warp, (m) => `${m}<a:noAutofit/>`)
+    : bodyPr.replace(/^(<a:bodyPr[^>]*>)/, (m) => `${m}<a:noAutofit/>`);
 }
