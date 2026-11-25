@@ -2488,9 +2488,12 @@ function withAnnotationRef(p: string): string {
 /** A paragraph of a comment without its comment mark (w:annotationRef, which goes in the first only). */
 const noAnnotationRef = (p: string) => p.replace(/<w:r\b(?:(?!<\/w:r>)[\s\S])*?<w:annotationRef\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/, '');
 
+/** Characters Word writes as elements of their own in a run: a tab, a soft hyphen and a non-breaking hyphen (§17.3.3.18, :29, :23). */
+const RUN_MARKS = new Map([['\t', '<w:tab/>'], ['\u00ad', '<w:softHyphen/>'], ['\u2011', '<w:noBreakHyphen/>']]);
+
 function run(rPr: string, text: string): string {
   if (!text) return '';
-  const body = text.split(/([\t\u00ad])/).map((s) => (s === '\t' ? '<w:tab/>' : s === '\u00ad' ? '<w:softHyphen/>' : s ? `<w:t xml:space="preserve">${xml(s)}</w:t>` : '')).join('');
+  const body = text.split(/([\t\u00ad\u2011])/).map((s) => RUN_MARKS.get(s) ?? (s ? `<w:t xml:space="preserve">${xml(s)}</w:t>` : '')).join('');
   return `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${body}</w:r>`;
 }
 
