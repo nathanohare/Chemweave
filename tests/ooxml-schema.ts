@@ -14,6 +14,11 @@
  * out. Anything else the schemas don't allow is reported. Only parts whose root element is in a
  * namespace the schemas define are checked; the packaging parts ([Content_Types].xml, the .rels
  * files, docProps/core.xml) are defined in Part 2 and are left out, as are legacy VML drawing parts.
+ *
+ * Two consequences to keep in mind: a Choice that needs a Microsoft namespace (Word's wps text
+ * boxes and shapes, wpg groups, a14 picture effects) gives way to its Fallback, so those are
+ * checked only through their VML or plain fallback; and one difference between the schema and what
+ * Excel writes is allowed (excelAllows below), so a check never fails on what Excel itself writes.
  */
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -93,6 +98,16 @@ export function processMce(doc: Document, known: Set<string>): void {
 
 export type SchemaProblem = { part: string; message: string };
 
+/**
+ * What Excel writes that the 2016 schema doesn't allow, taken out before checking: xml:space on a
+ * SpreadsheetML text element (<t>, in shared strings, rich text runs and notes), which Excel writes
+ * on text with leading or trailing spaces but which the schema types as plain ST_Xstring.
+ */
+function excelAllows(doc: Document): void {
+  const SML = 'http://schemas.openxmlformats.org/spreadsheetml/2006/main';
+  for (const t of Array.from(doc.getElementsByTagNameNS(SML, 't'))) t.removeAttributeNS('http://www.w3.org/XML/1998/namespace', 'space');
+}
+
 /** Each schema problem in the package's XML parts, as "part: line: message". */
 export async function validatePackage(bytes: Uint8Array): Promise<SchemaProblem[]> {
   const { wrapper, preload, namespaces } = load();
@@ -105,6 +120,7 @@ export async function validatePackage(bytes: Uint8Array): Promise<SchemaProblem[
     if (doc.getElementsByTagName('parsererror').length) { names.push(name); xml.push({ fileName: `p${names.length - 1}.xml`, contents: '<not-well-formed/>' }); continue; }
     if (!namespaces.has(doc.documentElement.namespaceURI ?? '')) continue;
     processMce(doc, namespaces);
+    excelAllows(doc);
     names.push(name);
     xml.push({ fileName: `p${names.length - 1}.xml`, contents: new XMLSerializer().serializeToString(doc) });
   }
@@ -115,5 +131,7 @@ export async function validatePackage(bytes: Uint8Array): Promise<SchemaProblem[
     const m = /^p(\d+)\.xml:(\d+): (.*)$/.exec(line.trim());
     if (m) out.push({ part: names[Number(m[1])], message: `${m[2]}: ${m[3].replace(/^Schemas validity error : /, '')}` });
   }
+  // a failure with no line read (a changed message format) must not pass as "no problems"
+  if (!r.valid && !out.length) throw new Error(`the schema check failed without a problem it could read:\n${r.rawOutput.slice(0, 2000)}`);
   return out;
 }

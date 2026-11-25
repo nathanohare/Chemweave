@@ -141,7 +141,7 @@ rule('2-color scale (white to green)', 'supported', `${C}, colorScale; Color Sca
 rule('3-color scale with 50th percentile', 'supported', `${C}, colorScale (3 stops)`, 'type="colorScale"', '<colorScale><cfvo type="min"/><cfvo type="percentile" val="50"/><cfvo type="max"/><color rgb="FFF8696B"/><color rgb="FFFFEB84"/><color rgb="FF63BE7B"/></colorScale>',
   (rs) => xKids(cs(rs), 'cfvo')[1]?.getAttribute('type') === 'percentile' && xKids(cs(rs), 'cfvo')[1]?.getAttribute('val') === '50' && xKids(cs(rs), 'color').length === 3);
 rule('Color scale with number limits', 'supported', `${C}, colorScale cfvo num`, 'type="colorScale"', '<colorScale><cfvo type="num" val="0"/><cfvo type="num" val="100"/><color rgb="FFFFFFFF"/><color rgb="FF5A8AC6"/></colorScale>',
-  (rs) => xKids(cs(rs), 'cfvo').every((c) => c.getAttribute('type') === 'num'));
+  (rs) => { const v = xKids(cs(rs), 'cfvo'); return v.length === 2 && v.every((c) => c.getAttribute('type') === 'num') && v[1].getAttribute('val') === '100'; });
 rule('Color scale with a formula limit', 'loss', `${C}, colorScale cfvo formula`, 'type="colorScale"', '<colorScale><cfvo type="formula" val="$B$1"/><cfvo type="max"/><color rgb="FFFFFFFF"/><color rgb="FF5A8AC6"/></colorScale>',
   (rs) => xKids(cs(rs), 'cfvo')[0]?.getAttribute('type') === 'formula', undefined, { basis: 'xlsx-format.ts:158 readCfvo (formula as auto)' });
 // Data Bars

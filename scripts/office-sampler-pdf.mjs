@@ -1,17 +1,23 @@
 // Chemweave's own PDF of each Office sampler, for comparing page by page with Office's
 // (docs/developers.md, "The Office samplers"). After `npm run build`:
 //   node scripts/office-sampler-pdf.mjs <folder> [subfolder ...]
-// opens every .docx and .pptx file in <folder> (and in each subfolder named, such as
-// office-saved) in the built app in Chromium, runs File ▸ Export ▸ PDF, and saves the PDF as
-// <folder>/pdf/chemweave/<subfolder->/<name>.pdf. The files are read where they are; nothing is
+// opens every .docx, .pptx and .xlsx file in <folder> (and in each subfolder named, such as
+// office-saved) in the built app in Chromium and saves its PDF as
+// <folder>/pdf/chemweave/<subfolder>/<name>.pdf: Word and PowerPoint files through File ▸ Export ▸
+// PDF; workbooks, which have no Export PDF, through File ▸ Print's own page layout (each sheet's
+// printed pages, as Print and Print Preview make them), printed to PDF by the browser. The files are read where they are; nothing is
 // written into the repository.
 import { spawn } from 'node:child_process';
 import { readdirSync, readFileSync, mkdirSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { launch } from '../bench/browser.mjs';
 
 const [folder, ...subs] = process.argv.slice(2);
 if (!folder || !existsSync(folder)) { console.error('Usage: node scripts/office-sampler-pdf.mjs <folder> [subfolder ...]'); process.exit(2); }
+// the PDFs (and Office's copies beside them) never go into the repository
+const rel = relative(resolve(dirname(fileURLToPath(import.meta.url)), '..'), resolve(folder));
+if (!rel.startsWith('..') && !isAbsolute(rel)) { console.error(`${folder} is inside the repository; give a folder outside it`); process.exit(2); }
 
 const PORT = 4181;
 const URL = `http://localhost:${PORT}/`;
@@ -34,9 +40,7 @@ try {
     if (!existsSync(dir)) { console.log(`- ${dir}: not there, skipped`); continue; }
     const out = join(folder, 'pdf', 'chemweave', sub);
     mkdirSync(out, { recursive: true });
-    // (Spreadsheet mode has no Export PDF: index.html offers it in Canvas, Slides, Design and Document)
-    for (const skipped of readdirSync(dir).filter((n) => /\.xlsx$/i.test(n))) console.log(`- ${join(sub, skipped)}: skipped (spreadsheets have no Export PDF)`);
-    for (const name of readdirSync(dir).filter((n) => /\.(docx|pptx)$/i.test(n)).sort()) {
+    for (const name of readdirSync(dir).filter((n) => /\.(docx|pptx|xlsx)$/i.test(n)).sort()) {
       // a fresh page each time, so one file's trouble doesn't carry into the next
       const page = await browser.newPage({ viewport: { width: 1400, height: 900 }, acceptDownloads: true });
       const errors = [];
@@ -55,6 +59,44 @@ try {
         }, [b64, name]);
         if (!opened) throw new Error('did not open');
         await page.waitForTimeout(1500);
+        if (/\.xlsx$/i.test(name)) {
+          // Spreadsheet mode has no Export PDF (index.html offers it in Canvas, Slides, Design and
+          // Document): print every sheet as File ▸ Print lays it out (sheetMode.printedSheet), each
+          // page at its own size through a named @page rule, with the window's print style
+          // (body.printing, as src/ui/print.ts printPages sets it) showing only those pages
+          const printed = await page.evaluate((n) => {
+            const sm = window.__app.sheetMode, wb = sm.book;
+            const root = document.createElement('div');
+            root.id = 'print-root';
+            let count = 0, css = '';
+            for (let i = 0; i < wb.sheets.length; i++) {
+              sm.view.goSheet(i);
+              const got = sm.printedSheet({ selection: false, ignoreArea: false, file: n });
+              if (!got) continue;
+              css += `@page s${i} { size: ${got.w}pt ${got.h}pt; margin: 0; }`;
+              for (const svg of got.pages) {
+                const p = document.createElement('div');
+                p.className = 'print-page';
+                p.style.cssText = `width:${got.w}pt;height:${got.h}pt;page:s${i}`;
+                p.innerHTML = svg;
+                root.append(p);
+                count++;
+              }
+            }
+            const rules = document.createElement('style');
+            rules.textContent = css;
+            document.head.append(rules);
+            document.body.append(root);
+            document.body.classList.add('printing');
+            return count;
+          }, name);
+          if (!printed) throw new Error('no printed pages');
+          await page.waitForTimeout(500);
+          await page.emulateMedia({ media: 'print' });
+          await page.pdf({ path: join(out, name.replace(/\.\w+$/, '.pdf')), preferCSSPageSize: true, printBackground: true });
+          console.log(`- ${join(sub, name)}: saved (${printed} printed pages)${errors.length ? ` (page errors: ${errors.slice(0, 3).join(' | ')})` : ''}`);
+          continue;
+        }
         const download = page.waitForEvent('download', { timeout: 120000 });
         await page.evaluate(() => window.__app.command('export-pdf'));
         const d = await download;

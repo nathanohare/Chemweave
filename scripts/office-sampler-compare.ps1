@@ -19,7 +19,9 @@ samplers"). Everything is written inside -Folder, never into the repository:
 
 Each file is opened in a separate PowerShell process with a time limit, so a file Office can't open
 (a repair prompt, a hang) is logged and skipped. Office programs that were already running when the
-script started are left alone: only instances it started are closed or, after a time-out, ended.
+script started are left alone: Word and Excel get instances of their own, PowerPoint (which runs
+once per user) is quit only when no other presentation is open in it, and after a time-out only
+hidden instances started by the script are ended. Best not to open Office while it runs.
 #>
 param(
   [Parameter(Mandatory = $true)][string]$Folder,
@@ -43,7 +45,8 @@ function Convert-One([string]$path, [string]$pdf, [string]$out) {
       $d.Close([ref]0)
     } finally { $app.Quit([ref]0); [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app) }
   } elseif ($ext -eq '.pptx') {
-    $running = @(Get-Process POWERPNT -ErrorAction SilentlyContinue).Count -gt 0
+    # PowerPoint runs once per user: this may be the user's own PowerPoint, so it is quit only when
+    # nothing but this script's presentation was open in it
     $app = New-Object -ComObject PowerPoint.Application
     try {
       # Open(FileName, ReadOnly, Untitled, WithWindow)
@@ -51,7 +54,7 @@ function Convert-One([string]$path, [string]$pdf, [string]$out) {
       if ($out) { $p.SaveCopyAs($out, 24) }   # ppSaveAsOpenXMLPresentation
       $p.SaveAs($pdf, 32)                       # ppSaveAsPDF
       $p.Close()
-    } finally { if (-not $running) { $app.Quit() }; [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app) }
+    } finally { if ($app.Presentations.Count -eq 0 -and -not $app.Visible) { $app.Quit() }; [void][Runtime.InteropServices.Marshal]::ReleaseComObject($app) }
   } elseif ($ext -eq '.xlsx') {
     $app = New-Object -ComObject Excel.Application
     $app.Visible = $false; $app.DisplayAlerts = $false
@@ -69,7 +72,10 @@ if ($One) {
   try { Convert-One $One $Pdf $Out; exit 0 } catch { [Console]::Error.WriteLine($_.Exception.Message); exit 1 }
 }
 
-$Folder = (Resolve-Path $Folder).Path
+$Folder = (Resolve-Path $Folder).Path.TrimEnd('\')
+# Office's copies are made by Office: they never go into the repository
+$repo = (Resolve-Path (Join-Path $PSScriptRoot '..')).Path.TrimEnd('\')
+if (($Folder + '\').StartsWith($repo + '\', [StringComparison]::OrdinalIgnoreCase)) { throw "-Folder ($Folder) is inside the repository; give a folder outside it" }
 $sets = if ($Stage -eq 'office') {
   @(@{ dir = $Folder; pdf = 'pdf\office'; save = 'office-saved' }, @{ dir = "$Folder\chemweave-saved"; pdf = 'pdf\office\chemweave-saved'; save = $null })
 } else {
@@ -98,9 +104,10 @@ foreach ($s in $sets) {
     if (-not $p.WaitForExit($TimeoutSeconds * 1000)) {
       $status = 'timed out'
       $p.Kill()
-      # end only the Office instances this script started
+      # end only the hidden Office instances this script started: started after it, with no window
+      # (a program the user opens during the run has one, and is left alone)
       $n = $names[$f.Extension.ToLowerInvariant()]
-      Get-Process $n -ErrorAction SilentlyContinue | Where-Object { $before[$n] -notcontains $_.Id } | Stop-Process -Force
+      Get-Process $n -ErrorAction SilentlyContinue | Where-Object { $before[$n] -notcontains $_.Id -and $_.MainWindowHandle -eq 0 } | Stop-Process -Force
     } elseif ($p.ExitCode -ne 0) { $status = 'failed' }
     $message = (Get-Content $err -Raw -ErrorAction SilentlyContinue); Remove-Item $err -ErrorAction SilentlyContinue
     $message = if ($message) { $message.Trim() -replace '\s+', ' ' } else { '' }

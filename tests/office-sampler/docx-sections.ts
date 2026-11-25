@@ -64,12 +64,19 @@ const hEven = sec('Different odd and even pages header', 'supported', '§17.15.1
 const fPage = sec('Footer with Page X of Y', 'supported', '§17.16.5.42 PAGE, §17.16.5.41 NUMPAGES; Insert ▸ Page Number', (v) => { const f = hfFields(v, sectOf(v, s1), 'footer', 'default'); return /\bPAGE\b/.test(f) && /\bNUMPAGES\b/.test(f) && hfText(v, sectOf(v, s1), 'footer', 'default').includes(fPage); });
 const fFirst = sec('First page footer', 'supported', '§17.10.3 footerReference first', (v) => hfText(v, sectOf(v, s1), 'footer', 'first').includes(fFirst));
 const fEven = sec('Even page footer', 'supported', '§17.10.3 footerReference even', (v) => hfText(v, sectOf(v, s1), 'footer', 'even').includes(fEven));
-const hTab = sec('Header with center and right tab text', 'supported', '§17.3.1.37 tabs in a header', (v) => hfText(v, sectOf(v, s1), 'header', 'default').includes('right side'));
-const hPic = sec('Picture in the header', 'loss', '§17.10.4 hdr with a drawing; Header ▸ Pictures', (v) => {
+const hTab = sec('Header with center and right tab text', 'supported', '§17.3.1.37 tabs in a header', (v) => {
+  // the text, and the center and right tab stops of the header paragraph that holds it
+  const ref = Array.from(sectOf(v, s1)?.children ?? []).find((c) => c.localName === 'headerReference' && at(c, 'w:type') === 'default');
+  const t = ref && v.target('word/document.xml', at(ref, 'r:id') ?? '');
+  const p = t ? Array.from(v.doc(`word/${t}`)?.getElementsByTagNameNS(NS.w, 'p') ?? []).find((x) => (x.textContent ?? '').includes('right side')) : undefined;
+  const tabs = Array.from(kid(kid(p, 'w:pPr'), 'w:tabs')?.children ?? []).map((x) => at(x, 'w:val'));
+  return !!p && tabs.includes('center') && (tabs.includes('right') || tabs.includes('end'));
+});
+const hPic = sec('Picture in the header', 'kept', '§17.10.4 hdr with a drawing; Header ▸ Pictures', (v) => {
   const ref = Array.from(sectOf(v, s1)?.children ?? []).find((c) => c.localName === 'headerReference' && at(c, 'w:type') === 'default');
   const t = ref && v.target('word/document.xml', at(ref, 'r:id') ?? '');
   return !!t && (v.doc(`word/${t}`)?.getElementsByTagNameNS(NS.wp, 'inline').length ?? 0) > 0;
-}, 'docx-read.ts WARN header/footer pictures');
+}, 'docx-read.ts WARN header/footer pictures; kept through a save in the 2026-11-24 run (tag set from that result)');
 const pgStart = sec('Page numbers start at 3', 'supported', '§17.6.12 pgNumType@start; Page Number ▸ Format', (v) => at(kid(sectOf(v, s1), 'w:pgNumType'), 'w:start') === '3');
 sections.push({ first: s1, text: [s1, hDefault, hFirst, hEven, fPage, fFirst, fEven, hTab, hPic, pgStart].join(', '), sect: () => '@HF@<w:pgSz w:w="12240" w:h="15840"/><w:pgMar w:top="1440" w:right="1440" w:bottom="1440" w:left="1440" w:header="720" w:footer="720" w:gutter="0"/><w:pgNumType w:start="3"/><w:cols w:space="720"/><w:titlePg/>' });
 hf.push([

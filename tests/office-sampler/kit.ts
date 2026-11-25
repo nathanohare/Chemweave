@@ -42,6 +42,12 @@ export interface Finding {
   finding: string;
   /** What Chemweave does, as seen in its saved file. */
   note: string;
+  /**
+   * For a whole-file check (second-save, schema-out, integrity): the problems this finding covers,
+   * matched against each problem line (a part name first). Only those run as the expected
+   * failure; any other problem in the file fails the check as usual.
+   */
+  scope?: RegExp;
 }
 
 export interface Sampler {

@@ -28,16 +28,24 @@
  */
 import { describe, it, expect, beforeAll } from 'vitest';
 import { mkdirSync, writeFileSync, readFileSync, existsSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, resolve, relative, isAbsolute } from 'node:path';
 import { unzipSync, strFromU8 } from 'fflate';
 import { View, NS, type Sampler, type Finding } from './kit';
 import { openAndSave } from './app';
 import { validatePackage, schemasReady, schemasRequired } from '../ooxml-schema';
 
-const OUT = process.env.OFFICE_SAMPLER_OUT;
-const RESAVED = process.env.OFFICE_RESAVED;
+const REPO = resolve(__dirname, '..', '..');
+/** A folder outside the repository, or an error: Office's copies and Chemweave's saves never go into it. */
+function outside(folder: string | undefined, what: string): string | undefined {
+  if (!folder) return undefined;
+  const rel = relative(REPO, resolve(folder));
+  if (!rel.startsWith('..') && !isAbsolute(rel)) throw new Error(`${what} (${folder}) is inside the repository; give a folder outside it`);
+  return folder;
+}
+const OUT = outside(process.env.OFFICE_SAMPLER_OUT, 'OFFICE_SAMPLER_OUT');
+const RESAVED = outside(process.env.OFFICE_RESAVED, 'OFFICE_RESAVED');
 
-/** The XML parts of two saves, with what may differ between saves made the same: when it was saved. */
+/** The parts of two saves that differ, with what may differ between saves made the same: when it was saved. */
 function sameSave(a: Uint8Array, b: Uint8Array): string[] {
   const norm = (n: string, s: string) => n === 'docProps/core.xml'
     ? s.replace(/<cp:revision>\d+<\/cp:revision>/, '').replace(/(<dcterms:(?:created|modified)[^>]*>)[^<]*/g, '$1') : s;
@@ -45,6 +53,12 @@ function sameSave(a: Uint8Array, b: Uint8Array): string[] {
   const out: string[] = [];
   for (const n of new Set([...Object.keys(pa), ...Object.keys(pb)])) {
     if (!pa[n] || !pb[n]) { out.push(`${n}: only in the ${pa[n] ? 'first' : 'second'} save`); continue; }
+    // pictures, embedded objects and other binary parts byte for byte
+    if (!/\.(xml|rels|vml)$/i.test(n)) {
+      const x = pa[n], y = pb[n];
+      if (x.length !== y.length || x.some((v, i) => v !== y[i])) out.push(`${n}: its bytes differ`);
+      continue;
+    }
     const ta = norm(n, strFromU8(pa[n])), tb = norm(n, strFromU8(pb[n]));
     if (ta !== tb) {
       let i = 0;
@@ -81,6 +95,15 @@ function namesLost(a: View, b: View): string[] {
 export function integrity(v: View): string[] {
   const out: string[] = [];
   const all = new Set([...Object.keys(v.parts), ...Object.keys(v.binary)]);
+  // every part has a content type, by its extension (Default) or its name (Override)
+  const ct = v.doc('[Content_Types].xml');
+  const defaults = new Set(Array.from(ct?.getElementsByTagNameNS(NS.ct, 'Default') ?? []).map((d) => (d.getAttribute('Extension') ?? '').toLowerCase()));
+  const overrides = new Set(Array.from(ct?.getElementsByTagNameNS(NS.ct, 'Override') ?? []).map((o) => (o.getAttribute('PartName') ?? '').replace(/^\//, '').toLowerCase()));
+  for (const p of all) {
+    if (p === '[Content_Types].xml' || p.endsWith('/')) continue;
+    const ext = /\.([^./]+)$/.exec(p)?.[1]?.toLowerCase() ?? '';
+    if (!defaults.has(ext) && !overrides.has(p.toLowerCase())) out.push(`[Content_Types].xml: ${p} has no content type`);
+  }
   for (const part of Object.keys(v.parts).filter((p) => /\.xml$/i.test(p) && !p.includes('_rels/'))) {
     const dir = part.includes('/') ? part.slice(0, part.lastIndexOf('/') + 1) : '';
     const rels = v.doc(`${dir}_rels/${part.slice(dir.length)}.rels`);
@@ -133,6 +156,43 @@ export function samplerSuite(format: string, samplers: Sampler[], findings: Reco
     if (f) it.fails(`${title} [expected failure: ${f.finding}]`, fn, timeout);
     else it(title, fn, timeout);
   };
+  /**
+   * A whole-file check whose problems come as lines: with no finding, no problem may be left; with
+   * a finding that has a scope, the lines it covers run as the expected failure and every other
+   * line fails as usual (so a new problem in that file is still caught).
+   */
+  const fileCheck = (key: string, title: string, problems: () => Promise<string[]>, timeout = 60_000) => {
+    const f = findings[key];
+    if (!f) { it(title, async () => expect(await problems()).toEqual([]), timeout); return; }
+    if (!f.scope) { it.fails(`${title} [expected failure: ${f.finding}]`, async () => expect(await problems()).toEqual([]), timeout); return; }
+    const scope = f.scope;
+    it(`${title} (beyond what ${f.finding} covers)`, async () => expect((await problems()).filter((p) => !scope.test(p))).toEqual([]), timeout);
+    it.fails(`${title}, as far as ${f.finding} covers [expected failure: ${f.finding}]`, async () => expect((await problems()).filter((p) => scope.test(p))).toEqual([]), timeout);
+  };
+
+  describe(`${format}: item ids and findings`, () => {
+    // ids are never renumbered: an id keeps its feature for good (a removed item leaves a gap, a new
+    // one takes the next number), checked against the list kept beside the samplers;
+    // OFFICE_SAMPLER_IDS=update writes new ids into it, after a person has looked at the change
+    const snapPath = join(__dirname, `ids-${format}.json`);
+    const now: Record<string, string> = Object.fromEntries(samplers.flatMap((s) => s.items.map((i) => [i.id, i.feature])));
+    it('keeps every item id on the feature it was first given', () => {
+      const snap: Record<string, string> = existsSync(snapPath) ? JSON.parse(readFileSync(snapPath, 'utf8')) : {};
+      const moved = Object.entries(snap).filter(([id, f]) => id in now && now[id] !== f).map(([id, f]) => `${id}: was "${f}", now "${now[id]}"`);
+      expect(moved, 'an item id must keep its feature; give a new item a new number').toEqual([]);
+      const fresh = Object.keys(now).filter((id) => !(id in snap));
+      if (process.env.OFFICE_SAMPLER_IDS === 'update') {
+        writeFileSync(snapPath, JSON.stringify({ ...snap, ...Object.fromEntries(fresh.map((id) => [id, now[id]])) }, null, 1) + '\n');
+      } else {
+        expect(fresh, `new items: add them to ${snapPath} with OFFICE_SAMPLER_IDS=update`).toEqual([]);
+      }
+    });
+    it('names, for every finding, a check that exists', () => {
+      const keys = new Set([...samplers.flatMap((s) => s.items.filter((i) => i.tag !== 'loss').map((i) => i.id)),
+        ...samplers.flatMap((s) => ['opens', 'integrity', 'schema-out', 'second-save'].map((c) => `${s.name}:${c}`))]);
+      expect(Object.keys(findings).filter((k) => !keys.has(k))).toEqual([]);
+    });
+  });
 
   if (RESAVED) {
     describe(`${format}: Office re-saves`, () => {
@@ -216,33 +276,39 @@ export function samplerSuite(format: string, samplers: Sampler[], findings: Reco
       expect(saved).toBeDefined();
     });
 
-    check(`${name}:integrity`, 'saves a file that holds together (relationships and styles it uses are there)', () => {
+    // each whole-file check works its problems out once, and prints them whole for the findings report
+    const once = <T>(f: () => Promise<T>) => { let p: Promise<T> | undefined; return () => (p ??= f()); };
+    const integrityProblems = once(async () => {
       if (!savedView) throw failure ?? new Error('not saved');
       const problems = integrity(savedView);
       if (problems.length) console.log(`${name}: saved file doesn't hold together:\n  ${problems.join('\n  ')}`);
-      expect(problems).toEqual([]);
-    }, 60_000);
+      return problems;
+    });
+    fileCheck(`${name}:integrity`, 'saves a file that holds together (relationships and styles it uses are there)', integrityProblems);
 
     if (schemasReady() || schemasRequired()) {
-      check(`${name}:schema-out`, 'saves a file valid against the ECMA-376 schemas', async () => {
+      const schemaProblems = once(async () => {
         if (!saved) throw failure ?? new Error('not saved');
-        const problems = await validatePackage(saved);
-        // printed whole, so the findings report can quote it
-        if (problems.length) console.log(`${name}: schema problems after saving:\n  ${problems.map((p) => `${p.part}:${p.message}`).join('\n  ')}`);
-        expect(problems).toEqual([]);
-      }, 60_000);
+        const problems = (await validatePackage(saved)).map((p) => `${p.part}:${p.message}`);
+        if (problems.length) console.log(`${name}: schema problems after saving:\n  ${problems.join('\n  ')}`);
+        return problems;
+      });
+      fileCheck(`${name}:schema-out`, 'saves a file valid against the ECMA-376 schemas', schemaProblems);
     }
 
-    check(`${name}:second-save`, 'saves the same file when opened and saved again', () => {
+    const saveDiff = once(async () => {
       if (!saved || !again) throw failure ?? new Error('not saved');
       const diff = sameSave(saved, again);
       if (diff.length) console.log(`${name}: a second save differs:\n  ${diff.join('\n  ')}`);
-      expect(diff).toEqual([]);
+      return diff;
     });
+    fileCheck(`${name}:second-save`, 'saves the same file when opened and saved again', saveDiff);
 
     for (const item of sampler.items.filter((i) => i.tag !== 'loss' && i.check)) {
       check(item.id, `${item.id} ${item.feature} (${item.tag}) survives a save`, () => {
         if (!savedView) throw failure ?? new Error('not saved');
+        // the item itself is still there (its id in its text or name), not only something like it
+        expect(Object.values(savedView.parts).some((t) => t.includes(item.id)), `${item.id} is no longer in the saved file`).toBe(true);
         expect(item.check!(savedView)).toBe(true);
       });
     }
