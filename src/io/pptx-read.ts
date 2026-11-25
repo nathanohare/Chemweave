@@ -1886,8 +1886,13 @@ class Reader {
         // a filled shape with an outline of another colour keeps both
         if (look.fill && look.line && look.line.toLowerCase() !== look.fill.toLowerCase()) { sh.color = look.line; sh.fillColor = look.fill; }
         // (a dashed outline whenever one is drawn: round no fill, or round a fill of its own color)
-        if (look.dashed && (!look.fill || sh.fillColor)) sh.dashed = true;
+        if (look.dashed && (!look.fill || sh.fillColor)) { if (look.dotted) sh.dotted = true; else sh.dashed = true; }
         if (!look.fill && look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
+        // (the outline's width as the file has it, where it isn't the drawing's or its bold one)
+        if (look.line && (!look.fill || sh.fillColor)) {
+          const plain = sh.bold ? 2.5 * doc.style.lineWidth : doc.style.lineWidth;
+          if (Math.abs(look.width - plain) > 0.01) sh.lineWidth = +look.width.toFixed(2);
+        }
         if (prst === 'roundRect') {
           sh.rounded = true;
           sh.radius = roundRadius(spPr, box);

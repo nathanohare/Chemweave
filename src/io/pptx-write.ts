@@ -2138,7 +2138,7 @@ function patternOrGradient(s: Shape, fc: string, alpha: string, clr: ColourXml =
 
 /** A box, oval or line as a PowerPoint shape. */
 function shapeXml(s: Shape, id: number, lw: number, clr: ColourXml = srgbXml): string {
-  const width = (s.bold ? lw * 2.5 : lw);
+  const width = s.lineWidth ?? (s.bold ? lw * 2.5 : lw);
   const color = hex6(s.color ?? '#000000');
   const dash = s.dotted ? '<a:prstDash val="sysDot"/>' : s.dashed ? '<a:prstDash val="dash"/>' : '';
   if (s.kind === 'line') {

@@ -32,7 +32,6 @@ export const PPTX_FINDINGS: Record<string, Finding> = {
   'P-GRP-02': { finding: 'F-P-009', note: 'a group\'s own name ("P-GRP-02 named group") is saved as "Group N"; every grpSp is renamed' },
   // fills, lines, effects
   'pptx-format.pptx:second-save': { scope: /^ppt\/tags\/tag\d+\.xml:/, finding: 'F-P-010', note: TAGS },
-  'P-LIN-15': { finding: 'F-P-011', note: 'a plain box (no text) with prstDash sysDot (Round Dot) and a 3 pt outline is saved with prstDash "dash" and w="15240" (1.2 pt)' },
   // objects
   'pptx-objects.pptx:second-save': { scope: /^ppt\/(tags\/tag\d+\.xml|slides\/slide\d+\.xml|embeddings\/Microsoft_Excel_Worksheet\d+\.xlsx):/, finding: 'F-P-012', note: 'the second save moves the linked picture (P-LNK-20) to the back of the links slide (first in spTree), so the slide\'s relationships are numbered differently; the embedded chart workbooks (ppt/embeddings/Microsoft_Excel_Worksheet*.xlsx) carry a new docProps/core.xml time each save; and the tag parts differ as in F-P-001' },
   'P-TBL-12': { finding: 'F-P-013', note: 'table cell borders of 2 pt (lnL/lnR/lnT/lnB w="25400") are saved as w="15240" (1.2 pt)' },
