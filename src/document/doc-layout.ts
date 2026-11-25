@@ -17,7 +17,7 @@ import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type
 import { fitParas, laidParas, listMarkers, paraCount, paragraphMarks, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
-import type { PageBorder } from './document';
+import type { Float, PageBorder } from './document';
 import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type HfKey, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
@@ -189,7 +189,7 @@ export function docCellAlign(t: TableData, r: number, c: number): Justify {
 }
 
 /** Room a floating figure keeps clear on its page, from the top left of the margins (gap included). */
-export interface WrapRect { x1: number; y1: number; x2: number; y2: number; wrap: WrapKind }
+export interface WrapRect { x1: number; y1: number; x2: number; y2: number; wrap: WrapKind; /** The side the text goes (see Float.side). */ side?: Float['side'] }
 
 /** Less room than this beside a figure (an inch) and text goes below it instead (as Word does). */
 export const MIN_BESIDE = 72;
@@ -213,8 +213,10 @@ export function narrowLine(rects: WrapRect[], y1: number, y2: number, textW: num
     hit = true;
     below = Math.min(below, r.y2);
     const roomL = r.x1, roomR = textW - r.x2;
-    if (r.wrap === 'topBottom' || Math.max(roomL, roomR) < MIN_BESIDE) block = true;
-    else if (roomL >= roomR) right = Math.max(right, textW - r.x1);
+    // (text only at the left or the right: there, or below when too little room is left there)
+    const onLeft = r.side === 'left' ? true : r.side === 'right' ? false : roomL >= roomR;
+    if (r.wrap === 'topBottom' || (onLeft ? roomL : roomR) < MIN_BESIDE) block = true;
+    else if (onLeft) right = Math.max(right, textW - r.x1);
     else left = Math.max(left, r.x2);
   }
   if (!hit) return null;
@@ -942,7 +944,7 @@ export class DocLayouter {
           const g = floatGaps(fl);
           // (text keeps clear of Word's effects round it too: a border Word drew on a group)
           const fx = fl.effect ?? { l: 0, t: 0, r: 0, b: 0 };
-          rects.push({ x1: bx - page.left - g.l - fx.l, y1: by - page.top - g.t - fx.t, x2: bx + bw - page.left + g.r + fx.r, y2: by + bh - page.top + g.b + fx.b, wrap: fl.wrap });
+          rects.push({ x1: bx - page.left - g.l - fx.l, y1: by - page.top - g.t - fx.t, x2: bx + bw - page.left + g.r + fx.r, y2: by + bh - page.top + g.b + fx.b, wrap: fl.wrap, ...(fl.side ? { side: fl.side } : {}) });
         }
         const wl = rects.length ? wrapped(p, cursor, rects, colX[col]).lines : own;
         pl = only?.firstLine?.has(p) ? wl.slice(0, 1) : wl;

@@ -1420,6 +1420,9 @@ class DocxReader {
       : kind === 'wrapNone' ? (yes(anchor.getAttribute('behindDoc')) ? 'behind' as const : 'front' as const)
       : 'square' as const;
     const fl: Float = { wrap, x: round(x - l), y: round(y - t) };
+    // the side the text goes (Word's wrapText): left out for the wider side, "largest", as laid out here
+    const side = wrap === 'square' ? kids(anchor).find((k) => k.localName === kind)?.getAttribute('wrapText') : null;
+    if (side === 'bothSides' || side === 'left' || side === 'right') fl.side = side;
     if (align) fl.align = align;
     const fx = effectBeyond(anchor, look ?? undefined);
     if (fx) fl.effect = fx;
