@@ -76,11 +76,14 @@ export function outlineLevelAttrs(s: Sheet): string {
 /** A row's (or column's) outline attributes: its level, and collapsed on a summary row whose details are all hidden. */
 export function outlineAttrs(levels: Map<number, number>, hidden: Map<number, true>, i: number, summaryBefore: boolean): string {
   const lv = levels.get(i) ?? 0;
+  return `${lv ? ` outlineLevel="${lv}"` : ''}${collapsedSummary(levels, hidden, i, summaryBefore) ? ' collapsed="1"' : ''}`;
+}
+
+/** Row or column `i` is the summary of a collapsed group: the details next to it are deeper and hidden. */
+export function collapsedSummary(levels: Map<number, number>, hidden: Map<number, true>, i: number, summaryBefore: boolean): boolean {
   // the details are next to the summary: below it when summaries are above, else above it
   const d = summaryBefore ? i + 1 : i - 1;
-  const dl = levels.get(d) ?? 0;
-  const collapsed = dl > lv && hidden.has(d);
-  return `${lv ? ` outlineLevel="${lv}"` : ''}${collapsed ? ' collapsed="1"' : ''}`;
+  return (levels.get(d) ?? 0) > (levels.get(i) ?? 0) && hidden.has(d);
 }
 
 // ---------------------------------------------------------------- sparklines

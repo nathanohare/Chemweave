@@ -53,7 +53,7 @@ import { dataTableXml, readDataTable, pivotParts, readPivot, samePivot, PIVOT_CT
 import { type DataTable, seenDataTableId } from '../sheet/what-if';
 import { type PivotTable, seenPivotId } from '../sheet/pivot';
 import { Persons, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
-import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
+import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, collapsedSummary, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
 import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, withDxfs } from './xlsx-view';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders } from '../sheet/cell-styles';
 import type { WorkbookTheme } from '../sheet/themes';
@@ -732,7 +732,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const list = byRow.get(r);
       if (list) list.push(k); else byRow.set(r, [k]);
     }
-    for (const r of [...s.rowHeights.keys(), ...auto.keys(), ...s.hiddenRows.keys(), ...s.rowLevels.keys(), ...[...s.rowLevels.keys()].map((r) => (s.outline?.summaryAbove ? r - 1 : r + 1)).filter((r) => r >= 0)]) if (!byRow.has(r)) byRow.set(r, []);
+    for (const r of [...s.rowHeights.keys(), ...auto.keys(), ...s.hiddenRows.keys(), ...s.rowLevels.keys(), ...[...s.rowLevels.keys()].map((r) => (s.outline?.summaryAbove ? r - 1 : r + 1)).filter((r) => r >= 0 && r < MAX_ROWS)]) if (!byRow.has(r)) byRow.set(r, []);
     // a sheet whose unlisted rows are hidden (zeroHeight): every row shown, down to the last in use, is listed
     const zero = !!own.fileRowHeight?.zero;
     if (zero) {
@@ -898,7 +898,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // columns: widths, hidden, and whole-column formatting
     // (columns pushed past the sheet's last by inserting ones are gone, as in Excel)
     // (and the summary column beside a collapsed group, which says collapsed="1" though nothing else is set on it)
-    const summaries = [...s.colLevels.keys()].map((c) => (s.outline?.summaryLeft ? c - 1 : c + 1)).filter((c) => c >= 0 && outlineAttrs(s.colLevels, s.hiddenCols, c, !!s.outline?.summaryLeft).includes('collapsed'));
+    const summaries = [...s.colLevels.keys()].map((c) => (s.outline?.summaryLeft ? c - 1 : c + 1)).filter((c) => c >= 0 && collapsedSummary(s.colLevels, s.hiddenCols, c, !!s.outline?.summaryLeft));
     const colKeys = [...new Set([...s.colWidths.keys(), ...s.hiddenCols.keys(), ...s.colStyles.keys(), ...s.colLevels.keys(), ...summaries])].filter((c) => c < MAX_COLS).sort((a, b) => a - b);
     const colAttrs = colKeys.map((c): [number, string] => {
       const w = s.colWidths.get(c);

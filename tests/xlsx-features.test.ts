@@ -521,6 +521,9 @@ describe('a collapsed column group (F-X-003)', () => {
     const cols = colsOf(saved);
     expect(cols.find((c) => c.includes('min="4"'))).toContain('collapsed="1"');
     expect(cols.find((c) => c.includes('min="2"'))).toMatch(/hidden="1".*outlineLevel="1"/);
+    // its width stays the sheet's own (not made a fixed width), and the next save says the same
+    expect(cols.find((c) => c.includes('min="4"'))).not.toContain('customWidth');
+    expect(part(await writeXlsx((await readXlsx(await writeXlsx((await readXlsx(bytes)).book, pictures))).book, pictures), 'xl/worksheets/sheet1.xml')).toBe(saved);
   });
 
   it('puts it at the left of the group when summaries are at the left', async () => {
