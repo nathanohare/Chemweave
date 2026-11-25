@@ -7,6 +7,7 @@
 
 import { describe, it, expect } from 'vitest';
 import { keptFrame, frameNow } from '../src/io/pptx-keep';
+import { noShrink } from '../src/io/pptx-write';
 import type { Caption } from '../src/model';
 
 const P = 'http://schemas.openxmlformats.org/presentationml/2006/main';
@@ -38,5 +39,22 @@ describe('a placeholder\'s own frame (F-P-002)', () => {
     const f = frameNow(c, emu)!;
     expect(f.xfrm).toBe(`<a:xfrm><a:off x="${110 * EMU}" y="${320 * EMU}"/><a:ext cx="${500 * EMU}" cy="${80 * EMU}"/></a:xfrm>`);
     expect(f.bodyPr).toBe(BP);
+  });
+});
+
+describe('a placeholder\'s kept frame: the review\'s cases', () => {
+  it('is not kept for the placeholder pasted as a plain text box', () => {
+    const pbox = keptFrame(placeholder(), read)!;
+    const pasted = { ...read, pbox, ph: undefined };
+    expect(frameNow(pasted as Caption, emu)).toBeNull();
+  });
+
+  it('is written with no AutoFit, its text already at the size its shrinking gave it', () => {
+    // §21.1.2.1.3 normAutofit fontScale: PowerPoint's shrink, which the reader has applied to the sizes
+    expect(noShrink('<a:bodyPr anchor="b"><a:normAutofit fontScale="70000" lnSpcReduction="10000"/></a:bodyPr>')).toBe('<a:bodyPr anchor="b"><a:noAutofit/></a:bodyPr>');
+    expect(noShrink('<a:bodyPr/>')).toBe('<a:bodyPr><a:noAutofit/></a:bodyPr>');
+    expect(noShrink('<a:bodyPr anchor="b"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp></a:bodyPr>'))
+      .toBe('<a:bodyPr anchor="b"><a:prstTxWarp prst="textNoShape"><a:avLst/></a:prstTxWarp><a:noAutofit/></a:bodyPr>');
+    expect(noShrink(BP)).toBe(BP);
   });
 });

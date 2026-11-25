@@ -190,6 +190,8 @@ interface FrameKept {
   /** The shape's a:xfrm and its text's a:bodyPr (21.1.2.1.1), as written. */
   xf: string;
   bp: string;
+  /** The placeholder it was (title or body), whose layout gives what its bodyPr leaves out; null for a text box. */
+  ph?: string | null;
   /** The caption's place, width, height, fit, direction and turn as read. */
   x: number;
   y: number;
@@ -222,7 +224,7 @@ export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
 export function keptFrame(sp: Element, c: Omit<Caption, 'id'>): string | null {
   const xf = kid(kid(sp, 'spPr'), 'xfrm'), bp = kid(kid(sp, 'txBody'), 'bodyPr');
   if (!xf || !bp || !kid(xf, 'off') || !kid(xf, 'ext')) return null;
-  const k: FrameKept = { xf: xmlOf(xf), bp: xmlOf(bp), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
+  const k: FrameKept = { xf: xmlOf(xf), bp: xmlOf(bp), ...(c.ph ? { ph: c.ph } : {}), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
   return JSON.stringify(k);
 }
 
@@ -251,6 +253,8 @@ export function frameNow(c: Caption, emu: (pt: number) => number, fit?: TextFit)
   if (!c.pbox) return null;
   let k: FrameKept;
   try { k = JSON.parse(c.pbox) as FrameKept; } catch { return null; }
+  // (a placeholder's frame only for the same placeholder: pasted as a text box, or the other way, it is placed afresh)
+  if ((c.ph ?? null) !== (k.ph ?? null)) return null;
   if ((c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;
   const dx = c.x - k.x, dy = c.y - k.y;
   let xfrm = k.xf.replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Number(x) + emu(dx)}" y="${Number(y) + emu(dy)}"`);

@@ -2576,7 +2576,9 @@ class Reader {
       // what PowerPoint has no place for: groups, order, steps, ties to structures, chemistry
       const own: Partial<Caption> = {};
       for (const k of OWN_CAPTION_KEYS) if (saved.c?.[k] !== undefined) (own as Record<string, unknown>)[k] = saved.c[k];
-      return { ...theirs, ...own, runs: this.ownLinks(theirs.runs, saved.c?.runs) };
+      // (its frame as PowerPoint has it now, as for a text box or placeholder of PowerPoint's)
+      const pbox = keptFrame(sp, theirs);
+      return { ...theirs, ...own, runs: this.ownLinks(theirs.runs, saved.c?.runs), ...(pbox ? { pbox } : {}) };
     }
     const c: Omit<Caption, 'id'> & { id?: number } = { ...saved.c };
     delete c.id;
@@ -2591,7 +2593,8 @@ class Reader {
       const rot = normDegrees(box.rot ?? 0);
       if (rot) c.rot = rot; else delete c.rot;
       const nw = box.x2 - box.x1, nh = box.y2 - box.y1;
-      if (c.wrap !== undefined && Math.abs(nw - w) > 0.5) c.wrap = nw;
+      // (a kept frame's text is narrower than the frame by its insets: widened by as much as the frame)
+      if (c.wrap !== undefined && Math.abs(nw - w) > 0.5) c.wrap = c.pbox ? c.wrap + nw - w : nw;
       if ((c.ph || c.fit) && Math.abs(nh - h) > 0.5) c.boxH = nh;
     } else if (saved.at?.length === 4) {
       const [x, y, w, h] = saved.at;
