@@ -750,8 +750,10 @@ const PARA_KEYS = ['align', 'spaceBefore', 'spaceAfter', 'line', 'indent', 'firs
 /** A paragraph after its style changed from `from` to `to`: what looked like `from` now looks like `to`. */
 export function restylePara(p: ParaStyle, from: NamedStyle, to: NamedStyle): ParaStyle {
   const want = paraFromStyle(to, p, from);
-  // (lines and shading: the old style's give way to the new one's, the paragraph's own stay)
-  const out: ParaStyle = { ...p, style: want.style, border: want.border, shade: want.shade };
+  // (lines and shading as the other settings: where the paragraph had the old style's, the new style's)
+  const sameLines = JSON.stringify(cleanBorders(p.border) ?? null) === JSON.stringify(cleanBorders(from.border) ?? null);
+  const sameShade = (p.shade ?? '').toLowerCase() === (from.shade ?? '').toLowerCase();
+  const out: ParaStyle = { ...p, style: want.style, border: sameLines ? to.border : p.border, shade: sameShade ? to.shade : p.shade };
   for (const k of PARA_KEYS) {
     const fromV = k === 'keepLines' || k === 'noWidow' ? !!from[k] : from[k];
     if (paraValue(p, k) === fromV) (out as Record<string, unknown>)[k] = (want as Record<string, unknown>)[k];

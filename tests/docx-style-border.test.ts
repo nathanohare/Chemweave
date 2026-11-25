@@ -6,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
-import { newParaStyle, paraFromStyle, setParaStyle, type DocText } from '../src/document/document';
+import { modifyStyle, newParaStyle, paraFromStyle, setParaStyle, type DocText } from '../src/document/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -76,6 +76,13 @@ describe("a paragraph style's lines and shading", () => {
     expect(back.paras[1].border?.top).toBeTruthy();
     const again = unzipSync(await writeDocx(back, deps));
     for (const part of ['word/document.xml', 'word/styles.xml']) expect(strFromU8(again[part])).toBe(strFromU8(unzipSync(once)[part]));
+    // (in their place in each style's w:pPr: before the spacing, ECMA-376 Part 1 §17.3.1.26 CT_PPrBase)
+    const sx = strFromU8(unzipSync(once)['word/styles.xml']);
+    for (const m of sx.matchAll(/<w:pPr>(.*?)<\/w:pPr>/g)) {
+      const i = Math.max(m[1].indexOf('<w:pBdr>'), m[1].indexOf('<w:shd '));
+      const j = m[1].search(/<w:(spacing|ind|jc|outlineLvl)\b/);
+      if (i >= 0 && j >= 0) expect(i).toBeLessThan(j);
+    }
   });
 
   it("give way to another style's when a paragraph changes style; New Style takes the paragraph's", async () => {
@@ -83,6 +90,13 @@ describe("a paragraph style's lines and shading", () => {
     const plain = setParaStyle(t, 0, 0, 'Normal');
     expect(plain.paras[0].border).toBeUndefined();
     expect(plain.paras[0].shade).toBeUndefined();
+    // the style changed (Modify Style): the paragraph unboxed by hand stays so, the other takes the change
+    const boxed = Object.values(t.styles).find((s) => s.name === 'Boxed')!;
+    const modified = modifyStyle(t, { ...boxed, size: boxed.size + 2, shade: '#ddeeff' });
+    expect(modified.paras[1].border).toBeUndefined();
+    expect(modified.paras[1].shade).toBeUndefined();
+    expect(modified.paras[0].shade).toBe('#ddeeff');
+    expect(modified.paras[0].border?.top).toBeTruthy();
     const made = newParaStyle(t, 'Bare', 1, {});
     expect(made.t.styles[made.id].border).toBeUndefined();
     expect(made.t.styles[made.id].shade).toBeUndefined();

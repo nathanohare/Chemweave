@@ -2481,12 +2481,12 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   // (widow and orphan control is on for every style, from the document's defaults, unless a style turns it off)
   if (s.keepLines) pPr.push('<w:keepLines/>');
   if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>');
+  // (its lines and shading, in their place before the spacing; a style based on Normal says where it hasn't Normal's)
+  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : normal));
   pPr.push(`<w:spacing w:before="${twips(s.spaceBefore)}" w:after="${twips(s.spaceAfter)}" w:line="${Math.round(240 * s.line)}" w:lineRule="auto"/>`);
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
   if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
-  // (its lines and shading; a style based on Normal says where it hasn't Normal's)
-  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : normal));
   const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;
