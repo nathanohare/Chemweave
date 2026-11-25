@@ -248,7 +248,7 @@ export type TextFit = { h: number; w: number; top: number; free?: () => { h: num
  * exactly as read.
  */
 export function frameNow(c: Caption, emu: (pt: number) => number, fit?: TextFit): { xfrm: string; bodyPr: string; dx: number; dy: number } | null {
-  if (!c.pbox || c.ph) return null;
+  if (!c.pbox) return null;
   let k: FrameKept;
   try { k = JSON.parse(c.pbox) as FrameKept; } catch { return null; }
   if ((c.fit ?? null) !== k.fit || (c.dir ?? null) !== k.dir || !near(c.rot, k.rot)) return null;

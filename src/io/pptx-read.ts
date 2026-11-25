@@ -1903,8 +1903,10 @@ class Reader {
     const tbox = quarter ? { ...box, ...swapBox(box), rot: box.rot + quarter } : box;
     let c = this.ourText(tags[TAG.text], sp, tbox, ph, from) ?? turned(this.text(sp, tbox, ph, from), tbox);
     if (c && quarter) c = { ...c, dir: quarter > 0 ? 'vert' : 'vert270' };
-    // a text box of PowerPoint's: its frame as the file had it (size, place, anchor and margins), kept while it isn't resized here
-    if (c && !ph && !c.pbox) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
+    // a text box or placeholder of PowerPoint's: its frame as the file had it (size, place, anchor
+    // and margins), kept while it isn't resized here (a placeholder placed by its layout has none of
+    // its own, and one saved here is placed as before)
+    if (c && !c.pbox && (!ph || !tags[TAG.text])) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
     if (c && !c.pbox) delete c.pbox;
     // a table's title or footnotes, saved here as a text box beside it
     const part = (() => {
