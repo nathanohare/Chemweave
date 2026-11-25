@@ -4,7 +4,8 @@
 // gains a row of height. View > Window and Colours > Title Bar in Menu Row puts the system's title bar back.
 
 import { isTauri } from '@tauri-apps/api/core';
-import { getCurrentWindow } from '@tauri-apps/api/window';
+import { currentMonitor, getCurrentWindow } from '@tauri-apps/api/window';
+import { setModalTitleStrip, setOffScreen } from './modal-guard';
 
 /** Where the window's title and buttons are: in the menu row ('app') or the system's own bar. */
 export type TitleBarPlace = 'app' | 'system';
@@ -20,9 +21,8 @@ const ICONS = {
 let controls: HTMLElement | null = null;
 let place: TitleBarPlace = 'system';
 
-/** The window buttons, made the first time they are needed. */
-function windowButtons(header: HTMLElement): HTMLElement {
-  if (controls) return controls;
+/** A set of the window's buttons: Minimize, Maximize (Restore Down when maximized) and Close. */
+function makeWindowButtons(): { box: HTMLElement; showMax: () => Promise<void> } {
   const w = getCurrentWindow();
   const box = document.createElement('div');
   box.className = 'win-controls';
@@ -38,7 +38,7 @@ function windowButtons(header: HTMLElement): HTMLElement {
     return b;
   };
   button('win-min', 'Minimize', ICONS.min, () => w.minimize());
-  const max = button('win-max', 'Maximize', ICONS.max, () => w.toggleMaximize());
+  const max = button('win-max', 'Maximize', ICONS.max, () => w.toggleMaximize().then(() => showMax()));
   // closing asks about unsaved work as the system's close button does (onCloseRequested)
   button('win-close', 'Close', ICONS.close, () => w.close());
   const showMax = async () => {
@@ -47,11 +47,77 @@ function windowButtons(header: HTMLElement): HTMLElement {
     max.title = big ? 'Restore Down' : 'Maximize';
     max.setAttribute('aria-label', max.title);
   };
-  void w.onResized(() => { void showMax(); });
   void showMax();
+  return { box, showMax };
+}
+
+/** The window buttons in the menu bar, made the first time they are needed. */
+function windowButtons(header: HTMLElement): HTMLElement {
+  if (controls) return controls;
+  const { box, showMax } = makeWindowButtons();
+  void getCurrentWindow().onResized(() => { void showMax(); });
   header.append(box);
   controls = box;
   return box;
+}
+
+/**
+ * A modal window's copy of the title strip. A modal window makes the rest of the page inert, the
+ * menu bar's buttons and the strip that moves the program with it, so each modal window carries
+ * its own copy at the top of the program (src/ui/modal-guard.ts).
+ */
+function modalStrip(): HTMLElement {
+  const strip = document.createElement('div');
+  strip.setAttribute('data-tauri-drag-region', '');
+  const { box } = makeWindowButtons();
+  // (in the menu bar's own colors: a window sets its own colors for what is inside it)
+  const header = document.querySelector('header');
+  if (header) {
+    const cs = getComputedStyle(header);
+    box.style.backgroundColor = cs.backgroundColor;
+    box.style.color = cs.color;
+  }
+  strip.append(box);
+  return strip;
+}
+
+/** How tall the menu bar is, for the modal windows' title strip. */
+function stripHeight(header: HTMLElement): number {
+  const h = header.getBoundingClientRect().height;
+  return h > 0 ? Math.min(h, 40) : 32;
+}
+
+/**
+ * Tell the modal windows how much of the program is off the screen, so they open in the part that
+ * is on it. Checked when the program is moved, resized or moved to a screen with another scale.
+ */
+let watchingScreen = false;
+function watchScreen(): void {
+  if (watchingScreen) return;
+  watchingScreen = true;
+  const w = getCurrentWindow();
+  let timer = 0;
+  const measure = async () => {
+    try {
+      const [pos, size, mon] = await Promise.all([w.innerPosition(), w.innerSize(), currentMonitor()]);
+      if (!mon || !size.width || !size.height) { setOffScreen(null); return; }
+      // (CSS pixels per physical pixel: the screen's scale and View > Interface Size both count)
+      const k = window.innerWidth / size.width;
+      const area = mon.workArea ?? { position: mon.position, size: mon.size };
+      const ax = area.position.x, ay = area.position.y;
+      setOffScreen({
+        top: Math.max(0, ay - pos.y) * k,
+        left: Math.max(0, ax - pos.x) * k,
+        bottom: Math.max(0, pos.y + size.height - (ay + area.size.height)) * k,
+        right: Math.max(0, pos.x + size.width - (ax + area.size.width)) * k,
+      });
+    } catch { setOffScreen(null); }
+  };
+  const soon = () => { window.clearTimeout(timer); timer = window.setTimeout(() => void measure(), 120); };
+  void w.onMoved(soon).catch(() => {});
+  void w.onResized(soon).catch(() => {});
+  void w.onScaleChanged(soon).catch(() => {});
+  void measure();
 }
 
 /** Put the title bar where it goes. Only the desktop app has one; the web page leaves it alone. */
@@ -69,6 +135,8 @@ export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
     else el.removeAttribute('data-tauri-drag-region');
   }
   windowButtons(header).hidden = !own;
+  setModalTitleStrip(own ? modalStrip : null, own ? stripHeight(header) : 0);
+  watchScreen();
   await getCurrentWindow().setDecorations(!own).catch(() => {});
 }
 
