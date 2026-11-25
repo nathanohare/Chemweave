@@ -71,6 +71,8 @@ async function chooseReader(host: ImportHost, preferAi: boolean): Promise<'here'
 /** Download the reader on this computer, with a progress window and Cancel; true when it is ready. */
 async function downloadReader(): Promise<boolean> {
   const d = document.createElement('dialog');
+  // (a download in progress: a click outside the window doesn't mean Cancel)
+  d.dataset.outsideClick = 'keep';
   d.className = 'ask';
   const bar = document.createElement('progress');
   bar.max = 1;
