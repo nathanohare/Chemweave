@@ -1645,7 +1645,12 @@ class Writer {
     const ext = MIME_EXT[mime];
     if (!ext) return '';
     const fx = tidyFx(pic?.fx);
-    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic) };
+    // (and its link, as a shape's: a web page, a file, a slide or a show jump)
+    const was = this.curPath;
+    this.curPath = from;
+    const click = pic?.link && !pic.zoom ? this.hlink(pic.link) : '';
+    this.curPath = was;
+    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic), ...(click ? { click } : {}) };
     const descr = alt?.trim() || undefined;
     // what Office can't show live goes in worked in. PowerPoint keeps the original as the blip's
     // layer only as an HD Photo (.wdp) and refuses a PNG there, so the original goes in a tag with
@@ -2052,7 +2057,7 @@ function decorXml(sh: DecorShape, id: number): string {
 }
 
 /** A picture's turn and whether it is hidden (Selection Pane). */
-interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string }
+interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string; /** What a click on it does (its a:hlinkClick). */ click?: string }
 
 /**
  * A picture element: PNG (or another bitmap), optionally with an SVG PowerPoint shows instead,
@@ -2065,7 +2070,8 @@ function picXml(id: number, name: string, blipId: string, svgId: string | null, 
     ? `<a:srcRect l="${Math.round(crop.l * 100000)}" t="${Math.round(crop.t * 100000)}" r="${Math.round(crop.r * 100000)}" b="${Math.round(crop.b * 100000)}"/>` : '';
   const ph = more.ph ?? '';
   const nvPr = tagsId ? `<p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tagsId}"/></p:custDataLst></p:nvPr>` : ph ? `<p:nvPr>${ph}</p:nvPr>` : '<p:nvPr/>';
-  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}/><p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
+  const cNv = `<p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}`;
+  return `<p:pic><p:nvPicPr>${more.click ? `${cNv}>${more.click}</p:cNvPr>` : `${cNv}/>`}<p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
     `<p:blipFill><a:blip r:embed="${blipId}">${blipEffectsXml(fx)}${ext}</a:blip>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr>${xfrm(box, rotAttr(more.rot))}${pictureLookXml(look, fx)}</p:spPr></p:pic>`;
 }
