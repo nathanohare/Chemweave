@@ -76,7 +76,10 @@ export class DocArrangeUI {
     // the section the figure is in decides the margins (Word's Position is inside them)
     const page = (placed ? f.layout().pages[placed.page]?.setup : undefined) ?? f.t.page;
     const fl = positioned(floatOf(o), p, size, page, lookExtent(lookOf(o)));
-    this.update({ ...f.t, objects: { ...f.t.objects, [id]: withFloat(o, fl) } }, 'Position');
+    const moved = withFloat(o, fl);
+    this.update({ ...f.t, objects: { ...f.t.objects, [id]: moved } }, 'Position');
+    // (a picture hidden in Word, shown here while in the line: hidden once it floats, as in Word)
+    if (floatOf(moved)?.hidden && !floatOf(o)) this.host.flash('This figure is hidden in Word. Show it in the Selection Pane.');
   }
 
   /** Rotate: a quarter right or left, flipped, or by any angle (a picture, or a drawing as a whole: an icon, a shape, a structure). */

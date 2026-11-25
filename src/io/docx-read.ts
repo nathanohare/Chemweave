@@ -1452,7 +1452,7 @@ class DocxReader {
     if (kept?.was !== undefined && shown && shown !== kept.was) out.name = shown;
     else if (kept?.name) out.name = kept.name;
     // (in a file saved here, a name that isn't one this program gives: given or changed in Word)
-    else if (!kept && shown && (ownName(pr, box) || !this.model || !GIVEN_NAME.test(shown))) out.name = shown;
+    else if ((!kept || kept.was === undefined) && shown && (ownName(pr, box) || !this.model || !GIVEN_NAME.test(shown))) out.name = shown;
     return out;
   }
 
