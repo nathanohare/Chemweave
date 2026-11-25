@@ -1018,7 +1018,9 @@ export function chartSvg(chart: Chart, data: SeriesData[]): string {
 
 function scaleItems(items: Item[], k: number): Item[] {
   const seg = (s: Seg): Seg => (s.k === 'Z' ? s : s.k === 'C' ? { k: 'C', x1: s.x1 * k, y1: s.y1 * k, x2: s.x2 * k, y2: s.y2 * k, x: s.x * k, y: s.y * k } : { k: s.k, x: s.x * k, y: s.y * k });
-  return items.map((it) => {
+  return items.map((one) => {
+    const c = one.clip;
+    const it = c ? { ...one, clip: { x1: c.x1 * k, y1: c.y1 * k, x2: c.x2 * k, y2: c.y2 * k } } : one;
     if (it.kind === 'path') return { ...it, segs: it.segs.map(seg), ...(it.stroke ? { stroke: { ...it.stroke, width: it.stroke.width * k } } : {}) };
     if (it.kind === 'text') return { ...it, x: it.x * k, y: it.y * k, size: it.size * k, widths: it.widths.map((w) => w * k) };
     return { ...it, x: it.x * k, y: it.y * k, w: it.w * k, h: it.h * k };

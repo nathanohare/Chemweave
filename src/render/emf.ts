@@ -18,6 +18,7 @@ const EMR = {
   EOF: 14, SETMAPMODE: 17, SETBKMODE: 18, SETPOLYFILLMODE: 19, SETTEXTALIGN: 22, SETTEXTCOLOR: 24, MOVETOEX: 27,
   SELECTOBJECT: 37, CREATEBRUSHINDIRECT: 39, DELETEOBJECT: 40, LINETO: 54, BEGINPATH: 59, ENDPATH: 60,
   CLOSEFIGURE: 61, FILLPATH: 62, STROKEPATH: 64, EXTCREATEFONTINDIRECTW: 82, EXTTEXTOUTW: 84, EXTCREATEPEN: 95,
+  INTERSECTCLIPRECT: 30, EXTSELECTCLIPRGN: 75,
 } as const;
 const NULL_BRUSH = 0x80000005;
 const NULL_PEN = 0x80000008;
@@ -139,9 +140,21 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
   };
   const bounds = () => { out.i32(0); out.i32(0); out.i32(Math.round(W * UNIT)); out.i32(Math.round(H * UNIT)); };
 
+  // what is drawn is cut off by its item's rectangle (a table row of exact height): the clip is
+  // set back to none (an empty region, RGN_COPY), then cut to the rectangle, whenever it changes
+  let clipKey = '';
+  const clipTo = (c: Item['clip']) => {
+    const key = c ? `${c.x1},${c.y1},${c.x2},${c.y2}` : '';
+    if (key === clipKey) return;
+    if (clipKey) rec(EMR.EXTSELECTCLIPRGN, 0, 5);
+    if (c) rec(EMR.INTERSECTCLIPRECT, X(c.x1), Y(c.y1), X(c.x2), Y(c.y2));
+    clipKey = key;
+  };
+
   for (const it of items) {
     // pictures go with the PNG copy on the clipboard, not in the EMF
     if (it.kind === 'image') continue;
+    clipTo(it.clip);
     if (it.kind === 'path') {
       if (!it.segs.some((s) => s.k !== 'M')) continue;
       if (it.fill) {
