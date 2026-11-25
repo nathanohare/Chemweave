@@ -39,7 +39,7 @@ import {
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
   samePageBorder,
 } from '../document/document';
-import { hasTitlePg, linkedHf } from '../document/sections';
+import { linkedHf } from '../document/sections';
 import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
@@ -1163,7 +1163,7 @@ class DocxReader {
     const prevHf = this.lastHf;
     const { hf, linked, titlePg } = this.readHeaderFooter(next, prevHf);
     if (!linked) out.hf = hf;
-    else if (prevHf && titlePg !== undefined && titlePg !== hasTitlePg(prevHf)) out.titlePg = titlePg;
+    else if (titlePg !== undefined) out.titlePg = titlePg;
     // each section has its own page border: kept where it isn't the document's (the first section's)
     const border = this.pageBorderOf(next);
     if (!samePageBorder(border, this.docBorder)) out.pageBorder = border;

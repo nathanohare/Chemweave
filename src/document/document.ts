@@ -242,7 +242,8 @@ export interface SectionBreak {
   hf?: HeaderFooter;
   /**
    * Different First Page (Word's titlePg, which each section has for itself) of a section whose
-   * header and footer are the section before's; left out, as the section before has it.
+   * header and footer are the section before's; left out (made before this was kept), as the
+   * section before has it.
    */
   titlePg?: boolean;
   /** Its own page border (Word's pgBorders, which each section has for itself), or null for none; left out, the document's. */

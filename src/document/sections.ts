@@ -23,7 +23,7 @@ export interface Section {
   hf: HeaderFooter;
   /** Its header and footer are the section before's (Word's Link to Previous). */
   linked: boolean;
-  /** A linked section's own Different First Page, where it isn't the section before's (see SectionBreak.titlePg). */
+  /** A linked section's own Different First Page (see SectionBreak.titlePg). */
   titlePg?: boolean;
   /** Its own page border, or null for none, where it isn't the document's (see SectionBreak.pageBorder). */
   ownBorder?: PageBorder | null;
@@ -50,7 +50,7 @@ export function sectionsOf(t: Pick<DocText, 'runs' | 'paras' | 'page' | 'hf'> & 
     if (!s) continue;
     const prev = out[out.length - 1];
     prev.end = p;
-    const titlePg = !s.hf && s.titlePg !== undefined && s.titlePg !== hasTitlePg(prev.hf) ? s.titlePg : undefined;
+    const titlePg = !s.hf ? s.titlePg : undefined;
     out.push({
       index: out.length, first: p, end: n, kind: s.kind, page: s.page ?? prev.page, hf: s.hf ?? linkedHf(prev.hf, titlePg), linked: !s.hf,
       restart: s.restart, format: s.format ?? 'decimal', lines: s.lines,
@@ -70,16 +70,15 @@ export function hasTitlePg(hf: HeaderFooter): boolean {
 /**
  * The header and footer of a section linked to the one before (`prev`), with its own Different
  * First Page (`titlePg`, left out: the same as the one before). Without it, its first page shows
- * the usual header and footer, page number and all; with it and no first page header before, its
- * first page shows none (the one before's, which is empty).
+ * the usual header and footer, page number and all; with it, the first page header and footer
+ * linked from before (as Word links them through sections without a first page of their own),
+ * or none where there were never any.
  */
 export function linkedHf(prev: HeaderFooter, titlePg?: boolean): HeaderFooter {
   if (titlePg === undefined || titlePg === hasTitlePg(prev)) return prev;
-  if (!titlePg) {
-    const { firstPage: _f, first: _z, ...rest } = prev;
-    return { ...rest, onFirst: true };
-  }
-  return { ...prev, firstPage: true, first: { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
+  // (the first page's header and footer stay with it, for a later section that has a first page again)
+  if (!titlePg) return { ...prev, firstPage: undefined, onFirst: true };
+  return { ...prev, firstPage: true, first: prev.first ?? { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
 }
 
 /** The section a paragraph is in. */
@@ -145,7 +144,7 @@ export function changeAllSections(t: DocText, patch: (s: Section) => SectionPatc
  * the one before, its numbers carrying on.
  */
 export function newBreak(s: Section, kind: BreakKind): SectionBreak {
-  const out: SectionBreak = { kind, page: s.page };
+  const out: SectionBreak = { kind, page: s.page, titlePg: hasTitlePg(s.hf) };
   if (s.ownBorder !== undefined) out.pageBorder = s.ownBorder;
   if (s.format !== 'decimal') out.format = s.format;
   if (s.lines) out.lines = s.lines;

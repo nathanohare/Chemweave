@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
-import { sectionsOf, linkedHf, hasTitlePg, changeSection } from '../src/document/sections';
+import { sectionsOf, linkedHf, hasTitlePg, changeSection, newBreak } from '../src/document/sections';
 import { defaultHeaderFooter } from '../src/document/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
@@ -93,5 +93,41 @@ describe('what each section has for itself (F-W-013, F-W-014)', () => {
     const own = linkedHf(untitled, true);
     expect(hasTitlePg(own)).toBe(true);
     expect(own.first).toEqual({ header: ['', '', ''], footer: ['', '', ''] });
+    // through a section without one, a later section with a first page again shows the first one's
+    expect(linkedHf(plain, true).first).toEqual(titled.first);
+  });
+
+  it('keeps a section\'s own Different First Page when changed while linked, and when linked again', async () => {
+    const { doc } = await readDocx(wordFile());
+    // section 2 (linked) takes a first page of its own: section 1's first page header shows there
+    const on = changeSection(doc, 1, { titlePg: true });
+    const s = sectionsOf(on);
+    expect(s[1].linked).toBe(true);
+    expect(hasTitlePg(s[1].hf)).toBe(true);
+    expect(s[1].hf.first?.header).toEqual(s[0].hf.first?.header);
+    // a section of its own linked again (Link to Previous) keeps what it had
+    const own = changeSection(doc, 1, { hf: { ...sectionsOf(doc)[1].hf }, linked: false });
+    const relinked = changeSection(own, 1, { linked: true, titlePg: false });
+    expect(hasTitlePg(sectionsOf(relinked)[1].hf)).toBe(false);
+  });
+
+  it('writes the first page header of a section whose linked follower has a first page and it hasn\'t', async () => {
+    const { doc } = await readDocx(wordFile());
+    // section 1 without a first page, section 2 linked with one: section 1's first page header is written for it
+    const t = changeSection(changeSection(doc, 0, { hf: { ...sectionsOf(doc)[0].hf, firstPage: undefined, onFirst: true } }), 1, { titlePg: true });
+    const saved = strFromU8(unzipSync(await writeDocx(t, deps))['word/document.xml']);
+    const s = sectPrs(saved);
+    expect(s.map((x) => x.includes('<w:titlePg/>'))).toEqual([false, true, false]);
+    expect(s[0]).toContain('w:type="first"');
+  });
+
+  it('gives no border to a section without one beside a document border, and copies a section\'s own to a new section', async () => {
+    const { doc } = await readDocx(wordFile());
+    const t = { ...doc, pageBorder: { style: 'single' as const, width: 0.5, color: '#000000', from: 'page' as const, space: 24 } };
+    const none = changeSection(t, 1, { ownBorder: null });
+    expect(sectionsOf(none).map((s) => s.border?.style ?? null)).toEqual(['single', null, 'double']);
+    const saved = strFromU8(unzipSync(await writeDocx(none, deps))['word/document.xml']);
+    expect(sectPrs(saved).map((x) => x.includes('<w:pgBorders'))).toEqual([true, false, true]);
+    expect(newBreak(sectionsOf(none)[2], 'nextPage').pageBorder?.style).toBe('double');
   });
 });

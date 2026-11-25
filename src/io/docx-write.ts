@@ -392,7 +392,7 @@ class DocxWriter {
     const main = 'word/document.xml';
     const body = await this.body(main);
     const secs = sectionsOf(this.t);
-    const sect = await this.section(main, secs[secs.length - 1]);
+    const sect = await this.section(main, secs[secs.length - 1], secs);
     // Design > Page Color: Word's background (shown once settings say so)
     const bg = this.t.pageColor ? `<w:background w:color="${hex6(this.t.pageColor)}"/>` : '';
     pkg.add(main, `${HEAD}<w:document ${PART_NS}>${bg}<w:body>${body}${sect}</w:body></w:document>`, DOCX_CT.document);
@@ -525,7 +525,7 @@ class DocxWriter {
       const ps = paras[p];
       blockTo(ps.cc);
       const ending = endsSection.get(p);
-      const sectXml = ending ? await this.section(main, ending) : '';
+      const sectXml = ending ? await this.section(main, ending, secs) : '';
       // a section ending with a table, contents or bibliography: an empty paragraph after it holds the section's properties
       const before = out.length;
       const close = () => { if (sectXml && out.length > before) out.push(`<w:p><w:pPr>${sectXml}</w:pPr></w:p>`); if (sectXml) lastWasTable = false; };
@@ -1726,7 +1726,7 @@ class DocxWriter {
    * numbers, and its own header and footer (a section linked to the one before has none, and
    * Word shows the one before's).
    */
-  private async section(main: string, sec: Section): Promise<string> {
+  private async section(main: string, sec: Section, secs: Section[]): Promise<string> {
     const t = this.t;
     const pg = sec.page;
     const hf = sec.hf;
@@ -1749,7 +1749,10 @@ class DocxWriter {
     await add('footer', 'default', true);
     // a first page of its own (Different First Page), or one without its number (the header and footer text stay)
     const titlePg = hasTitlePg(hf);
-    if (titlePg) { await add('header', 'first', !!hf.firstPage && hf.onFirst); await add('footer', 'first', !!hf.firstPage && hf.onFirst); }
+    // (a section linked to this one with a first page of its own shows this one's first page header and footer)
+    let linkedFirst = false;
+    for (let i = sec.index + 1; i < secs.length && secs[i].linked; i++) linkedFirst ||= hasTitlePg(secs[i].hf);
+    if (titlePg || linkedFirst) { await add('header', 'first', !!hf.firstPage && hf.onFirst); await add('footer', 'first', !!hf.firstPage && hf.onFirst); }
     if (hf.oddEven) { await add('header', 'even', true); await add('footer', 'even', true); }
     // header references come before footer references
     refs.sort((a, b) => Number(b.startsWith('<w:header')) - Number(a.startsWith('<w:header')));
