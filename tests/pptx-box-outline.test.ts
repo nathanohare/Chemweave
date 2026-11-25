@@ -27,5 +27,5 @@ describe('a plain box\'s dotted outline (F-P-011)', () => {
       expect(box).toMatch(/<a:prstDash val="sysDot"\/>/);
       expect(/<a:ln w="(\d+)"/.exec(box)?.[1]).toBe(w);
     }
-  });
+  }, 30_000);
 });

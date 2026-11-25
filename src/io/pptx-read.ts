@@ -2140,6 +2140,10 @@ class Reader {
       if (look.dashed) sh.dashed = true;
       if (look.dotted) sh.dotted = true;
       if (look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
+      if (look.line && sh.kind !== 'line') {
+        const plain = sh.bold ? 2.5 * doc.style.lineWidth : doc.style.lineWidth;
+        if (Math.abs(look.width - plain) > 0.01) sh.lineWidth = +look.width.toFixed(2);
+      }
     }
     const made = doc.addShape(sh);
     if (typeof saved?.sid === 'number') this.saveId('s', saved.sid, made.id);

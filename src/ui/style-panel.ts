@@ -627,7 +627,7 @@ export class StylePanel {
     if (l) {
       this.check('Dashed', !!l.dashed && !l.dotted, (v) => set('Dashed', lined, () => ({ dashed: v, dotted: false })));
       if (l.kind === 'line') this.check('Dotted', !!l.dotted, (v) => set('Dotted', (x) => x.kind === 'line', () => ({ dotted: v, dashed: v })));
-      if (!geo) this.check('Bold', !!l.bold, (v) => set('Bold', lined, () => ({ bold: v })));
+      if (!geo) this.check('Bold', !!l.bold, (v) => set('Bold', lined, () => ({ bold: v, lineWidth: undefined })));
     }
     if (box) {
       const isBox = (x: Shape) => x.kind === 'rect';
