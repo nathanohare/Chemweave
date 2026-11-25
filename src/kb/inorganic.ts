@@ -8,9 +8,9 @@
 //   Tables 6.14 and 6.15, which credit R. G. Pearson, J. Chem. Educ. 1968, 45, 581. The paper is
 //   real (Crossref: doi 10.1021/ed045p581, "Hard and soft acids and bases, HSAB, part 1:
 //   Fundamental principles") but its own tables could not be read, so each row cites the paper as
-//   the textbook tabulates it. The textbook's "[Co(CN)₅]²⁻" is left out: pentacyanocobaltate(II)
-//   carries a 3− charge, so the printed charge is wrong and the entry is held back until it is
-//   checked against Pearson's table.
+//   the textbook tabulates it. The textbook's "[Co(CN)₅]²⁻" is left out: which cobalt species is
+//   meant (the charge fits the cobalt(III) fragment, not pentacyanocobaltate(II), 3−) is not clear
+//   from the textbook alone, so the entry is held back until it is checked against Pearson's table.
 // - Absolute hardness: the textbook's Table 6.16, from R. G. Pearson, Inorg. Chem. 1988, 27, 734
 //   (doi 10.1021/ic00277a030, checked on Crossref). Every row satisfies Pearson's own definitions
 //   χ = (I + A)/2 and η = (I − A)/2 (Parr and Pearson, J. Am. Chem. Soc. 1983, 105, 7512) to within
@@ -74,7 +74,7 @@ Br⁻|11.84|3.36|7.60|4.24
 I⁻|10.45|3.06|6.76|3.70`;
 
 /** The kind of species a hardness row is, from Table 6.14 or 6.15 when they list it. */
-const HARDNESS_KIND: Record<string, 'Acid' | 'Base'> = { 'Al³⁺': 'Acid', 'Li⁺': 'Acid', 'Na⁺': 'Acid', 'K⁺': 'Acid', 'Au⁺': 'Acid', 'BF₃': 'Acid', 'H₂O': 'Base', 'NH₃': 'Base', 'PF₃': 'Base', 'PH₃': 'Base', 'F⁻': 'Base', 'Cl⁻': 'Base', 'Br⁻': 'Base', 'I⁻': 'Base' };
+const HARDNESS_KIND: Record<string, 'Acid' | 'Base'> = { 'Al³⁺': 'Acid', 'Li⁺': 'Acid', 'Na⁺': 'Acid', 'K⁺': 'Acid', 'Au⁺': 'Acid', 'BF₃': 'Acid', 'H₂O': 'Base', 'NH₃': 'Base', 'F⁻': 'Base', 'Cl⁻': 'Base', 'Br⁻': 'Base', 'I⁻': 'Base' };
 
 const CLASS_INFO = 'Pearson\'s class. Hard acids and bases are small, hold their electrons tightly and are not easily polarized (H⁺, Al³⁺, F⁻, H₂O); soft ones are large and easily polarized (Ag⁺, Hg²⁺, I⁻, R₂S); borderline ones fall between. Hard acids bind hard bases more strongly, soft acids soft bases. A qualitative rule for comparing species, not a measured number. Source: Pearson, J. Chem. Educ. 1968, 45, 581, as tabulated by Miessler, Fischer and Tarr (Inorganic Chemistry, 5th ed., 2014, Tables 6.14 and 6.15).';
 const I_INFO = 'Ionization energy I, in eV: the energy to take one electron away. For a cation it is the next ionization of the element (for Al³⁺, the fourth of aluminum). Source: Pearson, Inorg. Chem. 1988, 27, 734.';
@@ -178,7 +178,7 @@ const EN = `1|H|Hydrogen|2.1|2.300
 const D_BLOCK = new Set(['Zn', 'Cd', 'Hg']);
 
 const PAULING_INFO = 'Pauling\'s scale, from bond energies: the more a bond A–B is stronger than the average of A–A and B–B, the further apart A and B are on the scale; fluorine is set at 4.0. These are Pauling\'s early one-decimal values (The Nature of the Chemical Bond, 3rd ed., 1960, as listed by Miessler, Fischer and Tarr, Table 3.3). Later revised values differ a little and are not given here. Blank where that table has no value.';
-const ALLEN_INFO = 'Allen\'s scale: the average energy of an atom\'s valence electrons in the free atom (its configuration energy), from measured atomic spectra, multiplied by a constant so the numbers sit close to Pauling\'s. It covers the noble gases too. Source: Mann, Meek and Allen, J. Am. Chem. Soc. 2000, 122, 2780 (main group), and Mann et al., J. Am. Chem. Soc. 2000, 122, 5132 (zinc and cadmium), as listed by Miessler, Fischer and Tarr, Table 3.5.';
+const ALLEN_INFO = 'Allen\'s scale: the average energy of an atom\'s valence electrons in the free atom (its configuration energy), from measured atomic spectra, multiplied by a constant so the numbers sit close to Pauling\'s. It covers the noble gases too. Source: Mann, Meek and Allen, J. Am. Chem. Soc. 2000, 122, 2780 (main group), and Mann et al., J. Am. Chem. Soc. 2000, 122, 5132 (zinc, cadmium and mercury), as listed by Miessler, Fischer and Tarr, Table 3.5.';
 
 export const ELECTRONEGATIVITY_TABLE: KbTable = {
   id: 'electronegativity',

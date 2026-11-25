@@ -1656,7 +1656,7 @@ function moMenu(): MenuItem[] {
     { label: 'Edit Title', run: () => renameMo(c.frame, { title: c.column === 'left' ? 0 : c.column === 'middle' ? 1 : 2 }), title: 'The title under this column (also: double-click it)' },
     ...(l ? [
       { label: 'Rename Level', run: () => renameMo(c.frame, { level: c.level! }) },
-      { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.' : undefined },
+      { label: 'Delete Level', run: () => { editor.deleteMoLevel(); }, disabled: !!l.auto, title: l.auto ? (mo.molecule ? 'This level comes from the molecule. Choose Custom for Molecule in the Side Panel to delete it.' : 'This level comes from the atom. Choose Custom for its side in the Side Panel to delete it.') : undefined },
     ] : []),
     null,
   ];

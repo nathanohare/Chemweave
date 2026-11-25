@@ -18,7 +18,7 @@ import { setStereoShown, setStereoText } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
-import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moSides, setElectrons, setMolecule, setSides, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
+import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moPlain, moSides, setElectrons, setMolecule, setSides, sources, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -715,7 +715,9 @@ export class StylePanel {
     const molecule = moMolecule(mo.molecule);
     // first what the diagram is of: two atoms (each side picked below), a ready-made molecule, or custom
     const kinds: Opt<string>[] = [[MO_TWO_ATOMS, 'Two Atoms'], ...MO_MOLECULES.map((m): Opt<string> => [m.id, m.name]), [MO_CUSTOM, 'Custom']];
-    const kind = molecule ? molecule.id : sides.left === MO_CUSTOM && sides.right === MO_CUSTOM ? MO_CUSTOM : MO_TWO_ATOMS;
+    // a molecule this version does not know (a file from a later one): shown as such, so Custom can still be picked
+    if (mo.molecule && !molecule) kinds.splice(kinds.length - 1, 0, [mo.molecule, 'Other Molecule']);
+    const kind = mo.molecule ? mo.molecule : sides.left === MO_CUSTOM && sides.right === MO_CUSTOM ? MO_CUSTOM : MO_TWO_ATOMS;
     // a ready-made molecule has twice the levels of most two-atom diagrams: one shorter than 22 bond lengths grows to that, so its names stay apart
     const tall = Math.round(22 * this.doc.style.bondLength);
     this.select('Molecule', kinds, kind, (v) => this.plate?.restyle(sh.id, { mo: setMolecule(mo, v), ...(moMolecule(v) && d.h < tall ? { h: tall } : {}) }));
@@ -755,9 +757,10 @@ export class StylePanel {
     this.row('Electrons', both, 'Electrons in the molecule\'s orbitals');
     // a ready-made molecule draws no electrons on its atoms' orbitals: its charge is from the neutral molecule's count, and
     // a bond order between two atoms means nothing for it
-    const charge = (molecule ? molecule.electrons : counts.atomElectrons) - counts.moElectrons;
+    const whole = molecule?.electrons ?? (mo.molecule || (sides.left === MO_CUSTOM && sides.right === MO_CUSTOM) ? mo.neutral : undefined);
+    const charge = (whole ?? counts.atomElectrons) - counts.moElectrons;
     const sign = charge === 0 ? '0' : `${Math.abs(charge)}${charge > 0 ? '+' : '−'}`;
-    const facts = molecule ? [`Charge ${sign}`, `${counts.unpaired} Unpaired`] : [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
+    const facts = whole !== undefined || mo.molecule ? [`Charge ${sign}`, `${counts.unpaired} Unpaired`] : [`Charge ${sign}`, `Bond Order ${counts.bondOrder}`, `${counts.unpaired} Unpaired`];
     this.note(facts.join(' · '));
     const name = (l: MoLevel, into: HTMLElement, first = false) => {
       const parts = moParts(mo, l.label);
@@ -808,7 +811,7 @@ export class StylePanel {
         if (l.column === 'middle') {
           const choices = fromChoices(mo.levels), want = fromValue(l);
           const list: Opt<string>[] = choices.map((c): Opt<string> => [c.value, c.text]);
-          if (want && !choices.some((c) => c.value === want)) list.push([want, `${(l.from ?? '').replace(',', ' +')} (Not Found)`]);
+          if (want && !choices.some((c) => c.value === want)) list.push([want, `${(l.from ?? '').split(',').map((x) => moPlain(x)).filter(Boolean).join(' + ')}${sources(mo.levels, l).length ? '' : ' (Not Found)'}`]);
           this.select('Made From', list, want, (v) => set(withLevel(mo, at, fromOf(v))));
         }
       }

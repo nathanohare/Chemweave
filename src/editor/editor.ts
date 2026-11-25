@@ -4566,7 +4566,7 @@ export class Editor {
   private clickMoLevel(frame: number, level: number): void {
     const mo = this.doc.shapes.get(frame)?.plate?.mo, l = mo?.levels[level];
     if (!mo || !l) return;
-    if (!electronsFree(l)) { this.onNotice('An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
+    if (!electronsFree(l)) { this.onNotice(mo.molecule ? 'These electrons are set by the molecule. Choose Custom for Molecule in the Side Panel to change them.' : 'An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
     this.setMo(frame, withLevel(mo, level, { electrons: nextElectrons(l) }), l.electrons >= 2 * hund(l.n, 0).length ? 'Remove Electrons' : 'Add Electron');
   }
 

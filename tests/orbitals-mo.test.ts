@@ -252,7 +252,9 @@ describe('MO diagrams', () => {
     expect(moCounts(co.levels).bondOrder).toBe(3);
     // LiF (the same book, section 5.3.2 and Figure 5.14): Li 2s and F 2pz make the bonding
     // orbital, which takes Li's electron; everything else on F stays as it was: one bond
-    const lif = fromAtoms('Li', 'F')!, bond = lif.levels.find((l) => moPlain(l.label) === '3σ')!;
+    // The figure names them plainly, bottom to top: σ, σ, π, σ*.
+    const lif = fromAtoms('Li', 'F')!, bond = lif.levels.find((l) => l.column === 'middle' && l.fromSide === 'each' && l.electrons > 0)!;
+    expect(lif.levels.filter((l) => l.column === 'middle' && l.fromSide !== 'left').sort((x, y) => x.e - y.e).map((l) => moPlain(l.label))).toEqual(['σ', 'σ', 'π', 'σ*']);
     expect(sources(lif.levels, bond).map((l) => `${l.column} ${l.label}`)).toEqual(['left 2s', 'right 2p']);
     expect(lif.levels.filter((l) => l.column === 'middle' && l.fromSide === 'right').map((l) => [l.n, l.electrons])).toEqual([[1, 2], [2, 4]]);
     expect(moCounts(lif.levels)).toMatchObject({ bondOrder: 1, unpaired: 0 });
@@ -422,6 +424,23 @@ describe('MO diagrams', () => {
     // custom: the levels kept, all set by hand
     const custom = setMolecule(water, MO_CUSTOM);
     expect(custom.molecule).toBeUndefined();
+    // neutral water has 8 valence electrons (Miessler, Fischer and Tarr, 5th ed., Figure 5.28): kept, so the Side
+    // Panel's charge is still counted from it; pictures asked for earlier do not come back for group orbitals
+    expect(custom.neutral).toBe(8);
+    expect(setMolecule(setMolecule({ ...h2, pictures: true }, 'BF3'), MO_CUSTOM).pictures).toBeUndefined();
+    expect(setSides(custom, { left: 'O' }).neutral).toBeUndefined();
+    expect(setMolecule(custom, MO_TWO_ATOMS).neutral).toBeUndefined();
+    // a molecule from a later version: Custom still frees every level
+    const later = setMolecule({ ...water, molecule: 'ZZ9' }, MO_CUSTOM);
+    expect(later.molecule).toBeUndefined();
+    expect(later.levels.some((l) => l.auto)).toBe(false);
+    // a group orbital named for a degenerate pair renamed: the orbitals made from it follow
+    const co2 = fromMolecule('CO2')!, at = co2.levels.findIndex((l) => l.column === 'right' && moPlain(l.label) === 'B2u, B3u');
+    const pu = withLevel(co2, at, { label: 'π_{u}' });
+    for (const name of ['1b2u, 1b3u', '2b2u, 2b3u']) expect(sources(pu.levels, pu.levels.find((l) => moPlain(l.label) === name)!).map((l) => `${l.column} ${moPlain(l.label)}`)).toEqual(['left 2p', 'right πu']);
+    // an orbital made from three names keeps them through the Made From list
+    const a1 = water.levels.find((l) => l.column === 'middle' && (l.from ?? '').split(',').length === 3)!;
+    expect(fromOf(fromValue(a1)).from!.split(', ').map(moPlain)).toEqual(a1.from!.split(',').map(moPlain));
     expect(custom.atoms).toEqual({ left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
     expect(custom.levels.map((l) => l.label)).toEqual(water.levels.map((l) => l.label));
     expect(custom.levels.some((l) => l.auto)).toBe(false);

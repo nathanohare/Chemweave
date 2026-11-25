@@ -55,6 +55,8 @@ export interface MoSpec {
    * filled in from it (`atoms` is then not set). Not set: two atoms (every diagram saved before this).
    */
   molecule?: string;
+  /** The neutral molecule's valence electrons, kept when a ready-made molecule is changed to Custom (its side levels show no electrons to count). */
+  neutral?: number;
   /**
    * Names and titles are rich text kept as markup (parseMarkup), drawn exactly as written. Not set
    * in diagrams made before rich text: theirs went through chemical interpretation (chemRuns),
@@ -304,8 +306,8 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
     // (the metal's empty 2p is drawn far enough above its 2s for the 2s electron to show: such a diagram spans some 40 eV)
     const mpE = r(Math.max(mp.e, ms.e + 0.1 * (ms.e + 6 - xs.e)));
     lifted = { side: mSide, label: mp.label, e: mpE };
-    mid.push(named(sg(0), xs.e, 1, xs.label, xSide), named(sg(1), r(xp.e - 1.5), 1, pair, 'each'), named('1π', xp.e, 2, xp.label, xSide),
-      named(mp.label, mpE, 3, mp.label, mSide), named(sg(1, true), r(mpE + 4), 1, pair, 'each'));
+    mid.push(named('σ', xs.e, 1, xs.label, xSide), named('σ', r(xp.e - 1.5), 1, pair, 'each'), named('π', xp.e, 2, xp.label, xSide),
+      named(mp.label, mpE, 3, mp.label, mSide), named('σ^{*}', r(mpE + 4), 1, pair, 'each'));
     names = 'numbered';
   } else if (pa && pb) {
     // A bonding orbital lies below the lower of the two atomic orbitals it is made from and an
@@ -405,10 +407,12 @@ export function setSides(spec0: MoSpec, to: { left?: string; right?: string; mix
   if (A && B) {
     const same = left === was.left && right === was.right;
     const filled = fromAtoms(left, right, same ? moCounts(spec.levels).moElectrons : undefined, to.mixing ?? (same ? was.mixing : undefined))!;
-    const { levels: _l, titles: _t, atoms: _a, molecule: _m, ...look } = spec;
+    const { levels: _l, titles: _t, atoms: _a, molecule: _m, neutral: _n, ...look } = spec;
     return { ...look, levels: filled.levels, titles: filled.titles, atoms: filled.atoms };
   }
-  const { molecule: _m, ...rest } = spec;
+  const { molecule: _m, neutral: _n, ...rest0 } = spec;
+  // all by hand still: the neutral count a molecule left behind stays, an atom on either side ends it
+  const rest: MoSpec = !A && !B && spec.neutral !== undefined ? { ...rest0, neutral: spec.neutral } : rest0;
   const levels = rest.levels.filter((l) => !(l.column === 'left' && A && left !== was.left) && !(l.column === 'right' && B && right !== was.right))
     .map((l) => ((l.column === 'left' && A) || (l.column === 'right' && B) ? l : (({ auto: _x, ...rest }) => rest)(l)));
   if (A && left !== was.left) levels.push(...sideLevels(A, 'left'));
@@ -529,8 +533,14 @@ export function fromMolecule(id: string, electrons?: number): MoSpec | null {
  */
 export function setMolecule(spec0: MoSpec, id: string): MoSpec {
   const spec = toRelative(spec0);
-  const { levels: _l, titles: _t, atoms: _a, molecule: _m, ...look } = spec;
-  if (id === MO_CUSTOM) return setSides({ ...spec, atoms: undefined }, { left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
+  const { levels: _l, titles: _t, atoms: _a, molecule: _m, neutral: _n, ...look } = spec;
+  if (id === MO_CUSTOM) {
+    // from a molecule (one this version does not know too): its neutral count is kept for the charge, and orbital
+    // pictures asked for before it stay off (they would be guessed from the group orbitals' names)
+    const was = moMolecule(spec.molecule);
+    const from: MoSpec = spec.molecule ? { ...spec, pictures: undefined, neutral: was?.electrons ?? spec.neutral } : spec;
+    return setSides({ ...from, atoms: undefined }, { left: MO_CUSTOM, right: MO_CUSTOM, mixing: false });
+  }
   const m = moMolecule(id);
   if (m) {
     const filled = fromMolecule(id, spec.molecule === id ? moCounts(spec.levels).moElectrons : undefined)!;
@@ -870,7 +880,16 @@ export function withLevel(spec0: MoSpec, index: number, patch: Partial<MoLevel> 
   // an atomic orbital renamed: the molecular orbitals made from it follow
   if (patch.label !== undefined && was.column !== 'middle' && moPlain(was.label) && moPlain(was.label) !== moPlain(next.label)) {
     const still = levels.some((l, i) => i !== index && l.column !== 'middle' && moPlain(l.label) === moPlain(was.label));
-    if (!still) levels = levels.map((l) => (l.from ? { ...l, from: l.from.split(',').map((x) => (moPlain(x) === moPlain(was.label) ? moPlain(next.label) : x.trim())).filter(Boolean).join(', ') } : l));
+    // a name with commas in it ("B_{2u}, B_{3u}") stands in `from` as that run of names
+    const old = was.label.split(',').map(moPlain).filter(Boolean), now = next.label.split(',').map(moPlain).filter(Boolean);
+    const renamed = (from: string): string => {
+      const parts = from.split(',').map((x) => x.trim()).filter(Boolean), out: string[] = [];
+      for (let i = 0; i < parts.length;) {
+        if (old.length && old.every((o, k) => i + k < parts.length && moPlain(parts[i + k]) === o)) { out.push(...now); i += old.length; } else out.push(parts[i++]);
+      }
+      return out.join(', ');
+    };
+    if (!still) levels = levels.map((l) => (l.from ? { ...l, from: renamed(l.from) } : l));
   }
   return { ...spec, levels };
 }
@@ -892,13 +911,16 @@ export function fromValue(l: MoLevel): string {
   const parts = (l.from ?? '').split(',').map((x) => moPlain(x)).filter(Boolean);
   if (!parts.length) return '';
   if (l.fromSide && l.fromSide !== 'each') return `${l.fromSide}|${parts[0]}`;
+  // three names or more (a ready-made molecule's orbital): none of fromChoices' values, kept as it is
+  if (parts.length > 2) return `keep|${parts.join('|')}`;
   return parts.length === 1 ? `both|${parts[0]}` : `pair|${parts[0]}|${parts[1]}`;
 }
 
 /** One of fromChoices' values as a level's `from` and `fromSide`. */
 export function fromOf(v: string): { from: string | undefined; fromSide: 'left' | 'right' | 'each' | undefined } {
-  const [kind, a, b] = v.split('|');
+  const [kind, a, b, ...more] = v.split('|');
   if (!kind || !a) return { from: undefined, fromSide: undefined };
+  if (kind === 'keep') return { from: [a, b, ...more].filter(Boolean).join(', '), fromSide: undefined };
   if (kind === 'pair') return { from: `${a}, ${b}`, fromSide: 'each' };
   return kind === 'both' ? { from: a, fromSide: undefined } : { from: a, fromSide: kind as 'left' | 'right' };
 }

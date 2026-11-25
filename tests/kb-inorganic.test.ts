@@ -3,7 +3,7 @@
 // its source; spot values are typed in here from the published tables, with the reference beside
 // each.
 
-import { CO_STRETCH_TABLE, describe, expect, it } from 'vitest';
+import { describe, expect, it } from 'vitest';
 import { CO_STRETCH_TABLE, ELECTRONEGATIVITY_TABLE, HSAB_TABLE } from '../src/kb/inorganic';
 import { BUILT_IN_TABLES } from '../src/kb/data';
 import { findRows, tableTsv } from '../src/kb/tables';
