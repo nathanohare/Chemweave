@@ -39,14 +39,32 @@ describe("a connector's name", () => {
     expect(names.filter((n) => n === undefined)).toHaveLength(1);
   });
 
-  it('comes back on curved and elbow connectors, and the same on a second save', async () => {
-    const p = await deckWith({ name: 'Bent', elbow: true, head: { x: 300, y: 200 } }, { name: 'Curved', sweep: 40 });
-    const names = arrowsOf(zipSync(p)).map((a) => a.name).sort();
-    expect(names).toEqual(['Bent', 'Curved']);
-    const host = readPptx(zipSync(p));
-    void host;
-    const again = await deckWith({ name: 'Bent', elbow: true, head: { x: 300, y: 200 } }, { name: 'Curved', sweep: 40 });
-    expect(strFromU8(again[SLIDE2])).toBe(strFromU8(p[SLIDE2]));
+  it('comes back on curved (stuck to shapes) and elbow connectors, and the same on a second save', async () => {
+    // two boxes, a curved connector stuck to them (PowerPoint's curved connector, a p:sp here) and an elbow
+    const host = new Doc();
+    const d = Deck.blank(host);
+    d.attach();
+    d.addSlide('blank');
+    const line = { headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 10, headWidth: 4, ppt: true } as const;
+    host.edit('x', () => {
+      const a = host.addShape({ kind: 'geo', geo: 'rect', x1: 50, y1: 50, x2: 150, y2: 100, color: '#000000' } as never);
+      const b = host.addShape({ kind: 'geo', geo: 'rect', x1: 350, y1: 50, x2: 450, y2: 100, color: '#000000' } as never);
+      host.addArrow({ ...line, tail: { x: 150, y: 75 }, head: { x: 350, y: 75 }, sweep: 40, from: { shape: a.id, port: 1 }, to: { shape: b.id, port: 3 }, name: 'Curved' } as Omit<Arrow, 'id'>);
+      host.addArrow({ ...line, tail: { x: 100, y: 200 }, head: { x: 300, y: 300 }, elbow: true, name: 'Bent' } as Omit<Arrow, 'id'>);
+    });
+    const data: DeckData = { size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: i + 1, layout: s.layout, doc: d.docOf(i), notes: s.notes })) };
+    const p = unzipSync(await writePptx(data, opts));
+    const x = strFromU8(p[SLIDE2]);
+    expect(x).toMatch(/<p:sp><p:nvSpPr><p:cNvPr id="\d+" name="Curved"\/>/);
+    expect(x).toMatch(/<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="\d+" name="Bent"\/>/);
+    const read = readPptx(zipSync(p));
+    expect([...read.slides[1].contents.arrows.values()].map((r) => r.name).sort()).toEqual(['Bent', 'Curved']);
+    // saved again from what was read: the same names, the same connectors' tags
+    const doc2 = new Doc();
+    doc2.restoreContents(read.slides[1].contents);
+    const again = unzipSync(await writePptx({ ...data, slides: [data.slides[0], { ...data.slides[1], doc: doc2 }] }, opts));
+    const names = (s: string) => [...s.matchAll(/<p:cNvPr id="\d+" name="([^"]*)"/g)].map((m) => m[1]);
+    expect(names(strFromU8(again[SLIDE2]))).toEqual(names(x));
   });
 
   it('is the name PowerPoint gave it after a save here, not the one saved', async () => {
