@@ -72,7 +72,7 @@ export interface NamedStyle {
   link?: string;
   /**
    * The style it is based on in Word (w:basedOn), by id, where it isn't Normal: written back while
-   * that style is in the file. Its settings here are its own and those it inherits, all written.
+   * that style is one of these (each is written with all its settings). Its settings here are its own and those it inherits, all written.
    */
   basedOn?: string;
 }

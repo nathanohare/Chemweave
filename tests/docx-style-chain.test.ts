@@ -86,7 +86,7 @@ describe("a paragraph style's chain", () => {
     const files = unzipSync(docx(para('X', 'x') + '<w:p/>'));
     files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
     const x = strFromU8(unzipSync(await writeDocx((await readDocx(zipSync(files))).doc, deps))['word/styles.xml']);
-    expect([basedOf(x, 'X'), basedOf(x, 'K')]).toContain('Normal');
+    expect([basedOf(x, 'X'), basedOf(x, 'K')]).toEqual(['Normal', 'Normal']);
   });
 
   it('a kept style based on one read under another id is based on that id', async () => {
