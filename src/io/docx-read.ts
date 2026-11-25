@@ -830,7 +830,7 @@ class DocxReader {
     let text: string | undefined;
     for (const id of this.usedChar) {
       // (Word's link styles only where some text kept is in them: not a contents list's, made again here)
-      // (Word's link styles only where some text kept is in them: not a contents list's, made again here)
+      if (rt.LINK_STYLES.has(id) && !(text ??= kept()).includes(`"cstyle":"${id}"`)) continue;
       for (let w: string | undefined = id; w && !ids.has(w) && this.keptCharStyle(w); w = this.wstyles.get(`character:${w}`)?.basedOn) ids.add(w);
     }
     for (const id of ids) {
