@@ -243,6 +243,11 @@ export function restoreSheet(
     const to = m.row(r);
     if (to !== null && s.rowHeights.get(to) === px) s.setRowHeight(to, undefined);
   }
+  // rows Excel had fitted, given to it as set heights: fitted rows again while Excel left them so
+  for (const [r, px] of ms.fitRows ?? []) {
+    const to = m.row(r);
+    if (to !== null && s.rowHeights.get(to) === px) { s.setRowHeight(to, undefined); s.setFittedRow(to, px); }
+  }
   const structureCols = new Set<number>();
   ms.cells.forEach((x, i) => {
     const p = at.get(i);

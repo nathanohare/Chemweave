@@ -582,3 +582,17 @@ describe('a line break in a data validation message', () => {
     expect((await readXlsx(saved)).book.sheet.validations[0]?.prompt).toBe('Whole numbers\nfrom 0 to 100');
   });
 });
+
+describe('a row Excel fitted to its text (F-X-004)', () => {
+  // ECMA-376 Part 1, §18.3.1.73 row@ht without customHeight: a height Excel worked out itself
+  it('keeps its height through two saves, and is a fitted row again when opened', async () => {
+    const bytes = excelBook([['Rows', '<sheetData><row r="1"><c r="A1"><v>1</v></c></row><row r="7" ht="45"><c r="A7" t="inlineStr"><is><t>wrapped</t></is></c></row></sheetData>']]);
+    const first = await writeXlsx((await readXlsx(bytes)).book, pictures);
+    const { book } = await readXlsx(first);
+    expect(book.sheet.fittedRows.has(6)).toBe(true);
+    expect(book.sheet.rowHeights.has(6)).toBe(false);
+    const second = await writeXlsx(book, pictures);
+    expect(/<row r="7"[^>]*>/.exec(part(second, 'xl/worksheets/sheet1.xml'))?.[0]).toBe(/<row r="7"[^>]*>/.exec(part(first, 'xl/worksheets/sheet1.xml'))?.[0]);
+    expect(part(second, 'xl/worksheets/sheet1.xml')).toMatch(/<row r="7" ht="45"/);
+  });
+});

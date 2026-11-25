@@ -295,6 +295,8 @@ export interface ModelSheet {
   filter: Filter | null;
   /** Rows grown to fit (Excel is given them as set heights), with their heights in pixels: they keep fitting here. */
   autoRows?: [number, number][];
+  /** Rows Excel had fitted itself (given back to it as set heights), with their heights in pixels: fitted rows again here. */
+  fitRows?: [number, number][];
   /** Conditional formatting and tables as this program holds them (Excel's own copy can't say everything). */
   condFormats?: CondFormat[];
   tables?: TableDef[];
@@ -714,7 +716,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       if (h > DEFAULT_ROW_H) { auto.set(r, Math.max(auto.get(r) ?? 0, h)); pictureRows.add(r); }
     }
     const rowH = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? auto.get(r) ?? DEFAULT_ROW_H);
-    ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r));
+    ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r) && !keptFit.has(r));
+    if (keptFit.size) ms.fitRows = [...keptFit].map((r): [number, number] => [r, auto.get(r)!]);
     const cols = new Axis(colW), rows = new Axis(rowH);
     // a column's style number (the many columns a range to the end of the sheet formats share one look, looked up once)
     const colXfs = new Map<CellStyle, number>();
