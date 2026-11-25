@@ -1472,6 +1472,12 @@ export interface BorderLine {
   style: 'none' | 'single' | 'double' | 'dotted' | 'dashed';
   w: number;
   color: string;
+  /**
+   * Documents: Word's own line kind (w:val, ECMA-376 Part 1 §17.18.2 ST_Border: thick, triple,
+   * dotDash, wave...) where it isn't one drawn here, written back while the line is still drawn as
+   * `style` (the kind it was read as).
+   */
+  word?: string;
 }
 
 export type BorderSide = 'top' | 'bottom' | 'left' | 'right';

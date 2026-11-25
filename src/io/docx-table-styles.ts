@@ -14,10 +14,16 @@ const hex6 = (c: string) => (c.startsWith('#') ? c.slice(1) : c).slice(0, 6).toU
 const EDGE_ORDER: StyleEdge[] = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'];
 const WORD_LINE: Record<BorderLine['style'], string> = { none: 'nil', single: 'single', double: 'double', dotted: 'dotted', dashed: 'dashed' };
 
-/** One border element (w:top…): Word's line kind, its width in eighths of a point, and its colour. */
+/** How a Word line kind (ST_Border) is drawn here. */
+export function lineStyleOf(v: string): BorderLine['style'] {
+  return /double|triple|thinThick|thickThin/i.test(v) ? 'double' : /dot(?!Dash)/i.test(v) && !/dash/i.test(v) ? 'dotted' : /dash/i.test(v) ? 'dashed' : 'single';
+}
+
+/** One border element (w:top…): Word's line kind (its own, while still drawn as read), its width in eighths of a point, and its colour. */
 export function borderXml(name: string, b: BorderLine): string {
   if (b.style === 'none') return `<w:${name} w:val="nil"/>`;
-  return `<w:${name} w:val="${WORD_LINE[b.style]}" w:sz="${Math.max(2, Math.round(b.w * 8))}" w:space="0" w:color="${hex6(b.color)}"/>`;
+  const kind = b.word && /^[A-Za-z0-9]+$/.test(b.word) && lineStyleOf(b.word) === b.style ? b.word : WORD_LINE[b.style];
+  return `<w:${name} w:val="${kind}" w:sz="${Math.max(2, Math.round(b.w * 8))}" w:space="0" w:color="${hex6(b.color)}"/>`;
 }
 
 export function bordersXml(wrap: string, sides: Partial<Record<StyleEdge, BorderLine>> | undefined): string {
@@ -95,8 +101,11 @@ export function readBorder(el: Element | null, a: Attr): BorderLine | null {
   const sz = Number(a(el, 'sz') ?? 4);
   const col = a(el, 'color');
   const color = col && /^[0-9a-f]{6}$/i.test(col) ? `#${col.toLowerCase()}` : '#000000';
-  const style: BorderLine['style'] = /double|triple|thinThick|thickThin/i.test(v) ? 'double' : /dot(?!Dash)/i.test(v) && !/dash/i.test(v) ? 'dotted' : /dash/i.test(v) ? 'dashed' : 'single';
-  return { style, w: Math.max(0.25, (Number.isFinite(sz) ? sz : 4) / 8), color };
+  const style = lineStyleOf(v);
+  // (Word's own kind, where it isn't one of those)
+  const own = a(el) ?? '';
+  const word = /^[A-Za-z0-9]+$/.test(own) && own !== WORD_LINE[style] ? own : undefined;
+  return { style, w: Math.max(0.25, (Number.isFinite(sz) ? sz : 4) / 8), color, ...(word ? { word } : {}) };
 }
 
 export function readBorders(el: Element | null, a: Attr): Partial<Record<StyleEdge, BorderLine>> {
