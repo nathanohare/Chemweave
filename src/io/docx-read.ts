@@ -22,7 +22,7 @@ import { readPictureFx } from './picture-xml';
 import { DEFAULT_MARGINS, builtInStyle, type TableStyleDef } from '../document/table-styles';
 import { keepDirectBorders, readBorder, readBorders, readLook as readTableLook, readMargins, readRowHeight, readTableFloat, readTableStyle, readTableWidth, sameStyle, styleIsRich } from './docx-table-styles';
 import { cleanBorders } from '../document/para-borders';
-import { gradientOk } from './docx-write';
+import { gradFirst, gradientOk } from './docx-write';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { NS, PackageReader, REL, bytesHash, kid, kids, rAttr, fromEmu } from './ooxml';
@@ -3995,6 +3995,6 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
   if (!el) return null;
   const xml = elementXml(el).replace(/ xmlns:a="[^"]*"/g, '');
   if (!gradientOk(xml)) return null;
-  const first = /<a:gs\b[^>]*>\s*<a:srgbClr val="([0-9A-Fa-f]{6})"/.exec(xml)?.[1];
-  return { xml, ...(first ? { fill: `#${first.toLowerCase()}` } : {}) };
+  const fill = gradFirst(xml);
+  return { xml, ...(fill ? { fill } : {}) };
 }

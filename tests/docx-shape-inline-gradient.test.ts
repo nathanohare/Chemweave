@@ -67,5 +67,29 @@ describe("a Word shape's place and fill", () => {
     expect(gradientOk(GRAD + '<evil/>')).toBe(false);
     expect(gradientOk(GRAD.replace('<a:lin', 'text<a:lin'))).toBe(false);
     expect(gradientOk(5)).toBe(false);
+    // (well formed: closed in order, nothing on a closing tag, each attribute once)
+    expect(gradientOk(GRAD.replace('</a:gs><a:gs pos="100000">', '<a:gs pos="100000">'))).toBe(false);
+    expect(gradientOk(GRAD.replace('<a:gs pos="0">', '<a:gs pos="0" pos="1">'))).toBe(false);
+    expect(gradientOk(GRAD.replace('</a:gsLst>', '</a:gsLst x="1">'))).toBe(false);
+    expect(gradientOk(GRAD.replace('<a:gs pos="0">', '<a:gs foo:bar="1" pos="0">'))).toBe(false);
+  });
+
+  it('floats again (written as Word places a figure) when hidden, named, grouped or positioned here', async () => {
+    const t = (await readDocx(docx(shape('inline', '<a:solidFill><a:srgbClr val="1B7F79"/></a:solidFill>')))).doc as DocText;
+    const o = shapeOf(t);
+    for (const change of [{ hidden: true }, { name: 'Logo' }, { group: 1 }, { yFrom: 'margin' as const }, { align: 'left' as const }, { gap: 9 }]) {
+      const d = { ...t, objects: Object.fromEntries(Object.entries(t.objects).map(([k, v]) => [k, v === o ? { ...o, float: { ...o.float, ...change } } : v])) } as DocText;
+      expect(await saved(d), JSON.stringify(change)).toContain('<wp:anchor');
+    }
+  });
+
+  it("shows a gradient whose first stop shows through as no fill, keeps it, and the same on a second save", async () => {
+    const fade = '<a:gradFill><a:gsLst><a:gs pos="0"><a:srgbClr val="000000"><a:alpha val="0"/></a:srgbClr></a:gs><a:gs pos="100000"><a:srgbClr val="1B7F79"/></a:gs></a:gsLst><a:lin ang="0" scaled="1"/></a:gradFill>';
+    const t = (await readDocx(docx(shape('anchor', fade)))).doc as DocText;
+    expect(shapeOf(t).fill).toBeUndefined();
+    const once = await writeDocx(t, deps);
+    const x = strFromU8(unzipSync(once)['word/document.xml']);
+    expect(x).toContain('<a:alpha val="0"/>');
+    expect(await saved((await readDocx(once)).doc as DocText)).toBe(x);
   });
 });
