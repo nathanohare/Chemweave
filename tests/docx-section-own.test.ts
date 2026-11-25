@@ -119,6 +119,19 @@ describe('what each section has for itself (F-W-013, F-W-014)', () => {
     const s = sectPrs(saved);
     expect(s.map((x) => x.includes('<w:titlePg/>'))).toEqual([false, true, false]);
     expect(s[0]).toContain('w:type="first"');
+    // opened again: section 2's first page still shows that header, and the next save writes the same
+    const again = (await readDocx(await writeDocx(t, deps))).doc;
+    expect(sectionsOf(again)[1].hf.first?.header).toEqual(['Title page head', '', '']);
+    expect(sectPrs(strFromU8(unzipSync(await writeDocx(again, deps))['word/document.xml']))).toEqual(s);
+  });
+
+  it('shows the first page of a later section with a first page, through a section without one, as the owner has it', async () => {
+    const { doc } = await readDocx(wordFile());
+    // section 3 linked too, with a first page again: section 1's first page header, numbered as there
+    const t = changeSection(doc, 2, { titlePg: true });
+    const s = sectionsOf(t);
+    expect(s[2].hf).toBe(s[0].hf);
+    expect(hasTitlePg(s[1].hf)).toBe(false);
   });
 
   it('gives no border to a section without one beside a document border, and copies a section\'s own to a new section', async () => {

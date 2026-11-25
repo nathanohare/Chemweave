@@ -1752,7 +1752,8 @@ class DocxWriter {
     // (a section linked to this one with a first page of its own shows this one's first page header and footer)
     let linkedFirst = false;
     for (let i = sec.index + 1; i < secs.length && secs[i].linked; i++) linkedFirst ||= hasTitlePg(secs[i].hf);
-    if (titlePg || linkedFirst) { await add('header', 'first', !!hf.firstPage && hf.onFirst); await add('footer', 'first', !!hf.firstPage && hf.onFirst); }
+    // (and a first page header or footer kept without Different First Page, as Word keeps them)
+    if (titlePg || linkedFirst || hf.first || hf.bodies?.firstHeader || hf.bodies?.firstFooter) { await add('header', 'first', !!hf.firstPage && hf.onFirst); await add('footer', 'first', !!hf.firstPage && hf.onFirst); }
     if (hf.oddEven) { await add('header', 'even', true); await add('footer', 'even', true); }
     // header references come before footer references
     refs.sort((a, b) => Number(b.startsWith('<w:header')) - Number(a.startsWith('<w:header')));

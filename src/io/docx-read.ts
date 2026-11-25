@@ -1167,7 +1167,8 @@ class DocxReader {
     // each section has its own page border: kept where it isn't the document's (the first section's)
     const border = this.pageBorderOf(next);
     if (!samePageBorder(border, this.docBorder)) out.pageBorder = border;
-    this.lastHf = hf;
+    // (a linked section's header and footer are those of the last section with its own)
+    if (!linked) this.lastHf = hf;
     const start = Number(this.a(kid(next, 'pgNumType'), 'start'));
     if (this.a(kid(next, 'pgNumType'), 'start') !== null && Number.isFinite(start)) out.restart = Math.round(start);
     const fmt = this.numFormatOf(next);
@@ -3372,8 +3373,9 @@ class DocxReader {
       }
       // a logo, a table or formatted text: kept as Word's paragraphs
       if (part.rich) bodies[kind] = this.hfBody(path!);
-      if (titlePg) {
-        const fp = refOf(kind, 'first');
+      // a first page header and footer: Word keeps them without Different First Page too (a later section linked to this one may show them)
+      const fp = refOf(kind, 'first');
+      if (titlePg || fp) {
         const f = this.hfPart(fp);
         if (f.page) numberedFirst = true;
         if (f.rich) { bodies[`first${Kind}`] = this.hfBody(fp!); firstUsed = true; }
@@ -3394,6 +3396,7 @@ class DocxReader {
     if (titlePg && hf.numbers !== 'none' && !numberedFirst) hf.onFirst = false;
     // a first page with a header or footer of its own (not just an empty one, which is a page without its number)
     if (titlePg && firstUsed) { hf.firstPage = true; hf.first = first; hf.onFirst = numberedFirst; }
+    else if (firstUsed) hf.first = first;
     if (evenUsed) { hf.oddEven = true; hf.even = even; }
     if (Object.keys(bodies).length) hf.bodies = bodies;
     return { hf, linked: false };

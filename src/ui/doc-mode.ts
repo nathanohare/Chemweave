@@ -4162,7 +4162,7 @@ export class DocumentMode {
         const page = cmd === 'hf-first' && f.box?.hf ? f.layout().pages[f.box.hf.page] : undefined;
         const mine = page ? sectionsOf(f.t)[page.section] : undefined;
         if (mine?.linked) {
-          this.hfChange(() => f.ed.update(changeSection(f.t, mine.index, { titlePg: !hasTitlePg(mine.hf) }), 'Different First Page'));
+          this.hfChange(() => f.ed.update(changeSection(f.t, mine.index, { titlePg: !mine.hf.firstPage }), 'Different First Page'));
           this.updateRibbon();
           return true;
         }

@@ -45,14 +45,17 @@ export function sectionsOf(t: Pick<DocText, 'runs' | 'paras' | 'page' | 'hf'> & 
     index: 0, first: 0, end: n, kind: 'nextPage', page: t.page, hf: t.hf, linked: false,
     restart: t.hf.start ?? 1, format: t.numFormat ?? 'decimal', lines: t.lineNumbers, border: t.pageBorder ?? null,
   }];
+  // the header and footer linked sections show: the last section's with its own (Word links each to the one before, through to it)
+  let owner = t.hf;
   for (let p = 1; p < n; p++) {
     const s = t.paras[p]?.section;
     if (!s) continue;
     const prev = out[out.length - 1];
+    if (s.hf) owner = s.hf;
     prev.end = p;
     const titlePg = !s.hf ? s.titlePg : undefined;
     out.push({
-      index: out.length, first: p, end: n, kind: s.kind, page: s.page ?? prev.page, hf: s.hf ?? linkedHf(prev.hf, titlePg), linked: !s.hf,
+      index: out.length, first: p, end: n, kind: s.kind, page: s.page ?? prev.page, hf: s.hf ?? linkedHf(owner, titlePg), linked: !s.hf,
       restart: s.restart, format: s.format ?? 'decimal', lines: s.lines,
       ...(titlePg !== undefined ? { titlePg } : {}),
       ...(s.pageBorder !== undefined ? { ownBorder: s.pageBorder } : {}),
@@ -68,17 +71,19 @@ export function hasTitlePg(hf: HeaderFooter): boolean {
 }
 
 /**
- * The header and footer of a section linked to the one before (`prev`), with its own Different
- * First Page (`titlePg`, left out: the same as the one before). Without it, its first page shows
- * the usual header and footer, page number and all; with it, the first page header and footer
- * linked from before (as Word links them through sections without a first page of their own),
- * or none where there were never any.
+ * The header and footer of a section linked to the ones before, `owner` the header and footer of
+ * the last of them with its own, with its own Different First Page (`titlePg`, left out: the
+ * owner's). Without it, its first page shows the usual header and footer, page number and all;
+ * with it, the owner's first page header and footer (which Word keeps even where the owner has no
+ * first page of its own), or none where there are none.
  */
-export function linkedHf(prev: HeaderFooter, titlePg?: boolean): HeaderFooter {
-  if (titlePg === undefined || titlePg === hasTitlePg(prev)) return prev;
-  // (the first page's header and footer stay with it, for a later section that has a first page again)
-  if (!titlePg) return { ...prev, firstPage: undefined, onFirst: true };
-  return { ...prev, firstPage: true, first: prev.first ?? { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
+export function linkedHf(owner: HeaderFooter, titlePg?: boolean): HeaderFooter {
+  if (titlePg === undefined || titlePg === hasTitlePg(owner)) return owner;
+  if (!titlePg) {
+    const { firstPage: _f, ...rest } = owner;
+    return { ...rest, onFirst: true };
+  }
+  return { ...owner, firstPage: true, first: owner.first ?? { header: ['', '', ''], footer: ['', '', ''] }, onFirst: false };
 }
 
 /** The section a paragraph is in. */
