@@ -897,7 +897,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
 
     // columns: widths, hidden, and whole-column formatting
     // (columns pushed past the sheet's last by inserting ones are gone, as in Excel)
-    const colKeys = [...new Set([...s.colWidths.keys(), ...s.hiddenCols.keys(), ...s.colStyles.keys(), ...s.colLevels.keys()])].filter((c) => c < MAX_COLS).sort((a, b) => a - b);
+    // (and the summary column beside a collapsed group, which says collapsed="1" though nothing else is set on it)
+    const summaries = [...s.colLevels.keys()].map((c) => (s.outline?.summaryLeft ? c - 1 : c + 1)).filter((c) => c >= 0 && outlineAttrs(s.colLevels, s.hiddenCols, c, !!s.outline?.summaryLeft).includes('collapsed'));
+    const colKeys = [...new Set([...s.colWidths.keys(), ...s.hiddenCols.keys(), ...s.colStyles.keys(), ...s.colLevels.keys(), ...summaries])].filter((c) => c < MAX_COLS).sort((a, b) => a - b);
     const colAttrs = colKeys.map((c): [number, string] => {
       const w = s.colWidths.get(c);
       const xf = colXf(c);

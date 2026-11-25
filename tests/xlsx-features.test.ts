@@ -508,3 +508,24 @@ describe('each table\'s filter buttons, saved and opened again (F-X-007 review)'
     expect(sheet).toContain('<autoFilter ref="A1:B4"');
   });
 });
+
+describe('a collapsed column group (F-X-003)', () => {
+  // ECMA-376 Part 1, §18.3.1.13 col@collapsed: on the summary column beside a hidden group of
+  // detail columns (to their right unless sheetPr outlinePr summaryRight="0")
+  const sheet = (pr: string, cols: string) => `${pr}<cols>${cols}</cols><sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData>`;
+  const colsOf = (x: string) => [...x.matchAll(/<col [^>]*\/>/g)].map((m) => m[0]);
+
+  it('keeps collapsed="1" on the summary column, though nothing else is set on it', async () => {
+    const bytes = excelBook([['Groups', sheet('', '<col min="2" max="3" width="9" hidden="1" outlineLevel="1"/><col min="4" max="4" collapsed="1"/>')]]);
+    const saved = part(await writeXlsx((await readXlsx(bytes)).book, pictures), 'xl/worksheets/sheet1.xml');
+    const cols = colsOf(saved);
+    expect(cols.find((c) => c.includes('min="4"'))).toContain('collapsed="1"');
+    expect(cols.find((c) => c.includes('min="2"'))).toMatch(/hidden="1".*outlineLevel="1"/);
+  });
+
+  it('puts it at the left of the group when summaries are at the left', async () => {
+    const bytes = excelBook([['Groups', sheet('<sheetPr><outlinePr summaryRight="0"/></sheetPr>', '<col min="1" max="1" collapsed="1"/><col min="2" max="3" width="9" hidden="1" outlineLevel="1"/>')]]);
+    const saved = part(await writeXlsx((await readXlsx(bytes)).book, pictures), 'xl/worksheets/sheet1.xml');
+    expect(colsOf(saved).find((c) => c.includes('min="1"'))).toContain('collapsed="1"');
+  });
+});
