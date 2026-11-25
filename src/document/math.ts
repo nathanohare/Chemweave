@@ -30,7 +30,9 @@ export type MathNode =
   /** A reaction or long arrow with conditions over (and under) it (\xrightarrow[under]{over}). */
   | { t: 'arrow'; ch: string; over?: MathNode; under?: MathNode }
   /** Space (in ems). */
-  | { t: 'space'; em: number };
+  | { t: 'space'; em: number }
+  /** A matrix (\begin{matrix} a & b \\ c & d \end{matrix}): its rows of entries. */
+  | { t: 'matrix'; rows: MathNode[][] };
 
 export type Accent = 'bar' | 'hat' | 'vec' | 'dot' | 'ddot' | 'tilde';
 
@@ -59,7 +61,10 @@ const OP_CHARS = new Set([...'+−-=<>×÷±∓⋅≤≥≠≈∼≡∝→←↔
 const UPRIGHT_CHARS = /[0-9.ΓΔΘΛΞΠΣΥΦΨΩ∞∂∇°′‡†…⋯∠∅()[\]{}|,;:!?'/%@&]/;
 
 /** All the names understood after a backslash (for the help in the equation box). */
-export const MATH_NAMES = [...Object.keys(SYMBOLS), ...Object.keys(OPERATORS), ...Object.keys(BIG), ...FUNCTIONS, ...Object.keys(ACCENTS), ...Object.keys(LONG_ARROWS), 'frac', 'dfrac', 'tfrac', 'sqrt', 'left', 'right', 'text', 'mathrm', 'mathit', 'overset', 'underset', 'quad', 'qquad'];
+export const MATH_NAMES = [...Object.keys(SYMBOLS), ...Object.keys(OPERATORS), ...Object.keys(BIG), ...FUNCTIONS, ...Object.keys(ACCENTS), ...Object.keys(LONG_ARROWS), 'frac', 'dfrac', 'tfrac', 'sqrt', 'left', 'right', 'text', 'mathrm', 'mathit', 'overset', 'underset', 'quad', 'qquad', 'begin', 'end'];
+
+/** The matrix environments, with the brackets round each (none for matrix). */
+const MATRIX_ENVS: Record<string, [string, string] | null> = { matrix: null, pmatrix: ['(', ')'], bmatrix: ['[', ']'], Bmatrix: ['{', '}'], vmatrix: ['|', '|'], Vmatrix: ['‖', '‖'], cases: ['{', ''] };
 
 // ---------------------------------------------------------------- reading LaTeX
 
@@ -127,6 +132,27 @@ class Reader {
     return this.atom() ?? { t: 'row', kids: [] };
   }
 
+  /** A matrix's rows of entries, to its \end (which is read). */
+  matrixRows(): MathNode[][] {
+    const rows: MathNode[][] = [];
+    let cur: MathNode[] = [];
+    for (;;) {
+      cur.push(this.row((t) => (t.k === 'ch' && t.v === '&') || (t.k === 'cmd' && (t.v === '\\' || t.v === 'end' || t.v === 'right'))));
+      const t = this.peek();
+      if (!t || t.k === 'close' || (t.k === 'cmd' && t.v === 'right')) break;
+      this.i++;
+      if (t.k === 'ch') continue;
+      // (its name, after any spaces)
+      if (t.k === 'cmd' && t.v === 'end') { while (this.peek()?.k === 'ch' && /\s/.test((this.peek() as { v: string }).v)) this.i++; if (this.peek()?.k === 'open') this.rawGroup(); break; }
+      rows.push(cur);
+      cur = [];
+    }
+    // (a row break before \end ends the last row: no empty row after it)
+    const blank = (n: MathNode) => n.t === 'row' && !n.kids.length;
+    if (!(cur.length === 1 && blank(cur[0]) && rows.length)) rows.push(cur);
+    return rows;
+  }
+
   /** An optional [argument]. */
   optional(): MathNode | undefined {
     if (this.peek()?.k !== 'lbr') return undefined;
@@ -179,6 +205,21 @@ class Reader {
     if (FUNCTIONS.has(name)) return { t: 'sym', s: name, style: 'up' };
     if (name in ACCENTS) return { t: 'acc', mark: ACCENTS[name], body: this.arg() };
     if (name in LONG_ARROWS) { const under = this.optional(); return { t: 'arrow', ch: LONG_ARROWS[name], over: this.arg(), under }; }
+    // a matrix: its entries split by & and its rows by \\, to \end
+    if (name === 'begin' || name === 'end') {
+      const at = this.i;
+      while (this.peek()?.k === 'ch' && /\s/.test((this.peek() as { v: string }).v)) this.i++;
+      const env = this.peek()?.k === 'open' ? this.rawGroup().trim() : '';
+      if (Object.prototype.hasOwnProperty.call(MATRIX_ENVS, env)) {
+        // (an \end with no \begin: nothing)
+        if (name === 'end') return { t: 'row', kids: [] };
+        const br = MATRIX_ENVS[env];
+        const node: MathNode = { t: 'matrix', rows: this.matrixRows() };
+        return br ? { t: 'delim', open: br[0], close: br[1], body: node } : node;
+      }
+      // (another environment: as it was typed)
+      this.i = at;
+    }
     switch (name) {
       case 'frac': case 'dfrac': case 'tfrac': { const num = this.arg(); return { t: 'frac', num, den: this.arg() }; }
       case 'sqrt': { const index = this.optional(); return { t: 'sqrt', body: this.arg(), index }; }
@@ -239,6 +280,7 @@ function upright(n: MathNode): MathNode {
     case 'frac': return { ...n, num: upright(n.num), den: upright(n.den) };
     case 'delim': case 'sqrt': case 'acc': return { ...n, body: upright(n.body) };
     case 'over': return { ...n, body: upright(n.body), over: n.over && upright(n.over), under: n.under && upright(n.under) };
+    case 'matrix': return { ...n, rows: n.rows.map((r) => r.map(upright)) };
     default: return n;
   }
 }
@@ -315,6 +357,7 @@ export class MathLayout {
       case 'acc': return this.accent(n, size);
       case 'over': return this.stack(this.box(n.body, size), n.over, n.under, size, 0.08 * size);
       case 'arrow': return this.arrow(n, size);
+      case 'matrix': return this.matrix(n, size);
     }
   }
 
@@ -444,6 +487,32 @@ export class MathLayout {
       }
       default: return [];
     }
+  }
+
+  /** A matrix: its entries in columns, each centred in its column, the whole centred on the axis. */
+  private matrix(n: Extract<MathNode, { t: 'matrix' }>, size: number): MathBox {
+    const boxes = n.rows.map((r) => r.map((c) => this.box(c, size)));
+    const cols = Math.max(0, ...boxes.map((r) => r.length));
+    if (!cols) return empty();
+    const colW = Array.from({ length: cols }, (_, j) => Math.max(0, ...boxes.map((r) => r[j]?.w ?? 0)));
+    const rowA = boxes.map((r) => Math.max(0.7 * size, ...r.map((b) => b.ascent)));
+    const rowD = boxes.map((r) => Math.max(0.2 * size, ...r.map((b) => b.descent)));
+    const gapX = 0.8 * size, gapY = 0.25 * size;
+    const h = rowA.reduce((s, a, i) => s + a + rowD[i], 0) + gapY * (boxes.length - 1);
+    const top = -this.axis(size) - h / 2;
+    const items: MathItem[] = [];
+    let y = top;
+    boxes.forEach((r, i) => {
+      y += rowA[i];
+      let x = 0;
+      for (let j = 0; j < cols; j++) {
+        const b = r[j];
+        if (b) items.push(...shift(b, x + (colW[j] - b.w) / 2, y));
+        x += colW[j] + gapX;
+      }
+      y += rowD[i] + gapY;
+    });
+    return { w: colW.reduce((s, w) => s + w, 0) + gapX * (cols - 1), ascent: -top, descent: top + h, items };
   }
 
   private delim(n: Extract<MathNode, { t: 'delim' }>, size: number): MathBox {
@@ -672,6 +741,12 @@ function omml(n: MathNode): string {
       if (n.over) x = `<m:limUpp><m:e>${x}</m:e><m:lim>${e(n.over)}</m:lim></m:limUpp>`;
       return x;
     }
+    case 'matrix': {
+      // Word's matrix: as many columns as its widest row, each entry centred (ECMA-376 Part 1 §22.1.2.60)
+      const cols = Math.max(1, ...n.rows.map((r) => r.length));
+      return `<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="${cols}"/><m:mcJc m:val="center"/></m:mcPr></m:mc></m:mcs></m:mPr>` +
+        n.rows.map((r) => `<m:mr>${Array.from({ length: cols }, (_, j) => `<m:e>${r[j] ? e(r[j]) : ''}</m:e>`).join('')}</m:mr>`).join('') + '</m:m>';
+    }
     case 'arrow': {
       // only conditions under it: Word's arrow over its text (the group character on top, ECMA-376 Part 1 §22.1.2.84)
       if (n.under && (!n.over || (n.over.t === 'row' && !n.over.kids.length))) return `<m:groupChr><m:groupChrPr><m:chr m:val="${n.ch}"/><m:pos m:val="top"/><m:vertJc m:val="top"/></m:groupChrPr><m:e>${e(n.under)}</m:e></m:groupChr>`;
@@ -816,7 +891,13 @@ function texEl(e: Element): string {
     case 'func': return `${part('fName')} ${part('e')}`;
     case 'box': case 'borderBox': case 'phant': return part('e');
     case 'eqArr': return kidsOf(e).filter((k) => local(k) === 'e').map((k) => texOf(kidsOf(k))).join(' \\quad ');
-    case 'm': return kidsOf(e).filter((k) => local(k) === 'mr').map((r) => kidsOf(r).filter((k) => local(k) === 'e').map((k) => texOf(kidsOf(k))).join(' \\quad ')).join(' \\quad ');
+    // a matrix: its entries and rows as LaTeX's (its brackets, if any, are the m:d round it)
+    case 'm': {
+      const rows = kidsOf(e).filter((k) => local(k) === 'mr').map((r) => kidsOf(r).filter((k) => local(k) === 'e').map((k) => texOf(kidsOf(k))).join(' & '));
+      // (a last row that reads as nothing: a row break more, so it stays a row)
+      const end = rows.length > 1 && !rows[rows.length - 1].trim() ? ' \\\\ ' : '';
+      return `\\begin{matrix}${rows.join(' \\\\ ')}${end}\\end{matrix}`;
+    }
     default: return texOf(kidsOf(e));
   }
 }
@@ -831,7 +912,7 @@ export function mathText(src: string): string {
       case 'frac': return `(${flat(n.num)})/(${flat(n.den)})`;
       case 'scr': return `${flat(n.base)}${n.sub ? `_${flat(n.sub)}` : ''}${n.sup ? `^${flat(n.sup)}` : ''}`;
       case 'sqrt': return `√(${flat(n.body)})`;
-      case 'delim': return `${n.open}${flat(n.body)}${n.close}`;
+      case 'delim': return n.body.t === 'matrix' ? `${n.open}${flat(n.body).slice(1, -1)}${n.close}` : `${n.open}${flat(n.body)}${n.close}`;
       case 'big': return n.op;
       case 'acc': return flat(n.body);
       case 'over': return flat(n.body);
@@ -840,6 +921,7 @@ export function mathText(src: string): string {
         const said = [n.over, n.under].map((x) => (x ? flat(x).trim() : '')).filter(Boolean);
         return ` ${n.ch}${said.length ? ` (${said.join(', ')})` : ''} `;
       }
+      case 'matrix': return `[${n.rows.map((r) => r.map((c) => flat(c).trim()).join(', ')).join('; ')}]`;
     }
   };
   return flat(parseMath(src)).replace(/\s+/g, ' ').trim();
