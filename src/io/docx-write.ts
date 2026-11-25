@@ -1108,7 +1108,7 @@ class DocxWriter {
         const ps = paras.map((p, i) => {
           const pPr: string[] = [`<w:pStyle w:val="${style}"/>`];
           // (a note style with numbering: not on the notes, as here)
-          if (this.styleNum(st)) pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
+          if (this.styleNum(t.styles[style] ?? st)) pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
           const align = p.align ?? 'left';
           if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
           // the note's number, and the space after it (or what the note had there in Word)
