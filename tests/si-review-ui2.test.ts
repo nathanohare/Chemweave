@@ -49,11 +49,14 @@ describe('project warnings in the SI tab', () => {
     const mode = makeMode();
     const tab = { id: 1, mode: 'si', name: p.title, si: p, sheetState: { pick: { kind: 'compound', id: c.id } } as unknown };
     mode.show(tab as never);
-    await tick(80);
     const own = await PW.projectWarnings(p);
     expect(own.length).toBeGreaterThan(0);
     const inner = mode as unknown as { activeWarnings(x: unknown): unknown[] };
-    const active = p.compounds.reduce((n, x) => n + inner.activeWarnings(x).length, 0);
+    const activeNow = (): number => p.compounds.reduce((n, x) => n + inner.activeWarnings(x).length, 0);
+    // the tab works the project's warnings out after it shows: wait for the count rather than a
+    // fixed time, which a busy test machine can overrun (the count read 0 after 80 ms on CI, #758)
+    await vi.waitFor(() => expect(count()).toBe(activeNow() + own.length), { timeout: 5000, interval: 20 });
+    const active = activeNow();
     expect(count()).toBeGreaterThanOrEqual(own.length);
     expect(count()).toBe(active + own.length);
     expect(hints[hints.length - 1]).toContain(`${count()} warning`);
