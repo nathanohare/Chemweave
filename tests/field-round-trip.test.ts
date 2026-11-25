@@ -410,6 +410,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     cmt: { v: '2' },
     link: { v: 'https://example.org/' },
     spacing: { v: 1.5 },
+    // (kerned from 14 pt: so this 16 pt text is kerned)
+    kernAt: { v: 14, with: { size: 16 } },
     field: { v: 'slidenum' },
     cite: { v: 'r1' },
     lang: { v: 'de-DE' },
@@ -617,6 +619,7 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
     'TextRun.cstyle': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.field': "a PowerPoint field (slide number, date): slides are saved as PowerPoint",
     'TextRun.fmt': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
+    'TextRun.kernAt': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.noProof': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.raise': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",
     'TextRun.rev': "Document text only (src/model.ts \"Documents:\"); drawings' captions never have it, and Word files keep it",

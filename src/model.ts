@@ -415,6 +415,11 @@ export interface TextRun {
   cc?: string;
   /** Text effects (the Font box): no kerning between letter pairs (they are kerned unless this is set). */
   noKern?: boolean;
+  /**
+   * Documents: Word's kerning size (w:kern, in points) where the file's is not the usual 1 pt: text
+   * this size and larger is kerned. Written back while it agrees with `noKern` at the text's size.
+   */
+  kernAt?: number;
   /** Text effects: no fill inside the letters (outline-only text, with `outline`). */
   noFill?: boolean;
   /** Text effects: how much shows through the letters' fill, 0 (solid) to 1. */

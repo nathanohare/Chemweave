@@ -2110,8 +2110,11 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   // character spacing (twentieths of a point) and kerning taken off
   if (r.spacing) out.push(`<w:spacing w:val="${Math.round(r.spacing * 20)}"/>`);
   out.push(raw.d ?? '');
-  if (r.noKern) out.push('<w:kern w:val="0"/>');
+  // (Word's kerning size as the file had it, while the text is still kerned, or not, as it says at its size)
   const size = r.size ?? st.size;
+  // (Word's sizes go up to 1638 pt)
+  if (r.kernAt !== undefined && r.kernAt > 0 && r.kernAt <= 1638 && !r.noKern === size >= r.kernAt) out.push(`<w:kern w:val="${Math.round(r.kernAt * 2)}"/>`);
+  else if (r.noKern) out.push('<w:kern w:val="0"/>');
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
   const hl = r.highlight && !(raw.shd && raw.shdFill === r.highlight) ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
