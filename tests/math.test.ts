@@ -197,6 +197,7 @@ describe("Word's arrow over or under its text (group character)", () => {
     const old = ommlEl(`<m:limLow><m:e><m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:vertJc m:val="bot"/></m:groupChrPr><m:e>${r(' ')}</m:e></m:groupChr></m:e><m:lim>${r('hv')}</m:lim></m:limLow>`);
     const tex = ommlToTex(old);
     expect(mathText(tex)).toContain('hv');
-    expect(roundTrip(tex)).toBe(roundTrip(roundTrip(tex)));
+    expect(tex).toBe('\\xrightarrow[hv]{}');
+    expect(roundTrip(tex)).toBe(tex);
   });
 });
