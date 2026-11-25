@@ -13565,7 +13565,8 @@ if (isTauri()) {
   window.addEventListener('beforeunload', (e) => {
     finishTyping();
     // reloading for a new version: the unsaved tabs were just copied, and are offered when the page is back
-    if (webReloading) { void diagnostics.write(); return; }
+    // (anything changed after the copy, and the question asks again)
+    if (webReloading && keeper.workKept()) { void diagnostics.write(); return; }
     if (ws.anyDirty) e.preventDefault();
     // with nothing unsaved the copies can go; otherwise they stay, in case the page is left
     else void keeper.end();

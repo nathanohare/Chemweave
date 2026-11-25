@@ -43,10 +43,15 @@ const WEB = !process.env.TAURI_ENV_PLATFORM;
 const BUILD_ID = `${(process.env.GITHUB_SHA ?? 'local').slice(0, 12)}-${Date.now().toString(36)}`;
 const STAMP = WEB ? '-[hash]' : '';
 
+// (the id goes in the pages, not the code, so two builds of the same code have the same file names)
 function webVersion(): Plugin {
   return {
     name: 'web-version',
     apply: 'build',
+    transformIndexHtml(html) {
+      if (!WEB) return html;
+      return html.replace('<meta charset="utf-8" />', `<meta charset="utf-8" />\n  <meta name="chemweave-build" content="${BUILD_ID}" />`);
+    },
     generateBundle() {
       if (!WEB) return;
       this.emitFile({ type: 'asset', fileName: 'version.json', source: JSON.stringify({ build: BUILD_ID }) + '\n' });
@@ -57,7 +62,6 @@ function webVersion(): Plugin {
 export default defineConfig({
   base: './',
   plugins: [webCsp(), webVersion()],
-  define: { __WEB_BUILD__: JSON.stringify(BUILD_ID) },
   // The desktop app's development mode expects this exact port (src-tauri/tauri.conf.json).
   // docs/ holds the README pictures; the picture scripts write there while the page is open, so don't reload it
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/docs/**'] } },

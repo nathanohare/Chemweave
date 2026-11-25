@@ -105,11 +105,18 @@ export class Keeper {
    * then stays.
    */
   async keepForReload(): Promise<boolean> {
-    const dirty = this.ws.fileTabs.filter((t) => t.dirty).length;
-    if (!dirty) return true;
+    if (!this.ws.anyDirty) return true;
     if (this.prefs.recoveryMinutes <= 0 || this.ended) return false;
     try { await this.copyNow(); } catch { return false; }
-    return this.recovery.count >= dirty;
+    if (!this.workKept()) return false;
+    // (offered straight after the reload even where the browser has no locks)
+    await this.recovery.stop().catch(() => {});
+    return true;
+  }
+
+  /** Every tab with unsaved changes has a recovery copy of it as it is now. */
+  workKept(): boolean {
+    return !this.ended && this.ws.fileTabs.every((t) => !t.dirty || this.recovery.copied(t.id, this.ws.token(t)));
   }
 
   private get ws(): Workspace {

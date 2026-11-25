@@ -10,8 +10,10 @@
 // The site lists its stamped files in kept-files.json, each with when it was last part of a
 // published version. This script reads that list from the live site, downloads the files of the
 // last KEEP_DAYS days that the new build no longer has (newest first, up to KEEP_BYTES in all), and
-// writes the new list into dist/. Nothing here fails the deploy: if the site can't be reached, the
-// new version is published without the old files and says so in the log.
+// writes the new list into dist/. A site without a list yet (the first deploy) publishes the new
+// version alone. A list that can't be read otherwise (the site down, a timeout) fails the step,
+// which the workflow tries again (scripts/retry.mjs): publishing without it would drop every
+// earlier version's files at once. An old file that can't be fetched is left out of the list.
 //
 //   node scripts/keep-old-web-files.mjs [dist folder]     (site: WEB_SITE_URL, or the usual address)
 
@@ -54,13 +56,15 @@ export function parseList(text) {
 export function plan(built, listed, now, days = KEEP_DAYS, maxBytes = KEEP_BYTES) {
   const have = new Set(built.map((f) => f.path));
   const seen = new Set();
-  const old = listed
-    .filter((f) => !have.has(f.path) && now - f.last <= days * DAY_MS && !seen.has(f.path) && seen.add(f.path))
-    .sort((a, b) => b.last - a.last || (a.path < b.path ? -1 : 1));
+  // (newest first, so a file listed twice counts with its newest time)
+  const old = [...listed]
+    .sort((a, b) => b.last - a.last || (a.path < b.path ? -1 : 1))
+    .filter((f) => !have.has(f.path) && now - f.last <= days * DAY_MS && !seen.has(f.path) && seen.add(f.path));
   const keep = [];
   let bytes = 0;
+  // (the newest versions whole: a version's files share their time, so stop at the first that won't fit)
   for (const f of old) {
-    if (bytes + f.size > maxBytes) continue;
+    if (bytes + f.size > maxBytes) break;
     bytes += f.size;
     keep.push(f);
   }
@@ -95,11 +99,14 @@ async function main() {
   const now = Date.now();
   let listed = [];
   try {
-    const r = await get(new URL(LIST, site));
+    // (the query keeps GitHub's servers from answering with the copy they hold for ten minutes)
+    const r = await get(new URL(`${LIST}?t=${now}`, site));
     if (r.ok) listed = parseList(await r.text());
-    else console.log(`No ${LIST} on ${site} yet (${r.status}): publishing without earlier versions' files.`);
+    else if (r.status === 404) console.log(`No ${LIST} on ${site} yet: publishing without earlier versions' files.`);
+    else throw new Error(`the site answered ${r.status}`);
   } catch (e) {
-    console.log(`::warning::Couldn't read ${LIST} from ${site} (${e}): publishing without earlier versions' files.`);
+    console.error(`Couldn't read ${LIST} from ${site} (${e}).`);
+    process.exit(1);
   }
   const { keep, list } = plan(built, listed, now);
   const missing = new Set();
@@ -108,9 +115,11 @@ async function main() {
   const worker = async () => {
     for (let f = queue.shift(); f; f = queue.shift()) {
       try {
-        const r = await get(new URL(f.path, site));
+        let r = await get(new URL(f.path, site));
+        if (r.status >= 500) r = await get(new URL(f.path, site)); // once more
         if (!r.ok) { missing.add(f.path); continue; }
         const data = new Uint8Array(await r.arrayBuffer());
+        if (data.length !== f.size) { missing.add(f.path); continue; }
         const to = path.join(dist, ...f.path.split('/'));
         if (existsSync(to)) continue;
         mkdirSync(path.dirname(to), { recursive: true });

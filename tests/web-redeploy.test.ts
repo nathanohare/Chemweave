@@ -1,3 +1,4 @@
+// @vitest-environment jsdom
 // The web version when a newer version is published while a page is open: recovery copies offered
 // right after a reload (browser locks), the new-version notice's decisions, and the deploy script
 // that keeps earlier versions' files on the site.
@@ -5,7 +6,7 @@
 import { describe, it, expect } from 'vitest';
 import { memoryStore } from '../src/keep/store';
 import { Recovery, parseSession, type Copyable } from '../src/keep/recovery';
-import { worthTelling, publishedBuild } from '../src/ui/web-update';
+import { worthTelling, publishedBuild, pageBuild } from '../src/ui/web-update';
 import { plan, parseList, safePath, KEEP_DAYS } from '../scripts/keep-old-web-files.mjs';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -44,6 +45,20 @@ describe('recovery right after a reload (browser locks)', () => {
     expect(await after.running('old')).toBe(true);
   });
 
+  it('a session that said it was stopping is offered at once even without locks, and only until it beats again', async () => {
+    const now = 1_000_000;
+    const store = memoryStore(() => now);
+    const before = new Recovery(store, 'before', () => now);
+    await before.copy([copyable(1)]);
+    await before.stop();
+    const after = new Recovery(store, 'after', () => now + 1000);
+    expect((await after.leftOver(7)).map((s) => s.session)).toEqual(['before']);
+    // the reload didn't happen after all: its next beat says it runs
+    await before.beat();
+    expect(await after.leftOver(7)).toEqual([]);
+    expect(await after.running('before')).toBe(true);
+  });
+
   it('when the locks cannot be read, the beat decides, as before', async () => {
     const now = 1_000_000;
     const store = memoryStore(() => now);
@@ -55,6 +70,15 @@ describe('recovery right after a reload (browser locks)', () => {
     expect(await after.leftOver(7)).toEqual([]);
     const none = new Recovery(store, 'none', () => now + 1000);
     expect(await none.leftOver(7)).toEqual([]);
+  });
+
+  it('knows whether each tab\u2019s copy is of it as it is now', async () => {
+    const store = memoryStore();
+    const r = new Recovery(store, 'me');
+    await r.copy([copyable(1)]);
+    expect(r.copied(1, 1)).toBe(true);
+    expect(r.copied(1, 2)).toBe(false); // changed after the copy
+    expect(r.copied(2, 1)).toBe(false);
   });
 
   it('keeps the lock mark when the offer is answered', async () => {
@@ -83,11 +107,18 @@ describe('new-version notice', () => {
     expect(worthTelling('a', 'c', 'b')).toBe(true);
   });
 
+  it('reads the page\u2019s own build from the page', () => {
+    const doc = new DOMParser().parseFromString('<head><meta name="chemweave-build" content="abc-1"></head>', 'text/html');
+    expect(pageBuild(doc)).toBe('abc-1');
+    expect(pageBuild(new DOMParser().parseFromString('<head></head>', 'text/html'))).toBeNull();
+  });
+
   it('reads the build from version.json without the cache, and null when it cannot', async () => {
     const seen: [string, RequestInit | undefined][] = [];
     const ok = (async (u: string, o?: RequestInit) => { seen.push([u, o]); return new Response('{"build":"abc-1"}'); }) as typeof fetch;
-    expect(await publishedBuild(ok, 'https://example.org/Chemweave/index.html')).toBe('abc-1');
-    expect(seen[0][0]).toBe('https://example.org/Chemweave/version.json');
+    expect(await publishedBuild(ok, 'https://example.org/Chemweave/index.html', 42)).toBe('abc-1');
+    // (a query of its own each time: GitHub's servers otherwise answer with a copy up to ten minutes old)
+    expect(seen[0][0]).toBe('https://example.org/Chemweave/version.json?t=42');
     expect(seen[0][1]?.cache).toBe('no-store');
     const missing = (async () => new Response('Not found', { status: 404 })) as typeof fetch;
     expect(await publishedBuild(missing, 'https://example.org/')).toBeNull();
@@ -121,6 +152,12 @@ describe('keeping earlier versions’ files on the site', () => {
     ]);
     // a size limit leaves out the older ones first
     expect(plan(built, listed, now, KEEP_DAYS, 15).keep.map((f: { path: string }) => f.path)).toEqual(['app-OLD1.js']);
+    // a file listed twice counts with its newest time, wherever it is in the list
+    expect(plan([], [{ path: 'x-1.js', last: now - 9 * DAY, size: 1 }, { path: 'x-1.js', last: now - DAY, size: 1 }], now).keep)
+      .toEqual([{ path: 'x-1.js', last: now - DAY, size: 1 }]);
+    // and keeps versions whole: once one doesn't fit, nothing older (however small) is kept
+    const small = [...listed, { path: 'tiny-OLD3.js', last: now - 4 * DAY, size: 1 }];
+    expect(plan(built, small, now, KEEP_DAYS, 15).keep.map((f: { path: string }) => f.path)).toEqual(['app-OLD1.js']);
   });
 
   it('never writes a page, a hidden file or outside the site’s folder', () => {

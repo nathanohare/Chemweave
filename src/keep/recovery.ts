@@ -55,6 +55,8 @@ export interface Session {
    * lock, which the browser lets go the moment the page closes or reloads, not by its last beat.
    */
   held?: boolean;
+  /** It said it was stopping (a reload for a new version), so it is offered at once without locks too. */
+  stopped?: boolean;
 }
 
 /** How often a running app says it is still running. */
@@ -81,7 +83,7 @@ export function parseSession(text: string | null): Session | null {
       stamp: t.stamp && typeof t.stamp.modified === 'number' && typeof t.stamp.size === 'number' ? { modified: t.stamp.modified, size: t.stamp.size } : null,
       file: keyPart(t.file), copied: Number(t.copied) || 0 }));
   const locks = Array.isArray(o.locks) ? o.locks.filter((l): l is string => typeof l === 'string') : [];
-  return { session: o.session, started: typeof o.started === 'number' ? o.started : o.beat, beat: o.beat, offered: o.offered === true, tabs, ...(locks.length ? { locks } : {}), ...(o.held === true ? { held: true } : {}) };
+  return { session: o.session, started: typeof o.started === 'number' ? o.started : o.beat, beat: o.beat, offered: o.offered === true, tabs, ...(locks.length ? { locks } : {}), ...(o.held === true ? { held: true } : {}), ...(o.stopped === true ? { stopped: true } : {}) };
 }
 
 export class Recovery {
@@ -104,6 +106,8 @@ export class Recovery {
   heldNow: (() => Promise<Set<string> | null>) | null = null;
   /** This session holds its browser lock (written in its list, so other sessions go by the lock). */
   holdsLock = false;
+  /** The next list written says this session is stopping (only that one: a later beat takes it back). */
+  private stopping = false;
 
   constructor(private store: KeepStore, readonly session = newSessionId(), private now: () => number = Date.now) {
     this.started = now();
@@ -170,8 +174,20 @@ export class Recovery {
     return this.serial(() => this.writeManifest());
   }
 
+  /**
+   * Say this session is stopping (the page is about to reload): a start straight after offers its
+   * copies even where browser locks can't tell. Should the page stay after all, its next beat
+   * says it runs again.
+   */
+  stop(): Promise<void> {
+    return this.serial(() => { this.stopping = true; return this.writeManifest(); });
+  }
+
   private writeManifest(): Promise<void> {
-    const s: Session = { session: this.session, started: this.started, beat: this.now(), tabs: [...this.tabs.values()], ...(this.locks.length ? { locks: this.locks } : {}), ...(this.holdsLock ? { held: true } : {}) };
+    const stopped = this.stopping;
+    this.stopping = false;
+    const s: Session = { session: this.session, started: this.started, beat: this.now(), tabs: [...this.tabs.values()], ...(this.locks.length ? { locks: this.locks } : {}),
+      ...(this.holdsLock ? { held: true } : {}), ...(stopped ? { stopped: true } : {}) };
     return putText(this.store, this.key(MANIFEST), JSON.stringify(s));
   }
 
@@ -185,17 +201,23 @@ export class Recovery {
     });
   }
 
+  /** Whether a tab's copy holds it as it is now (its token when copied is this one). */
+  copied(id: number, token: number): boolean {
+    return this.tabs.has(id) && this.tokens.get(id) === token;
+  }
+
   /** How many tabs have copies now. */
   get count(): number {
     return this.tabs.size;
   }
 
   /**
-   * Whether a session that last said it was running at `beat` still is. One that holds a browser
-   * lock runs exactly while the lock is held (when the locks can be read); others by their beat.
+   * Whether a session that last said it was running at `beat` still is. One that said it was
+   * stopping has stopped; one that holds a browser lock runs exactly while the lock is held (when
+   * the locks can be read); others go by their beat.
    */
-  private alive(s: { session: string; beat: number; held?: boolean }, now: number, held: Set<string> | null): boolean {
-    if (this.oneCopy) return false;
+  private alive(s: { session: string; beat: number; held?: boolean; stopped?: boolean }, now: number, held: Set<string> | null): boolean {
+    if (this.oneCopy || s.stopped) return false;
     if (s.held && held) return held.has(s.session);
     return now - s.beat < STALE_MS;
   }

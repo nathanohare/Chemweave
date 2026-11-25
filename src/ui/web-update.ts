@@ -39,10 +39,18 @@ export function worthTelling(mine: string, published: string | null, dismissed: 
   return !!published && published !== mine && published !== dismissed;
 }
 
-/** The build the site has now, or null when it can't be read (offline, or not the web version). */
-export async function publishedBuild(fetcher: typeof fetch = fetch, base = document.baseURI): Promise<string | null> {
+/** The build this page is (written into the page by vite.config.ts), or null outside the web version's build. */
+export function pageBuild(doc: Document = document): string | null {
+  return doc.querySelector<HTMLMetaElement>('meta[name="chemweave-build"]')?.content || null;
+}
+
+/**
+ * The build the site has now, or null when it can't be read (offline, or not the web version).
+ * The query keeps GitHub's servers from answering with the copy they hold for ten minutes.
+ */
+export async function publishedBuild(fetcher: typeof fetch = fetch, base = document.baseURI, now = Date.now()): Promise<string | null> {
   try {
-    const r = await fetcher(new URL('version.json', base).href, { cache: 'no-store' });
+    const r = await fetcher(new URL(`version.json?t=${now}`, base).href, { cache: 'no-store' });
     if (!r.ok) return null;
     const j: unknown = await r.json();
     const b = j && typeof j === 'object' ? (j as { build?: unknown }).build : null;
@@ -57,11 +65,11 @@ export class WebUpdates {
   private lastCheck = 0;
   private checking: Promise<void> | null = null;
 
-  constructor(private host: WebUpdateHost, readonly mine: string = __WEB_BUILD__, private fetcher: typeof fetch = (...a) => fetch(...a)) {}
+  constructor(private host: WebUpdateHost, readonly mine: string | null = pageBuild(), private fetcher: typeof fetch = (...a) => fetch(...a)) {}
 
   /** Start checking (the web version's built page only). */
   start(): void {
-    if (isTauri() || import.meta.env.DEV) return;
+    if (isTauri() || import.meta.env.DEV || !this.mine) return;
     // a part that fails to load (Vite reports every lazily loaded part that fails this way)
     window.addEventListener('vite:preloadError', () => void this.failedLoad());
     window.setInterval(() => { if (document.visibilityState === 'visible') void this.check(); }, CHECK_MS);
@@ -76,7 +84,7 @@ export class WebUpdates {
     this.checking ??= (async () => {
       this.lastCheck = Date.now();
       const published = await publishedBuild(this.fetcher);
-      if (worthTelling(this.mine, published, this.dismissed)) this.offer(published!, false);
+      if (this.mine && worthTelling(this.mine, published, this.dismissed)) this.offer(published!, false);
     })().finally(() => { this.checking = null; });
     return this.checking;
   }
@@ -84,7 +92,7 @@ export class WebUpdates {
   /** A part of the page didn't load: if a newer version is the reason, say so (even after Later). */
   async failedLoad(): Promise<void> {
     const published = await publishedBuild(this.fetcher);
-    if (worthTelling(this.mine, published, null)) this.offer(published!, true);
+    if (this.mine && worthTelling(this.mine, published, null)) this.offer(published!, true);
   }
 
   private offer(build: string, failed: boolean): void {
@@ -103,7 +111,8 @@ export class WebUpdates {
   /** Reload for the new version, unsaved work copied first. */
   async reload(): Promise<void> {
     this.host.finishTyping();
-    // (when not everything could be copied, the browser's "Leave site?" question still asks)
+    // (when not everything could be copied, or something changes after the copy, the browser's
+    // "Leave site?" question still asks)
     if (await this.host.keepForReload().catch(() => false)) this.host.reloading();
     closeNotice(KEY);
     location.reload();
