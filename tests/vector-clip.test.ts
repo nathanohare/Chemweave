@@ -15,6 +15,7 @@ import { itemsToEmf } from '../src/render/emf';
 import { readDocx } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
 import { recordPages, placeItems } from '../src/document/doc-paint';
+import { paintMapBox } from '../src/render/map-box';
 
 const latin1 = (b: Uint8Array) => Array.from(b, (c) => String.fromCharCode(c)).join('');
 /** Every page's drawing of a PDF written by writePdf (its content streams, unpacked). */
@@ -149,5 +150,46 @@ describe('a Word table row of exact height in Export ▸ PDF (F-W-027)', () => {
     const pdf = contents(await writePdf(pages, { image: async () => null }));
     expect(pdf).toHaveLength(1);
     expect(pdf[0]).toMatch(/re W n\n[^Q]*\(first\) Tj/);
+  });
+});
+
+describe('clip in a vector picture: the review\'s cases', () => {
+  it('refuses two sides and a diagonal home (a triangle) as much as any other shape', () => {
+    const ctx = new VectorContext() as unknown as CanvasRenderingContext2D;
+    ctx.beginPath();
+    ctx.moveTo(0, 0); ctx.lineTo(10, 0); ctx.lineTo(10, 10); ctx.closePath();
+    expect(() => ctx.clip()).toThrow(/rectangle/);
+  });
+
+  it('draws a rounded, patterned atom-map box in a vector picture (its pattern cut to the box\'s rectangle)', () => {
+    const v = new VectorContext();
+    const own = { fill: '#ffffff', pattern: 'lines', patternColor: '#ff0000', border: '#000000', borderWidth: 1, text: '#000000', bold: false, shadow: false, rounded: true } as const;
+    expect(() => paintMapBox(v as unknown as CanvasRenderingContext2D, { x1: 0, y1: 0, x2: 20, y2: 10 }, 1, 1, 'own' as Parameters<typeof paintMapBox>[4], own)).not.toThrow();
+    expect(v.items.some((i) => i.clip && i.clip.x2 === 20 && i.clip.y2 === 10)).toBe(true);
+  });
+
+  it('changes the EMF clip from one rectangle to the next (put back to none, then cut again)', () => {
+    const v = new VectorContext();
+    const ctx = v as unknown as CanvasRenderingContext2D;
+    for (const x of [0, 50]) {
+      ctx.save(); ctx.beginPath(); ctx.rect(x, 0, 10, 10); ctx.clip();
+      ctx.fillRect(x, 0, 20, 20);
+      ctx.restore();
+    }
+    const emf = new DataView(itemsToEmf(v.items, { x1: 0, y1: 0, x2: 100, y2: 100 }).buffer);
+    const types: number[] = [];
+    for (let at = 0; at < emf.byteLength; at += emf.getUint32(at + 4, true)) types.push(emf.getUint32(at, true));
+    const clips = types.filter((t) => t === 30 || t === 75);
+    expect(clips).toEqual([30, 75, 30]);
+  });
+
+  it('cuts a filled shape in a PDF too, inside its own q … Q', async () => {
+    const v = new VectorContext();
+    const ctx = v as unknown as CanvasRenderingContext2D;
+    ctx.beginPath(); ctx.rect(0, 0, 10, 10); ctx.clip();
+    ctx.fillStyle = '#00ff00';
+    ctx.fillRect(0, 0, 50, 50);
+    const pdf = contents(await writePdf([{ w: 100, h: 100, items: v.items }], { image: async () => null }))[0];
+    expect(pdf).toMatch(/q\n0 0 10 10 re W n\n0 1 0 rg\n[^Q]*\nf\nQ/);
   });
 });

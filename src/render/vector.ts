@@ -341,8 +341,12 @@ export function rectOf(segs: Seg[]): ClipBox | null {
     if (!ys.some((y) => near(y, p.y))) ys.push(p.y);
   }
   if (xs.length > 2 || ys.length > 2) return null;
-  // (each step goes along an axis: a diagonal across the box isn't the box)
-  for (let i = 1; i < pts.length; i++) if (!near(pts[i].x, pts[i - 1].x) && !near(pts[i].y, pts[i - 1].y)) return null;
+  // each step goes along an axis, back to the start too (a diagonal across the box isn't the box),
+  // and it goes round every corner (two sides and a diagonal home make a triangle)
+  const step = (a: { x: number; y: number }, b: { x: number; y: number }) => near(a.x, b.x) || near(a.y, b.y);
+  for (let i = 1; i < pts.length; i++) if (!step(pts[i - 1], pts[i])) return null;
+  if (!step(pts[pts.length - 1], pts[0])) return null;
+  if (xs.length === 2 && ys.length === 2 && !xs.every((x) => ys.every((y) => pts.some((p) => near(p.x, x) && near(p.y, y))))) return null;
   return { x1: Math.min(...xs), y1: Math.min(...ys), x2: Math.max(...xs), y2: Math.max(...ys) };
 }
 
