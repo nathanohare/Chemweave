@@ -55,6 +55,40 @@ describe("a paragraph style's chain", () => {
     expect(strFromU8(unzipSync(await writeDocx(back, deps))['word/styles.xml'])).toBe(x);
   });
 
+  it("gives no style settings it doesn't write: a style's text reads back the same, and edits stay", async () => {
+    // Middle (not used itself) sets much that isn't a style setting here; Leaf takes each off
+    const MID = `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Mid"><w:name w:val="Mid"/><w:basedOn w:val="Normal"/><w:pPr><w:pageBreakBefore/><w:pBdr><w:top w:val="single" w:sz="8" w:space="1" w:color="FF0000"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="FFFF00"/><w:tabs><w:tab w:val="left" w:pos="2880"/></w:tabs><w:ind w:right="720"/></w:pPr><w:rPr><w:caps/><w:strike/><w:u w:val="single"/><w:spacing w:val="40"/><w:highlight w:val="yellow"/><w:vertAlign w:val="superscript"/></w:rPr></w:style>`;
+    const OFF = `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Off"><w:name w:val="Off"/><w:basedOn w:val="Mid"/><w:pPr><w:pageBreakBefore w:val="0"/><w:pBdr><w:top w:val="nil"/></w:pBdr><w:shd w:val="clear" w:color="auto" w:fill="auto"/><w:tabs><w:tab w:val="clear" w:pos="2880"/></w:tabs><w:ind w:right="0"/></w:pPr><w:rPr><w:caps w:val="0"/><w:strike w:val="0"/><w:u w:val="none"/><w:spacing w:val="0"/><w:highlight w:val="none"/><w:vertAlign w:val="baseline"/></w:rPr></w:style>`;
+    const ON = `<w:style w:type="paragraph" w:customStyle="1" w:styleId="On"><w:name w:val="On"/><w:basedOn w:val="Mid"/></w:style>`;
+    const files = unzipSync(docx(para('Off', 'off') + para('On', 'on') + '<w:p/>'));
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}><w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>${MID}${OFF}${ON}</w:styles>`));
+    const t = (await readDocx(zipSync(files))).doc as DocText;
+    const look = (d: DocText) => ({ p: d.paras.slice(0, 2).map((p) => ({ ...p, wpx: undefined })), r: d.runs.map((r) => ({ ...r, text: r.text.replace(/\n/g, '') })).filter((r) => r.text) });
+    // unedited: read back as read
+    const back = (await readDocx(await writeDocx(t, deps))).doc as DocText;
+    expect(look(back)).toEqual(look(t));
+    expect(back.paras[0].pageBreak).toBeFalsy();
+    expect(back.runs.find((r) => r.text.includes('off'))).not.toMatchObject({ underline: true });
+    // edits to what On has from Mid (its line, shading, tab, underline taken off here) stay
+    const runs = t.runs.map((r) => (r.text.includes('on') ? { ...r, underline: undefined, allCaps: undefined, strike: undefined, highlight: undefined, sup: undefined, spacing: undefined } : r));
+    const paras = t.paras.map((p, i) => (i === 1 ? { ...p, border: undefined, shade: undefined, tabs: undefined, indentRight: undefined, pageBreak: undefined } : p));
+    const edited = (await readDocx(await writeDocx({ ...t, runs, paras }, deps))).doc as DocText;
+    expect(edited.paras[1]).not.toMatchObject({ pageBreak: true });
+    expect(edited.paras[1].border).toBeUndefined();
+    expect(edited.paras[1].shade).toBeUndefined();
+    expect(edited.paras[1].tabs?.length ?? 0).toBe(0);
+    expect(edited.runs.find((r) => r.text.includes('on'))).not.toMatchObject({ underline: true });
+  });
+
+  it('is Normal for a loop through a style not used', async () => {
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="X"><w:name w:val="X"/><w:basedOn w:val="K"/></w:style><w:style w:type="paragraph" w:customStyle="1" w:styleId="K"><w:name w:val="K"/><w:basedOn w:val="X"/></w:style>`;
+    const files = unzipSync(docx(para('X', 'x') + '<w:p/>'));
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    const x = strFromU8(unzipSync(await writeDocx((await readDocx(zipSync(files))).doc, deps))['word/styles.xml']);
+    expect([basedOf(x, 'X'), basedOf(x, 'K')]).toContain('Normal');
+  });
+
   it('a kept style based on one read under another id is based on that id', async () => {
     // UnderKop not used (kept as the file had it), Kop2 used (read as Heading2)
     const x = strFromU8(unzipSync(await writeDocx((await readDocx(docx(para('Kop2', 'head') + '<w:p/>'))).doc, deps))['word/styles.xml']);

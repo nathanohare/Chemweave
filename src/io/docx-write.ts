@@ -1922,8 +1922,9 @@ class DocxWriter {
     const ids = Object.keys(t.styles);
     // (the character styles the file will have, for the paragraph styles linked to one)
     const chars = new Set((t.kept?.styles ?? []).filter((k) => k.type === 'character' && !this.charStyles[k.id]).map((k) => k.id));
-    // (the paragraph styles the file will have, for those based on one: ours and the file's kept ones)
-    const paras = new Set([...ids, ...(t.kept?.styles ?? []).filter((k) => k.type === 'paragraph').map((k) => k.id)]);
+    // (the paragraph styles a style can be based on)
+    // (only ours: one kept as the file had it would give the style its settings that aren't written here)
+    const paras = new Set(ids);
     // (none based, through others, on itself)
     for (const id of ids) { const seen = new Set([id]); for (let b = t.styles[id]?.basedOn; b && t.styles[b]; b = t.styles[b].basedOn) { if (seen.has(b)) { paras.delete(b); break; } seen.add(b); } }
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {

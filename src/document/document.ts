@@ -884,7 +884,9 @@ export function deleteStyle(t: DocText, id: string): DocText {
     const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
     let out = t;
     paras.forEach((p, i) => { if (p.style === id) out = setParaStyle(out, i, i, 'Normal'); });
-    const { [id]: _, ...styles } = out.styles;
+    const { [id]: _, ...rest } = out.styles;
+    // (those based on it: on Normal)
+    const styles = Object.fromEntries(Object.entries(rest).map(([k, s]) => [k, s.basedOn === id ? { ...s, basedOn: undefined } : s]));
     return { ...out, styles };
   }
   const cs = t.charStyles?.[id];

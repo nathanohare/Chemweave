@@ -3591,8 +3591,8 @@ class DocxReader {
     const size = r.size ?? WORD_SIZE;
     const dflt = defaultStyles()[ours];
     const next = ws?.next ? this.idMap.get(ws.next) : undefined;
-    // the style it is based on (by our id where it is read as one, else as the file has it)
-    const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) ?? ws.basedOn : undefined;
+    // the style it is based on (read as a style too: see where the styles are made)
+    const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) : undefined;
     return {
       id: ours,
       name: dflt?.name ?? ws?.name ?? ours,
@@ -3677,7 +3677,13 @@ class DocxReader {
     if (this.keptNumbering.nums.length) this.kept = { ...this.kept, numbering: this.keptNumbering };
     // the standard styles (the file's, or ours where it has none) and the others the text uses
     const styles = defaultStyles();
-    for (const [wordId, ours] of this.idMap) if (BUILT_IN_IDS[ours] || this.used.has(wordId)) styles[ours] = this.named(wordId, ours);
+    // (with the styles those are based on, all the way up: a chain is of styles written here, each with all its settings)
+    const read = new Set<string>();
+    for (const [wordId, ours] of this.idMap) {
+      if (!BUILT_IN_IDS[ours] && !this.used.has(wordId)) continue;
+      for (let w: string | undefined = wordId; w && !read.has(w) && this.wstyles.has(`paragraph:${w}`); w = this.wstyles.get(`paragraph:${w}`)?.basedOn) read.add(w);
+    }
+    for (const [wordId, ours] of this.idMap) if (read.has(wordId)) styles[ours] = this.named(wordId, ours);
     if (!out.length) out.push({ ps: {}, runs: [], mark: this.runStyle(merge<RProps>(this.docDefaults.r, this.chain('paragraph', this.defaultPara).r)), style: 'Normal', contextual: false });
     const runs: TextRun[] = [];
     out.forEach((p, i) => {
