@@ -821,15 +821,16 @@ class DocxReader {
   }
 
   /** The character styles met, as styles here: what each sets. */
-  private charStylesRead(kept: string): Record<string, CharStyle> | undefined {
+  private charStylesRead(kept: () => string): Record<string, CharStyle> | undefined {
     if (!this.usedChar.size) return undefined;
     const own = defaultCharStyles();
     const out: Record<string, CharStyle> = {};
     // (with the styles they are based on, all the way up, where those are kept as styles: a chain is of styles written here)
     const ids = new Set<string>();
+    let text: string | undefined;
     for (const id of this.usedChar) {
       // (Word's link styles only where some text kept is in them: not a contents list's, made again here)
-      if (rt.LINK_STYLES.has(id) && !kept.includes(`"cstyle":"${id}"`)) continue;
+      // (Word's link styles only where some text kept is in them: not a contents list's, made again here)
       for (let w: string | undefined = id; w && !ids.has(w) && this.keptCharStyle(w); w = this.wstyles.get(`character:${w}`)?.basedOn) ids.add(w);
     }
     for (const id of ids) {
@@ -3764,7 +3765,7 @@ class DocxReader {
     // Word's styles that aren't styles here (a journal template's unused ones...), kept as they were
     const wordStyles = this.keptStyles(styles);
     if (wordStyles || this.latentXml) this.kept = { ...this.kept, ...(wordStyles ? { styles: wordStyles } : {}), ...(this.latentXml ? { latentStyles: this.latentXml } : {}) };
-    const charStyles = this.charStylesRead(JSON.stringify({ runs, comments, hf, objects }));
+    const charStyles = this.charStylesRead(() => JSON.stringify({ runs, comments, hf, objects }));
     return {
       runs: rt.normalizeRuns(runs),
       ...(comments ? { comments } : {}),
