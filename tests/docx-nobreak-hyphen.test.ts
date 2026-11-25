@@ -47,6 +47,9 @@ describe('a non-breaking hyphen in a header and a comment (from the review)', ()
       expect(strFromU8(header[1])).toMatch(/Smith<\/w:t><w:noBreakHyphen\/><w:t[^>]*>Jones/);
       expect(strFromU8(saved['word/comments.xml'])).toMatch(/see 2<\/w:t><w:noBreakHyphen\/><w:t[^>]*>methyl/);
       ({ doc } = await readDocx(zipSync(saved)));
+      // (read back as the characters, not only written back as Word had them)
+      expect(JSON.stringify(doc.comments)).toContain('2‑methyl');
+      expect(doc.hf.header.join('')).toContain('Smith‑Jones');
     }
   });
 });
