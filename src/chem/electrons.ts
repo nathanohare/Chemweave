@@ -23,6 +23,7 @@ import { SYMBOLS, elementNumber, lowestValence, tablePosition, valenceOfBonds } 
 import { labelDonates, labelGraph } from './labels';
 import { metalCarbonyl } from './hapto';
 import { ligandByAbbr } from './ligands';
+import { parseType, sanitizeEcount, typeKey } from './ecount-settings';
 
 export type LigandKind = 'L' | 'X' | 'Z' | 'M–M';
 
@@ -90,13 +91,7 @@ export function typeCode(l: number, x: number, z: number, mm = 0): string {
   return part('L', l) + part('X', x) + part('Z', z) || '—';
 }
 
-/** A type code read back (L2X → l 2, x 1), or null when it isn't one. */
-export function parseType(code: string): { l: number; x: number; z: number } | null {
-  const m = /^(?:L(\d?))?(?:X(\d?))?(?:Z(\d?))?$/.exec(code);
-  if (!m || !code) return null;
-  const n = (k: string, d: string | undefined) => (code.includes(k) ? Number(d || 1) : 0);
-  return { l: n('L', m[1]), x: n('X', m[2]), z: n('Z', m[3]) };
-}
+export { parseType, typeKey };
 
 /** A type code as shown, with real subscripts (L₂X). */
 export const typeText = (code: string) => code.replace(/\d/g, (d) => SUB[d]);
@@ -106,14 +101,16 @@ export const LIGAND_TYPES = ['L', 'X', 'Z', 'X2', 'X3', 'LX', 'L2', 'L2X', 'LX2'
 
 /**
  * The electron count expected for a metal: 18 (the 18-electron rule), or 16 for a d⁸ metal of
- * groups 9 and 10 with four ligand sites, which is square planar: Miessler, Fischer and Tarr,
+ * groups 9 to 11 with four ligand sites, which is square planar: Miessler, Fischer and Tarr,
  * Inorganic Chemistry, 5th ed., section 13.3.3, pp. 485–486 (sixteen-electron square-planar
- * complexes are most common for d⁸ Ni²⁺, Pd²⁺, Pt²⁺, Rh⁺ and Ir⁺). The sites are the ligand bond
+ * complexes are most common for d⁸ Ni²⁺, Pd²⁺, Pt²⁺, Rh⁺ and Ir⁺), and section 10.6, p. 396
+ * ("The d⁸ ions Au(III), Pt(II), Pd(II), Rh(I), and Ir(I) often form square-planar" complexes),
+ * which adds gold(III) of group 11. The sites are the ligand bond
  * number l + x + z (section 13.7, p. 522: often the coordination number). A rule of thumb only:
  * the value can be set by hand.
  */
 export function expectedCount(c: { group: number; dn: number; l: number; x: number; z: number }): { value: number; reason: string } {
-  if (c.dn === 8 && (c.group === 9 || c.group === 10) && c.l + c.x + c.z === 4) return { value: 16, reason: 'usual for square planar d⁸' };
+  if (c.dn === 8 && c.group >= 9 && c.group <= 11 && c.l + c.x + c.z === 4) return { value: 16, reason: 'usual for square planar d⁸' };
   return { value: 18, reason: '18-electron rule' };
 }
 
@@ -351,10 +348,12 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const group = groups.get(m);
     if (group === undefined) continue;
     const a = doc.atoms.get(m)!;
-    const settings = a.ecount ?? {};
-    // a type set by hand for a ligand (by its name) takes the place of the one worked out
+    const settings = sanitizeEcount(a.ecount) ?? {};
+    // an oxidation state above the group number would leave fewer than no d electrons: not used
+    if (settings.ox !== undefined && settings.ox > group) delete settings.ox;
+    // a type set by hand for a ligand (by its name and the type worked out for it, typeKey) takes the place of the one worked out
     for (const r of rows.get(m)!) {
-      const own = r.mm ? null : settings.types?.[r.name];
+      const own = r.mm ? null : settings.types?.[typeKey(r.name, r.auto)];
       const t = own ? parseType(own) : null;
       if (!t) continue;
       const e = electronsOf(t.l, t.x);
@@ -363,7 +362,7 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     // the same ligand more than once goes on one row
     const merged: LigandCount[] = [];
     for (const r of rows.get(m)!) {
-      const same = merged.find((x) => x.name === r.name && x.l === r.l && x.x === r.x && x.z === r.z && x.mm === r.mm && x.hapto === r.hapto);
+      const same = merged.find((x) => x.name === r.name && x.auto === r.auto && x.type === r.type && x.l === r.l && x.x === r.x && x.z === r.z && x.mm === r.mm && x.hapto === r.hapto);
       if (same) same.count++;
       else merged.push({ ...r });
     }
@@ -428,6 +427,14 @@ export function countSummary(c: MetalCount): string {
   return `${c.symbol}(${roman(c.oxidation)}), d${sup(c.dn)}, ${c.electrons} electrons · ${c.classification}`;
 }
 
+/**
+ * Why the neutral and ionic totals differ, or null when they agree: they can only differ when the
+ * oxidation state set by hand is not the one the ligand types give (x + q).
+ */
+export function countsDiffer(c: MetalCount): string | null {
+  return c.electrons === c.ionicTotal ? null : 'The counts differ: the oxidation state set does not fit the ligand types.';
+}
+
 /** A signed whole number with a real minus sign (+1, 0, −2). */
 export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 
@@ -444,6 +451,8 @@ export function countRows(c: MetalCount): string[][] {
   rows.push(['Total', '', String(c.electrons), String(c.ionicTotal)]);
   rows.push(['Oxidation State', signed(c.oxidation), '', '']);
   rows.push(['Charge', signed(c.charge), '', '']);
+  const why = countsDiffer(c);
+  if (why) rows.push([why]);
   rows.push([countSummary(c)]);
   return rows;
 }

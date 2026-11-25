@@ -1375,18 +1375,20 @@ function scriptRuns(text: string): TextRun[] {
 }
 
 /**
- * Electron Count's Insert as Table: the count's rows as an ordinary table to the right of the
- * metal's structure, its last row (the summary) across every column. A copy, not linked.
+ * Electron Count's Insert as Table: the count's rows as an ordinary table beside the metal's
+ * structure (right of it, else below, clear of other objects: Editor.spotBesideStructure), its
+ * short rows (a note, the summary) across every column. A copy, not linked; one undo step.
  */
 function electronCountTable(metal: number, rows: string[][]): void {
   if (!doc.atoms.has(metal)) return;
   const n = Math.max(...rows.map((r) => r.length));
   const t = tableFromCells(rows.map((r) => r.length < n ? [{ runs: scriptRuns(r[0]), span: n }] : r.map((x) => ({ runs: scriptRuns(x) }))), textMeasure, doc.style.captionSize);
-  const atoms = [...doc.fragmentOf(metal)].map((id) => doc.atoms.get(id)!);
   renderer.useStyle(doc);
   const lay = renderer.tableLayout(t);
-  const right = Math.max(...atoms.map((a) => a.x)), top = Math.min(...atoms.map((a) => a.y));
-  placeTable(t, 'Insert Electron Count Table', { x: right + doc.style.bondLength * 3.5 + lay.width / 2, y: top });
+  // beside the complex's drawn box (labels and all), where nothing else is, on the slide when there is one
+  const at = editor.spotBesideStructure(metal, lay.width, lay.height, placingPage());
+  if (!at) return;
+  placeTable(t, 'Insert Electron Count Table', { x: at.x + lay.width / 2, y: at.y });
 }
 
 /** The table style last picked for a slide table (PowerPoint's default, Medium Style 2 – Accent 1, at first). */

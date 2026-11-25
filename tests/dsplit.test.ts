@@ -4,7 +4,12 @@
 // expected values come from Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed. (Pearson,
 // 2014), chapter 10, never from running the code: cited at each one ("MFT", book page numbers).
 import { describe, expect, it } from 'vitest';
-import { D_GEOMETRIES, dCount, dFill, dReadout, deltaMarkup, dShell, fromDSplit, lfseMarkup, newDSplit, parseIon, readoutLines, setDSplit, spinMatters, splitLevels, type DSplit } from '../src/design/dsplit';
+import { D_GEOMETRIES, dCount, dFill, dReadout, deltaMarkup, dShell, followDrawn, fromDSplit, ionD, lfseMarkup, newDSplit, parseIon, readoutLines, resetDSplitLevels, sanitizeDSplit, setDSplit, spinMatters, splitLevels, type DSplit } from '../src/design/dsplit';
+import { StylePanel } from '../src/ui/style-panel';
+import type { Selection } from '../src/editor/editor';
+import { Editor } from '../src/editor/editor';
+import { Renderer } from '../src/render/renderer';
+import { soundContents } from '../src/io/clip-check';
 import { drawMo, moCaptionRoles, moPlain, withLevel, type MoSpec } from '../src/design/mo';
 import { Doc } from '../src/model';
 import { ACS_1996 } from '../src/style';
@@ -249,5 +254,204 @@ describe('saving', () => {
     const f = [...back.shapes.values()].find((s) => s.plate?.mo)!;
     expect(f.plate!.mo!.dsplit).toBeUndefined();
     expect(f.name).toBe('MO diagram');
+  });
+});
+
+// ---------------------------------------------------------------- fixes from review
+// The chemistry values below are from MFT as cited; where a test only checks that what was drawn or
+// typed is kept (levels, titles, file values), the settings are invented and say so.
+
+/** A diagram on a page, with an editor and a Side Panel showing it (the panel's restyle as the app's: one edit). */
+function onPage(start: MoSpec = newDSplit()) {
+  window.requestAnimationFrame = () => 0;
+  const doc = new Doc();
+  doc.style = { ...ACS_1996 };
+  const d = { ...newDSplitPlate(doc.style.bondLength), mo: start };
+  let id = 0;
+  doc.edit('d-Orbital Splitting', () => { id = putPlate(doc, POINTS, d, { x: 100, y: 100 }); });
+  const section = document.createElement('section'), body = document.createElement('div');
+  section.append(Object.assign(document.createElement('h2'), { textContent: 'Style' }));
+  const sel = (): Selection => ({ atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set([id]) }) as Selection;
+  const p = new StylePanel(section, body, doc, sel, () => p.refresh());
+  p.plate = {
+    edit() { /* not used */ },
+    restyle: (sid, patch) => { const s = doc.shapes.get(sid)!; doc.edit('Edit d-Orbital Splitting', () => { putPlate(doc, POINTS, { ...s.plate!, ...patch }, { x: s.x1, y: s.y1 }, sid); }); },
+  };
+  p.refresh(true);
+  const mo = () => doc.shapes.get(id)!.plate!.mo!;
+  return { doc, id, p, body, mo };
+}
+const idx = (spec: MoSpec, name: string) => spec.levels.findIndex((l) => moPlain(l.label) === name);
+
+describe('a new metal ion keeps what was changed by hand', () => {
+  it('keeps dragged, renamed and added levels and edited titles; sets d, the shell name and an automatic title', () => {
+    // (the drag, the names and the titles are invented; the d counts are MFT Table 10.6, p. 374, Fe²⁺ d⁶,
+    // and group less charge, section 2.2.4, for Rh³⁺: group 9 − 3 = d⁶)
+    let spec = newDSplit();
+    spec = withLevel(spec, idx(spec, 'eg'), { e: 0.9 });
+    spec = withLevel(spec, idx(spec, 't2g'), { label: 'T' });
+    spec = { ...spec, levels: [...spec.levels, { column: 'right', label: 'extra', e: 0.5, n: 1, electrons: 0 }], titles: [spec.titles[0], '[Co(NH_{3})_{6}]^{3+}', ''] };
+    const fe = setDSplit(spec, { ion: 'Fe2+' });
+    expect(fe.dsplit!.d).toBe(6);
+    expect(fe.levels.find((l) => moPlain(l.label) === 'eg')!.e).toBe(0.9);
+    expect(fe.levels.some((l) => l.label === 'T')).toBe(true);
+    expect(fe.levels.some((l) => l.label === 'extra')).toBe(true);
+    expect(fe.titles).toEqual(['Fe^{2+} free ion', '[Co(NH_{3})_{6}]^{3+}', '']);
+    // a title typed over stays; the free ion's level becomes 4d, and the split levels made from it follow
+    const rh = setDSplit({ ...fe, titles: ['Mine', fe.titles[1], ''] }, { ion: 'Rh3+' });
+    expect(rh.titles[0]).toBe('Mine');
+    expect(rh.levels.find((l) => l.column === 'left')!.label).toBe('4d');
+    expect(rh.levels.filter((l) => l.column === 'middle').every((l) => l.from === '4d')).toBe(true);
+    expect(rh.dsplit!.d).toBe(6);
+    // text that is no ion: the levels are as they were
+    const odd = setDSplit(rh, { ion: 'hello' });
+    expect(odd.levels.map((l) => [l.label, l.e])).toEqual(rh.levels.map((l) => [l.label, l.e]));
+    // only a new geometry draws the levels again
+    expect(setDSplit(rh, { geometry: 'td' }).levels.some((l) => l.label === 'T')).toBe(false);
+  });
+});
+
+describe('the spin buttons and clicked electrons', () => {
+  it('lights the spin the drawn electrons have; a press always fills again', () => {
+    // MFT Table 10.7, p. 375: d⁶ weak field (high spin) t2g⁴eg², strong field (low spin) t2g⁶
+    let spec = newDSplit();
+    spec = withLevel(spec, idx(spec, 't2g'), { electrons: 4 });
+    spec = followDrawn(withLevel(spec, idx(spec, 'eg'), { electrons: 2 }));
+    expect(spec.dsplit!.spin).toBe('low');
+    expect(dReadout(spec).spin).toBe('high');
+    const { body, mo, doc } = onPage(spec);
+    const btn = (t: string) => [...body.querySelectorAll<HTMLButtonElement>('.seg button')].find((b) => b.textContent === t)!;
+    expect(btn('High Spin').getAttribute('aria-checked')).toBe('true');
+    expect(btn('Low Spin').getAttribute('aria-checked')).toBe('false');
+    const before = doc.undoLabel;
+    btn('Low Spin').click();
+    expect(config(mo())).toBe('t2g6 eg0');
+    doc.undo();
+    expect(config(mo())).toBe('t2g4 eg2');
+    expect(doc.undoLabel).toBe(before);
+    // and the spin already chosen refills too
+    expect(config(setDSplit(spec, { spin: 'low' }))).toBe('t2g6 eg0');
+  });
+
+  it('lights neither when the drawn filling is neither', () => {
+    // t2g⁴eg¹ is neither d⁵ arrangement of MFT Table 10.7 (t2g³eg² or t2g⁵)
+    let spec = setDSplit(newDSplit(), { spin: 'high', d: 5 });
+    spec = followDrawn(withLevel(spec, idx(spec, 't2g'), { electrons: 4 }));
+    spec = followDrawn(withLevel(spec, idx(spec, 'eg'), { electrons: 1 }));
+    const { body } = onPage(spec);
+    expect([...body.querySelectorAll('.seg button')].map((b) => b.getAttribute('aria-checked'))).toEqual(['false', 'false']);
+  });
+
+  it('a click on a split level sets d Electrons and the free ion in the same undo step', () => {
+    // (Co³⁺ low spin, MFT Table 10.7: t2g⁶; one more clicked into eg makes 7 drawn)
+    const { doc, id, mo } = onPage();
+    const scene = document.createElement('canvas'), overlay = document.createElement('canvas'), host = document.createElement('div');
+    host.append(scene, overlay); document.body.append(host);
+    const ed = new Editor(doc, new Renderer(scene, overlay), host);
+    ed.paused = true;
+    Object.assign(ed, { measure: () => POINTS, fullMeasure: () => POINTS });
+    (ed as unknown as { clickMoLevel(f: number, l: number): void }).clickMoLevel(id, idx(mo(), 'eg'));
+    expect(mo().dsplit!.d).toBe(7);
+    expect(mo().levels.find((l) => l.column === 'left')!.electrons).toBe(7);
+    expect(config(mo())).toBe('t2g6 eg1');
+    doc.undo();
+    expect(mo().dsplit!.d).toBe(6);
+    expect(mo().levels.find((l) => l.column === 'left')!.electrons).toBe(6);
+    host.remove();
+  });
+});
+
+describe('LFSE after a drag', () => {
+  it('is not given when the split levels are drawn out of the order of their energies', () => {
+    // (eg dragged below t2g: invented; the d⁴ high-spin LFSE of MFT Table 10.7 is −3/5 Δo only in the book's order)
+    const spec = setDSplit(newDSplit(), { d: 4, spin: 'high' });
+    expect(dReadout(spec).lfse).toBe(-3);
+    const dragged = setDSplit(withLevel(spec, idx(spec, 'eg'), { e: 0.05 }), { d: 4 });
+    expect(dReadout(dragged).lfse).toBeNull();
+    expect(readoutLines(dragged)[1].startsWith('μ_{S}')).toBe(true);
+    const { body } = onPage(dragged);
+    expect([...body.querySelectorAll('.style-row > span')].some((s) => s.firstChild?.textContent === 'LFSE')).toBe(false);
+  });
+});
+
+describe('ion parsing', () => {
+  it('reads lower case, repeated signs, Roman numerals to IX and negative ones', () => {
+    expect(parseIon('fe3+')).toEqual({ symbol: 'Fe', z: 26, charge: 3 });
+    expect(parseIon('Fe+++')).toEqual({ symbol: 'Fe', z: 26, charge: 3 });
+    expect(parseIon('Ir(IX)')).toEqual({ symbol: 'Ir', z: 77, charge: 9 });
+    expect(parseIon('Fe(-II)')).toEqual({ symbol: 'Fe', z: 26, charge: -2 });
+    expect(parseIon('Fe(−II)')).toEqual({ symbol: 'Fe', z: 26, charge: -2 });
+    // d count: group less the charge (MFT section 2.2.4); Fe³⁺ d⁵ (Table 10.6, p. 374)
+    expect(ionD('fe3+')).toBe(5);
+  });
+
+  it('leaves d Electrons alone, and marks the field, when no count from 0 to 10 is read', () => {
+    // group less charge: Zn 12, Cu 11, Mn 7 − 8 = −1, Fe 8 + 3 = 11, all outside 0 to 10
+    for (const t of ['Zn', 'Cu', 'Mn8+', 'Fe3-', 'hello']) {
+      expect(ionD(t), t).toBeNull();
+      expect(setDSplit(newDSplit(), { ion: t }).dsplit!.d, t).toBe(6);
+    }
+    const { body } = onPage(setDSplit(newDSplit(), { ion: 'Zn' }));
+    const inp = [...body.querySelectorAll('.style-row')].find((r) => r.firstElementChild?.firstChild?.textContent === 'Metal Ion')!.querySelector('input')!;
+    expect(inp.classList.contains('unread')).toBe(true);
+    expect(inp.title).toContain('Not read');
+    const ok = onPage().body;
+    expect(ok.querySelector('input.unread')).toBeNull();
+  });
+});
+
+describe('Reset Levels', () => {
+  it('puts the split levels back, keeping the ion, d count and spin, in one undo step', () => {
+    // (the drag, rename and added level are invented; the default octahedral levels are MFT Figure 10.11)
+    let spec = setDSplit(newDSplit(), { ion: 'Fe3+', spin: 'high' });
+    spec = withLevel(spec, idx(spec, 'eg'), { e: 0.1 });
+    spec = withLevel(spec, idx(spec, 't2g'), { label: 'T' });
+    spec = { ...spec, levels: [...spec.levels, { column: 'middle', label: 'x', e: 0.8, n: 1, electrons: 0 }] };
+    const back = resetDSplitLevels(spec);
+    expect(splitLevels(back).map((l) => [moPlain(l.label), l.e, l.n])).toEqual(D_GEOMETRIES[0].sets.map((s) => [moPlain(s.label), s.at, s.n]));
+    expect(back.dsplit).toEqual(spec.dsplit);
+    // Fe³⁺ d⁵ high spin: t2g³eg² (MFT Table 10.7)
+    expect(config(back)).toBe('t2g3 eg2');
+    const { body, mo, doc } = onPage(spec);
+    const btn = [...body.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Reset Levels')!;
+    expect(btn.title).toBeTruthy();
+    btn.click();
+    expect(config(mo())).toBe('t2g3 eg2');
+    doc.undo();
+    expect(mo().levels.some((l) => l.label === 'T')).toBe(true);
+  });
+});
+
+describe('dsplit read from a file or the clipboard', () => {
+  it('falls back to defaults for anything unsound, and the diagram still draws', () => {
+    // (all invented values)
+    const bad = { geometry: 'zz', ion: {}, d: 99, spin: 'sideways', label: 5, arrow: 'yes', readouts: 1, barycenter: 'x' };
+    const base = newDSplit().dsplit!;
+    expect(sanitizeDSplit(bad)).toEqual({ geometry: base.geometry, ion: base.ion, d: base.d, spin: base.spin, label: 'Δ_{o}', arrow: base.arrow, readouts: base.readouts });
+    expect(sanitizeDSplit({ ...base, d: 2.5, barycenter: true })).toEqual({ ...base, barycenter: true });
+    expect(sanitizeDSplit('x')).toBeNull();
+  });
+
+  it('CDXML: a label that is not text is replaced and the diagram opens', () => {
+    const { doc } = onPage();
+    let file = writeCdxml(doc, { name: 't.cdxml' });
+    const before = file;
+    // (the plate is JSON inside the shape's JSON tag: its quotes written \&quot; and Δ as \u0394)
+    file = file.replace('\\&quot;label\\&quot;:\\&quot;\\u0394_{o}\\&quot;,\\&quot;arrow', '\\&quot;label\\&quot;:5,\\&quot;arrow');
+    expect(file).not.toBe(before);
+    const back = readCdxml(file).doc;
+    const f = [...back.shapes.values()].find((s) => s.plate?.mo)!;
+    expect(f.plate!.mo!.dsplit!.label).toBe('Δ_{o}');
+    const d = new Doc();
+    d.style = { ...ACS_1996 };
+    expect(() => d.edit('Draw', () => { drawMo(d, POINTS, f.plate!.mo!, { x: 0, y: 0 }, 300, 220); })).not.toThrow();
+  });
+
+  it('the clipboard: an unsound dsplit is made sound', () => {
+    const { doc, id } = onPage();
+    const s = JSON.parse(JSON.stringify(doc.shapes.get(id)));
+    s.plate.mo.dsplit = { geometry: 'oh', ion: 'Co^{3+}', d: 6, spin: 'low', label: { x: 1 }, arrow: true, readouts: true };
+    const got = soundContents({ shapes: [s] })!;
+    expect(got.shapes[0].plate!.mo!.dsplit!.label).toBe('Δ_{o}');
   });
 });

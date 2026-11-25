@@ -78,6 +78,7 @@ import { SMART_LAYOUTS, layoutFits, addBranch, addLoop, arrangeSmart, branchSpot
 import type { SmartFormat } from '../chem/smart-format';
 import { plateFrameOf, plateFromBox, putPlate, refitPlates, rfAtY, setMarkAt, tlcSpotAt, type PlateData } from '../design/plates';
 import { drawMo, electronsFree, hund, moCaptionRoles, moColumnAt, moColumns, moY, moEnergyAt, moLevelAt, newLevel, nextElectrons, toRelative, withLevel, type MoColumn, type MoSpec } from '../design/mo';
+import { followDrawn } from '../design/dsplit';
 import { drawEyeMark, newmanCentre, newmanFrameOf, putMark, putNewman, refitNewman, type NewmanData } from '../design/newman';
 import { putTorsion, refitTorsion, torsionFrameOf, type TorsionData } from '../design/torsion';
 import {
@@ -86,7 +87,7 @@ import {
 import { attachWhereItIs, placeAttached, refitAttached } from './attached';
 import { fullLook, lookCaption, USUAL } from './tied-look';
 import { frameAround, frameBox, frameMembers, refitFrames, defaultPad, thingsInside } from './frames';
-import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, focusOf as focusOfUnit, clearOffset, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
+import { atomsBox, Align, Measure, POINTS, Snapshot, type TurnText, units, joinGroups, focusOf as focusOfUnit, clearOffset, spotBeside, alignOffsets, distributeOffsets, moveUnit, selectionBox, snapshot, transform, withFrameContents, rotation, mirrorX, mirrorY } from './arrange';
 import { elementNumber, hasImplicitH, implicitHydrogens, SYMBOLS } from '../chem/elements';
 import { anyMarks, isMarkToggle, readMark, styleOfMark, toggleMarks, toggledMark, writeMark, type Mark, type MarkToggle } from '../chem/label-marks';
 import { tokenize, addNicknames, isBuiltInNickname, labelGraph, labelOverValent, labelPieces, labelLook, styleLabel, CAP, SUB_SCALE } from '../chem/labels';
@@ -4567,7 +4568,9 @@ export class Editor {
     const mo = this.doc.shapes.get(frame)?.plate?.mo, l = mo?.levels[level];
     if (!mo || !l) return;
     if (!electronsFree(l)) { this.onNotice(mo.dsplit ? 'The free ion\'s electrons follow d Electrons in the Side Panel.' : mo.molecule ? 'These electrons are set by the molecule. Choose Custom for Molecule in the Side Panel to change them.' : 'An atom\'s electrons are set by the atom. Choose Custom for this side in the Side Panel to change them.'); this.changed(); return; }
-    this.setMo(frame, withLevel(mo, level, { electrons: nextElectrons(l) }), l.electrons >= 2 * hund(l.n, 0).length ? 'Remove Electrons' : 'Add Electron');
+    const next = withLevel(mo, level, { electrons: nextElectrons(l) });
+    // (a d-orbital splitting diagram's d Electrons and free ion follow what is drawn in the split levels, in the same step)
+    this.setMo(frame, mo.dsplit && l.column === 'middle' ? followDrawn(next) : next, l.electrons >= 2 * hund(l.n, 0).length ? 'Remove Electrons' : 'Add Electron');
   }
 
   /** Right-click ▸ Add Level: an empty level in the column and at the height the menu was opened. */
@@ -6363,6 +6366,26 @@ export class Editor {
     const boxes = units(doc, others, m).map((u) => u.box);
     const t = clearOffset(b, boxes, doc.style.bondLength, page);
     if (t.x || t.y) this.moveSelection(t.x, t.y);
+  }
+
+  /**
+   * Where a new object w × h goes beside the structure holding atom `atom` (Electron Count's
+   * Insert as Table): right of the structure's drawn box, labels included, else below it, clear
+   * of everything else and on the page when there is one (spotBeside). Its top-left corner.
+   */
+  spotBesideStructure(atom: number, w: number, h: number, page?: { w: number; h: number }): Vec | null {
+    const doc = this.doc, m = this.measure();
+    if (!doc.atoms.has(atom)) return null;
+    const mine = emptySel();
+    for (const id of doc.fragmentOf(atom)) { mine.atoms.add(id); for (const b of doc.adj.get(id) ?? []) mine.bonds.add(b); }
+    const b = selectionBox(doc, mine, m);
+    if (!b) return null;
+    const others = emptySel();
+    for (const id of doc.atoms.keys()) if (!mine.atoms.has(id)) others.atoms.add(id);
+    for (const id of doc.captions.keys()) others.captions.add(id);
+    for (const id of doc.arrows.keys()) others.arrows.add(id);
+    for (const id of doc.shapes.keys()) others.shapes.add(id);
+    return spotBeside(b, w, h, units(doc, others, m).map((u) => u.box), doc.style.bondLength, page);
   }
 
   /**

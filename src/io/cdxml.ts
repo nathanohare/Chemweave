@@ -8,6 +8,8 @@ import { tint } from '../colours';
 import { pathId, freeformId } from '../design/geo';
 import { parseGuides } from '../editor/guides';
 import { fillFrameMembers, frameFromTag } from '../editor/frames';
+import { sanitizeEcount } from '../chem/ecount-settings';
+import { soundPlateDSplit } from '../design/dsplit';
 import { ATTACH_TAG, CHEM_TAG, IGNORE_TAG, RESULTS_TAG, attachFromTag, attachedNode, fillAttachments } from '../editor/attached';
 import { readSpecies } from '../chem/species';
 import { highlightStyleFromTag } from '../render/highlight';
@@ -2066,6 +2068,8 @@ function geoFromTag(saved: Partial<Shape> & Record<string, unknown>): (Partial<S
     if (k === 'poly' && !(Array.isArray(v) && v.every((p) => p && typeof p.x === 'number' && typeof p.y === 'number'))) continue;
     out[k] = v;
   }
+  // a d-orbital splitting diagram's choices made sound (a label that isn't text would stop it drawing)
+  if (out.plate) out.plate = soundPlateDSplit(out.plate);
   return out as Partial<Shape> & Record<string, unknown>;
 }
 /** A reaction arrow's animation settings (MorphStep as JSON, atoms by the file's node ids). */
@@ -2075,24 +2079,12 @@ export const FOCAL_TAG = 'Chem Illustrator focal point';
 /** A metal's electron count as set by hand (Atom.ecount, as JSON). */
 export const ECOUNT_TAG = 'Chem Illustrator electron count';
 
-/** Atom.ecount read back from its tag: only the fields it has, each of its own kind; null when nothing fits. */
+/** Atom.ecount read back from its tag: only what is sound (sanitizeEcount: whole numbers in range, type codes that read); null when nothing is. */
 export function readEcount(text: string | null | undefined): import('../model').ElectronCountSettings | null {
   if (!text) return null;
   let v: unknown;
   try { v = JSON.parse(text); } catch { return null; }
-  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
-  const o = v as Record<string, unknown>;
-  const out: import('../model').ElectronCountSettings = {};
-  const int = (x: unknown) => typeof x === 'number' && Number.isInteger(x) && Math.abs(x) <= 99;
-  if (o.types && typeof o.types === 'object' && !Array.isArray(o.types)) {
-    const types: Record<string, string> = {};
-    for (const [k, t] of Object.entries(o.types as Record<string, unknown>)) if (k !== '__proto__' && typeof t === 'string' && /^[LXZ\d]{1,8}$/.test(t)) types[k] = t;
-    if (Object.keys(types).length) out.types = types;
-  }
-  if (int(o.ox)) out.ox = o.ox as number;
-  if (int(o.charge)) out.charge = o.charge as number;
-  if (int(o.expect)) out.expect = o.expect as number;
-  return Object.keys(out).length ? out : null;
+  return sanitizeEcount(v);
 }
 /** An atom's atom-atom map number across a reaction (Atom.mapNo). */
 export const MAP_TAG = 'Chem Illustrator map';

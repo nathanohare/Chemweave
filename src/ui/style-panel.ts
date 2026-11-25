@@ -19,7 +19,7 @@ import { arialWidth } from '../text-metrics';
 import { Selection } from '../editor/editor';
 import { freeformPoints } from '../design/geo';
 import { electronLook, fillElectrons, fillProblems, fromChoices, fromOf, fromValue, MO_ATOMS, MO_CUSTOM, MO_MOLECULES, MO_TWO_ATOMS, moCounts, moMolecule, moParts, moPeriod, moPlain, parseMarkup, moSides, setElectrons, setMolecule, setSides, sources, toRelative, withLevel, type MoLevel, type MoSpec } from '../design/mo';
-import { D_GEOMETRIES, deltaMarkup, dGeometry, dReadout, lfseMarkup, setDSplit, spinMatters, splitLevels, type DGeometry, type DSplit } from '../design/dsplit';
+import { D_GEOMETRIES, deltaMarkup, dGeometry, dReadout, ionD, lfseMarkup, resetDSplitLevels, setDSplit, spinMatters, splitLevels, type DGeometry, type DSplit } from '../design/dsplit';
 import { ORBITAL_KIND_NAMES, ORBITAL_LOOK_NAMES, orbitalsAmong, readOrbital, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from '../chem/orbitals';
 import { isSmoothPath, reshapeFreeform } from '../design/freeform';
 import { DEG, normDegrees, mul, type Vec } from '../geom';
@@ -49,7 +49,8 @@ import { straightenAt } from '../chem/chemgeom';
 import type { EnergyData } from '../design/energy';
 import { TLC_LOOKS, GEL_LOOKS, LOCK_SPOTS_INFO, type PlateData } from '../design/plates';
 import { DIAGRAM_COLOURS, DIAGRAM_LAYOUTS, type DiagramData } from '../design/diagrams';
-import { LIGAND_TYPES, countRows, countSummary, ligandText, roman, selectedComplex, signed, sup, typeText, type MetalCount } from '../chem/electrons';
+import { LIGAND_TYPES, countRows, countSummary, countsDiffer, ligandText, roman, selectedComplex, signed, sup, typeKey, typeText, type MetalCount } from '../chem/electrons';
+import { ECOUNT_RANGE } from '../chem/ecount-settings';
 import type { ElectronCountSettings } from '../model';
 
 /** What the table controls need from the editor. */
@@ -892,13 +893,24 @@ export class StylePanel {
     this.select('Geometry', geos, ds.geometry, (v) => change({ geometry: v }));
     if (ds.geometry === 'sq') this.tipOnLast('The order of the lower levels depends on the ligands. This is a common order: dx²−y² far above dz², then dxz and dyz, then dxy lowest. Drag the levels to change it. No LFSE is shown for square planar.');
     this.text('Metal Ion', supText(ds.ion), 'Co³⁺', (v) => change({ ion: v }));
-    this.tipOnLast('Type the ion with its charge, such as Co³⁺, Fe²⁺ or Ni(II); a charge typed on the line is read too. Its group and charge set d Electrons, and its row the d shell (3d, 4d or 5d).');
+    this.tipOnLast('Type the ion with its charge, such as Co³⁺, Fe²⁺ or Ni(II); a charge typed on the line, or one sign for each charge, is read too. Its group and charge set d Electrons, and its row the d shell (3d, 4d or 5d).');
+    // text that gives no d count (not a d-block ion, or one with fewer than 0 or more than 10 d electrons): a quiet mark on the field
+    if (ionD(ds.ion) === null) {
+      const inp = this.body.lastElementChild?.querySelector('input');
+      if (inp) {
+        inp.classList.add('unread');
+        inp.setAttribute('aria-invalid', 'true');
+        inp.title = 'Not read as a d-block ion with 0 to 10 d electrons, so d Electrons was left as it was';
+      }
+    }
     const counts: Opt<string>[] = Array.from({ length: 11 }, (_, k): Opt<string> => [String(k), `d${supText(`^{${k}}`)}`]);
     this.select('d Electrons', counts, String(ds.d), (v) => change({ d: Number(v) }));
     this.tipOnLast('Set automatically from the metal ion; choose another count to change it by hand.');
     // high or low spin: two buttons, disabled with the reason where both fill the levels alike
     const split = splitLevels(mo);
     const matters = spinMatters(split, ds.d);
+    // (the button lit is the way the electrons drawn are put in: neither when they are put in neither way)
+    const drawnSpin = dReadout(mo).spin;
     const seg = document.createElement('div');
     seg.className = 'seg';
     seg.setAttribute('role', 'radiogroup');
@@ -908,9 +920,10 @@ export class StylePanel {
       b.type = 'button';
       b.textContent = text;
       b.setAttribute('role', 'radio');
-      b.setAttribute('aria-checked', String(matters && ds.spin === v));
+      b.setAttribute('aria-checked', String(matters && drawnSpin === v));
       b.disabled = !matters;
-      b.addEventListener('click', () => { if (v !== ds.spin) change({ spin: v }); });
+      // (a press always fills the levels again, the spin already chosen too)
+      b.addEventListener('click', () => change({ spin: v }));
       seg.append(b);
     }
     if (!matters) seg.title = `High and low spin fill these levels the same way for d${supText(`^{${ds.d}}`)}`;
@@ -938,6 +951,15 @@ export class StylePanel {
     this.check('Barycenter Line', !!ds.barycenter, (v) => change({ barycenter: v || undefined }), 'A dotted line across the split levels at their average energy, weighted by the number of orbitals');
     this.check('White Background Behind Names', !!mo.labelBack, (v) => set({ ...mo, labelBack: v ? 'white' : undefined }));
     this.moLineRows(sh, d, mo);
+    const buttons = document.createElement('div');
+    buttons.className = 'style-buttons';
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset Levels';
+    reset.title = 'Put the split levels back at the geometry\'s heights, names and number, filled again; the ion, d Electrons and spin stay';
+    reset.addEventListener('click', () => set(resetDSplitLevels(mo)));
+    buttons.append(reset);
+    this.body.append(buttons);
   }
 
   /** An "i" with `tip` beside the label of the row just added. */
@@ -1816,6 +1838,8 @@ export class StylePanel {
     const own = c.settings.types ?? {};
     for (const r of c.ligands) {
       let type: string | HTMLElement = typeText(r.type);
+      // (set by hand by its name and the type worked out for it: a bridging Cl's X and L rows are apart)
+      const key = typeKey(r.name, r.auto);
       if (!r.mm) {
         const sel = document.createElement('select');
         sel.setAttribute('aria-label', `Type of ${r.name}`);
@@ -1823,17 +1847,17 @@ export class StylePanel {
         for (const code of codes) {
           const o = document.createElement('option');
           o.value = code;
-          o.textContent = code === r.auto && own[r.name] ? `${typeText(code)} (auto)` : typeText(code);
+          o.textContent = code === r.auto && own[key] ? `${typeText(code)} (auto)` : typeText(code);
           sel.append(o);
         }
         sel.value = r.type;
-        if (own[r.name]) sel.classList.add('own');
-        sel.title = own[r.name] ? `Set by hand (automatic: ${typeText(r.auto)})` : 'Calculated from the drawing; choose another type to change it';
+        if (own[key]) sel.classList.add('own');
+        sel.title = own[key] ? `Set by hand (automatic: ${typeText(r.auto)})` : 'Calculated from the drawing; choose another type to change it';
         sel.addEventListener('change', () => set('Ligand Type', (now) => {
           const types = { ...now.types };
           // choosing the automatic type again forgets the one set by hand
-          if (sel.value === r.auto) delete types[r.name];
-          else types[r.name] = sel.value;
+          if (sel.value === r.auto) delete types[key];
+          else types[key] = sel.value;
           return { ...now, types };
         }));
         type = sel;
@@ -1843,13 +1867,22 @@ export class StylePanel {
     if (c.charge) tr([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
     tr(['Total', '', String(c.electrons), String(c.ionicTotal)], 'ec-total');
     box.append(table);
+    // an oxidation state set by hand that the ligand types don't give: the two totals differ, and say why
+    const differ = countsDiffer(c);
+    if (differ) {
+      const why = document.createElement('p');
+      why.className = 'ec-status off ec-differ';
+      why.textContent = differ;
+      box.append(why);
+    }
     this.body.append(box);
 
     // the oxidation state: automatic (from the X ligands and the charge) or chosen
     const ox = document.createElement('select');
     const oxOpt = (v: string, text: string) => { const o = document.createElement('option'); o.value = v; o.textContent = text; ox.append(o); };
     oxOpt('auto', `Auto (${signed(c.autoOxidation)})`);
-    const lo = Math.min(-3, c.oxidation), hi = Math.max(8, c.oxidation);
+    // (−4 up to the group number, at most +9: no fewer than no d electrons)
+    const lo = ECOUNT_RANGE.ox[0], hi = Math.min(ECOUNT_RANGE.ox[1], c.group);
     for (let v = lo; v <= hi; v++) oxOpt(String(v), `${signed(v)} (${roman(v)})`);
     ox.value = c.settings.ox === undefined ? 'auto' : String(c.settings.ox);
     ox.addEventListener('change', () => set('Oxidation State', (now) => ({ ...now, ox: ox.value === 'auto' ? undefined : Number(ox.value) })));
@@ -1909,7 +1942,7 @@ export class StylePanel {
       n.focus();
       n.select();
     });
-    this.infoRow('Expected Count', holder, 'Automatic: 18 (the 18-electron rule), or 16 for a d⁸ metal of groups 9 and 10 with four ligands, which is usually square planar (Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., section 13.3). Many complexes have other counts; choose or type the one you expect.');
+    this.infoRow('Expected Count', holder, 'Automatic: 18 (the 18-electron rule), or 16 for a d⁸ metal of groups 9 to 11 with four ligands, which is usually square planar (Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., sections 13.3 and 10.6). Many complexes have other counts; choose or type the one you expect.');
 
     const buttons = document.createElement('div');
     buttons.className = 'style-buttons';
@@ -1922,7 +1955,8 @@ export class StylePanel {
     const reset = document.createElement('button');
     reset.type = 'button';
     reset.textContent = 'Reset Types';
-    const anyOwn = Object.keys(own).length > 0;
+    // (only types that still match a ligand count: one kept for a ligand since deleted does nothing)
+    const anyOwn = c.ligands.some((r) => !r.mm && own[typeKey(r.name, r.auto)] !== undefined);
     reset.disabled = !anyOwn;
     reset.title = anyOwn ? 'Use the ligand types calculated from the drawing again' : 'Every ligand type is already the automatic one';
     reset.addEventListener('click', () => set('Reset Types', (now) => ({ ...now, types: undefined })));

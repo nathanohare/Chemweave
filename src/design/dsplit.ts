@@ -65,23 +65,31 @@ export const D_GEOMETRIES: DGeo[] = [
 export const dGeometry = (id: DGeometry | string | undefined): DGeo => D_GEOMETRIES.find((g) => g.id === id) ?? D_GEOMETRIES[0];
 
 const SUP: Record<string, string> = { '⁰': '0', '¹': '1', '²': '2', '³': '3', '⁴': '4', '⁵': '5', '⁶': '6', '⁷': '7', '⁸': '8', '⁹': '9', '⁺': '+', '⁻': '-', '−': '-' };
-const ROMAN: Record<string, number> = { 0: 0, I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8 };
+const ROMAN: Record<string, number> = { 0: 0, I: 1, II: 2, III: 3, IV: 4, V: 5, VI: 6, VII: 7, VIII: 8, IX: 9 };
 
-/** A metal ion as typed: Co3+, Co^{3+}, Co³⁺, Co+3, Co(III), Fe2+, Cu+, Ni (no charge). Null: not an element and a charge. */
+/**
+ * A metal ion as typed: Co3+, Co^{3+}, Co³⁺, Co+3, Co(III), Fe(−II), Fe2+, Fe+++, fe3+, Cu+, Ni
+ * (no charge). The symbol may be typed in lower case. Null: not an element and a charge.
+ */
 export function parseIon(text: string): { symbol: string; z: number; charge: number } | null {
   const t = [...text].map((c) => SUP[c] ?? c).join('').replace(/[\s^{}_]/g, '');
-  let m = /^([A-Z][a-z]?)\(([0IVX]+)\)$/.exec(t);
-  let symbol: string, charge: number;
+  const el = '([A-Za-z][a-z]?)';
+  let m = new RegExp(`^${el}\\(([+-]?)([0IVX]+)\\)$`).exec(t);
+  let sym: string, charge: number;
   if (m) {
-    if (!(m[2] in ROMAN)) return null;
-    symbol = m[1]; charge = ROMAN[m[2]];
-  } else if ((m = /^([A-Z][a-z]?)(\d*)([+-])$/.exec(t))) {
-    symbol = m[1]; charge = (m[2] ? Number(m[2]) : 1) * (m[3] === '-' ? -1 : 1);
-  } else if ((m = /^([A-Z][a-z]?)([+-])(\d+)$/.exec(t))) {
-    symbol = m[1]; charge = Number(m[3]) * (m[2] === '-' ? -1 : 1);
-  } else if ((m = /^([A-Z][a-z]?)$/.exec(t))) {
-    symbol = m[1]; charge = 0;
+    if (!(m[3] in ROMAN)) return null;
+    sym = m[1]; charge = ROMAN[m[3]] * (m[2] === '-' ? -1 : 1);
+  } else if ((m = new RegExp(`^${el}(\\d+)([+-])$`).exec(t))) {
+    sym = m[1]; charge = Number(m[2]) * (m[3] === '-' ? -1 : 1);
+  } else if ((m = new RegExp(`^${el}(\\++|-+)$`).exec(t))) {
+    // one sign for each charge: Fe+++
+    sym = m[1]; charge = m[2].length * (m[2][0] === '-' ? -1 : 1);
+  } else if ((m = new RegExp(`^${el}([+-])(\\d+)$`).exec(t))) {
+    sym = m[1]; charge = Number(m[3]) * (m[2] === '-' ? -1 : 1);
+  } else if ((m = new RegExp(`^${el}$`).exec(t))) {
+    sym = m[1]; charge = 0;
   } else return null;
+  const symbol = sym[0].toUpperCase() + sym.slice(1).toLowerCase();
   const z = elementNumber(symbol);
   if (!z || SYMBOLS[z] !== symbol) return null;
   return { symbol, z, charge };
@@ -108,6 +116,12 @@ export function dCount(z: number, charge: number): number | null {
 export function dShell(z: number): string | null {
   const p = tablePosition(z);
   return p && p.row >= 4 && p.row <= 6 && p.col >= 3 && p.col <= 12 ? `${p.row - 1}d` : null;
+}
+
+/** The d electrons a typed ion gives, or null when it gives none (not a d-block ion, or a count outside 0 to 10): d Electrons is then left as it is. */
+export function ionD(text: string): number | null {
+  const ion = parseIon(text);
+  return ion ? dCount(ion.z, ion.charge) : null;
 }
 
 /** Electrons in each of a level's orbitals, by Hund's rule, counted as unpaired. */
@@ -160,17 +174,20 @@ export function fromDSplit(ds: DSplit, shell = '3d'): MoSpec {
 export const newDSplit = (): MoSpec => fromDSplit({ geometry: 'oh', ion: 'Co^{3+}', d: 6, spin: 'low', label: 'Δ_{o}', arrow: true, readouts: true });
 
 /**
- * The diagram with its choices changed, as one change. A new geometry or ion draws the levels
- * again (and the titles); a new d count or spin fills the levels that are there again, where they
- * now are; the rest only changes the look. An ion that is a d-block ion sets the d count (unless
- * one is given too); other text is kept as typed and changes nothing else.
+ * The diagram with its choices changed, as one change. Only a new geometry draws the levels again
+ * (with the titles that are still automatic). A new ion sets the d count (when it is a d-block
+ * ion whose count is 0 to 10, and no count is given too), the free ion's level name (3d, 4d or 5d,
+ * while it is still one of those) and the first title (while it is still the automatic one), and
+ * fills the levels again; dragged, renamed and added levels stay. A new d count or a spin (even
+ * the one already chosen) fills the levels that are there again, where they now are; the rest
+ * only changes the look. Text that is no ion is kept as typed.
  */
 export function setDSplit(spec: MoSpec, patch: Partial<DSplit>): MoSpec {
   const was = spec.dsplit;
   if (!was) return spec;
   const next: DSplit = { ...was, ...patch };
+  const ion = patch.ion !== undefined ? parseIon(patch.ion) : null;
   if (patch.ion !== undefined) {
-    const ion = parseIon(patch.ion);
     next.ion = ion ? ionMarkup(ion) : patch.ion.trim();
     const d = ion ? dCount(ion.z, ion.charge) : null;
     if (patch.d === undefined && d !== null) next.d = d;
@@ -184,13 +201,53 @@ export function setDSplit(spec: MoSpec, patch: Partial<DSplit>): MoSpec {
     if (patch.label === undefined && was.label === dGeometry(was.geometry).delta) next.label = dGeometry(patch.geometry).delta;
   }
   next.d = Math.max(0, Math.min(10, Math.round(next.d)));
-  const { levels: _l, titles: _t, dsplit: _d, ...look } = spec;
-  if (next.geometry !== was.geometry || next.ion !== was.ion) {
+  const titles: MoSpec['titles'] = [...spec.titles];
+  if (next.ion !== was.ion && titles[0] === `${was.ion} free ion`) titles[0] = `${next.ion} free ion`;
+  if (next.geometry !== was.geometry) {
     const made = fromDSplit(next, freeIon(spec)?.label || '3d');
-    return { ...look, levels: made.levels, titles: made.titles, dsplit: made.dsplit };
+    if (titles[1] === dGeometry(was.geometry).name) titles[1] = made.titles[1];
+    return { ...spec, levels: made.levels, titles, dsplit: made.dsplit };
   }
-  if (next.d !== was.d || next.spin !== was.spin) return { ...spec, dsplit: next, levels: refill(spec.levels, next) };
-  return { ...spec, dsplit: next };
+  let levels = spec.levels;
+  if (next.ion !== was.ion) {
+    // the free ion's level named for the new ion's d shell, while it has an automatic name; the split levels made from it follow
+    const shell = ion && dShell(ion.z);
+    const left = freeIon(spec);
+    if (shell && left && /^[3-6]d$/.test(left.label.trim()) && left.label !== shell) {
+      const old = left.label;
+      levels = levels.map((l) => (l === left ? { ...l, label: shell } : l.from === old ? { ...l, from: shell } : l));
+    }
+  }
+  if (next.ion !== was.ion || next.d !== was.d || patch.spin !== undefined) return { ...spec, titles, dsplit: next, levels: refill(levels, next) };
+  return { ...spec, titles, dsplit: next };
+}
+
+/**
+ * Reset Levels: the split levels back as the geometry has them (their heights, names and how many),
+ * filled again; the ion, d count, spin, the free ion's level, levels in other columns and the
+ * titles stay.
+ */
+export function resetDSplitLevels(spec: MoSpec): MoSpec {
+  const ds = spec.dsplit;
+  if (!ds) return spec;
+  const left = freeIon(spec);
+  const made = fromDSplit(ds, left?.label || '3d');
+  const fromName = left?.label ?? made.levels[0].label;
+  const split = made.levels.filter((l) => l.column === 'middle').map((l) => ({ ...l, from: fromName }));
+  const levels = [...spec.levels.filter((l) => l.column !== 'middle'), ...split];
+  return { ...spec, levels: refill(levels, ds) };
+}
+
+/**
+ * After electrons are clicked on a split level: d Electrons becomes the number drawn (0 to 10)
+ * and the free ion's level holds as many, so the Side Panel, the free ion and the readout agree.
+ */
+export function followDrawn(spec: MoSpec): MoSpec {
+  const ds = spec.dsplit;
+  if (!ds) return spec;
+  const d = Math.max(0, Math.min(10, splitLevels(spec).reduce((t, l) => t + l.electrons, 0)));
+  const levels = spec.levels.map((l) => (l.column === 'left' && l.auto ? { ...l, electrons: Math.min(2 * l.n, d) } : l));
+  return { ...spec, levels, dsplit: { ...ds, d } };
 }
 
 /** The levels with the d electrons put in again: all on the free ion, and in the split levels in the order they are now drawn. */
@@ -210,7 +267,11 @@ export interface DReadout {
   config: string;
   electrons: number;
   unpaired: number;
-  /** The LFSE in fifths of the splitting (−12 for −12/5 Δo); null when a level has no energy in units of the splitting (square planar, or one added by hand). */
+  /**
+   * The LFSE in fifths of the splitting (−12 for −12/5 Δo); null when a level has no energy in
+   * units of the splitting (square planar, or one added by hand), or the levels are drawn in
+   * another order than those energies (one dragged past another).
+   */
   lfse: number | null;
   /** The spin-only moment, √(n(n + 2)) Bohr magnetons. */
   moment: number;
@@ -228,7 +289,9 @@ export function dReadout(spec: MoSpec): DReadout {
   const split = splitLevels(spec);
   const electrons = split.reduce((t, l) => t + l.electrons, 0);
   const unpaired = split.reduce((t, l) => t + singles(l.n, l.electrons), 0);
-  const lfse = split.length && split.every((l) => typeof l.lf === 'number') ? Math.round(split.reduce((t, l) => t + l.electrons * l.lf!, 0) * 5) || 0 : null;
+  // (levels dragged out of the order of their energies in units of the splitting have no LFSE)
+  const inOrder = split.every((l, i) => i === 0 || (split[i - 1].lf ?? 0) <= (l.lf ?? 0));
+  const lfse = split.length && inOrder && split.every((l) => typeof l.lf === 'number') ? Math.round(split.reduce((t, l) => t + l.electrons * l.lf!, 0) * 5) || 0 : null;
   const drawn = split.map((l) => l.electrons).join();
   const hs = dFill(split, electrons, 'high').join(), ls = dFill(split, electrons, 'low').join();
   const spin = hs === ls ? null : drawn === hs ? 'high' : drawn === ls ? 'low' : null;
@@ -254,4 +317,40 @@ export function deltaMarkup(text: string): string {
   if (/[_^\\]/.test(t)) return t;
   const m = /^Δ\s*([A-Za-z0-9]+)$/.exec(t);
   return m ? `Δ_{${m[1]}}` : t;
+}
+
+const GEO_IDS: readonly string[] = D_GEOMETRIES.map((g) => g.id);
+
+/**
+ * MoSpec.dsplit as read from a file or the clipboard, made sound: the geometry one of D_GEOMETRIES,
+ * d a whole number 0 to 10, spin high or low, the texts texts and the switches true or false.
+ * A field that isn't falls back to a new diagram's (or, for the barycenter, is left out); null
+ * when it is not an object at all.
+ */
+export function sanitizeDSplit(v: unknown): DSplit | null {
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const base = newDSplit().dsplit!;
+  const geometry = typeof o.geometry === 'string' && GEO_IDS.includes(o.geometry) ? (o.geometry as DGeometry) : base.geometry;
+  const out: DSplit = {
+    geometry,
+    ion: typeof o.ion === 'string' ? o.ion : base.ion,
+    d: typeof o.d === 'number' && Number.isInteger(o.d) && o.d >= 0 && o.d <= 10 ? o.d : base.d,
+    spin: o.spin === 'high' || o.spin === 'low' ? o.spin : base.spin,
+    label: typeof o.label === 'string' ? o.label : dGeometry(geometry).delta,
+    arrow: typeof o.arrow === 'boolean' ? o.arrow : base.arrow,
+    readouts: typeof o.readouts === 'boolean' ? o.readouts : base.readouts,
+  };
+  if (typeof o.barycenter === 'boolean') out.barycenter = o.barycenter;
+  return out;
+}
+
+/** A plate (PlateData) as read, with its MO diagram's dsplit made sound (sanitizeDSplit) or dropped. Anything else is returned as it is. */
+export function soundPlateDSplit<T>(plate: T): T {
+  if (!plate || typeof plate !== 'object') return plate;
+  const mo = (plate as { mo?: unknown }).mo;
+  if (!mo || typeof mo !== 'object' || Array.isArray(mo) || !('dsplit' in mo)) return plate;
+  const { dsplit, ...rest } = mo as Record<string, unknown>;
+  const ds = sanitizeDSplit(dsplit);
+  return { ...plate, mo: ds ? { ...rest, dsplit: ds } : rest };
 }

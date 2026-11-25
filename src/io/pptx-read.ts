@@ -48,6 +48,7 @@ import { shapeMathPicture, shapeMathSize } from '../deck/equation';
 import { GEOS } from '../design/geo';
 import { cleanDiagram, textFromShapes } from '../design/diagrams';
 import { crystalSrc, type PlateData } from '../design/plates';
+import { soundPlateDSplit } from '../design/dsplit';
 import { gluePoint, arrowPoints, boxOf as pointsBox } from '../objects';
 import { stackAsRead, type StackItem } from '../editor/stacking';
 import { roughBox } from '../deck/split-slide';
@@ -3296,6 +3297,8 @@ function plainShapeFields(s: Record<string, unknown>): Partial<Shape> {
     if (!want || v === null || typeof v !== want || (want === 'number' && !Number.isFinite(v))) continue;
     out[k] = v;
   }
+  // a d-orbital splitting diagram's choices made sound (a label that isn't text would stop it drawing)
+  if (out.plate) out.plate = soundPlateDSplit(out.plate);
   return out as Partial<Shape>;
 }
 
