@@ -673,6 +673,8 @@ function omml(n: MathNode): string {
       return x;
     }
     case 'arrow': {
+      // only conditions under it: Word's arrow over its text (the group character on top, ECMA-376 Part 1 §22.1.2.84)
+      if (n.under && (!n.over || (n.over.t === 'row' && !n.over.kids.length))) return `<m:groupChr><m:groupChrPr><m:chr m:val="${n.ch}"/><m:pos m:val="top"/><m:vertJc m:val="top"/></m:groupChrPr><m:e>${e(n.under)}</m:e></m:groupChr>`;
       // Word's way: the arrow as a group character stretched under the conditions (over it), and what goes under as a lower limit
       let x = `<m:groupChr><m:groupChrPr><m:chr m:val="${n.ch}"/><m:vertJc m:val="bot"/></m:groupChrPr><m:e>${n.over ? e(n.over) : ommlRun(' ', 'up')}</m:e></m:groupChr>`;
       if (n.under) x = `<m:limLow><m:e>${x}</m:e><m:lim>${e(n.under)}</m:lim></m:limLow>`;
@@ -796,7 +798,8 @@ function texEl(e: Element): string {
       const chr = val(pr, 'chr') ?? '⏟';
       const long = LONG_OF.get(chr);
       const inner = part('e').replace(/\\quad\s*/g, '').trim();
-      if (long) return `\\${long}{${inner}}`;
+      // (the arrow over its text, pos top: the text goes under the arrow)
+      if (long) return val(pr, 'pos') === 'top' ? `\\${long}[${inner}]{}` : `\\${long}{${inner}}`;
       return val(pr, 'pos') === 'top' ? `\\overset{${texChars(chr)}}{${inner}}` : `\\underset{${texChars(chr)}}{${inner}}`;
     }
     case 'limUpp': case 'limLow': {

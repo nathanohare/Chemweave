@@ -163,3 +163,21 @@ describe('equations in documents', () => {
     }
   });
 });
+
+describe("Word's arrow over or under its text (group character)", () => {
+  const r = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
+  const arrow = (pr: string) => ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="→"/>${pr}</m:groupChrPr><m:e>${r('a')}</m:e></m:groupChr>`);
+  it('reads text over the arrow (the arrow below, Word\'s default) and under it (pos top)', () => {
+    expect(ommlToTex(arrow('<m:vertJc m:val="bot"/>'))).toBe('\\xrightarrow{a}');
+    expect(ommlToTex(arrow('<m:pos m:val="top"/><m:vertJc m:val="top"/>'))).toBe('\\xrightarrow[a]{}');
+  });
+  it('writes each back as Word had it, and the same again', () => {
+    const under = toOmml('\\xrightarrow[a]{}');
+    expect(under).toMatch(/<m:groupChr><m:groupChrPr><m:chr m:val="→"\/><m:pos m:val="top"\/><m:vertJc m:val="top"\/><\/m:groupChrPr><m:e>.*a.*<\/m:e><\/m:groupChr>/);
+    expect(roundTrip('\\xrightarrow[a]{}')).toBe('\\xrightarrow[a]{}');
+    // (over it, and over and under: as before)
+    expect(toOmml('\\xrightarrow{a}')).not.toContain('<m:pos');
+    expect(roundTrip('\\xrightarrow{a}')).toBe('\\xrightarrow{a}');
+    expect(roundTrip('\\xrightarrow[hv]{a}')).toBe('\\xrightarrow[hv]{a}');
+  });
+});
