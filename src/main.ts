@@ -93,7 +93,7 @@ import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
 import type { FileStamp } from './keep/recovery';
 import { NEW_ITEMS } from './ui/new-items';
-import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
+import { Deck, shownSlides, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
 import { NOTE_BULLET, bulletEdits, notesCharLooks, notesLookOf, type NotesLook } from './deck/notes-look';
 import { RichInput } from './ui/rich-input';
 import type { TextFormat } from './text/format';
@@ -8263,10 +8263,12 @@ async function exportPdf(watch?: PdfWatch): Promise<void> {
     // the pages as laid out on screen, figures as shapes and text so they stay sharp
     pages = recordPages(docFile.t, docFile.printLayout(), (c, style) => figures.record(c, style).pic);
   } else if (deck) {
-    pages = deck.slides.flatMap((_s, i) => slidePages(deck, i).map((p) => ({
+    // (not the hidden slides, as PowerPoint's Save as PDF)
+    pages = shownSlides(deck.slides).flatMap((i) => slidePages(deck, i).map((p) => ({
       w: deck.size.w, h: deck.size.h,
       items: recordSlide(p.page, p.doc),
     })));
+    if (!pages.length) { flash('Every slide is hidden, so there is nothing to put in a PDF. Show a slide first (right-click it ▸ Hide Slide).'); return; }
   } else {
     const pic = recordPicture(doc, 18);
     if (!pic) { flash('There is nothing to put in a PDF yet.'); return; }
