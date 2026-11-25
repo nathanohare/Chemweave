@@ -12,7 +12,6 @@ export const DOCX_SAMPLERS: Sampler[] = [docxText, docxParagraphs, docxStylesLis
 
 export const DOCX_FINDINGS: Record<string, Finding> = {
   'W-CHR-79': { finding: 'F-W-002', note: 'the Hyperlink character style is flattened into direct formatting (color and underline); w:rStyle is gone' },
-  'W-CHR-88': { finding: 'F-W-003', note: 'w:noBreakHyphen is saved as the character U+2011 instead' },
   'W-PAR-75': { finding: 'F-W-006', note: 'the paragraph mark\'s run properties (w:pPr/w:rPr) are dropped' },
   'W-STY-06': { finding: 'F-W-007', note: 'a basedOn chain is flattened: Sampler Leaf is saved based on Normal, with its ancestors\' properties copied into it' },
   'W-STY-11': { finding: 'F-W-010', note: 'a character style based on another is flattened onto Default Paragraph Font, and its dotted underline is saved as single' },
