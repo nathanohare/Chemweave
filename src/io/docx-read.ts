@@ -4029,6 +4029,7 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
 
 /** The names this program gives drawings in Word (wp:docPr name): its structures', charts', pictures', shapes', text boxes' and groups'. */
 const GIVEN_NAME = new RegExp(`^(?:${DRAWING_NAME}|${CHART_NAME}|Picture|Shape|Text Box|TextBox|Group) \\d+$`);
+
 /**
  * A run's piece of text as a character: its text, a tab, a line break, and the hyphens Word writes
  * as elements of their own (w:noBreakHyphen, w:softHyphen), as this program writes them.
