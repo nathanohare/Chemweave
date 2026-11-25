@@ -148,9 +148,8 @@ describe('a right-to-left piece in a PDF', () => {
       { kind: 'text', text: 'שלום لا', x: 10, y: 50, size: 10, family: 'Arial', bold: false, italic: false, color: '#000000', widths: [5, 5, 5, 5, 5, 5, 5] },
     ] }], { image: async () => null, fonts: async () => [woff('node_modules/@fontsource/arimo/files/arimo-latin-400-normal.woff')], fallback });
     const maps = streams(pdf).filter((t) => t.includes('beginbfchar')).join('\n');
-    // (the joined lam-alef, not lam and alef apart)
-    expect(maps).toContain('<FEFB>');
-    expect(maps).not.toContain('<0644>');
+    // (the joined lam-alef, one glyph, which gives back lam and alef for searching)
+    expect(maps).toMatch(/<[0-9A-F]{4}> <06440627>/);
   });
 });
 
