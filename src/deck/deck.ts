@@ -50,11 +50,6 @@ export interface SlideSize {
   /** PowerPoint's name for the size (p:sldSz's type: Letter, A4, 16:9...), kept from the file read while the size stays. */
   type?: string;
 }
-/** The slides a deck's PDF has, by their place: not the hidden ones (as PowerPoint's Save as PDF leaves them out). */
-export function shownSlides(slides: readonly { hidden?: boolean }[]): number[] {
-  return slides.flatMap((s, i) => (s.hidden ? [] : [i]));
-}
-
 /** PowerPoint's names for slide sizes (ECMA-376 Part 1 §19.7.18). */
 export const SLIDE_SIZE_TYPES = ['35mm', 'A3', 'A4', 'B4ISO', 'B4JIS', 'B5ISO', 'B5JIS', 'banner', 'custom', 'hagakiCard', 'ledger', 'letter', 'overhead', 'screen16x10', 'screen16x9', 'screen4x3'];
 /** PowerPoint's two standard sizes, in points: widescreen 13.33 × 7.5 in, and 10 × 7.5 in. */
@@ -891,6 +886,11 @@ export interface SectionCount { name: string; count: number }
 
 /** How things on the slides fit a new slide size: kept as they are (centred), made as big as will fit (Ensure Fit), or as big as the slide allows (Maximize). */
 export type SizeFit = 'centre' | 'fit' | 'max';
+
+/** The slides a deck's PDF has, by their place: not the hidden ones (as PowerPoint's Save as PDF leaves them out). */
+export function shownSlides(slides: readonly { hidden?: boolean }[]): number[] {
+  return slides.flatMap((s, i) => (s.hidden ? [] : [i]));
+}
 
 /** A slide's transition, animations, comments, own background and whether it is hidden, copied (for duplicates and the undo history). */
 export interface Motion { ownItems?: boolean; transition?: Transition; anims?: Anim[]; comments?: PinnedComment[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec; zotero?: SlideZotero; notesKept?: NotesKept; notesLook?: NotesLook }

@@ -9,7 +9,7 @@ Each kind of tab saves to its own file type. **Save** (Ctrl+S) uses the first ty
 | Tab | Opens | Saves | Also exports |
 |---|---|---|---|
 | Canvas | .cdxml, .cdx, .cds, .mol, .rxn, .mrv, .ket, .cml, ChemDoodle .json | .cdxml (the default), .cdx, .mol, .sdf, .rxn, .mrv, .ket, .cml, ChemDoodle .json | Molfile (.mol), PDF, PNG, TIFF, SVG, EMF, EPS |
-| Presentation | .pptx | .pptx | PDF (one page per slide), PNG, TIFF, SVG, EMF or EPS of the current slide |
+| Presentation | .pptx | .pptx | PDF (one page per slide, not the hidden ones), PNG, TIFF, SVG, EMF or EPS of the current slide |
 | Design | .pptx | .pptx (one slide) | PDF, PNG, TIFF, SVG, EMF, EPS |
 | Document | .docx, .doc, .rtf, .odt | .docx (the default), .rtf, .odt | PDF |
 | Spreadsheet | .xlsx, .xlsm, .xls, .ods, .csv, .tsv, .txt, .sdf | .xlsx, .xlsm, .csv, .sdf | Charts as PNG or SVG |
