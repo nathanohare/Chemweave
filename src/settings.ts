@@ -511,8 +511,13 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (typeof r.haptoDelocalized === 'boolean') s.haptoDelocalized = r.haptoDelocalized;
   if (r.toolboxScale != null) s.toolboxScale = toolboxScaleOf(r.toolboxScale);
   // settings the web version saved before it started in Dark Gray with the Simplified ribbon move to
-  // that look once (a default that was saved can't be told from a choice); after that, what is chosen stays
-  if (webDefaults() && r.webLook !== 1 && Object.keys(r).length) { s.appTheme = 'darkgray'; s.canvasRibbon = 'simple'; }
+  // that look once, where they still hold what the app used to start with (the System theme, the
+  // Classic ribbon: a default that was saved can't be told from a choice). A Light or Dark theme was
+  // chosen, so it stays; after the move, whatever is chosen stays.
+  if (webDefaults() && r.webLook !== 1 && Object.keys(r).length) {
+    if (s.appTheme === 'system') s.appTheme = 'darkgray';
+    s.canvasRibbon = 'simple';
+  }
   return s;
 }
 

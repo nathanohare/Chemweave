@@ -24,8 +24,14 @@ describe('the web version\'s defaults', () => {
 
   it('moves settings saved before the new look to it once, and saves that it did', async () => {
     const { parseSettings, DEFAULT_SETTINGS } = await import('../src/settings');
-    const old = parseSettings(JSON.stringify({ appTheme: 'light', canvasRibbon: 'classic', density: 'normal' }));
+    const old = parseSettings(JSON.stringify({ appTheme: 'system', canvasRibbon: 'classic', density: 'normal' }));
     expect(old.appTheme).toBe('darkgray');
+    // (a Light or Dark theme was a choice: only the ribbon moves)
+    for (const chosen of ['light', 'dark'] as const) {
+      const kept = parseSettings(JSON.stringify({ appTheme: chosen, canvasRibbon: 'classic' }));
+      expect(kept.appTheme).toBe(chosen);
+      expect(kept.canvasRibbon).toBe('simple');
+    }
     expect(old.canvasRibbon).toBe('simple');
     expect(old.density).toBe('normal');
     // what is saved from then on carries the mark, so a later choice of Classic or Light stays
