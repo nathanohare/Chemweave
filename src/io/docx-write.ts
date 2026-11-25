@@ -2563,9 +2563,10 @@ function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): 
     // (Word's "no numbering", which a style says over the one it is based on, and a level alone, on
     // the list of the one it is based on: as they are)
     if (id === '0' || id === undefined) return m;
-    const to = id === undefined ? undefined : numIds.get(id);
+    const to = numIds.get(id);
     return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
-  });
+  // (and no paragraph settings left at all where that was all there was: the same on a second save)
+  }).replace(/<w:pPr><\/w:pPr>/g, '');
 }
 
 /** A character style: only what it sets. */
