@@ -1863,7 +1863,7 @@ class Reader {
     const box = boxOf(xfrm, xfrm && kid(spPr, 'xfrm') ? t : IDENTITY);
     if (!box) return;
     const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? (kid(spPr, 'custGeom') ? 'cust' : 'rect');
-    if (!ph && /line|Connector/i.test(prst)) { this.line(sp, spPr, t, doc); return; }
+    if (!ph && LINE_PRST.test(prst)) { this.line(sp, spPr, t, doc); return; }
     if (!ph) {
       // a design shape saved here, or a PowerPoint shape that is one (in designs, boxes and ovals too)
       const geoTag = this.tagsOf(s.path, kid(sp, 'nvSpPr', 'nvPr'))[TAG.geo];
@@ -3331,3 +3331,10 @@ function restoreLinks(doc: Doc, tag: string, saved: Record<RefKind, Map<number, 
     if (k === 'a') doc.updateAtom(id, patch); else if (k === 'b') doc.updateBond(id, patch); else if (k === 'c') doc.updateCaption(id, patch); else if (k === 'r') doc.updateArrow(id, patch); else doc.updateShape(id, patch);
   }
 }
+
+/**
+ * The preset shapes that are lines (ECMA-376 Part 1, §20.1.10.56 ST_ShapeType): a line and the
+ * straight, bent and curved connectors. Not the flowchart's "connector", a circle
+ * (flowChartConnector, flowChartOffpageConnector), whose name only sounds like one.
+ */
+const LINE_PRST = /^(?:line|lineInv|straightConnector1|bentConnector[2-5]|curvedConnector[2-5])$/;
