@@ -64,8 +64,13 @@ export function fallbackFamily(pkg: string, unicode: Record<string, string>): Fa
  * may still lack the character, and the first one read that has it draws it). Japanese text (any
  * kana in `text`) tries the Japanese font before the Chinese one, so its kanji take Japanese shapes.
  */
+/** Whether a text is Japanese (has kana), which decides between the Japanese and Chinese fonts. */
+export function hasKana(text: string): boolean {
+  return /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]/.test(text);
+}
+
 export function fallbackPicks(families: FallbackFamily[], chars: string[], text: string): { pkg: string; subset: string }[] {
-  const kana = /[\u3040-\u30ff\u31f0-\u31ff\uff66-\uff9f]/.test(text);
+  const kana = hasKana(text);
   const order = kana ? [...families].sort((a, b) => (a.pkg === 'noto-sans-jp' ? -1 : b.pkg === 'noto-sans-jp' ? 1 : 0)) : families;
   const out: { pkg: string; subset: string }[] = [];
   const seen = new Set<string>();

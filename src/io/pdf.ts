@@ -8,7 +8,7 @@
 import { zlibSync } from 'fflate';
 import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
-import type { FallbackFile, PdfFallbackSource } from './pdf-fallback';
+import { hasKana, type FallbackFile, type PdfFallbackSource } from './pdf-fallback';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -113,8 +113,12 @@ export function symbolFontText(text: string, family: string): string {
   }).join('');
 }
 
-/** What draws nothing: a soft hyphen (the hyphen at a line break is a glyph of its own) and the variation selectors (U+FE00 to U+FE0F, text or emoji style). */
-const INVISIBLE = /^[\u00ad\ufe00-\ufe0f]$/;
+/**
+ * What draws nothing: a soft hyphen (the hyphen at a line break is a glyph of its own), the
+ * zero-width space, joiners and direction marks (U+200B to U+200F, U+2060), and the variation
+ * selectors (U+FE00 to U+FE0F, text or emoji style).
+ */
+const INVISIBLE = /^[\u00ad\u200b-\u200f\u2060\ufe00-\ufe0f]$/;
 
 /** Text cut into pieces that one font can write, with each piece's position along the line. */
 export function textPieces(text: string, widths: number[]): { symbol: boolean; codes: number[]; dx: number }[] {
@@ -404,17 +408,30 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
     }
     return f;
   };
+  // (each character's, looked for once in the PDF: by itself, and in Japanese text)
+  const fallbackOf = new Map<string, Promise<EmbeddedFont | null>>();
   /** For each character neither a face's files nor the standard fonts (Symbol among them) can draw, the first fallback font that has it. */
   const fallbackFonts = async (text: string, fonts: EmbeddedFont[]): Promise<Map<string, EmbeddedFont>> => {
     const out = new Map<string, EmbeddedFont>();
     if (!opts.fallback) return out;
+    const kana = hasKana(text);
     const missing = [...new Set(text)].filter((ch) => !/\s/.test(ch) && !INVISIBLE.test(ch) && winAnsi(ch) === null && SYMBOL[ch] === undefined && !fonts.some((f) => f.font.glyph(ch.codePointAt(0)!) !== 0));
     for (const ch of missing) {
-      const files = await opts.fallback(ch, text).catch(() => [] as FallbackFile[]);
-      for (const file of files) {
-        const e = await fallbackFile(file);
-        if (e && e.font.glyph(ch.codePointAt(0)!) !== 0) { out.set(ch, e); break; }
+      const key = `${ch}|${kana}`;
+      let found = fallbackOf.get(key);
+      if (!found) {
+        found = (async () => {
+          const files = await Promise.resolve().then(() => opts.fallback!(ch, text)).catch(() => [] as FallbackFile[]);
+          for (const file of files) {
+            const e = await fallbackFile(file);
+            if (e && e.font.glyph(ch.codePointAt(0)!) !== 0) return e;
+          }
+          return null;
+        })();
+        fallbackOf.set(key, found);
       }
+      const e = await found;
+      if (e) out.set(ch, e);
     }
     return out;
   };

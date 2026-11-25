@@ -105,6 +105,14 @@ describe('fallback fonts in PDFs', () => {
     expect(read.filter((x) => x.startsWith('noto-sans-symbols/'))).toEqual([]);
   });
 
+  it('asks for a character\'s fallback once in a PDF, and draws nothing for zero-width marks', async () => {
+    let asked = 0;
+    const counted: PdfFallbackSource = async (c, t) => { asked++; return fallback(c, t); };
+    const pdf = await writePdf([{ w: 400, h: 200, items: [line('化学'), line('化学'), line('a\u200db\u200fc')] }], { image: async () => null, fonts: arimo, fallback: counted });
+    expect(asked).toBe(2);
+    expect(streams(pdf).find((t) => t.includes(' Tf '))).not.toContain('?');
+  });
+
   it('writes the PDF anyway when a fallback font can\'t be had', async () => {
     const pdf = await writePdf([{ w: 400, h: 200, items: [line('化学')] }], { image: async () => null, fonts: arimo, fallback: async () => { throw new Error('offline'); } });
     expect(streams(pdf).find((t) => t.includes(' Tf '))).toContain('(??)');
