@@ -55,6 +55,7 @@ Every change follows these, whoever writes it:
 npm test          # unit tests for the chemistry, geometry and saving
 npm run build     # type-check and build the web version into dist/
 npm run typecheck:strict   # stricter type checks (unused parameters, a path that forgets to return)
+npm run typecheck:tests    # tests/: no duplicate, missing or misspelled names or imports
 npm run smoke     # after a build: the app in a headless browser, start to save and every menu
 ```
 

@@ -1,0 +1,6 @@
+{
+  "//": "Used by scripts/typecheck-tests.mjs (npm run typecheck:tests): the tests are not part of the build's type check, so a duplicate import or a name that doesn't exist in one only shows when the test runs, if at all.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": { "noEmit": true, "types": ["node"], "noUnusedLocals": false },
+  "include": ["src", "tests"]
+}
