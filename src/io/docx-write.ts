@@ -62,6 +62,7 @@ import {
   BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEAD_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
 import { minOf, maxOf } from './min-max';
+import { stackOrder } from '../document/arrange';
 
 export interface DocxDeps {
   /** A drawing's picture for Word: PNG bytes, an SVG Word shows instead when it can, and its own size in points. */
@@ -185,6 +186,16 @@ export async function writeDocx(t: DocText, deps: DocxDeps, title = ''): Promise
 class DocxWriter {
   private pkg = new Package();
   private docPr = 1;
+  /**
+   * Each floating drawing's place in Word's stack (wp:anchor's relativeHeight), from the back: the
+   * text's floats as they are drawn here (arrange's stackOrder: by z, else in the order of the text)
+   * above those of headers, footers and the like (`others`, numbered in the order written, as the
+   * reader reads them first and Word draws them under the text). So each has its own place, and a
+   * stack in the text's order reads back with none of its own (no z) and is numbered the same again.
+   */
+  private stackAt: Map<object, number> | null = null;
+  /** The floats not in the text's stack written so far. */
+  private others = 0;
   private bookmarkId = 0;
   /** Content controls' ids (Mendeley Cite's citations). */
   private sdtId = 1;
@@ -1216,10 +1227,36 @@ class DocxWriter {
   /** wp:anchor (ECMA-376 part 1 §20.4.2.3): a frame placed at x, y (EMU) as `fl` places it, with the text wrapping round it as `fl` says. */
   private anchor(fl: NonNullable<ReturnType<typeof floatOf>>, x: number, y: number, ext: string, inner: string): string {
     const gap = floatGaps(fl);
+    if (!this.stackAt) {
+      const order = stackOrder(this.t), inText = new Set(order);
+      const outside = Object.entries(this.t.objects).filter(([id, o]) => floatOf(o) && !inText.has(Number(id))).length;
+      // (a group written as one Word group is one drawing there, at the place of its member furthest back;
+      // the paragraphs' runs, to tell which groups are, as each paragraph is written)
+      const oneAnchor = new Set<number>();
+      let para: TextRun[] = [];
+      const flush = () => { for (const id of this.groupsIn(para).keys()) oneAnchor.add(id); para = []; };
+      for (const r of this.t.runs) {
+        if (r.obj !== undefined) para.push(r);
+        if (r.text.includes('\n')) flush();
+      }
+      flush();
+      this.stackAt = new Map();
+      const groups = new Map<number, number>();
+      let at = outside;
+      for (const id of order) {
+        const fl = floatOf(this.t.objects[id])!;
+        if (fl.group === undefined || !oneAnchor.has(id)) { this.stackAt.set(fl, at++); continue; }
+        if (!groups.has(fl.group)) groups.set(fl.group, at++);
+        this.stackAt.set(fl, groups.get(fl.group)!);
+      }
+    }
+    // (one outside the text's stack written twice, as a chart and its picture, at one place)
+    let at = this.stackAt.get(fl);
+    if (at === undefined) this.stackAt.set(fl, (at = this.others++));
     const h = fl.xFrom === 'page' ? 'page' : 'margin';
     const v = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'paragraph';
     const wrap = fl.wrap === 'square' ? '<wp:wrapSquare wrapText="largest"/>' : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
-    return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (fl.z !== undefined ? fl.z + 1 : this.docPr) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
+    return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (at + 1) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
       `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}">${fl.align ? `<wp:align>${fl.align}</wp:align>` : `<wp:posOffset>${x}</wp:posOffset>`}</wp:positionH>` +
       `<wp:positionV relativeFrom="${v}"><wp:posOffset>${y}</wp:posOffset></wp:positionV>${ext}${wrap}${inner}</wp:anchor>`;
   }
@@ -1231,6 +1268,12 @@ class DocxWriter {
    */
   private wordGroups = new Map<number, number[]>();
   private noteWordGroups(runs: TextRun[]): void {
+    for (const [id, ids] of this.groupsIn(runs)) this.wordGroups.set(id, ids);
+  }
+
+  /** The groups written as one Word group from a paragraph with these runs (see wordGroups): each picture's id to the group's. */
+  private groupsIn(runs: TextRun[]): Map<number, number[]> {
+    const out = new Map<number, number[]>();
     const by = new Map<number, number[]>();
     for (const r of runs) {
       if (r.obj === undefined || r.rev) continue;
@@ -1245,8 +1288,9 @@ class DocxWriter {
       const all = Object.values(this.t.objects).filter((o) => floatOf(o)?.group === g);
       const fls = ids.map((id) => floatOf(this.t.objects[id])!);
       const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
-      if (all.length === ids.length && same) for (const id of ids) this.wordGroups.set(id, ids);
+      if (all.length === ids.length && same) for (const id of ids) out.set(id, ids);
     }
+    return out;
   }
 
   /**
@@ -1340,7 +1384,9 @@ class DocxWriter {
   private async chart(main: string, id: number, o: Extract<DocObject, { kind: 'picture' }>, box: ChartBox, rPr: string): Promise<string> {
     const size = shownSize({ w: o.w, h: o.h }, o.scale ?? 1, this.textW);
     const { rid, print } = await addChart(this.pkg, main, 'word', ++this.chartNo, box, size.w, size.h);
-    (this.model.charts ??= {})[id] = box;
+    // (under its number in the file, not the id it has while open: the reader gives it a new one, and the
+    // same file saved again writes the same)
+    (this.model.charts ??= {})[id] = { ...box, chart: { ...box.chart, id: this.chartNo } };
     if (print) (this.model.chartPrints ??= {})[id] = print;
     const n = this.docPr++;
     const ex = isChartEx(box.chart.kind);
