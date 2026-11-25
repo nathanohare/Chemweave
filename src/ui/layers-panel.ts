@@ -182,7 +182,8 @@ export class LayersPanel {
       .map((f) => ({ ids: f, y: Math.min(...f.map((id) => doc.atoms.get(id)!.y)) })).sort((a, b) => a.y - b.y);
     frags.forEach((f, i) => rows.push(this.plainRow(`Structure ${i + 1}${f.ids.length > 1 ? '' : ' (one atom)'}`, picked('atoms', f.ids), false, (add) => this.pick({ atoms: f.ids }, add))));
     let n = 0;
-    for (const r of doc.arrows.values()) rows.push(this.plainRow(`Arrow ${++n}`, picked('arrows', [r.id]), false, (add) => this.pick({ arrows: [r.id] }, add)));
+    // (by its name, where it has one: a PowerPoint line's or connector's)
+    for (const r of doc.arrows.values()) { ++n; rows.push(this.plainRow(r.name?.trim() || `Arrow ${n}`, picked('arrows', [r.id]), false, (add) => this.pick({ arrows: [r.id] }, add))); }
     return rows;
   }
 

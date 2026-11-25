@@ -1620,7 +1620,10 @@ class Writer {
     if (bent) { frame = bent.frame; geom = bent.geom; curved = false; name = `Elbow Connector ${id - 1}`; }
     // (its own name, where it was given one)
     if (typeof r.name === 'string' && r.name.trim()) name = r.name.trim();
-    const { id: _, ...keep } = r;
+    // (its name in the tag only where it is one like PowerPoint's own, which isn't read from cNvPr;
+    // else cNvPr has it, so a name changed in PowerPoint isn't put back from the tag)
+    const { id: _, name: own, ...rest } = r;
+    const keep = typeof own === 'string' && own.trim() && PPT_NAME.test(own.trim()) ? { ...rest, name: own.trim() } : rest;
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';

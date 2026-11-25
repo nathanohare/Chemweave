@@ -1213,8 +1213,8 @@ class Reader {
     if (!name || el.localName === 'grpSp' || PPT_NAME.test(name)) return;
     if (shapes.length === 1) doc.updateShape(shapes[0].id, { name });
     else if (!shapes.length && caps.length === 1) doc.updateCaption(caps[0].id, { name });
-    // (a line or connector: an arrow here)
-    else if (!shapes.length && !caps.length && arrows.length === 1) doc.updateArrow(arrows[0].id, { name });
+    // (a line or connector: an arrow here; not a drawing's arrow, whose picture or object the name is of)
+    else if ((el.localName === 'cxnSp' || el.localName === 'sp') && !shapes.length && !caps.length && arrows.length === 1 && ![...doc.atoms.keys()].some((id) => id >= mark)) doc.updateArrow(arrows[0].id, { name });
   }
 
   /**

@@ -11,7 +11,7 @@ import { writePptx, type DeckData, type PptxOptions } from '../src/io/pptx-write
 import { readPptx } from '../src/io/pptx-read';
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 40, 0, 0, 0, 30]);
-const opts: PptxOptions = { async picture() { return null; }, async svgToPng() { return PNG; } };
+const opts: PptxOptions = { async picture() { return { svg: '<svg xmlns="http://www.w3.org/2000/svg"/>', png: PNG, box: { x1: 0, y1: 0, x2: 400, y2: 300 } }; }, async svgToPng() { return PNG; } };
 const SLIDE2 = 'ppt/slides/slide2.xml';
 
 /** A deck with one slide holding these arrows. */
@@ -37,6 +37,41 @@ describe("a connector's name", () => {
     const names = arrowsOf(zipSync(p)).map((a) => a.name);
     expect(names).toContain('Step 1 → 2 & "back"');
     expect(names.filter((n) => n === undefined)).toHaveLength(1);
+  });
+
+  it('comes back on curved and elbow connectors, and the same on a second save', async () => {
+    const p = await deckWith({ name: 'Bent', elbow: true, head: { x: 300, y: 200 } }, { name: 'Curved', sweep: 40 });
+    const names = arrowsOf(zipSync(p)).map((a) => a.name).sort();
+    expect(names).toEqual(['Bent', 'Curved']);
+    const host = readPptx(zipSync(p));
+    void host;
+    const again = await deckWith({ name: 'Bent', elbow: true, head: { x: 300, y: 200 } }, { name: 'Curved', sweep: 40 });
+    expect(strFromU8(again[SLIDE2])).toBe(strFromU8(p[SLIDE2]));
+  });
+
+  it('is the name PowerPoint gave it after a save here, not the one saved', async () => {
+    const p = await deckWith({ name: 'Old' });
+    const renamed = (to: string) => arrowsOf(zipSync({ ...p, [SLIDE2]: new Uint8Array(strToU8(strFromU8(p[SLIDE2]).replace('name="Old"', `name="${to}"`))) }))[0].name;
+    expect(renamed('New')).toBe('New');
+    // (renamed to one like PowerPoint's own: not the old one back from the tag)
+    expect(renamed('Straight Arrow Connector 9')).toBeUndefined();
+  });
+
+  it("isn't the name of a drawing's picture its arrow is in", async () => {
+    const host = new Doc();
+    const d = Deck.blank(host);
+    d.attach();
+    d.addSlide('blank');
+    host.edit('x', () => {
+      const a = host.addAtom(100, 100), b = host.addAtom(130, 100);
+      host.addBond(a.id, b.id);
+      host.addArrow({ tail: { x: 160, y: 100 }, head: { x: 240, y: 100 }, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 10, headWidth: 4 } as Omit<Arrow, 'id'>);
+    });
+    const data: DeckData = { size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ id: i + 1, layout: s.layout, doc: d.docOf(i), notes: s.notes })) };
+    const p = unzipSync(await writePptx(data, opts));
+    const x = strFromU8(p[SLIDE2]).replace(/name="Structure \d+"/, 'name="Scheme 1"');
+    expect(x).toContain('name="Scheme 1"');
+    expect(arrowsOf(zipSync({ ...p, [SLIDE2]: new Uint8Array(strToU8(x)) })).map((a) => a.name)).toEqual([undefined]);
   });
 
   it('is read from a connector named in PowerPoint (its tag gone), and not from PowerPoint\'s own', async () => {
