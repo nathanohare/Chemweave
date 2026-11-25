@@ -19,6 +19,7 @@
     "bench:baseline": "node bench/baseline.mjs",
     "coverage": "vitest run --coverage.enabled --coverage.provider=v8 --coverage.include=src/** --coverage.reporter=text-summary --coverage.reporter=json-summary --coverage.reporter=html",
     "typecheck:strict": "tsc --noEmit -p tsconfig.strict.json",
+    "typecheck:tests": "node scripts/typecheck-tests.mjs",
     "tauri": "tauri",
     "desktop": "tauri dev",
     "desktop:build": "tauri build"

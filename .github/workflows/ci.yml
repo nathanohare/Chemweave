@@ -59,6 +59,7 @@ jobs:
       # tsconfig.strict.json is tsconfig.json plus extra checks, so this covers the type check
       # `npm run build` does as well; the build step below is then only Vite's
       - run: npm run typecheck:strict
+      - run: npm run typecheck:tests
       - run: npx vite build
       # Playwright's headless Chromium is all the smoke test needs (not the full browser)
       - run: npx playwright install --with-deps --only-shell chromium
