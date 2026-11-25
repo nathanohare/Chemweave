@@ -1895,7 +1895,7 @@ class DocxReader {
       if (!Number.isInteger(id) || id < 0) continue;
       const paras = [...c.getElementsByTagNameNS(this.W, 'p')];
       const texts = paras.map((p) => [...p.getElementsByTagNameNS(this.W, '*')]
-        .map((e) => (e.localName === 't' ? e.textContent ?? '' : e.localName === 'tab' ? '\t' : e.localName === 'br' ? '\n' : '')).join(''));
+        .map(runChar).join(''));
       const text = texts.join('\n');
       const last = paras[paras.length - 1];
       const kept = this.commentParas(c, path!);
@@ -1963,7 +1963,7 @@ class DocxReader {
         const pr = kid(r, 'rPr');
         const pos = kid(pr, 'vertAlign')?.getAttributeNS(W, 'val');
         const look: Omit<NoteRun, 'text'> = { bold: on(kid(pr, 'b')), italic: on(kid(pr, 'i')), underline: on(kid(pr, 'u')), strike: on(kid(pr, 'strike')), sub: pos === 'subscript', sup: pos === 'superscript' };
-        const t = kids(r).map((e) => (e.localName === 't' ? e.textContent ?? '' : e.localName === 'tab' ? '\t' : e.localName === 'br' ? '\n' : '')).join('');
+        const t = kids(r).map(runChar).join('');
         if (t) out.push({ ...look, text: t });
       }
     });
@@ -2060,7 +2060,7 @@ class DocxReader {
           const m = !ctx.cell && !this.swallowing() ? readMendeleyTag(this.sdtTag(el)) : null;
           const mid = m ? this.managedCite(m, ctx, merge<RProps>(ctx.base, this.readRPr(kid(kid(el, 'sdtContent'), 'r', 'rPr')))) : null;
           if (mid !== null) {
-            if (this.keepBib) this.keepCite(mid, Array.from(kid(el, 'sdtContent')?.getElementsByTagNameNS('*', 't') ?? []).map((x) => x.textContent ?? '').join(''));
+            if (this.keepBib) this.keepCite(mid, runsText(kid(el, 'sdtContent')));
             break;
           }
           // another program's content control round text (Chem4Word's structure, a form field): kept round it
@@ -3518,6 +3518,8 @@ class DocxReader {
           switch (c.localName) {
             case 'pPr': case 'rPr': break;
             case 't': add(c.textContent ?? ''); break;
+            case 'noBreakHyphen': add('\u2011'); break;
+            case 'softHyphen': add('\u00ad'); break;
             case 'tab': zone = Math.min(2, zone + 1); break;
             case 'ptab': { const al = c.getAttributeNS(this.W, 'alignment') ?? c.getAttribute('w:alignment'); zone = al === 'center' ? 1 : al === 'right' ? 2 : 0; break; }
             case 'fldSimple': {
@@ -3799,7 +3801,7 @@ function groupTexts(group: Element): Map<string, string> {
     const name = kid(sp, 'cNvPr')?.getAttribute('name');
     const content = kid(sp, 'txbx', 'txbxContent');
     if (!name || !content) continue;
-    const paras = kids(content, 'p').map((p) => Array.from(p.getElementsByTagNameNS('*', 't')).map((t) => t.textContent ?? '').join('').replace(/^•\s*/, ''));
+    const paras = kids(content, 'p').map((p) => runsText(p).replace(/^•\s*/, ''));
     out.set(name, paras.join('\n'));
   }
   return out;
@@ -4027,3 +4029,23 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
 
 /** The names this program gives drawings in Word (wp:docPr name): its structures', charts', pictures', shapes', text boxes' and groups'. */
 const GIVEN_NAME = new RegExp(`^(?:${DRAWING_NAME}|${CHART_NAME}|Picture|Shape|Text Box|TextBox|Group) \\d+$`);
+/**
+ * A run's piece of text as a character: its text, a tab, a line break, and the hyphens Word writes
+ * as elements of their own (w:noBreakHyphen, w:softHyphen), as this program writes them.
+ */
+function runChar(e: Element): string {
+  switch (e.localName) {
+    case 't': return e.textContent ?? '';
+    case 'tab': return '\t';
+    case 'br': return '\n';
+    case 'noBreakHyphen': return '\u2011';
+    case 'softHyphen': return '\u00ad';
+    default: return '';
+  }
+}
+
+/** The text of the runs inside an element (w:t, and the hyphens Word writes as elements of their own). */
+function runsText(el: Element | null): string {
+  if (!el) return '';
+  return Array.from(el.getElementsByTagNameNS('*', '*')).filter((e) => e.localName !== 'tab' && e.localName !== 'br').map(runChar).join('');
+}

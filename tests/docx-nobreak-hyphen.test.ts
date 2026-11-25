@@ -29,3 +29,24 @@ describe('a non-breaking hyphen (F-W-003)', () => {
     }
   });
 });
+
+describe('a non-breaking hyphen in a header and a comment (from the review)', () => {
+  const file = () => zipSync({
+    '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>'),
+    '_rels/.rels': strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}officeDocument" Target="word/document.xml"/></Relationships>`),
+    'word/_rels/document.xml.rels': strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rH" Type="${R}header" Target="header1.xml"/><Relationship Id="rC" Type="${R}comments" Target="comments.xml"/></Relationships>`),
+    'word/header1.xml': strToU8(`<?xml version="1.0"?><w:hdr ${W}><w:p><w:r><w:t>Smith</w:t><w:noBreakHyphen/><w:t>Jones</w:t></w:r></w:p></w:hdr>`),
+    'word/comments.xml': strToU8(`<?xml version="1.0"?><w:comments ${W}><w:comment w:id="0" w:author="Nate" w:date="2026-11-25T00:00:00Z"><w:p><w:r><w:t>see 2</w:t><w:noBreakHyphen/><w:t>methyl</w:t></w:r></w:p></w:comment></w:comments>`),
+    'word/document.xml': strToU8(`<?xml version="1.0"?><w:document ${W} xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"><w:body><w:p><w:commentRangeStart w:id="0"/><w:r><w:t>Body</w:t></w:r><w:commentRangeEnd w:id="0"/><w:r><w:commentReference w:id="0"/></w:r></w:p><w:sectPr><w:headerReference w:type="default" r:id="rH"/><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`),
+  });
+  it('keeps them through two saves', async () => {
+    let { doc } = await readDocx(file());
+    for (let i = 0; i < 2; i++) {
+      const saved = unzipSync(await writeDocx(doc, deps));
+      const header = Object.entries(saved).find(([p]) => /^word\/header\d+\.xml$/.test(p))!;
+      expect(strFromU8(header[1])).toMatch(/Smith<\/w:t><w:noBreakHyphen\/><w:t[^>]*>Jones/);
+      expect(strFromU8(saved['word/comments.xml'])).toMatch(/see 2<\/w:t><w:noBreakHyphen\/><w:t[^>]*>methyl/);
+      ({ doc } = await readDocx(zipSync(saved)));
+    }
+  });
+});
