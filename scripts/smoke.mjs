@@ -234,6 +234,37 @@ try {
   else if (typing.bar !== true) fail('the bar above the text shows while the Canvas Home tab has the same buttons');
   if (typing.buttons < 18) fail(`the Canvas Home tab's Font and Paragraph groups have ${typing.buttons} buttons, not all of the typing bar's`);
 
+  step('the File tab opens every menu as a page, and Esc closes it');
+  if (!(await page.evaluate(() => document.body.classList.contains('menus-in-file')))) fail('the web app starts with the menu bar showing, not the menus in the File tab');
+  if (await page.locator('header > .menu-wrap > button').first().isVisible()) fail('the menu bar shows while the menus are in the File tab');
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(200);
+  const pages = await page.evaluate(() => {
+    const out = [];
+    const nav = [...document.querySelectorAll('#backstage nav button[data-i]')];
+    for (const b of nav) {
+      b.click();
+      const m = document.querySelector('.menu.bs-page');
+      const items = m ? [...m.querySelectorAll('button[data-cmd]')].filter((x) => x.getClientRects().length) : [];
+      // the page scrolls down when it is long; columns that run past the window's right edge would hide commands
+      const pane = document.querySelector('#backstage .bs-pane');
+      const off = items.filter((x) => x.getBoundingClientRect().right > innerWidth + 0.5).length;
+      out.push({ name: b.textContent.trim(), shown: !!m && !m.hidden && pane.contains(m), items: items.length, off, wide: pane.scrollWidth > pane.clientWidth + 1 });
+    }
+    return out;
+  });
+  if (pages.length < 7) fail(`the File tab lists ${pages.length} menus, not File, Edit, View, Insert, Format, Chemistry and Help`);
+  for (const p of pages) {
+    if (!p.shown || !p.items) fail(`the File tab's ${p.name} page shows no commands`);
+    else if (p.off || p.wide) fail(`the File tab's ${p.name} page runs off a 1280 × 720 window (${p.off} commands off it)`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('Esc did not close the File tab');
+  // the menu bar's checks below: the desktop app starts with it, and anyone can show it (View ▸ Menu Bar)
+  await page.evaluate(() => window.__app.command('menu-bar'));
+  await page.waitForTimeout(200);
+
   step('every menu fits in one column at 1280 × 720');
   for (const btn of await page.$$('header > .menu-wrap > button')) {
     if (!(await btn.isVisible())) continue;

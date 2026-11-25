@@ -150,7 +150,8 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar } from './ui/quick-bar';
+import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
 import { defaultHandout, handoutLayout, handoutPageSvg, notesPageSize, notesPageSvg, type HandoutSetup } from './deck/notes-pages';
@@ -11069,6 +11070,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
+  'menu-bar': () => { setMenusInFile(!menusInFile); storeSettings(); },
   'ui-scale-in': () => sizeInterface(stepUiScale(uiScale(), 1)),
   'ui-scale-out': () => sizeInterface(stepUiScale(uiScale(), -1)),
   'ui-scale-reset': () => sizeInterface(1),
@@ -11475,6 +11477,7 @@ function fitMenu(list: HTMLElement): void {
   if (r.right > innerWidth - 4 || r.left < 4) list.style.translate = `${Math.max(4, innerWidth - 4 - r.width) - r.left}px 0`;
 }
 function showMenu(m: Menu | null, focus = true): void {
+  if (!m && backstage?.isOpen) { backstage.close(false); return; }
   openMenu = m;
   for (const x of menus) {
     if (x !== m) closeSubs(x.list);
@@ -11495,8 +11498,9 @@ for (const m of menus) {
   // sliding along the menu bar opens each menu in turn (a mouse only: a tap's pointerenter would
   // open the menu and its click shut it again)
   m.btn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && openMenu && openMenu !== m) showMenu(m, false); });
-  m.list.addEventListener('scroll', () => closeSubs(m.list));
+  m.list.addEventListener('scroll', () => { if (!backstage?.isOpen) closeSubs(m.list); });
   m.list.addEventListener('pointerover', (e) => {
+    if (backstage?.isOpen) return;
     const item = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!item || item.disabled) return;
     if (item.classList.contains('has-sub')) { if (item.getAttribute('aria-expanded') !== 'true') openSub(item, false); }
@@ -11505,7 +11509,7 @@ for (const m of menus) {
   m.list.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b || b.disabled) return;
-    if (b.classList.contains('has-sub')) { openSub(b, false); return; }
+    if (b.classList.contains('has-sub')) { if (!backstage?.isOpen) openSub(b, false); return; }
     const recent = b.dataset.recent;
     if (recent !== undefined) { showMenu(null); void openRecent(recent); return; }
     const cmd = b.dataset.cmd;
@@ -11517,6 +11521,7 @@ for (const m of menus) {
     command(cmd);
   });
   m.list.addEventListener('keydown', (e) => {
+    if (backstage?.isOpen) { backstageKeys(e, m); return; }
     const here = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.menu') ?? m.list;
     const items = menuItems(here);
     const now = document.activeElement as HTMLButtonElement;
@@ -11543,7 +11548,68 @@ for (const m of menus) {
     }
   });
 }
-addEventListener('resize', () => { if (openMenu) showMenu(null); });
+addEventListener('resize', () => { if (openMenu && !backstage?.isOpen) showMenu(null); });
+
+// ---------------------------------------------------------------- the File tab (menu bar off)
+
+// With the menu bar off (the web app's start), a File tab leads each ribbon's tabs and opens the
+// menus as a page over the window, as Office's File tab does (src/ui/backstage.ts). The page is the
+// menu itself (.bs-page), so it greys, ticks and runs its commands just as the menu bar's does.
+let menusInFile = false;
+let backstage: Backstage | null = null;
+/** Every command in the page, top to bottom, for the arrow keys (the submenus' headings are not commands). */
+const pageItems = (list: HTMLElement) =>
+  [...list.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('has-sub') && !b.hidden && !b.disabled && b.getClientRects().length > 0);
+function backstageKeys(e: KeyboardEvent, m: Menu): void {
+  const items = pageItems(m.list);
+  const i = items.indexOf(document.activeElement as HTMLButtonElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); backstage!.close(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); backstage!.focusNav(); }
+}
+/** A menu shown as the File tab's page goes back to its place on the menu bar. */
+function putBack(m: Menu): void {
+  m.list.classList.remove('bs-page');
+  if (m.list.parentElement !== m.btn.parentElement) m.btn.after(m.list);
+}
+function openBackstage(m: Menu = menus[0], focusPage = false): void {
+  backstage ??= new Backstage({
+    menus: () => shownMenus().map((x) => ({ name: x.btn.textContent!.trim() })),
+    show: (i, focus) => {
+      const x = shownMenus()[i];
+      for (const y of menus) if (y !== x) putBack(y);
+      x.list.classList.add('bs-page');
+      backstage!.pane.append(x.list);
+      showMenu(x, false);
+      // the submenus open in the page, each under its name
+      for (const sub of x.list.querySelectorAll<HTMLElement>('.menu.sub')) {
+        sub.hidden = false;
+        sub.style.removeProperty('left');
+        sub.style.removeProperty('top');
+        sub.parentElement!.querySelector(':scope > button')!.setAttribute('aria-expanded', 'true');
+        paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));
+      }
+      backstage!.pane.scrollTop = 0;
+      if (focus) pageItems(x.list)[0]?.focus();
+    },
+    closed: () => {
+      for (const y of menus) putBack(y);
+      showMenu(null);
+    },
+  });
+  if (backstage.isOpen && backstage.current === shownMenus().indexOf(m) && !focusPage) { backstage.close(); return; }
+  backstage.openAt(Math.max(0, shownMenus().indexOf(m)), focusPage);
+}
+/** The menu bar on (the menus as in other desktop programs) or off (the menus in the File tab). View ▸ Window and Colors. */
+function setMenusInFile(on: boolean): void {
+  menusInFile = on;
+  document.body.classList.toggle('menus-in-file', on);
+  if (on) addFileTabs(() => openBackstage());
+  else backstage?.close(false);
+  $('[data-cmd="menu-bar"]')?.setAttribute('aria-checked', String(!on));
+  fitRibbons();
+}
 
 // ---------------------------------------------------------------- the keyboard round the window
 
@@ -11571,6 +11637,7 @@ let beforeMenus: HTMLElement | null = null;
 function enterMenuBar(): void {
   const a = document.activeElement as HTMLElement | null;
   if (!a?.closest('header')) beforeMenus = a;
+  if (menusInFile) { document.body.classList.remove('show-mnemonics'); openBackstage(menus[0]); return; }
   menus[0].btn.focus();
 }
 function leaveMenuBar(): void {
@@ -11594,7 +11661,7 @@ function focusWork(): void {
  * it (null when that part isn't showing).
  */
 const REGIONS: { inside: string; first: () => HTMLElement | null }[] = [
-  { inside: 'header', first: () => menus[0].btn },
+  { inside: 'header', first: () => (menusInFile ? $('#quick-bar').querySelector<HTMLElement>('button') : menus[0].btn) },
   { inside: '#tabs', first: () => $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]') ?? $('#tabs').querySelector<HTMLElement>('[role="tab"], button') },
   { inside: '.ribbon', first: () => [...document.querySelectorAll<HTMLElement>('.ribbon')].find(onScreenEl)?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], button:not([disabled])') ?? null },
   { inside: '#tools', first: () => onScreenEl($('#tools')) ? $('#tools').querySelector<HTMLElement>('button.tool.active') ?? $('#tools').querySelector<HTMLElement>('button.tool') : null },
@@ -11638,14 +11705,16 @@ window.addEventListener('keydown', (e) => {
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
   if (e.key === 'F10' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
     e.preventDefault();
-    if (inMenuBar() || openMenu) leaveMenuBar();
+    if (backstage?.isOpen) backstage.close();
+    else if (inMenuBar() || openMenu) leaveMenuBar();
     else { document.body.classList.add('show-mnemonics'); enterMenuBar(); }
     return;
   }
   // Alt and a menu's letter (by the key's place, so it works whatever the keyboard writes)
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && /^Key[A-Z]$/.test(e.code)) {
     const m = MNEMONICS.get(e.code.slice(3));
-    if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
+    if (m && menusInFile) { e.preventDefault(); e.stopImmediatePropagation(); openBackstage(m, true); }
+    else if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
   }
 }, true);
 // Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
@@ -11665,7 +11734,8 @@ window.addEventListener('keyup', (e) => {
   if (!alone || pointerHeld) { if (!inMenuBar()) document.body.classList.remove('show-mnemonics'); return; }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) { document.body.classList.remove('show-mnemonics'); return; }
   e.preventDefault();
-  if (inMenuBar() || openMenu) leaveMenuBar();
+  if (backstage?.isOpen) backstage.close();
+  else if (inMenuBar() || openMenu) leaveMenuBar();
   else enterMenuBar();
 });
 window.addEventListener('pointerdown', () => { altAlone = false; pointerHeld = true; }, true);
@@ -11684,8 +11754,9 @@ function tickMenuModes(): void {
   const mode = menuMode();
   // (a command greyed for the last mode is given back; showMenu greys it again if it still cannot run)
   clearCanRun(document.querySelector('header')!);
+  if (backstage?.isOpen) clearCanRun(backstage.pane);
   // what belongs to another mode is left out of the menus (marked, so what is hidden for other reasons stays hidden)
-  for (const el of document.querySelectorAll<HTMLElement>('header .menu > button, header .menu > .submenu, header .menu.sub > button')) {
+  for (const el of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu > button, :is(header, #backstage) .menu > .submenu, :is(header, #backstage) .menu.sub > button')) {
     const modes = el.dataset.modes ?? el.closest<HTMLElement>('[data-item-modes]')?.dataset.itemModes;
     if (!modes) continue;
     const on = modes.split(' ').includes(mode);
@@ -11694,7 +11765,7 @@ function tickMenuModes(): void {
     if (on && el.dataset.modeHid) { el.hidden = false; delete el.dataset.modeHid; }
     else if (!on && !el.hidden) { el.hidden = true; el.dataset.modeHid = '1'; }
   }
-  for (const menu of document.querySelectorAll<HTMLElement>('header .menu')) {
+  for (const menu of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu')) {
     const items = [...menu.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName !== 'HR');
     // a menu with nothing for this mode (Chemistry beside a sheet) shows its commands greyed out, so it is never empty
     if (items.length && items.every((c) => c.hidden)) {
@@ -11723,7 +11794,7 @@ function tickMenuModes(): void {
 tickMenuModes();
 // (in the capture phase: the drawing takes a finger's press for itself, so it never bubbles up)
 document.addEventListener('pointerdown', (e) => {
-  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap')) showMenu(null);
+  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap, #backstage, .rb-file')) showMenu(null);
 }, true);
 // listing the clipboard's formats needs the Windows app
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-cmd="clipboard-formats"]')) b.hidden = !nativeClipboard;
@@ -13063,6 +13134,7 @@ function currentSettings(): Settings {
     ribbonCollapsed: ribbonChosen,
     ribbonAutoFold,
     tabsInMenu,
+    menusInFile,
     uiScale: uiScale(),
     textBar: CaptionEditor.barPlace,
     appTheme,
@@ -13314,6 +13386,7 @@ function applySettings(s: Settings): void {
   ribbonAutoFold = s.ribbonAutoFold;
   autoFoldRibbon(true);
   placeTabs(s.tabsInMenu);
+  setMenusInFile(s.menusInFile);
   void setUiScale(s.uiScale);
   defaultPage = s.page;
   welcomed = s.welcomed;
@@ -16251,7 +16324,7 @@ let toolboxMenuTop: Element | null = null;
 
 /** View > Toolboxes: a ticked entry for each toolbox there is now, named and in the order Customize Toolboxes has them. */
 function fillToolboxMenu(): void {
-  const first = document.querySelector<HTMLElement>('header .menu [data-cmd^="toolbox-"]');
+  const first = document.querySelector<HTMLElement>(':is(header, #backstage) .menu [data-cmd^="toolbox-"]');
   if (!first) return;
   toolboxMenuTop ??= first.previousElementSibling;
   const menu = first.parentElement!;
@@ -16396,13 +16469,15 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
+  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
+  defaults: isTauri() ? undefined : QUICK_WEB,
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,
   key: (cmd) => commandKey(cmd),
   icon: (cmd) => (cmd === 'lock-toolboxes' ? lockIcon(toolboxState.locked) : commandIcon(cmd)),
   state: (cmd) => {
-    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"]`);
+    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"], #backstage .menu [data-cmd="${cmd}"]`);
     const e = topMenuEntry(cmd);
     return { enabled: !item || (!item.disabled && !item.closest('[data-mode-hid]')), on: e?.checked ?? null };
   },
@@ -16410,7 +16485,7 @@ quickBar = new QuickBar($('#quick-bar'), {
 });
 // right-click a menu item, or a ribbon button that runs a menu command, to put it on the quick bar (or take it off)
 document.addEventListener('contextmenu', (e) => {
-  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], .ribbon button[data-cmd]');
+  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], #backstage .menu [data-cmd], .ribbon button[data-cmd]');
   if (!b || !quickBar) return;
   e.preventDefault();
   const qb = quickBar;
@@ -16448,9 +16523,10 @@ function commandItems(): CommandItem[] {
     finishTyping();
     if (!command(cmd)) flash(`${label} isn't available here.`);
   };
-  for (const wrap of document.querySelectorAll<HTMLElement>('header .menu-wrap')) {
-    const menu = wrap.querySelector<HTMLElement>(':scope > button')?.textContent?.trim() ?? '';
-    for (const b of wrap.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
+  // (by the menus themselves: one may be in the File tab's page just now)
+  for (const { btn, list } of menus) {
+    const menu = btn.textContent?.trim() ?? '';
+    for (const b of list.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
       if (b.hidden || b.disabled || getComputedStyle(b).display === 'none') continue;
       // the submenus it is in, outermost first (File ▸ Export)
       const subs: HTMLButtonElement[] = [];

@@ -1,0 +1,2 @@
+Changed: Web app: the menus (File, Edit, View, Insert, Format, Chemistry, Help) move into a File tab at the start of the ribbon, as in Office. It opens a page with each menu's commands; Alt and a menu's letter (Alt+F, Alt+E…) open its page, and Esc closes it. View ▸ Window and Colors ▸ Menu Bar brings the menu bar back. The desktop app keeps its menu bar.
+Changed: Web app: the Quick Access Toolbar starts with only Save, Undo and Redo. Its ▾ button still adds others.

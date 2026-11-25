@@ -11,7 +11,10 @@ describe('the web version\'s defaults', () => {
       const s = parseSettings(text);
       expect(s.appTheme).toBe('darkgray');
       expect(s.canvasRibbon).toBe('simple');
+      // the menus are in the File tab, as in Office (no menu bar)
+      expect(s.menusInFile).toBe(true);
     }
+    expect(parseSettings(JSON.stringify({ menusInFile: false })).menusInFile).toBe(false);
   });
 
   it('keeps a theme and a ribbon look that were chosen', async () => {
@@ -51,6 +54,9 @@ describe('the desktop app\'s defaults', () => {
     const s = parseSettings('{}');
     expect(s.appTheme).toBe('darkgray');
     expect(s.canvasRibbon).toBe('classic');
+    // the desktop app keeps its menu bar
+    expect(s.menusInFile).toBe(false);
+    expect(parseSettings(JSON.stringify({ menusInFile: true })).menusInFile).toBe(true);
     // the desktop app's saved choices are never moved
     const kept = parseSettings(JSON.stringify({ appTheme: 'light', canvasRibbon: 'classic' }));
     expect(kept.appTheme).toBe('light');
