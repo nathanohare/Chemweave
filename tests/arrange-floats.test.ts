@@ -156,3 +156,29 @@ describe('order, groups and the Selection Pane', () => {
     expect(names).toEqual(expect.arrayContaining(['Spot test', 'Flask "flipped" & co']));
   });
 });
+
+describe('the stack in a Word file (office sampler F-W-026)', () => {
+  // (each picture told apart by where it is)
+  const byX = (t: DocText) => stackOrder(t).map((id) => (t.objects[id] as { float: Float }).float.x);
+  const heights = (bytes: Uint8Array) => [...strFromU8(unzipSync(bytes)['word/document.xml']).matchAll(/relativeHeight="(\d+)"/g)].map((m) => Number(m[1]));
+
+  it('saves the figures front to back as they are drawn here, a new one with no place of its own among them too', async () => {
+    let t = restacked(restacked(threeDoc(), 1, 'front'), 3, 'back');
+    // a new picture, put first in the text, with no place in the stack of its own
+    t = { ...t, runs: [{ ...look, obj: 4, text: '￼' }, ...t.runs], objects: { ...t.objects, 4: picture({ wrap: 'square', x: 150, y: 0 }) } };
+    const before = byX(t);
+    const once = await writeDocx(t, deps);
+    const h = heights(once);
+    expect(new Set(h).size).toBe(4);
+    const back = (await readDocx(once)).doc;
+    expect(byX(back)).toEqual(before);
+    // and the same again
+    expect(heights(await writeDocx(back, deps))).toEqual(h);
+  });
+
+  it('reads a stack in the order of the text back with no place of its own, so nothing is restacked by saving', async () => {
+    const once = await writeDocx(threeDoc(), deps);
+    const back = (await readDocx(once)).doc;
+    expect(Object.values(back.objects).map((o) => (o as { float?: Float }).float?.z)).toEqual([undefined, undefined, undefined]);
+  });
+});
