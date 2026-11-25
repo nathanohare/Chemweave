@@ -1202,6 +1202,8 @@ export class DocumentMode {
     // a document opened with structures that aren't figures: offer to make them figures (once)
     if (!st) this.figureOffer.opened(f);
     this.blink ??= setInterval(() => {
+      // (the page is gone: a test's window was torn down while the timer was still running)
+      if (typeof document === 'undefined') { if (this.blink) clearInterval(this.blink); this.blink = null; return; }
       // no caret to blink (Read Mode, text selected, typing elsewhere): no need to paint the pages
       // again, after one last time to take a caret that showed off
       if (!this.caretCanShow()) {
