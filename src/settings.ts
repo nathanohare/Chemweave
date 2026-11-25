@@ -286,7 +286,7 @@ export interface Settings {
   /** Settings ▸ Preferences ▸ Electron Counting Method: which column of the metal complex's electron count to show. */
   electronMethod: ElectronMethod;
   /** The web version has been moved to its newer starting look (Dark Gray, Simplified ribbon), once. */
-  webLook: 0 | 1;
+  webLook: 0 | 1 | 2;
   /** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size, in percent of the ribbon's small buttons (the rest of the interface keeps its size). */
   toolboxScale: number;
   /** The Windows app has offered to open the chemistry file types (once, at its first start). */
@@ -367,7 +367,7 @@ export const DEFAULT_SETTINGS: Settings = {
   cursorAids: { ...DEFAULT_CURSOR_AIDS },
   haptoDelocalized: true,
   electronMethod: 'both',
-  webLook: 1,
+  webLook: 2,
   toolboxScale: 100,
 };
 
@@ -516,9 +516,15 @@ export function parseSettings(text: string | null | undefined): Settings {
   // that look once, where they still hold what the app used to start with (the System theme, the
   // Classic ribbon: a default that was saved can't be told from a choice). A Light or Dark theme was
   // chosen, so it stays; after the move, whatever is chosen stays.
-  if (webDefaults() && r.webLook !== 1 && Object.keys(r).length) {
+  const look = r.webLook === 1 || r.webLook === 2 ? r.webLook : 0;
+  if (webDefaults() && look < 1 && Object.keys(r).length) {
     if (s.appTheme === 'system') s.appTheme = 'darkgray';
     s.canvasRibbon = 'simple';
+  }
+  // and once more (2026-11-25): the Drawing Tools docked at the left, as they used to start, float at
+  // the top left of the drawing instead, with no dock beside them; moved or docked after that, they stay
+  if (webDefaults() && look < 2 && Object.keys(r).length && s.toolboxes.places.main?.dock === 'left') {
+    s.toolboxes.places.main = { ...s.toolboxes.places.main, dock: 'float', x: 70, y: 90, corner: 'left' };
   }
   return s;
 }

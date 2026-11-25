@@ -38,11 +38,31 @@ describe('the web version\'s defaults', () => {
     expect(old.canvasRibbon).toBe('simple');
     expect(old.density).toBe('normal');
     // what is saved from then on carries the mark, so a later choice of Classic or Light stays
-    expect(old.webLook).toBe(1);
-    expect(DEFAULT_SETTINGS.webLook).toBe(1);
+    expect(old.webLook).toBe(2);
+    expect(DEFAULT_SETTINGS.webLook).toBe(2);
     const later = parseSettings(JSON.stringify({ ...old, appTheme: 'light', canvasRibbon: 'classic' }));
     expect(later.appTheme).toBe('light');
     expect(later.canvasRibbon).toBe('classic');
+  });
+});
+
+describe('the web version\'s Drawing Tools', () => {
+  it('start floating at the top left of the drawing, with no dock beside them', async () => {
+    const { parseSettings } = await import('../src/settings');
+    const s = parseSettings('{}');
+    expect(s.toolboxes.places.main).toMatchObject({ shown: true, dock: 'float', corner: 'left' });
+  });
+
+  it('move there once from the dock where they used to start; after that, wherever they are put stays', async () => {
+    const { parseSettings, settingsText } = await import('../src/settings');
+    const docked = { toolboxes: { places: { main: { shown: true, dock: 'left', x: 0, y: 0 } } } };
+    const moved = parseSettings(JSON.stringify({ ...docked, webLook: 1 }));
+    expect(moved.toolboxes.places.main).toMatchObject({ dock: 'float', corner: 'left' });
+    // docked again by hand: saved with the mark, it stays docked
+    moved.toolboxes.places.main = { ...moved.toolboxes.places.main, dock: 'left', corner: undefined };
+    expect(parseSettings(settingsText(moved)).toolboxes.places.main.dock).toBe('left');
+    // (one put somewhere else, such as the top, was a choice: it stays)
+    expect(parseSettings(JSON.stringify({ toolboxes: { places: { main: { shown: true, dock: 'top', x: 0, y: 0 } } } })).toolboxes.places.main.dock).toBe('top');
   });
 });
 
@@ -57,6 +77,9 @@ describe('the desktop app\'s defaults', () => {
     // the desktop app keeps its menu bar
     expect(s.menusInFile).toBe(false);
     expect(parseSettings(JSON.stringify({ menusInFile: true })).menusInFile).toBe(true);
+    // the Drawing Tools stay docked at the left, and saved ones are never moved
+    expect(s.toolboxes.places.main).toMatchObject({ dock: 'left' });
+    expect(parseSettings(JSON.stringify({ toolboxes: { places: { main: { shown: true, dock: 'left', x: 0, y: 0 } } } })).toolboxes.places.main.dock).toBe('left');
     // the desktop app's saved choices are never moved
     const kept = parseSettings(JSON.stringify({ appTheme: 'light', canvasRibbon: 'classic' }));
     expect(kept.appTheme).toBe('light');

@@ -3,6 +3,7 @@
 // and commands. Unlocked, a toolbox is dragged by its title to float anywhere, or to an edge of
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
+import { isTauri } from '@tauri-apps/api/core';
 import { BOX_COLS, fullCols } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
@@ -19,8 +20,8 @@ export interface BoxPlace {
   collapsed?: boolean;
   /** Locked where it is (its own padlock); unset follows the big Locked button. */
   locked?: boolean;
-  /** Floating at the top right of the drawing, whatever the window's size, until it is moved (the side panel starts so). */
-  corner?: boolean;
+  /** Floating at the top right of the drawing (true), or its top left ('left'), whatever the window's size, until it is moved (the side panel starts at the right; the web app's Drawing Tools at the left). */
+  corner?: boolean | 'left';
 }
 
 export interface ToolboxState {
@@ -151,9 +152,16 @@ export const NOT_IN_TOOLBOX_MENU: readonly string[] = ['details', 'smart'];
 export const CONTEXT_BOXES = ['schemes', 'diagrams', 'tables', 'biopolymers', 'perspective'] as const;
 export type ContextBox = (typeof CONTEXT_BOXES)[number];
 
+/** The web version (not the desktop app). */
+function webToolboxes(): boolean {
+  try { return !isTauri(); } catch { return true; }
+}
+
 export function defaultToolboxes(): ToolboxState {
   const places: Record<string, BoxPlace> = {};
   TOOLBOX_IDS.forEach((id, i) => { places[id] = { shown: id === 'main', dock: id === 'main' ? 'left' : 'float', x: 110 + i * 24, y: 90 + i * 64 }; });
+  // the web app's Drawing Tools float at the top left of the drawing, with no dock beside it (Nate, 2026-11-25)
+  if (webToolboxes()) places.main = { ...places.main, dock: 'float', x: 70, y: 90, corner: 'left' };
   // the side panel (Style, Warnings, Analysis) is always shown, floating at the top right of the drawing to start with
   places.details = { shown: true, dock: 'float', x: 900, y: 90, corner: true };
   // the Smart Scheme species list floats beside its scheme until docked (then it is a toolbox, at the right to start with)
@@ -197,7 +205,7 @@ export function parseToolboxes(raw: unknown): ToolboxState {
         x: num(p.x, s.places[id].x), y: num(p.y, s.places[id].y),
         ...(p.collapsed === true ? { collapsed: true } : {}),
         ...(typeof p.locked === 'boolean' ? { locked: p.locked } : {}),
-        ...(p.corner === true && p.dock === 'float' ? { corner: true } : {}),
+        ...((p.corner === true || p.corner === 'left') && p.dock === 'float' ? { corner: p.corner } : {}),
       };
     }
   }
@@ -587,7 +595,9 @@ export class Toolboxes {
   /** Put a floating toolbox at the top right of the drawing (where the side panel starts). */
   private toCorner(f: HTMLElement): void {
     const w = this.hooks.work().getBoundingClientRect();
-    f.style.left = `${Math.max(w.left, Math.round(w.right - f.offsetWidth - 6))}px`;
+    const id = [...this.frames].find(([, g]) => g === f)?.[0];
+    const left = id ? this.hooks.get().places[id]?.corner === 'left' : false;
+    f.style.left = `${left ? Math.round(w.left + 6) : Math.max(w.left, Math.round(w.right - f.offsetWidth - 6))}px`;
     f.style.top = `${Math.round(w.top + 6)}px`;
   }
 

@@ -4275,7 +4275,7 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 /* ---- item 38: Dark Gray (View > Window and Colours > Theme), like Office's: a dark title bar and
    tab band, the ribbon and the panels a lighter gray so the icons read easily; the page stays white.
    It is the light theme underneath (data-theme="light"), with these colours over it. */
-:root[data-gray] { --chrome: #2e3137; --rb-surface: #d3d6db; --pane: #dfe1e5; --bg: #b4b8bf; --surround: #9fa4ad; --line: #bfc3ca; --rb-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+:root[data-gray] { --chrome: #2e3137; --rb-surface: #d3d6db; --pane: #dfe1e5; --bg: #b4b8bf; --surround: #7d838d; --line: #bfc3ca; --rb-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
 :root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
@@ -5864,3 +5864,28 @@ body.backstage-open .ribbon { visibility: hidden; }
   .menu.bs-page { columns: 1; }
   .menu.bs-page button { white-space: normal; }
 }
+/* Focus View hides the ribbon, and with it the File tab: the menu bar shows instead, so the menus stay a click away */
+body.menus-in-file.focus-view header > .menu-wrap > button { display: inline-block; }
+html.touch-ui .bs-nav button { min-height: 40px; }
+
+/* ---- the web app's one row (no title row): Quick Access, the file tabs and Search in the ribbon's row of tabs */
+body.one-row:not(.focus-view) > header { display: none; }
+.rb-tabs > #quick-bar { align-self: center; margin: 0 6px 0 6px; padding: 0 6px; border-left: 1px solid color-mix(in srgb, var(--text) 25%, transparent); border-right: 1px solid color-mix(in srgb, var(--text) 25%, transparent); }
+.rb-tabs > #quick-bar > button { height: 22px; padding: 0 2px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: color-mix(in srgb, var(--text) 90%, transparent); }
+.rb-tabs > #quick-bar > button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 16%, transparent); border-color: transparent; color: var(--text); }
+.rb-tabs > #quick-bar > button:disabled { color: color-mix(in srgb, var(--text) 86%, transparent); opacity: 0.45; }
+.rb-tabs > #tabs { flex: 1 1 0; min-width: 0; display: flex; align-self: stretch; align-items: center; margin: 0 4px 0 12px; padding: 0; background: transparent; border: 0; }
+.rb-tabs > #tabs .tab-strip { align-items: center; }
+.rb-tabs .tab { flex: 0 1 180px; min-width: 0; height: 24px; margin: 0 1px; border: 1px solid transparent; border-radius: var(--r-control); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs .tab:hover { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+.rb-tabs .tab.active { background: color-mix(in srgb, var(--text) 20%, transparent); border-color: color-mix(in srgb, var(--text) 35%, transparent); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.rb-tabs .tab .tab-close, .rb-tabs .tab-ctl { width: 22px; height: 20px; padding: 0; border-radius: var(--r-control); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs .tab .tab-close:hover, .rb-tabs .tab-ctl:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 16%, transparent); color: var(--text); }
+.rb-tabs > #btn-search { align-self: center; height: 22px; min-width: 0; margin: 0 6px 0 2px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--text) 28%, transparent); border-radius: var(--r-control); background: color-mix(in srgb, var(--text) 8%, transparent); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs > #btn-search:hover { background: color-mix(in srgb, var(--text) 16%, transparent); color: var(--text); }
+/* the row's other buttons sit after Search (the warnings box no longer pushes itself to the right) */
+body.one-row .rb-tabs > button.cr-warnings, body.one-row .rb-tabs > .cr-tab-end { margin-left: 0; }
+/* a floating two-column toolbox (the web app's Drawing Tools): its name, then its buttons on one line under it
+   (the whole title bar drags it, so the grip dots make way for ×) */
+html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-grip { display: none; }
+html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-lock { margin-left: auto; }

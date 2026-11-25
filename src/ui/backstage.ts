@@ -24,6 +24,8 @@ export class Backstage {
   private cur = -1;
   /** The menu showing (-1 when closed). */
   get current(): number { return this.cur; }
+  /** What it made inert while it shows, to give back. */
+  private inerted: HTMLElement[] = [];
   /** Where the keys were before it opened, to go back to. */
   private before: HTMLElement | null = null;
 
@@ -31,6 +33,8 @@ export class Backstage {
     this.el = document.createElement('div');
     this.el.id = 'backstage';
     this.el.hidden = true;
+    this.el.setAttribute('role', 'dialog');
+    this.el.setAttribute('aria-label', 'File');
     this.nav = document.createElement('nav');
     this.nav.className = 'bs-nav';
     this.nav.setAttribute('aria-label', 'File');
@@ -49,8 +53,13 @@ export class Backstage {
       if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
         e.preventDefault();
         const n = items[(i + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % items.length];
-        n.focus();
         if (n.dataset.i) this.openAt(Number(n.dataset.i), false, true);
+        // (by its place: the list may have been drawn again)
+        this.nav.querySelectorAll<HTMLButtonElement>('button')[items.indexOf(n)]?.focus();
+      } else if (e.key === 'Home' || e.key === 'End') {
+        e.preventDefault();
+        const n = e.key === 'Home' ? 1 : items.length - 1;
+        this.openAt(Number(items[n].dataset.i), false);
       } else if (e.key === 'ArrowRight' && i > 0) {
         e.preventDefault();
         this.openAt(this.current, true);
@@ -60,6 +69,8 @@ export class Backstage {
         this.close();
       }
     });
+    // the page follows the title row if its height changes (the window narrower, the interface larger)
+    addEventListener('resize', () => { if (this.isOpen) this.place(); });
     // a part of the window, beside the title row (not a pop-up: it never opens over a window)
     const header = document.querySelector('header');
     if (header) header.after(this.el); else document.querySelector('main, #app')?.before(this.el);
@@ -74,10 +85,12 @@ export class Backstage {
     if (!this.isOpen) {
       const a = document.activeElement as HTMLElement | null;
       this.before = a && a !== document.body && !this.el.contains(a) ? a : null;
-      // the page starts under the title row, over the ribbon and the work, as Office's does
-      const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
-      document.documentElement.style.setProperty('--bs-top', `${Math.round(top)}px`);
+      this.place();
       this.el.hidden = false;
+      // what is under the page is out of the keys' reach (Tab stays in the page and the title row)
+      this.inerted = [...document.body.children].filter((c): c is HTMLElement =>
+        c instanceof HTMLElement && c !== this.el && c.tagName !== 'HEADER' && c.tagName !== 'DIALOG' && c.tagName !== 'SCRIPT' && !c.hasAttribute('inert') && !c.matches('.menu, .context-menu, .popup-menu, #flash, [role="status"], [aria-live]'));
+      for (const c of this.inerted) c.setAttribute('inert', '');
       document.body.classList.add('backstage-open');
       for (const b of fileTabs()) b.setAttribute('aria-expanded', 'true');
     }
@@ -88,6 +101,12 @@ export class Backstage {
     if (!focusPage && !keepNav) this.nav.querySelector<HTMLButtonElement>(`button[data-i="${this.current}"]`)?.focus();
   }
 
+  /** The page starts under the title row, over the ribbon and the work, as Office's does. */
+  private place(): void {
+    const top = document.querySelector('header')?.getBoundingClientRect().bottom ?? 0;
+    document.documentElement.style.setProperty('--bs-top', `${Math.round(top)}px`);
+  }
+
   /** Put the keys on the list of menus, at the menu showing. */
   focusNav(): void {
     this.nav.querySelector<HTMLButtonElement>(`button[data-i="${this.current}"]`)?.focus();
@@ -96,6 +115,8 @@ export class Backstage {
   close(restore = true): void {
     if (!this.isOpen) return;
     this.el.hidden = true;
+    for (const c of this.inerted) c.removeAttribute('inert');
+    this.inerted = [];
     document.body.classList.remove('backstage-open');
     for (const b of fileTabs()) b.setAttribute('aria-expanded', 'false');
     this.cur = -1;
@@ -106,9 +127,17 @@ export class Backstage {
   }
 
   private drawNav(menus: { name: string }[]): void {
-    const back = `<button type="button" class="bs-back" title="Back (Esc)" aria-label="Back">${BACK}</button>`;
-    const html = back + menus.map((m, i) => `<button type="button" data-i="${i}"${i === this.current ? ' aria-current="page"' : ''}>${esc(m.name)}</button>`).join('');
-    if (this.nav.innerHTML !== html) this.nav.innerHTML = html;
+    // the names are written only when they change (Developer comes and goes), so the focus stays on its button
+    const names = menus.map((m) => m.name).join('\n');
+    if (this.nav.dataset.names !== names) {
+      this.nav.dataset.names = names;
+      const back = `<button type="button" class="bs-back" title="Back (Esc)" aria-label="Back">${BACK}</button>`;
+      this.nav.innerHTML = back + menus.map((m, i) => `<button type="button" data-i="${i}">${esc(m.name)}</button>`).join('');
+    }
+    for (const b of this.nav.querySelectorAll<HTMLButtonElement>('button[data-i]')) {
+      if (Number(b.dataset.i) === this.cur) b.setAttribute('aria-current', 'page');
+      else b.removeAttribute('aria-current');
+    }
   }
 }
 

@@ -84,3 +84,34 @@ describe('the File tab', () => {
     expect(bs.el.querySelector('img')).toBeNull();
   });
 });
+
+describe('the File tab\'s list of menus from the keyboard', () => {
+  it('keeps the keys on the list as Down and Up move through it', () => {
+    ribbons();
+    const bs = new Backstage({ menus: () => [{ name: 'File' }, { name: 'Edit' }, { name: 'View' }], show: () => {}, closed: () => {} });
+    bs.openAt(0, false);
+    const at = () => (document.activeElement as HTMLElement).textContent;
+    expect(at()).toBe('File');
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(at()).toBe('Edit');
+    expect(bs.current).toBe(1);
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    expect(at()).toBe('View');
+    document.activeElement!.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    expect(at()).toBe('Edit');
+    expect(bs.el.querySelector('[aria-current="page"]')!.textContent).toBe('Edit');
+  });
+
+  it('puts what is under it out of the keys\' reach while it shows, and gives it back', () => {
+    ribbons();
+    const work = document.createElement('main');
+    document.body.append(work);
+    const bs = new Backstage({ menus: () => [{ name: 'File' }], show: () => {}, closed: () => {} });
+    bs.openAt(0, false);
+    expect(work.hasAttribute('inert')).toBe(true);
+    expect(document.querySelector('header')!.hasAttribute('inert')).toBe(false);
+    expect(bs.el.getAttribute('role')).toBe('dialog');
+    bs.close();
+    expect(work.hasAttribute('inert')).toBe(false);
+  });
+});

@@ -102,7 +102,8 @@ try {
       await frame();
       const r = [...document.querySelectorAll('.ribbon')].find((x) => x.offsetParent);
       if (!r) continue;
-      const tabs = [...r.querySelectorAll(':scope > .rb-tabs [role="tab"]')];
+      // (the ribbon's own tabs: not the open files' tabs, which share the row in the web app)
+      const tabs = [...r.querySelectorAll(':scope > .rb-tabs [role="tab"]')].filter((t) => !t.closest('#tabs'));
       // (an object's own tabs too, hidden until one is selected)
       for (const t of tabs) {
         const was = t.hidden;
@@ -182,9 +183,11 @@ try {
       if (tab.mode === 'sheet' || tab.mode === 'document') continue;
       const box = document.querySelector('.toolbox[data-id="main"]'), body = box?.querySelector('.tb-body');
       // the SI tab has no canvas (its structures open in a drawing window): no docked toolbox shows there
-      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: !!box?.offsetParent }); continue; }
+      // (shown, docked or floating: a floating toolbox is position: fixed, so it has no offsetParent)
+      const shown = !!box && box.getClientRects().length > 0;
+      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: shown }); continue; }
       const cells = box?.querySelector('.tb-cells');
-      if (!cells || !box.offsetParent) { out.push({ mode: tab.mode, cols: 0 }); continue; }
+      if (!cells || !shown) { out.push({ mode: tab.mode, cols: 0 }); continue; }
       const b = box.getBoundingClientRect();
       out.push({ mode: tab.mode, cols: getComputedStyle(cells).gridTemplateColumns.split(' ').length, bottom: b.bottom, h: innerHeight, page: document.documentElement.scrollHeight, scrolls: body.scrollHeight > body.clientHeight });
     }
@@ -335,6 +338,9 @@ try {
       await close();
     }
   }
+  // back to the web app's start (the menus in the File tab) for the rest
+  await page.evaluate(() => window.__app.command('menu-bar'));
+  await page.waitForTimeout(150);
   /** Right-click at (x, y) in the window and check the menu that opens. */
   const rightClick = async (what, x, y) => {
     await page.mouse.click(x, y, { button: 'right' });

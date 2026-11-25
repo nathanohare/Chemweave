@@ -336,7 +336,7 @@ import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
 import { type OrientPrefs, DEFAULT_ORIENT } from './orientation-prefs';
 import { type PageLook, type Side, DEFAULT_PAGE_LOOK, SIDES, SIDE_NAMES, pageExtent, extentRect, pageCount, pageKey, scrollBox, wallRect, wallsOf, setWall, usedPages, pagesToPrint, fixedCount, crossesWalls, clampMove, insetWalls, wrapPieces } from './page-grid';
-import { paintPages } from './ui/page-grid-view';
+import { paintPages, GRAY_ROOM_EXTRA } from './ui/page-grid-view';
 import { addRecent as addRecentSymbol } from './text/symbols';
 import type { CellBlock } from './sheet/workbook';
 import { DEFAULT_AI, type AiPrefs } from './ai/link';
@@ -6226,7 +6226,7 @@ function refreshHistory(): void {
     for (const [cmd, verb] of [['undo', 'Undo'], ['redo', 'Redo']] as const) {
       const step = historyStep(cmd === 'redo');
       const name = step ? `${verb} ${step}` : verb;
-      for (const item of document.querySelectorAll<HTMLButtonElement>(`header .menu [data-cmd="${cmd}"]`)) {
+      for (const item of document.querySelectorAll<HTMLButtonElement>(`:is(header, #backstage) .menu [data-cmd="${cmd}"]`)) {
         item.disabled = step === null;
         const label = item.firstChild;
         if (label?.nodeType === Node.TEXT_NODE) label.textContent = name;
@@ -6363,7 +6363,8 @@ new ResizeObserver(() => fitTabs()).observe(tabsEl);
 let tabsInMenu = true;
 function placeTabs(inMenu: boolean): void {
   tabsInMenu = inMenu;
-  if (inMenu) $('header').insertBefore(tabsEl, $('#btn-search'));
+  // (beside Search, wherever it is: the title row, or the ribbon's row of tabs in the web app)
+  if (inMenu) $('#btn-search').before(tabsEl);
   else $('header').after(tabsEl);
   document.body.classList.toggle('tabs-in-menu', inMenu);
   $('[data-cmd="tabs-in-menu"]')?.setAttribute('aria-checked', String(inMenu));
@@ -8622,6 +8623,9 @@ function showSheetParts(): void {
     el.hidden = (c.contains('sheet-only') && !sheet) || (c.contains('no-sheet') && sheet) || (c.contains('doc-only') && !words)
       || (c.contains('no-doc') && words);
   }
+  // another file's tab: the File tab's page closes (its menus were for the last one), and a ribbon made since (an SI project's) gets its File tab
+  if (backstage?.isOpen) backstage.close(false);
+  if (menusInFile) { addFileTabs(() => openBackstage()); placeOneRow(); }
   tickMenuModes();
 }
 
@@ -9000,7 +9004,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (!sheetActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #sheet-pane, select')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, #sheet-pane, select')) return;
   if (sheetKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) sheetMode.focus();
 });
@@ -9258,7 +9262,10 @@ function loadSiMode(): Promise<SiMode> {
       },
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
+    // the SI Project ribbon, made only now, leads with the File tab too
+    if (menusInFile) addFileTabs(() => openBackstage());
     if (ws.active.mode === 'si') siMode.show(ws.active);
+    if (menusInFile) placeOneRow();
     return siMode;
   }, (err: unknown) => {
     siModeLoading = null;
@@ -10309,7 +10316,7 @@ const DOC_ANY = new Set(['export-pdf', 'print']);
 window.addEventListener('keydown', (e) => {
   if (!docActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, select, aside, .ribbon')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, select, aside, .ribbon')) return;
   if (docKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) docMode.focus();
 });
@@ -11587,6 +11594,7 @@ function backstageKeys(e: KeyboardEvent, m: Menu): void {
 /** A menu shown as the File tab's page goes back to its place on the menu bar. */
 function putBack(m: Menu): void {
   m.list.classList.remove('bs-page');
+  for (const head of m.list.querySelectorAll<HTMLButtonElement>('button.has-sub')) head.removeAttribute('tabindex');
   if (m.list.parentElement !== m.btn.parentElement) m.btn.after(m.list);
 }
 function openBackstage(m: Menu = menus[0], focusPage = false): void {
@@ -11603,7 +11611,10 @@ function openBackstage(m: Menu = menus[0], focusPage = false): void {
         sub.hidden = false;
         sub.style.removeProperty('left');
         sub.style.removeProperty('top');
-        sub.parentElement!.querySelector(':scope > button')!.setAttribute('aria-expanded', 'true');
+        const head = sub.parentElement!.querySelector<HTMLButtonElement>(':scope > button')!;
+        head.setAttribute('aria-expanded', 'true');
+        // (a submenu's name is its heading here, not a command: out of the Tab order)
+        head.tabIndex = -1;
         paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));
       }
       backstage!.pane.scrollTop = 0;
@@ -11624,7 +11635,35 @@ function setMenusInFile(on: boolean): void {
   if (on) addFileTabs(() => openBackstage());
   else backstage?.close(false);
   $('[data-cmd="menu-bar"]')?.setAttribute('aria-checked', String(!on));
+  placeOneRow();
   fitRibbons();
+}
+
+// The web app with the menus in the File tab has no title row (Nate, 2026-11-25): Quick Access goes
+// before File in the ribbon's row of tabs, the file tabs and Search after the ribbon's tabs. The
+// desktop app keeps its title row (it moves the window and holds the window's buttons).
+const qaHome = document.createComment('quick bar');
+const searchHome = document.createComment('search');
+$('#quick-bar').before(qaHome);
+$('#btn-search').before(searchHome);
+function placeOneRow(): void {
+  const on = menusInFile && !isTauri();
+  document.body.classList.toggle('one-row', on);
+  const row = on ? [...document.querySelectorAll<HTMLElement>('.ribbon > .rb-tabs')].find((r) => !(r.parentElement as HTMLElement).hidden && r.offsetParent) : null;
+  const qa = $('#quick-bar'), search = $('#btn-search');
+  if (!row) {
+    // (the title row, as it was; while no ribbon shows, such as in Focus View, they stay where they last were)
+    if (on) return;
+    qaHome.after(qa);
+    searchHome.after(search);
+  } else {
+    // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
+    const tablist = row.querySelector(':scope > .rb-tablist')!;
+    if (qa.previousElementSibling !== tablist) tablist.after(qa);
+    if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
+  }
+  if (tabsInMenu) search.before(tabsEl);
+  fitTabs();
 }
 
 // ---------------------------------------------------------------- the keyboard round the window
@@ -11715,7 +11754,9 @@ window.addEventListener('keydown', (e) => {
   // Escape shuts an open menu wherever the keys are (one with every item greyed out never takes them)
   if (e.key === 'Escape' && openMenu && !openMenu.list.contains(e.target as Node | null)) {
     e.preventDefault(); e.stopImmediatePropagation();
-    showMenu(null);
+    // the File tab's page closes with the keys going back where they were
+    if (backstage?.isOpen) backstage.close();
+    else showMenu(null);
     return;
   }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
@@ -16763,7 +16804,7 @@ editor.underlay = (ctx) => {
   if (!drawingShown() || cellEdit) return;
   const p = gridPage();
   // with the page grid, whole pages show what is in use, so the tint round the drawing is left off
-  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround);
+  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround, graySurround ? GRAY_ROOM_EXTRA : undefined);
   else paintTint(ctx, orientPrefs, renderer, doc.bounds(), doc.style.labelSize * 1.5 + doc.style.bondLength);
 };
 editor.overlayTop = (ctx) => nmrPanel.drawMarks(ctx, renderer.view.scale, (id) => doc.atoms.get(id), (id) => doc.neighbors(id), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0e7c86');
@@ -17187,13 +17228,16 @@ function setShapesInk(ink: Settings['shapeInk']): void {
   $('[data-cmd="shape-ink-accent"]')?.setAttribute('aria-checked', String(ink === 'accent'));
 }
 
-/** The space round the drawing's pages in the dark theme (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
+/** The space round the drawing's pages in the dark and Dark Gray themes (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
 let darkSurround: string | null = null;
+/** Dark Gray: the room to add pages is a light grey against its dark surround (Nate's pick, 2026-11-25). */
+let graySurround = false;
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 function themeChanged(): void {
   const t = document.documentElement.dataset.theme;
   const isDark = t === 'dark' || (t !== 'light' && darkScheme.matches);
-  darkSurround = isDark ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
+  graySurround = !isDark && 'gray' in document.documentElement.dataset;
+  darkSurround = isDark || graySurround ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
   // the slide's and the document's canvases paint the space round the page themselves
   dispatchEvent(new CustomEvent('surround-changed', { detail: darkSurround }));
   renderer.repaintAll();

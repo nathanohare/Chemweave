@@ -76,7 +76,7 @@ function backToGroupRow(): void {
 
 /** The name and tick of a command as the top menus show it. */
 export function topMenuEntry(cmd: string): { label: string; checked: boolean | null } | null {
-  const b = document.querySelector<HTMLButtonElement>(`.menu-wrap [data-cmd="${cmd}"]`);
+  const b = document.querySelector<HTMLButtonElement>(`.menu-wrap [data-cmd="${cmd}"], #backstage .menu [data-cmd="${cmd}"]`);
   if (!b) return null;
   const span = b.querySelector('span');
   const text = (span ?? b).cloneNode(true) as HTMLElement;
