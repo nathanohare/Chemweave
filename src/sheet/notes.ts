@@ -17,6 +17,11 @@ export interface CellNote extends CommentThread {
    * italic, subscripts and fonts), written back while the note still says `text` by `author`.
    */
   xl?: { xml: string; text: string; author: string; /** The looks read with it (null: none), so a look changed here counts as a change. */ runs?: NoteRun[] | null };
+  /**
+   * From an Excel file: the ids of a threaded comment and of its replies (in order), written back
+   * so that every save names them the same (new ones get ids of their own).
+   */
+  tcIds?: { id: string; replies: string[] };
 }
 
 /** A note copied (for the undo history and pasting). */

@@ -299,6 +299,8 @@ export interface ExcelBookKept {
   calcAttrs?: string;
   /** Pictures placed in cells and other rich values: their parts and value metadata (see xlsx-rich.ts). */
   richValues?: RichValues;
+  /** The people of threaded comments as the file listed them (xl/persons/person.xml), written back with the same ids. */
+  persons?: { name: string; id: string; userId?: string; providerId?: string }[];
   /**
    * Every formula has the value Excel saved for it (worked out here, or kept): while nothing is
    * changed, Excel is not asked to work them all out again on opening (fullCalcOnLoad, after
