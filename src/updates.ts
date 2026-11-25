@@ -114,9 +114,32 @@ export function worthOffering(version: string, skipped: string | null): boolean 
   return version.replace(/^v/, '') !== (skipped ?? '').replace(/^v/, '');
 }
 
-/** The first lines of a release's notes, for the small notice. */
+/**
+ * A release's notes as plain lines: the Markdown the release workflow writes from changes/ ("### Fixed",
+ * "- Undo works. Fixes #12. (#40)") with links made plain text, and without what older releases
+ * carried from the merge commit (an empty pull request template, GitHub's "Merge pull request" line,
+ * the session and co-author lines).
+ */
+export function cleanNotes(body: string): string {
+  return body
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .split(/\r?\n## Checklist\b/)[0]
+    .split(/\r?\n/)
+    .map((l) => l.trim().replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1'))
+    .filter((l) => l && !/^(Merge (pull request|branch)\b|Every version: CHANGELOG\.md|Co-Authored-By:|Claude-Session:|🤖 |https:\/\/claude\.ai\/|_Requested by|## What this changes$)/i.test(l))
+    .join('\n');
+}
+
+/** One line of cleaned notes: a heading for a kind of change ("Fixed"), or one change. */
+export function noteLine(line: string): { heading?: string; text?: string } {
+  const h = /^#{1,6}\s+(.*)$/.exec(line);
+  if (h) return { heading: h[1] };
+  return { text: line.replace(/^[-*]\s+/, '') };
+}
+
+/** The first changes in a release's notes, for the small notice (headings left out). */
 export function shortNotes(notes: string, lines = 4): string {
-  const ls = notes.split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const ls = cleanNotes(notes).split('\n').map(noteLine).filter((l) => l.text).map((l) => l.text!);
   return ls.slice(0, lines).join('\n') + (ls.length > lines ? '\n…' : '');
 }
 
@@ -144,7 +167,7 @@ export function notesSince(releases: readonly PublishedRelease[], before: string
     .sort((a, b) => compareVersions(b.tag_name, a.tag_name))
     .map((r) => ({
       version: r.tag_name.replace(/^v/, ''),
-      notes: (r.body ?? '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !/^Merge (pull request|branch)\b/.test(l)).join('\n'),
+      notes: cleanNotes(r.body ?? ''),
     }))
     .filter((r) => r.notes);
 }

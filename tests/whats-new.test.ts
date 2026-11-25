@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareVersions, notesSince, newestNotes } from '../src/updates';
+import { compareVersions, notesSince, newestNotes, cleanNotes, shortNotes, noteLine } from '../src/updates';
 
 describe("What's New", () => {
   it('orders versions by number, not as text', () => {
@@ -29,5 +29,22 @@ describe("Help ▸ What's New (review of F5, R16)", () => {
     const rel = Array.from({ length: 12 }, (_, i) => ({ tag_name: `v0.1.${100 + i}`, body: `Change ${i}` }));
     expect(newestNotes(rel, '0.1.110').map((r) => r.version)).toEqual(['0.1.110', '0.1.109', '0.1.108']);
     expect(newestNotes(rel, '0.1.101', 5).map((r) => r.version)).toEqual(['0.1.101', '0.1.100']);
+  });
+});
+
+describe("What's New from change files", () => {
+  const body = '### Added\n\n- Slides: a new tool. (#740)\n\n### Fixed\n\n- Undo works. Fixes [#12](https://github.com/nathanohare/Chemweave/issues/12). (#741)\n\nEvery version: [CHANGELOG.md](https://github.com/nathanohare/Chemweave/blob/main/CHANGELOG.md)';
+  it('keeps the kinds of change and the changes, as plain text', () => {
+    expect(cleanNotes(body)).toBe('### Added\n- Slides: a new tool. (#740)\n### Fixed\n- Undo works. Fixes #12. (#741)');
+    expect(cleanNotes(body).split('\n').map(noteLine)).toEqual([
+      { heading: 'Added' }, { text: 'Slides: a new tool. (#740)' }, { heading: 'Fixed' }, { text: 'Undo works. Fixes #12. (#741)' },
+    ]);
+  });
+  it('the update notice shows the changes without the headings', () => {
+    expect(shortNotes(body, 1)).toBe('Slides: a new tool. (#740)\n…');
+  });
+  it("leaves out an older release's empty pull request template", () => {
+    const old = 'Staging (#716)\n\n## What this changes\n\n<!-- A few lines in plain words.\n-->\n\n## Checklist\n\n- **Real-program check**: queued';
+    expect(cleanNotes(old)).toBe('Staging (#716)');
   });
 });

@@ -2825,7 +2825,10 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .update-box p { margin: 0; white-space: pre-line; }
 .update-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .whats-new-list { display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
-.whats-new-list p { margin: 0; white-space: pre-line; font-size: var(--fs-sm); }
+.whats-new-list section { font-size: var(--fs-sm); }
+.whats-new-list ul { margin: 2px 0 0; padding-left: 16px; }
+.whats-new-list li { margin: 1px 0; }
+.whats-new-kind { margin-top: 4px; color: var(--muted, var(--text)); font-size: var(--fs-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .update-progress { font-variant-numeric: tabular-nums; }
 .desktop-only[hidden] { display: none !important; }
 
