@@ -60,7 +60,9 @@ export class Backstage {
         this.close();
       }
     });
-    document.body.append(this.el);
+    // a part of the window, beside the title row (not a pop-up: it never opens over a window)
+    const header = document.querySelector('header');
+    if (header) header.after(this.el); else document.querySelector('main, #app')?.before(this.el);
   }
 
   get isOpen(): boolean {

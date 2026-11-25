@@ -261,6 +261,26 @@ try {
   await page.keyboard.press('Escape');
   await page.waitForTimeout(100);
   if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('Esc did not close the File tab');
+  // a shortcut while the page shows runs and closes it (Ctrl+Shift+F1 is Focus View, on and off again)
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('ArrowRight');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(150);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('a command run while the File tab shows left it open over the work');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(150);
+  // Search (Alt+Q) from a command in the page
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Alt+KeyQ');
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('Alt+Q from a command in the File tab left the page open');
+  if (!(await page.evaluate(() => !!document.querySelector('dialog.command-search[open]')))) fail('Alt+Q from a command in the File tab did not open Search');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
   // the menu bar's checks below: the desktop app starts with it, and anyone can show it (View ▸ Menu Bar)
   await page.evaluate(() => window.__app.command('menu-bar'));
   await page.waitForTimeout(200);

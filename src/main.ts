@@ -388,6 +388,9 @@ const showLabCalculator = later(() => import('./ui/lab-calc-dialog'), 'showLabCa
 // Crash handling (src/diagnostics.ts): errors nothing else caught go to a log kept on this computer,
 // with a notice offering to report them through Send Feedback. The desktop app (not the iPad, whose
 // apps the system ends whenever it likes) also notices when it stopped without closing last time.
+/** The menus are in the File tab (the menu bar off), and its page once made (see "the File tab" below). */
+let menusInFile = false;
+let backstage: Backstage | null = null;
 const iPadApp = isTauri() && /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1;
 // NMR prediction is a desktop feature: its data (about 48 MB) is past what the browser version may
 // download, and the iPad app leaves it out (the builds for both drop public/nmr).
@@ -4462,6 +4465,8 @@ function showDevTools(on: boolean): void {
   for (const el of document.querySelectorAll<HTMLElement>('.dev-only')) el.hidden = !on;
   $('[data-cmd="dev-tools"]')?.setAttribute('aria-checked', String(on));
   if (on) { updatePanels(); renderErrorLog(); }
+  // the File tab's list gains or loses Developer
+  if (backstage?.isOpen) backstage.openAt(Math.min(backstage.current, shownMenus().length - 1), false, true);
 }
 
 function align(how: Align): void {
@@ -10567,6 +10572,8 @@ async function compareSlides(): Promise<void> {
 
 /** Run a menu command in the way that suits the tab showing. False when it doesn't apply there. */
 function command(name: string): boolean {
+  // a command run while the File tab's page shows (a shortcut, Search, a file tab) closes the page first
+  if (backstage?.isOpen) { backstage.close(false); if (!document.activeElement || document.activeElement === document.body) focusWork(); }
   // View > Toolboxes: one of your own
   if (name.startsWith('toolbox-own-')) { toolboxes.toggle(name.slice('toolbox-'.length)); return true; }
   if (sheetActive()) {
@@ -11517,8 +11524,11 @@ for (const m of menus) {
     // a greyed command says why and the menu stays open on it, for the keys to go on from (F5b-R09)
     const why = cantRun(b) ? whyCannotRun(cmd) : null;
     if (why) { flash(why); b.focus(); return; }
+    const fromPage = !!backstage?.isOpen;
     showMenu(null);
     command(cmd);
+    // the keys go back to the work, unless the command opened a window or put them somewhere
+    if (fromPage && (!document.activeElement || document.activeElement === document.body)) focusWork();
   });
   m.list.addEventListener('keydown', (e) => {
     if (backstage?.isOpen) { backstageKeys(e, m); return; }
@@ -11555,12 +11565,18 @@ addEventListener('resize', () => { if (openMenu && !backstage?.isOpen) showMenu(
 // With the menu bar off (the web app's start), a File tab leads each ribbon's tabs and opens the
 // menus as a page over the window, as Office's File tab does (src/ui/backstage.ts). The page is the
 // menu itself (.bs-page), so it greys, ticks and runs its commands just as the menu bar's does.
-let menusInFile = false;
-let backstage: Backstage | null = null;
 /** Every command in the page, top to bottom, for the arrow keys (the submenus' headings are not commands). */
 const pageItems = (list: HTMLElement) =>
   [...list.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('has-sub') && !b.hidden && !b.disabled && b.getClientRects().length > 0);
 function backstageKeys(e: KeyboardEvent, m: Menu): void {
+  // a shortcut (Ctrl+N, Alt+Q…) runs as it would anywhere else; command() closes the page
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    const chord = chordOf(e);
+    const action = chord ? keymap.lookup('command', chord) : null;
+    const a = action ? parseAction(action) : null;
+    if (a?.verb === 'command') { e.preventDefault(); e.stopPropagation(); command(a.arg); }
+    return;
+  }
   const items = pageItems(m.list);
   const i = items.indexOf(document.activeElement as HTMLButtonElement);
   if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); backstage!.close(); }

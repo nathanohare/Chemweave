@@ -112,6 +112,16 @@ export async function a11yProblems(page, log = () => {}) {
       await page.locator('.ribbon > .rb-tabs > .rb-file:visible').first().click();
       await page.waitForTimeout(200);
       await runAxe(look, 'the File tab open');
+      await esc();
+      // and the menu bar's File menu, as the desktop app (or anyone who shows the menu bar) has it
+      await cmd('menu-bar');
+      await page.waitForTimeout(150);
+      await page.locator('header > .menu-wrap > button').first().click();
+      await page.waitForTimeout(200);
+      await runAxe(look, 'the File menu open');
+      await esc();
+      await cmd('menu-bar');
+      await page.waitForTimeout(150);
     } else {
       await page.locator('header > .menu-wrap > button').first().click();
       await page.waitForTimeout(200);

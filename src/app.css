@@ -5853,3 +5853,14 @@ body.backstage-open .ribbon { visibility: hidden; }
 /* every command in the page starts at the same place, ticked or not (the menus keep room for a tick) */
 .menu.bs-page button:not([role='menuitemcheckbox'], [role='menuitemradio']) { padding-left: calc(8px + 1.2em); }
 .menu.bs-page { max-width: 1180px; }
+/* a narrow window (a phone, a tablet upright): the menus' names run along the top and the page is one column */
+@media (max-width: 640px) {
+  #backstage { flex-direction: column; }
+  .bs-nav { flex-direction: row; width: auto; padding: 0 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .bs-nav button { width: auto; flex: none; padding: 7px 10px; }
+  .bs-nav button[aria-current='page'] { box-shadow: inset 0 -3px 0 var(--accent); }
+  .bs-nav .bs-back { margin: 0 4px 0 0; align-self: center; }
+  .bs-pane { padding: 8px 10px; }
+  .menu.bs-page { columns: 1; }
+  .menu.bs-page button { white-space: normal; }
+}
