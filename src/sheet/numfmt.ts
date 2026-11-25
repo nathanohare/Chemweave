@@ -120,7 +120,7 @@ function parseSections(code: string): Section[] {
       continue;
     }
     // a fraction's fixed denominator (# ?/16): its digits right after the /
-    if (/[1-9]/.test(ch) && /\/\d*$/.test(lastCode(cur)) && cur.parts[cur.parts.length - 1]?.k === 'code') { pushCode(ch); continue; }
+    if (/[1-9]/.test(ch) && /[0#?]\/\d*$/.test(lastCode(cur)) && !isDateCode(lastCode(cur)) && cur.parts[cur.parts.length - 1]?.k === 'code') { pushCode(ch); continue; }
     if ('0#?.,%Ee+-@'.includes(ch) || /[ymdhsAP/:]/i.test(ch)) {
       // E+ / E- belong to the number; on their own + and - are text
       if ((ch === '+' || ch === '-') && !/[Ee]$/.test(lastCode(cur))) { pushLit(ch); continue; }
@@ -155,44 +155,65 @@ function sectionIsDate(sec: Section): boolean {
   return sec.parts.some((p) => p.k === 'code' && isDateCode(p.s) && !/[0#?]/.test(p.s.replace(/(s+\]?)\.0+/gi, '$1')));
 }
 
-/** A fraction's parts in a section's codes (# ?/?, # ??/16, ?/?): the whole number's, the numerator's and the denominator's. */
-function fractionOf(sec: Section): { whole: string; num: string; den: string } | null {
-  const code = sec.parts.map((p) => (p.k === 'code' ? p.s : ' ')).join('');
-  const m = /^\s*(?:([0#?,]+)\s+)?([0#?]+)\s*\/\s*([0#?]+|\d+)\s*$/.exec(code);
-  if (!m || /[.%Ee]/.test(code)) return null;
-  return { whole: m[1] ?? '', num: m[2], den: m[3] };
+/**
+ * A fraction in a section (# ?/?, # ??/16, ?/?, 0 0/0): which code part is the fraction (its
+ * numerator's and denominator's codes; a denominator of digits 1-9 first is a fixed one) and which
+ * is the whole number's, if any; null when the section isn't one.
+ */
+interface Fraction { at: number; whole: number; num: string; den: string }
+function fractionAt(sec: Section): Fraction | null {
+  const at = sec.parts.findIndex((p) => p.k === 'code' && p.s.includes('/'));
+  if (at < 0) return null;
+  const m = /^([0#?]+)\/([0#?]+|[1-9]\d*)$/.exec(sec.parts[at].s);
+  if (!m) return null;
+  let whole = -1;
+  for (let i = 0; i < sec.parts.length; i++) {
+    const p = sec.parts[i];
+    if (p.k !== 'code' || i === at) continue;
+    // (a whole number before it, of digits and thousands commas only; nothing else that is a number)
+    if (i < at && whole < 0 && /^[0#?,]+$/.test(p.s)) { whole = i; continue; }
+    if (/[0#?.%Ee]/.test(p.s)) return null;
+  }
+  return { at, whole, num: m[1], den: m[2] };
 }
 
-/** The fraction nearest x (0 ≤ x < 1) with a denominator under `limit`. */
+/** The fraction nearest x (0 ≤ x) with a denominator under `limit`. */
 function nearestFraction(x: number, limit: number): [number, number] {
-  let best: [number, number] = [0, 1], err = x;
-  for (let d = 1; d < limit; d++) {
+  let best: [number, number] = [Math.round(x), 1], err = Math.abs(x - Math.round(x));
+  for (let d = 2; d < limit && err > 0; d++) {
     const n = Math.round(x * d), e = Math.abs(x - n / d);
-    if (e < err - 1e-12) { best = [n, d]; err = e; if (e === 0) break; }
+    if (e < err - 1e-12) { best = [n, d]; err = e; }
   }
   return best;
 }
 
-/** A number as a fraction, as Excel shows it: the whole number, then the fraction (spaces for ? where there is none). */
-function formatFraction(v: number, f: { whole: string; num: string; den: string }): string {
+/**
+ * A number as a fraction, as Excel shows it: the whole number in its own codes, then the fraction
+ * (its room left blank for ? where there is none), the section's text round them in place. `signed`:
+ * the section is a negative number's own (its text gives the sign), so no minus is added.
+ */
+function formatFraction(v: number, sec: Section, f: Fraction, signed: boolean): string {
   const a = Math.abs(v);
-  let whole = f.whole ? Math.trunc(a) : 0;
-  const x = f.whole ? a - whole : a;
+  const hasWhole = f.whole >= 0;
+  let whole = hasWhole ? Math.trunc(a) : 0;
+  const x = hasWhole ? a - whole : a;
+  const fixed = /^[1-9]\d*$/.test(f.den);
   let n: number, d: number;
-  if (/^\d+$/.test(f.den)) { d = Number(f.den) || 1; n = Math.round(x * d); }
-  else [n, d] = nearestFraction(x, Math.pow(10, f.den.length));
-  if (f.whole && n === d) { whole += 1; n = 0; }
-  const pad = (s: string, code: string, end: 'start' | 'end') => {
-    const w = code.length;
-    if (s.length >= w) return s;
+  if (fixed) { d = Number(f.den); n = Math.round(x * d); } else [n, d] = nearestFraction(x, Math.pow(10, f.den.length));
+  if (hasWhole && n === d) { whole += 1; n = 0; }
+  const zero = whole === 0 && n === 0;
+  const pad = (t: string, code: string, end: 'start' | 'end') => {
+    if (t.length >= code.length) return t;
     const fill = code.includes('0') ? '0' : code.includes('?') ? ' ' : '';
-    return end === 'start' ? s.padStart(w, fill) : s.padEnd(w, fill);
+    return end === 'start' ? t.padStart(code.length, fill) : t.padEnd(code.length, fill);
   };
-  const w = f.whole ? (whole || f.whole.includes('0') ? String(whole) : '') : '';
-  // (no fraction: its room left blank where ? asks for it, else nothing)
-  const frac = n === 0 && f.whole ? (f.num.includes('?') ? ' '.repeat(f.num.length + 1 + f.den.length) : '') : `${pad(String(n), f.num, 'start')}/${/^\d+$/.test(f.den) ? f.den : pad(String(d), f.den, 'end')}`;
-  const out = w && frac ? `${w} ${frac}` : w || frac || '0';
-  return (v < 0 && (whole || n) ? '-' : '') + out;
+  const wholeText = hasWhole ? (zero ? '0' : formatNumber(whole, { parts: [{ k: 'code', s: (sec.parts[f.whole] as { s: string }).s }] })) : '';
+  const fracText = hasWhole && n === 0
+    ? (f.num.includes('0') ? `${pad('0', f.num, 'start')}/${fixed ? f.den : pad('1', f.den, 'end')}` : f.num.includes('?') ? ' '.repeat(f.num.length + 1 + f.den.length) : '')
+    // (a denominator's 0s pad it in front, its ?s with spaces after)
+    : `${pad(String(n), f.num, 'start')}/${fixed ? f.den : pad(String(d), f.den, f.den.includes('0') ? 'start' : 'end')}`;
+  const out = sec.parts.map((p, i) => (p.k === 'lit' ? p.s : i === f.at ? fracText : i === f.whole ? wholeText : p.s.replace(/[0#?,]/g, ''))).join('');
+  return (v < 0 && !signed && !zero ? '-' : '') + out;
 }
 
 /**
@@ -252,8 +273,8 @@ export function formatValue(v: Value, code?: string): Shown {
   else if (v === 0 && secs.length >= 3) sec = secs[2];
   else sec = secs[0];
   if (sectionIsDate(sec)) return { text: formatDate(v, sec), color: sec.color, align: 'right' };
-  const frac = fractionOf(sec);
-  if (frac) return { text: formatFraction(abs ? Math.abs(v) : v, frac), color: sec.color, align: 'right' };
+  const frac = fractionAt(sec);
+  if (frac) return { text: formatFraction(abs ? Math.abs(v) : v, sec, frac, abs), color: sec.color, align: 'right' };
   const text = formatNumber(abs ? Math.abs(v) : v, sec);
   return { text, color: sec.color, align: 'right' };
 }
@@ -341,8 +362,11 @@ const DAYS = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 
 
 function formatDate(v: number, sec: Section): string {
   if (v < 0 || v >= 2958466) return '#'.repeat(10);
-  // (rounded to the millisecond, so 0.9999999 of a second shows as the next)
+  // (rounded to the tenths, hundredths or thousandths of a second shown, else the millisecond, so they carry)
+  const k = Math.max(0, ...sec.parts.filter((p) => p.k === 'code').map((p) => (/\.(0+)/.exec(p.s)?.[1].length ?? 0)));
+  if (k) v = Math.round(v * 86400 * Math.pow(10, k)) / (86400 * Math.pow(10, k));
   const ms = Math.round(v * 86400000) % 1000;
+  const secs = Math.round(v * 86400000) / 1000;
   const p = serialParts(Math.round(v * 86400000) / 86400000 - ms / 86400000);
   const Y = p.y, M = p.m - 1, D = p.d, wd = p.weekday;
   const h = Math.floor(p.secs / 3600), mi = Math.floor(p.secs / 60) % 60, s = p.secs % 60;
@@ -363,9 +387,9 @@ function formatDate(v: number, sec: Section): string {
       } else if (/^d+$/.test(low)) out += low.length === 1 ? String(D) : low.length === 2 ? String(D).padStart(2, '0') : low.length === 3 ? DAYS[wd].slice(0, 3) : DAYS[wd];
       else if (/^h+$/.test(low)) { const hh = ampm ? ((h + 11) % 12) + 1 : h; out += low.length >= 2 ? String(hh).padStart(2, '0') : String(hh); }
       else if (/^s+$/.test(low)) out += low.length >= 2 ? String(s).padStart(2, '0') : String(s);
-      else if (/^\[h+\]$/.test(low)) out += String(Math.floor(v * 24));
-      else if (/^\[m+\]$/.test(low)) out += String(Math.floor(v * 1440));
-      else if (/^\[s+\]$/.test(low)) out += String(Math.floor(v * 86400));
+      else if (/^\[h+\]$/.test(low)) out += String(Math.floor(secs / 3600));
+      else if (/^\[m+\]$/.test(low)) out += String(Math.floor(secs / 60));
+      else if (/^\[s+\]$/.test(low)) out += String(Math.floor(secs));
       else if (low === 'am/pm') out += h < 12 ? (t[0] === 'a' ? 'am' : 'AM') : (t[0] === 'a' ? 'pm' : 'PM');
       else if (low === 'a/p') out += h < 12 ? 'A' : 'P';
       else if (/^\.0+$/.test(low)) out += (ms / 1000).toFixed(low.length - 1).slice(1);
@@ -399,6 +423,8 @@ export function changeDecimals(code: string | undefined, delta: 1 | -1, shown = 
   }
   // change each section's number the same way
   return fmt.split(';').map((sec) => {
+    const parsed = parseSections(sec)[0];
+    if (parsed && (sectionIsDate(parsed) || fractionAt(parsed))) return sec;
     const m = /([0#?](?:[0#?,]*))(\.([0#?]*))?/.exec(sec.replace(/"[^"]*"/g, (q) => '\u0000'.repeat(q.length)));
     if (!m) return sec;
     const start = m.index, end = start + m[0].length;
@@ -426,7 +452,8 @@ export function describeFormat(code: string | undefined): string {
   if (unit) return `${unit.name} (${unit.unit}), ${dp}`;
   if (/E[+-]/i.test(first)) return `Scientific, ${dp}`;
   if (first.includes('%')) return `Percentage, ${dp}`;
-  if (/[ymdhs]/i.test(first.replace(/"[^"]*"/g, '')) && !/[0#]/.test(first)) return 'Date or time';
+  if (dateKind(code)) return 'Date or time';
+  if (fractionAt(parseSections(first)[0] ?? { parts: [] })) return 'Fraction';
   if (/[0#],[0#]/.test(first)) return `Number with thousands commas, ${dp}`;
   return `Number, ${dp}`;
 }
