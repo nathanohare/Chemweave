@@ -84,6 +84,12 @@ try {
   }
 
   step('every ribbon, on every tab, is the Spreadsheet\'s height');
+  // (the web version starts with the one-row Simplified Canvas ribbon; the heights are held for the
+  // Classic two-row look, and the Simplified one must be lower than that)
+  const simplified = () => page.evaluate(() => !!document.querySelector('.canvas-ribbon:not(.cr-classic)'));
+  const startedSimplified = await simplified();
+  if (startedSimplified) await page.evaluate(() => window.__app.command('ribbon-simplified'));
+  if (await simplified()) fail('View ▸ Ribbon ▸ Simplified Ribbon did not switch the Canvas ribbon to Classic');
   await page.evaluate(() => window.__app.ws.newDesign({ w: 720, h: 540 }));
   // the SI tab too (retrospective audit G5-06), with a project kept in memory
   await page.evaluate(() => window.__app.openMemorySi({ 'project.json': JSON.stringify({ title: 'Smoke test' }) }));
@@ -96,7 +102,8 @@ try {
       await frame();
       const r = [...document.querySelectorAll('.ribbon')].find((x) => x.offsetParent);
       if (!r) continue;
-      const tabs = [...r.querySelectorAll(':scope > .rb-tabs [role="tab"]')];
+      // (the ribbon's own tabs: not the open files' tabs, which share the row in the web app)
+      const tabs = [...r.querySelectorAll(':scope > .rb-tabs [role="tab"]')].filter((t) => !t.closest('#tabs'));
       // (an object's own tabs too, hidden until one is selected)
       for (const t of tabs) {
         const was = t.hidden;
@@ -114,6 +121,18 @@ try {
   console.log(`  ${heights.length} tabs in ${new Set(heights.map((x) => x.mode)).size} modes, ${sheetH} px`);
   if (new Set(heights.map((x) => x.mode)).size < 6) fail('not every mode\'s ribbon (and the SI tab\'s) was checked');
   for (const x of heights) if (x.h !== sheetH) fail(`the ${x.mode} ribbon's ${x.tab} tab is ${x.h} px tall, not the Spreadsheet's ${sheetH} px`);
+  if (startedSimplified) {
+    const low = await page.evaluate(async () => {
+      const ws = window.__app.ws;
+      ws.activate(ws.tabs.find((t) => t.mode === 'drawing') ?? ws.tabs[0]);
+      window.__app.command('ribbon-simplified');
+      await new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+      const r = document.querySelector('.canvas-ribbon');
+      return { simple: !r?.classList.contains('cr-classic'), h: r?.offsetHeight ?? 0 };
+    });
+    if (!low.simple) fail('the Canvas ribbon did not go back to Simplified');
+    else if (!(low.h > 0 && low.h < sheetH)) fail(`the Simplified Canvas ribbon is ${low.h} px tall, not lower than the Classic ${sheetH} px`);
+  }
   step('going to a canvas slide, the Keyframes group fits in the Home ribbon: nothing runs off its right end');
   const over = await page.evaluate(async () => {
     const ws = window.__app.ws;
@@ -164,9 +183,11 @@ try {
       if (tab.mode === 'sheet' || tab.mode === 'document') continue;
       const box = document.querySelector('.toolbox[data-id="main"]'), body = box?.querySelector('.tb-body');
       // the SI tab has no canvas (its structures open in a drawing window): no docked toolbox shows there
-      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: !!box?.offsetParent }); continue; }
+      // (shown, docked or floating: a floating toolbox is position: fixed, so it has no offsetParent)
+      const shown = !!box && box.getClientRects().length > 0;
+      if (tab.mode === 'si') { out.push({ mode: 'si', siShown: shown }); continue; }
       const cells = box?.querySelector('.tb-cells');
-      if (!cells || !box.offsetParent) { out.push({ mode: tab.mode, cols: 0 }); continue; }
+      if (!cells || !shown) { out.push({ mode: tab.mode, cols: 0 }); continue; }
       const b = box.getBoundingClientRect();
       out.push({ mode: tab.mode, cols: getComputedStyle(cells).gridTemplateColumns.split(' ').length, bottom: b.bottom, h: innerHeight, page: document.documentElement.scrollHeight, scrolls: body.scrollHeight > body.clientHeight });
     }
@@ -215,6 +236,96 @@ try {
   if (!typing.open) fail('clicking with the Text tool opened no text to type in');
   else if (typing.bar !== true) fail('the bar above the text shows while the Canvas Home tab has the same buttons');
   if (typing.buttons < 18) fail(`the Canvas Home tab's Font and Paragraph groups have ${typing.buttons} buttons, not all of the typing bar's`);
+
+  step("the web app's one row: File, the ribbon's tabs, Quick Access, the open files and Search, in every kind of tab, in Focus View and at 800 px wide");
+  const ROW = ['.rb-file', '.rb-tablist', '#quick-bar', '#tabs', '#btn-search'];
+  const rowCheck = (sizeNote) => page.evaluate(async ({ ROW }) => {
+    const ws = window.__app.ws, out = [];
+    const frame = () => new Promise((ok) => requestAnimationFrame(() => requestAnimationFrame(ok)));
+    const seen = (el) => !!el && el.getClientRects().length > 0 && el.getBoundingClientRect().width > 0;
+    for (const tab of [...ws.tabs]) {
+      ws.activate(tab);
+      await frame();
+      const row = [...document.querySelectorAll('.ribbon > .rb-tabs')].find((r) => r.offsetParent);
+      const kids = row ? [...row.children] : [];
+      const right = Math.max(...['#quick-bar', '#tabs', '#btn-search'].map((q) => document.querySelector(q)?.getBoundingClientRect().right ?? 0));
+      out.push({ mode: tab.mode, order: ROW.map((q) => kids.findIndex((k) => k.matches(q))), hidden: ['#quick-bar', '#tabs', '#btn-search'].filter((q) => !seen(document.querySelector(q))), right, w: innerWidth, page: document.documentElement.scrollWidth });
+    }
+    ws.activate(ws.tabs.find((t) => t.mode === 'drawing'));
+    await frame();
+    return out;
+  }, { ROW });
+  const checkRow = (rows, size) => {
+    if (new Set(rows.map((x) => x.mode)).size < 6) fail(`the one-row check at ${size} did not visit every kind of tab and the SI tab`);
+    for (const x of rows) {
+      if (x.order.some((i) => i < 0) || x.order.some((i, k) => k && i <= x.order[k - 1])) fail(`at ${size}, the ${x.mode} ribbon's row is not File, its tabs, Quick Access, the open files and Search (places ${x.order.join(', ')})`);
+      if (x.hidden.length) fail(`at ${size}, in a ${x.mode} tab, ${x.hidden.join(', ')} cannot be seen`);
+      if (x.right > x.w + 1 || x.page > x.w + 1) fail(`at ${size}, in a ${x.mode} tab, the row runs off the window (to ${Math.round(Math.max(x.right, x.page))} px of ${x.w})`);
+    }
+  };
+  checkRow(await rowCheck(), '1280 × 720');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(200);
+  const focusRow = await page.evaluate(() => ['#quick-bar', '#tabs', '#btn-search'].filter((q) => { const el = document.querySelector(q); return !el?.closest('header') || !(el.getBoundingClientRect().width > 0); }));
+  if (focusRow.length) fail(`in Focus View, ${focusRow.join(', ')} are not in the title row it shows`);
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(200);
+  await page.setViewportSize({ width: 800, height: 720 });
+  await page.waitForTimeout(300);
+  checkRow(await rowCheck(), '800 × 720');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+
+  step('the File tab opens every menu as a page, and Esc closes it');
+  if (!(await page.evaluate(() => document.body.classList.contains('menus-in-file')))) fail('the web app starts with the menu bar showing, not the menus in the File tab');
+  if (await page.locator('header > .menu-wrap > button').first().isVisible()) fail('the menu bar shows while the menus are in the File tab');
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(200);
+  const pages = await page.evaluate(() => {
+    const out = [];
+    const nav = [...document.querySelectorAll('#backstage nav button[data-i]')];
+    for (const b of nav) {
+      b.click();
+      const m = document.querySelector('.menu.bs-page');
+      const items = m ? [...m.querySelectorAll('button[data-cmd]')].filter((x) => x.getClientRects().length) : [];
+      // the page scrolls down when it is long; columns that run past the window's right edge would hide commands
+      const pane = document.querySelector('#backstage .bs-pane');
+      const off = items.filter((x) => x.getBoundingClientRect().right > innerWidth + 0.5).length;
+      out.push({ name: b.textContent.trim(), shown: !!m && !m.hidden && pane.contains(m), items: items.length, off, wide: pane.scrollWidth > pane.clientWidth + 1 });
+    }
+    return out;
+  });
+  if (pages.length < 7) fail(`the File tab lists ${pages.length} menus, not File, Edit, View, Insert, Format, Chemistry and Help`);
+  for (const p of pages) {
+    if (!p.shown || !p.items) fail(`the File tab's ${p.name} page shows no commands`);
+    else if (p.off || p.wide) fail(`the File tab's ${p.name} page runs off a 1280 × 720 window (${p.off} commands off it)`);
+  }
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('Esc did not close the File tab');
+  // a shortcut while the page shows runs and closes it (Ctrl+Shift+F1 is Focus View, on and off again)
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('ArrowRight');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(150);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('a command run while the File tab shows left it open over the work');
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await page.waitForTimeout(150);
+  // Search (Alt+Q) from a command in the page
+  await page.locator('.canvas-ribbon .rb-file').click();
+  await page.waitForTimeout(150);
+  await page.keyboard.press('ArrowRight');
+  await page.keyboard.press('Alt+KeyQ');
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => !document.getElementById('backstage').hidden)) fail('Alt+Q from a command in the File tab left the page open');
+  if (!(await page.evaluate(() => !!document.querySelector('dialog.command-search[open]')))) fail('Alt+Q from a command in the File tab did not open Search');
+  await page.keyboard.press('Escape');
+  await page.keyboard.press('Escape');
+  await page.waitForTimeout(100);
+  // the menu bar's checks below: the desktop app starts with it, and anyone can show it (View ▸ Menu Bar)
+  await page.evaluate(() => window.__app.command('menu-bar'));
+  await page.waitForTimeout(200);
 
   step('every menu fits in one column at 1280 × 720');
   for (const btn of await page.$$('header > .menu-wrap > button')) {
@@ -266,6 +377,9 @@ try {
       await close();
     }
   }
+  // back to the web app's start (the menus in the File tab) for the rest
+  await page.evaluate(() => window.__app.command('menu-bar'));
+  await page.waitForTimeout(150);
   /** Right-click at (x, y) in the window and check the menu that opens. */
   const rightClick = async (what, x, y) => {
     await page.mouse.click(x, y, { button: 'right' });

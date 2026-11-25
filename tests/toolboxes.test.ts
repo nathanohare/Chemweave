@@ -17,7 +17,8 @@ describe('toolboxes', () => {
   it('starts with only the drawing tools (left) and the side panel (right) showing, locked', () => {
     const d = defaultToolboxes();
     expect(d.locked).toBe(true);
-    expect(d.places.main).toMatchObject({ shown: true, dock: 'left' });
+    // (the web version, as the tests run: floating at the drawing's top left; the desktop app docks them, tests/web-defaults.test.ts)
+    expect(d.places.main).toMatchObject({ shown: true, dock: 'float', corner: 'left' });
     expect(Object.entries(d.places).filter(([, p]) => p.shown).map(([id]) => id).sort()).toEqual(['details', 'main']);
   });
 

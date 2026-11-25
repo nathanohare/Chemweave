@@ -230,7 +230,10 @@ jobs:
     env:
       VERSION: 0.1.${{ github.run_number }}
     steps:
+      # the whole history and its tags: the notes are the change files added since the last release
       - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
       - uses: actions/download-artifact@v8
         with:
           path: out
@@ -238,9 +241,10 @@ jobs:
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
-          NOTES: ${{ github.event.head_commit.message }}
         run: |
-          printf '%s\n' "$NOTES" > "$RUNNER_TEMP/notes.txt"
+          # what changed: the change files (changes/) added since the last release, never the merge
+          # commit's message, which for staging into main is often an empty pull request template
+          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.txt" "$VERSION"
           node scripts/release.mjs manifest "$VERSION" "$RUNNER_TEMP/notes.txt" out
           # the signatures are inside latest.json; the release lists the installers
           # not marked "latest" yet: builds can finish out of order, and an older one must not
@@ -257,3 +261,8 @@ jobs:
           newest=$(node scripts/release.mjs newest "$VERSION" "$RUNNER_TEMP/releases.json")
           node scripts/retry.mjs -- gh release edit "$newest" --latest
           echo "Latest release: $newest"
+      # CHANGELOG.md on main, made again from changes/ with this version's section; the only commit
+      # this workflow makes (the workflow's own token, so it doesn't start another build)
+      - name: Update CHANGELOG.md
+        run: |
+          node scripts/retry.mjs -- node scripts/changelog.mjs push "$VERSION"

@@ -189,7 +189,6 @@ COMMAND_ICONS['depth-shading-settings'] ??= corner('depth-shading', SLIDERS);
 /** Pictures used on the Canvas ribbon only (the toolboxes show these commands by name, beside others like them). */
 export const RIBBON_ONLY_ICONS: Record<string, string> = {
   'centre-highlight': svg('<path d="M3 9h18M3 15h18" stroke-width="1.6"/><path d="M3 12h18" stroke-width="5" stroke-opacity=".3"/>'),  'predict-nmr': svg('<path d="M2 20.5h20"/><path d="M3 20h3l1-1.5 1 1.5h3l1.2-14 1.2 14h1.8l1-7 1 7h1.6l.8-3.5.8 3.5H21"/>'),
-  'nmr-menu': svg('<path d="M2 20.5h20"/><path d="M3 20h3l1-1.5 1 1.5h3l1.2-14 1.2 14h1.8l1-7 1 7h1.6l.8-3.5.8 3.5H21"/>'),
   'nmr-1h': svg('<text x="5" y="10" font-size="8" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">1</text><text x="11" y="19" font-size="14" font-weight="600" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">H</text>'),
   'nmr-13c': svg('<text x="2" y="10" font-size="8" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">13</text><text x="11" y="19" font-size="14" font-weight="600" fill="currentColor" stroke="none" font-family="system-ui,sans-serif">C</text>'),
   'nmr-solvent': svg('<path d="M9 3h6M10 3v6l-5 9.5A1.7 1.7 0 0 0 6.5 21h11a1.7 1.7 0 0 0 1.5-2.5L14 9V3"/><path d="M7.2 15h9.6"/>'),

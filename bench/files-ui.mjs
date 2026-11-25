@@ -13,6 +13,8 @@ page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message));
 page.on('dialog', (d) => { logs.push('dialog: ' + d.message()); d.accept(); });
 await page.goto(process.env.APP_URL || 'http://localhost:4173/');
 await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 20000 });
+// these check the menu bar's menus: the web app starts with them in the File tab, so show the bar
+await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
 const title = () => page.title();
 console.log('start title:', await title());
 // draw a benzene ring with the tool

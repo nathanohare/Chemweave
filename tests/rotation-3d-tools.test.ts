@@ -3,7 +3,7 @@
 // Turning structures in 3-D, made easier to find and to use: the 3-D Rotation window turns the
 // selection live as its angles change (Cancel puts it back, Rotate keeps it as one undo step), the
 // selection box has tilt handles (with a Perspective tool) that tip or swing the selection, and the
-// Perspective tools are on the ribbon's Arrange tab and in the toolboxes.
+// Perspective tools are on the ribbon's View tab and in the toolboxes.
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { Doc } from '../src/model';
@@ -167,14 +167,13 @@ describe('tilt handles on the selection box', () => {
 });
 
 describe('where the Perspective tools are', () => {
-  it('has a 3-D group on the ribbon\'s Arrange tab with both drag tools and 3-D Rotation…', () => {
-    const arrange = CANVAS_TABS.find((t) => t.id === 'arrange')!;
-    const g = arrange.groups.find((x) => x.name === '3-D')!;
+  it('has a 3-D group on the ribbon\'s View tab with both drag tools and 3-D Rotation…', () => {
+    const view = CANVAS_TABS.find((t) => t.id === 'view')!;
+    const g = view.groups.find((x) => x.name === '3-D')!;
     expect(g).toBeTruthy();
-    const names = g.items.map((it) => ('tool' in it ? `tool:${it.tool}` : `cmd:${it.cmd}`));
+    const names = g.items.map((it) => ('tool' in it ? `tool:${it.tool}` : 'cmd' in it ? `cmd:${it.cmd}` : ''));
     expect(names).toEqual(expect.arrayContaining(['tool:perspective', 'tool:perspective-3d', 'cmd:turn-3d', 'cmd:flatten-3d']));
-    // next to Rotate
-    const i = arrange.groups.findIndex((x) => x.name === 'Rotate');
-    expect(arrange.groups[i + 1]).toBe(g);
+    // (the Arrange tab is gone: Home's Arrange group has Align, Rotate, Order and Focal Point as flyouts)
+    expect(CANVAS_TABS.some((t) => t.id === 'arrange')).toBe(false);
   });
 });

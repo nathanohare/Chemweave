@@ -29,6 +29,45 @@ pub const TYPES: &[(&str, &str)] = &[
     ("chemsi", "Chemweave SI project"),
 ];
 
+/// Types with their own icon (made by scripts/make-file-icons.mjs): the file name it is written
+/// under and its bytes. The others show the app's icon. The icon is carried inside the app and
+/// written out by the app itself, so every copy has it: the installers, the portable zip, and a
+/// portable copy that updated only its .exe.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const OWN_ICONS: &[(&str, &str, &[u8])] = &[("chemsi", "chemsi.ico", include_bytes!("../icons/chemsi.ico"))];
+
+/// The app's id (tauri.conf.json `identifier`), which names its folder in %LOCALAPPDATA%.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub const IDENTIFIER: &str = "io.github.nathanohare.chemillustrator";
+
+/// Where the types' icons are written: the "Chemweave Data" folder of a portable copy, otherwise
+/// the app's folder in %LOCALAPPDATA% (the same folder Tauri's app_local_data_dir names).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn icon_folder() -> Option<std::path::PathBuf> {
+    if let Some(dir) = crate::portable::settings_folder() {
+        return Some(dir.to_path_buf());
+    }
+    std::env::var_os("LOCALAPPDATA").map(|d| std::path::PathBuf::from(d).join(IDENTIFIER))
+}
+
+/// What Windows shows for a type (its DefaultIcon): the type's own icon, written into `folder`
+/// when it isn't there already (or is out of date), otherwise the app's icon. If the icon can't
+/// be written, the app's icon is used.
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn default_icon(ext: &str, exe: &std::path::Path, folder: Option<&std::path::Path>) -> String {
+    let app = format!("\"{}\",0", exe.to_string_lossy());
+    let (Some((_, file, bytes)), Some(folder)) = (OWN_ICONS.iter().find(|(e, _, _)| *e == ext), folder) else {
+        return app;
+    };
+    let icon = folder.join(file);
+    let current = std::fs::read(&icon).map(|b| b == *bytes).unwrap_or(false);
+    if current || (std::fs::create_dir_all(folder).is_ok() && std::fs::write(&icon, bytes).is_ok()) {
+        format!("\"{}\",0", icon.to_string_lossy())
+    } else {
+        app
+    }
+}
+
 /// Files to open, kept until the page asks for them (it may still be loading). Once it has
 /// asked, it is listening, and later files go straight to it.
 #[derive(Default)]
@@ -228,8 +267,9 @@ pub(crate) mod win {
     }
 
     pub fn set(types: &[String]) -> Result<(), String> {
-        let exe = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
-        let exe = exe.to_string_lossy();
+        let exe_path = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
+        let exe = exe_path.to_string_lossy();
+        let icons = super::icon_folder();
         let mut any = false;
         for (ext, what) in TYPES {
             let id = prog_id(ext);
@@ -237,7 +277,7 @@ pub(crate) mod win {
             if types.iter().any(|t| t == ext) {
                 any = true;
                 set_string(&class, None, what)?;
-                set_string(&format!(r"{class}\DefaultIcon"), None, &format!("\"{exe}\",0"))?;
+                set_string(&format!(r"{class}\DefaultIcon"), None, &super::default_icon(ext, &exe_path, icons.as_deref()))?;
                 set_string(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""))?;
                 set_string(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), Some(&id), "")?;
                 set_string(&format!(r"{CAPABILITIES}\FileAssociations"), Some(&format!(".{ext}")), &id)?;
@@ -277,7 +317,27 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    use super::files_in;
+    use super::{default_icon, files_in, OWN_ICONS};
+
+    #[test]
+    fn a_type_with_its_own_icon_gets_it_written_out() {
+        let dir = std::env::temp_dir().join(format!("ci-file-types-icon-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exe = dir.join("Chemweave.exe");
+        let folder = dir.join("data");
+        let ico = folder.join("chemsi.ico");
+        let app = format!("\"{}\",0", exe.to_string_lossy());
+        assert_eq!(default_icon("chemsi", &exe, Some(&folder)), format!("\"{}\",0", ico.to_string_lossy()));
+        assert_eq!(std::fs::read(&ico).unwrap(), OWN_ICONS[0].2);
+        // a stale copy (an older icon) is replaced
+        std::fs::write(&ico, [1u8, 2, 3]).unwrap();
+        default_icon("chemsi", &exe, Some(&folder));
+        assert_eq!(std::fs::read(&ico).unwrap(), OWN_ICONS[0].2);
+        // other types, or nowhere to write it: the app's icon
+        assert_eq!(default_icon("cdxml", &exe, Some(&folder)), app);
+        assert_eq!(default_icon("chemsi", &exe, None), app);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
 
     #[test]
     fn takes_files_from_the_command_line() {

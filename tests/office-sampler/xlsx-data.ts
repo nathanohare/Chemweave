@@ -127,7 +127,7 @@ const buttons = tbl('Filter buttons on every table of a sheet', 'supported', `${
 }, 'xlsx.ts:918 filterTable (the one table overlapping the sheet\'s filter)');
 tb.item(buttons, 'Filter buttons on every table of a sheet (the Tables sheet\'s tables with a header row)');
 table('Table sorted (sortState)', 'kept', `${T}, §18.3.1.92 sortState`, { sortState: '<sortState ref="{ref}"><sortCondition descending="1" ref="B{r}:B{e}"/></sortState>' },
-  (t) => !!kid(t, 'x:sortState'), 'xlsx-format.ts:306 (sortState kept)');
+  (t) => !!kid(t, 'x:sortState'), 'xlsx-format.ts:304 (sortState kept)');
 table('Column number format (dataDxfId)', 'loss', `${T}, §18.5.1.3 dataDxfId`, { colAttrs: ['', ` dataDxfId="${book.styles.dxf('<numFmt numFmtId="164" formatCode="0.0%"/>')}"`] },
   (t) => !!tcols(t)[1]?.getAttribute('dataDxfId'), 'xlsx-format.ts:108 (per-column formats not written)');
 book.styles.numFmt('0.0%');
@@ -189,10 +189,10 @@ filter('Rows hidden by the filter', 'Hidden rows', 'supported', `${F}; §18.3.1.
   (_, ws) => { const rows = xKids(kid(ws, 'x:sheetData'), 'row'); return ['2', '3', '4'].every((n) => isOn(rows.find((r) => r.getAttribute('r') === n)?.getAttribute('hidden'))); }, 'xlsx.ts:1736',
   (s) => { for (const r of [2, 3, 4]) s.row(r - 1, 'hidden="1"'); });
 filter('Sort by a column, descending (sortState)', 'Sort', 'kept', '§18.3.1.92 sortState, §18.3.1.91 sortCondition; Data ▸ Sort', '',
-  (_, ws) => kid(kid(ws, 'x:sortState'), 'x:sortCondition')?.getAttribute('descending') === '1', 'xlsx-view.ts:338 sortState',
+  (_, ws) => kid(kid(ws, 'x:sortState'), 'x:sortCondition')?.getAttribute('descending') === '1', 'xlsx-view.ts:390 sortState',
   (s) => s.set('sortState', '<sortState ref="A2:C7"><sortCondition descending="1" ref="B2:B7"/></sortState>'));
 filter('Sort by cell color', 'Sort color', 'kept', '§18.3.1.91 sortCondition@sortBy cellColor', '',
-  (_, ws) => kid(kid(ws, 'x:sortState'), 'x:sortCondition')?.getAttribute('sortBy') === 'cellColor', 'xlsx-view.ts:338',
+  (_, ws) => kid(kid(ws, 'x:sortState'), 'x:sortCondition')?.getAttribute('sortBy') === 'cellColor', 'xlsx-view.ts:390 (keptWithDxfs)',
   (s) => s.set('sortState', `<sortState ref="A2:C7"><sortCondition sortBy="cellColor" ref="B2:B7" dxfId="${book.styles.dxf('<fill><patternFill patternType="solid"><bgColor rgb="FF8AB17D"/></patternFill></fill>')}"/></sortState>`));
 const fdb = flt('Filter range name (_xlnm._FilterDatabase)', 'supported', '§18.2.5 definedName _xlnm._FilterDatabase (§18.2.6 built-in names)',
   (v) => definedNames(v).some((d) => d.getAttribute('name') === '_xlnm._FilterDatabase' && /Values/.test(d.textContent ?? '')), 'xlsx.ts:924 (regenerated)');

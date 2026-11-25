@@ -84,6 +84,7 @@ export async function itemsToEps(items: Item[], box: EmfBox, image: (src: string
     return f;
   };
   for (const it of items) {
+    const at = body.length;
     if (it.kind === 'path') {
       if (!it.segs.some((s) => s.k !== 'M')) continue;
       const paint = colour(it.fill ?? it.stroke!.color);
@@ -130,6 +131,12 @@ export async function itemsToEps(items: Item[], box: EmfBox, image: (src: string
           ascii85(data),
         );
       }
+      body.push('grestore');
+    }
+    // cut off by a rectangle (a table row of exact height)
+    const c = it.clip;
+    if (c && body.length > at) {
+      body.splice(at, 0, `gsave ${num(c.x1)} ${num(c.y1)} ${num(c.x2 - c.x1)} ${num(c.y2 - c.y1)} rectclip`);
       body.push('grestore');
     }
   }

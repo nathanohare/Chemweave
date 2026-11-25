@@ -50,6 +50,13 @@ export interface Session {
   tabs: CopiedTab[];
   /** The lock files it has beside open files (so a later start can take away those a crash left). */
   locks?: string[];
+  /**
+   * It holds a browser lock while it runs (Web Locks): whether it still runs is then told by the
+   * lock, which the browser lets go the moment the page closes or reloads, not by its last beat.
+   */
+  held?: boolean;
+  /** It said it was stopping (a reload for a new version), so it is offered at once without locks too. */
+  stopped?: boolean;
 }
 
 /** How often a running app says it is still running. */
@@ -76,7 +83,7 @@ export function parseSession(text: string | null): Session | null {
       stamp: t.stamp && typeof t.stamp.modified === 'number' && typeof t.stamp.size === 'number' ? { modified: t.stamp.modified, size: t.stamp.size } : null,
       file: keyPart(t.file), copied: Number(t.copied) || 0 }));
   const locks = Array.isArray(o.locks) ? o.locks.filter((l): l is string => typeof l === 'string') : [];
-  return { session: o.session, started: typeof o.started === 'number' ? o.started : o.beat, beat: o.beat, offered: o.offered === true, tabs, ...(locks.length ? { locks } : {}) };
+  return { session: o.session, started: typeof o.started === 'number' ? o.started : o.beat, beat: o.beat, offered: o.offered === true, tabs, ...(locks.length ? { locks } : {}), ...(o.held === true ? { held: true } : {}), ...(o.stopped === true ? { stopped: true } : {}) };
 }
 
 export class Recovery {
@@ -91,6 +98,16 @@ export class Recovery {
    * stopped, however lately it wrote: ended from Task Manager and started again straight away.
    */
   oneCopy = false;
+  /**
+   * The sessions whose browser locks are held now (the web version, where the browser has Web
+   * Locks), or null when that can't be told. A session that says it holds one and doesn't has
+   * stopped, however lately it beat: the page was reloaded or closed a moment ago.
+   */
+  heldNow: (() => Promise<Set<string> | null>) | null = null;
+  /** This session holds its browser lock (written in its list, so other sessions go by the lock). */
+  holdsLock = false;
+  /** The next list written says this session is stopping (only that one: a later beat takes it back). */
+  private stopping = false;
 
   constructor(private store: KeepStore, readonly session = newSessionId(), private now: () => number = Date.now) {
     this.started = now();
@@ -157,8 +174,20 @@ export class Recovery {
     return this.serial(() => this.writeManifest());
   }
 
+  /**
+   * Say this session is stopping (the page is about to reload): a start straight after offers its
+   * copies even where browser locks can't tell. Should the page stay after all, its next beat
+   * says it runs again.
+   */
+  stop(): Promise<void> {
+    return this.serial(() => { this.stopping = true; return this.writeManifest(); });
+  }
+
   private writeManifest(): Promise<void> {
-    const s: Session = { session: this.session, started: this.started, beat: this.now(), tabs: [...this.tabs.values()], ...(this.locks.length ? { locks: this.locks } : {}) };
+    const stopped = this.stopping;
+    this.stopping = false;
+    const s: Session = { session: this.session, started: this.started, beat: this.now(), tabs: [...this.tabs.values()], ...(this.locks.length ? { locks: this.locks } : {}),
+      ...(this.holdsLock ? { held: true } : {}), ...(stopped ? { stopped: true } : {}) };
     return putText(this.store, this.key(MANIFEST), JSON.stringify(s));
   }
 
@@ -172,31 +201,47 @@ export class Recovery {
     });
   }
 
+  /** Whether a tab's copy holds it as it is now (its token when copied is this one). */
+  copied(id: number, token: number): boolean {
+    return this.tabs.has(id) && this.tokens.get(id) === token;
+  }
+
   /** How many tabs have copies now. */
   get count(): number {
     return this.tabs.size;
   }
 
-  /** Whether a session that last said it was running at `beat` still is. */
-  private alive(beat: number, now: number): boolean {
-    return !this.oneCopy && now - beat < STALE_MS;
+  /**
+   * Whether a session that last said it was running at `beat` still is. One that said it was
+   * stopping has stopped; one that holds a browser lock runs exactly while the lock is held (when
+   * the locks can be read); others go by their beat.
+   */
+  private alive(s: { session: string; beat: number; held?: boolean; stopped?: boolean }, now: number, held: Set<string> | null): boolean {
+    if (this.oneCopy || s.stopped) return false;
+    if (s.held && held) return held.has(s.session);
+    return now - s.beat < STALE_MS;
+  }
+
+  private async held(): Promise<Set<string> | null> {
+    try { return (await this.heldNow?.()) ?? null; } catch { return null; }
   }
 
   /** Whether another session is running now (it said so lately). */
   async running(session: string): Promise<boolean> {
     if (session === this.session) return true;
     const s = parseSession(await getText(this.store, `${FOLDER}/${keyPart(session)}/${MANIFEST}`));
-    return !!s && this.alive(s.beat, this.now());
+    return !!s && this.alive(s, this.now(), await this.held());
   }
 
   /** Lock files listed by sessions that stopped without closing (a crash, the app being ended from Task Manager). */
   async strayLocks(): Promise<{ session: string; paths: string[] }[]> {
     const out: { session: string; paths: string[] }[] = [];
     const now = this.now();
+    const held = await this.held();
     for (const e of await this.store.list(FOLDER)) {
       if (!e.folder || e.name === keyPart(this.session)) continue;
       const s = parseSession(await getText(this.store, `${FOLDER}/${e.name}/${MANIFEST}`));
-      if (!s?.locks?.length || this.alive(s.beat, now)) continue;
+      if (!s?.locks?.length || this.alive(s, now, held)) continue;
       out.push({ session: s.session, paths: s.locks });
     }
     return out;
@@ -209,11 +254,12 @@ export class Recovery {
   async leftOver(days: number): Promise<Session[]> {
     const out: Session[] = [];
     const now = this.now();
+    const held = await this.held();
     for (const e of await this.store.list(FOLDER)) {
       if (!e.folder || e.name === keyPart(this.session)) continue;
       const s = parseSession(await getText(this.store, `${FOLDER}/${e.name}/${MANIFEST}`));
       const last = s?.beat ?? e.modified;
-      if (this.alive(last, now)) continue; // still running (another window of the app)
+      if (this.alive(s ?? { session: e.name, beat: last }, now, held)) continue; // still running (another window of the app)
       if (!s || !s.tabs.length || now - last > days * 86_400_000) {
         await this.store.remove(`${FOLDER}/${e.name}`);
         continue;

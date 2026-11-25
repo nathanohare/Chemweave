@@ -160,7 +160,8 @@ export function moveFilter(f: Filter, m: Mover): Filter | null {
     const to = m.col(Number(c));
     if (to !== null) conditions[to] = cond;
   }
-  return { range: { r1, c1, c2, r2: Math.max(r1, r2 ?? r1) }, conditions };
+  // (its keys in a range's own order, r1, c1, r2, c2, so the next save writes the same part)
+  return { range: { r1, c1, r2: Math.max(r1, r2 ?? r1), c2 }, conditions };
 }
 
 /** A value as a key for finding cells holding it (numbers to 12 significant figures, as files round them). */

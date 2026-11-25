@@ -6,7 +6,7 @@
 
 import type { Sheet, Workbook } from './workbook';
 import { valueInput } from './workbook';
-import { type Range, MAX_ROWS, MAX_COLS, inRange, rangesOverlap, rangeName } from './refs';
+import { type Range, MAX_ROWS, MAX_COLS, inRange, rangesOverlap, rangeName, sameRange } from './refs';
 import { isError, type Value } from './values';
 import { newTable, DEFAULT_TABLE_STYLE, type TableDef } from './table-styles';
 import { tableNameFor, type QTable, type Query } from './query';
@@ -160,7 +160,7 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
   if (own) {
     table = { ...own, range: R };
     s.setTables(s.tables.map((x) => (x.id === own.id ? table : x)));
-    if (s.filter && JSON.stringify(s.filter.range) === JSON.stringify(own.range)) s.setFilter({ range: R, conditions: {} });
+    if (s.filter && sameRange(s.filter.range, own.range)) s.setFilter({ range: R, conditions: {} });
   } else {
     const name = tableNameFor(q.name, tableNames(s.wb));
     table = { ...newTable(R, s.tables, DEFAULT_TABLE_STYLE, true), name };

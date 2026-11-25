@@ -70,10 +70,10 @@ describe('sections', () => {
     expect(t.paras[1].section?.hf).toBeUndefined();
   });
 
-  it('copies a section\'s page setup, number format and line numbers into a new one, as Word does', () => {
+  it('copies a section\'s page setup, Different First Page, number format and line numbers into a new one, as Word does', () => {
     const t = changeSection(docOf(['one']), 0, { format: 'upperRoman', lines: { start: 1, countBy: 5, restart: 'section' }, page: { ...newDocument().page, cols: 2 } });
     const b = newBreak(sectionsOf(t)[0], 'continuous');
-    expect(b).toEqual({ kind: 'continuous', page: t.page, format: 'upperRoman', lines: t.lineNumbers });
+    expect(b).toEqual({ kind: 'continuous', page: t.page, titlePg: false, format: 'upperRoman', lines: t.lineNumbers });
     expect(b.hf).toBeUndefined();
     expect(b.restart).toBeUndefined();
   });

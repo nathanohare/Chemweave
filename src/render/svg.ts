@@ -45,7 +45,10 @@ function svgImage(item: ImageItem): string {
 export function itemsToSvg(items: Item[], box: EmfBox): string {
   const W = box.x2 - box.x1, H = box.y2 - box.y1;
   const out = [`<svg xmlns="http://www.w3.org/2000/svg" width="${n(W)}pt" height="${n(H)}pt" viewBox="${n(box.x1)} ${n(box.y1)} ${n(W)} ${n(H)}">`];
+  // an item cut off by a rectangle (a table row of exact height) goes in a group cut to it, one clipPath for each rectangle
+  const clips = new Map<string, string>();
   for (const it of items) {
+    const at = out.length;
     if (it.kind === 'path') {
       if (!it.segs.some((s) => s.k !== 'M')) continue;
       if (it.fill) out.push(`<path d="${pathData(it.segs)}" ${paint('fill', it.fill)}/>`);
@@ -61,6 +64,18 @@ export function itemsToSvg(items: Item[], box: EmfBox): string {
         `<text x="${n(it.x)}" y="${n(it.y)}" font-family="'${esc(family)}', Arial, Helvetica, sans-serif" font-size="${n(it.size)}"` +
           `${it.bold ? ' font-weight="bold"' : ''}${it.italic ? ' font-style="italic"' : ''} ${paint('fill', it.color)}${it.angle ? ` transform="rotate(${n(-it.angle)} ${n(it.x)} ${n(it.y)})"` : ''} xml:space="preserve">${esc(it.text)}</text>`,
       );
+    }
+    const c = it.clip;
+    if (c && out.length > at) {
+      const rect = `x="${n(c.x1)}" y="${n(c.y1)}" width="${n(c.x2 - c.x1)}" height="${n(c.y2 - c.y1)}"`;
+      const drawn = out.splice(at);
+      let id = clips.get(rect);
+      if (!id) {
+        id = `cut${++clipCount}`;
+        clips.set(rect, id);
+        out.push(`<clipPath id="${id}"><rect ${rect}/></clipPath>`);
+      }
+      out.push(`<g clip-path="url(#${id})">`, ...drawn, '</g>');
     }
   }
   out.push('</svg>');

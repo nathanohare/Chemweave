@@ -1,5 +1,33 @@
 {
   "bundle": {
+    "linux": {
+      "deb": {
+        "files": {
+          "/usr/share/mime/packages/chemweave.xml": "linux/chemweave-mime.xml",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-x-chemweave-si.svg": "icons/chemsi.svg",
+          "/usr/share/icons/hicolor/16x16/mimetypes/application-x-chemweave-si.png": "icons/chemsi-16.png",
+          "/usr/share/icons/hicolor/24x24/mimetypes/application-x-chemweave-si.png": "icons/chemsi-24.png",
+          "/usr/share/icons/hicolor/32x32/mimetypes/application-x-chemweave-si.png": "icons/chemsi-32.png",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-x-chemweave-si.png": "icons/chemsi-48.png",
+          "/usr/share/icons/hicolor/64x64/mimetypes/application-x-chemweave-si.png": "icons/chemsi-64.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-x-chemweave-si.png": "icons/chemsi-128.png",
+          "/usr/share/icons/hicolor/256x256/mimetypes/application-x-chemweave-si.png": "icons/chemsi-256.png"
+        }
+      },
+      "rpm": {
+        "files": {
+          "/usr/share/mime/packages/chemweave.xml": "linux/chemweave-mime.xml",
+          "/usr/share/icons/hicolor/scalable/mimetypes/application-x-chemweave-si.svg": "icons/chemsi.svg",
+          "/usr/share/icons/hicolor/16x16/mimetypes/application-x-chemweave-si.png": "icons/chemsi-16.png",
+          "/usr/share/icons/hicolor/24x24/mimetypes/application-x-chemweave-si.png": "icons/chemsi-24.png",
+          "/usr/share/icons/hicolor/32x32/mimetypes/application-x-chemweave-si.png": "icons/chemsi-32.png",
+          "/usr/share/icons/hicolor/48x48/mimetypes/application-x-chemweave-si.png": "icons/chemsi-48.png",
+          "/usr/share/icons/hicolor/64x64/mimetypes/application-x-chemweave-si.png": "icons/chemsi-64.png",
+          "/usr/share/icons/hicolor/128x128/mimetypes/application-x-chemweave-si.png": "icons/chemsi-128.png",
+          "/usr/share/icons/hicolor/256x256/mimetypes/application-x-chemweave-si.png": "icons/chemsi-256.png"
+        }
+      }
+    },
     "fileAssociations": [
       {
         "ext": [

@@ -37,7 +37,9 @@ import {
   OBJECT_CHAR, COMPOUND, compoundSeqs, defaultCharStyles, defaultHeaderFooter, defaultPage, defaultStyles,
   COL_GAP, FLOAT_GAP, columnsOf, contentsPrint, lookExtent, usedObjects,
   type WordLook, type BreakKind, type CharStyle, type DocObject, type DocText, type Embedded, type TocLook, type PageBorder, type Watermark, type FigureLook, type Float, type HeaderFooter, type HfBody, type HfZones, type LineNumbers, type NamedStyle, type NoteFormat, type NoteFormats, type NumberPlace, type PageNumFormat, type PageSetup, type SectionBreak,
+  samePageBorder,
 } from '../document/document';
+import { linkedHf } from '../document/sections';
 import { parseFieldInstr, type DocProps } from '../document/fields';
 import { shownSize } from '../document/doc-layout';
 import { coveringCell, layoutTable } from '../table';
@@ -384,6 +386,7 @@ class DocxReader {
     this.sects = [...sects.filter((e) => e !== last), ...(last ? [last] : [])];
     const first = this.sects[0] ?? null;
     this.readPage(first);
+    this.docBorder = this.pageBorderOf(first);
     const hf = this.readHeaderFooter(first).hf;
     this.lastHf = hf;
     this.blocks(kids(body));
@@ -1157,9 +1160,15 @@ class DocxReader {
     const next = at >= 0 ? this.sects[at + 1] : undefined;
     if (!next) return null;
     const out: SectionBreak = { kind: this.kindOf(next), page: this.pageOf(next) };
-    const { hf, linked } = this.readHeaderFooter(next, this.lastHf);
+    const prevHf = this.lastHf;
+    const { hf, linked, titlePg } = this.readHeaderFooter(next, prevHf);
     if (!linked) out.hf = hf;
-    this.lastHf = hf;
+    else if (titlePg !== undefined) out.titlePg = titlePg;
+    // each section has its own page border: kept where it isn't the document's (the first section's)
+    const border = this.pageBorderOf(next);
+    if (!samePageBorder(border, this.docBorder)) out.pageBorder = border;
+    // (a linked section's header and footer are those of the last section with its own)
+    if (!linked) this.lastHf = hf;
     const start = Number(this.a(kid(next, 'pgNumType'), 'start'));
     if (this.a(kid(next, 'pgNumType'), 'start') !== null && Number.isFinite(start)) out.restart = Math.round(start);
     const fmt = this.numFormatOf(next);
@@ -1641,7 +1650,8 @@ class DocxReader {
       cont = true;
     }
     const firstSize = ctx.pieces[0].runs.find((r) => r.obj === undefined)?.size ?? size;
-    let indent = Math.max(0, p.left ?? 0);
+    // (a negative indent, into the margin, as Word has it: Layout ▸ Indent Left below 0)
+    let indent = p.left ?? 0;
     if (list) indent = Math.max(0, indent - listIndent({ list, level: ilvl }, firstSize).left);
     const brk = this.takeBreak();
     // a frame of paragraphs as this program writes them (ParaStyle.frame), in the body; others are kept as Word had them
@@ -1653,7 +1663,7 @@ class DocxReader {
       spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0),
       // spacing in points stays in points for the paragraph (its style takes the nearest multiple)
       ...(p.line && p.line.rule !== 'auto' ? { linePt: round(p.line.v / 20), lineRule: p.line.rule === 'exact' ? 'exact' as const : 'atLeast' as const } : { line: this.lineOf(p, size) }),
-      indent: round(indent), indentRight: p.right ? round(Math.max(0, p.right)) : undefined, firstLine: list ? undefined : round(p.first ?? 0), keepNext: p.keepNext,
+      indent: round(indent), indentRight: p.right ? round(p.right) : undefined, firstLine: list ? undefined : round(p.first ?? 0), keepNext: p.keepNext,
       keepLines: p.keepLines || undefined, noWidow: p.widow === false || undefined,
       pageBreak: p.pageBreak, section: brk, list, level: list ? ilvl : undefined, noLineNumbers: p.noLineNumbers, noHyphen: p.noHyphen || undefined,
       tabs: finalTabs(p), scheme, bullet,
@@ -3328,7 +3338,7 @@ class DocxReader {
    * footer of its own takes the one before's (Word's Link to Previous: `linked`); one with only
    * a header of its own takes the footer before, and the other way round.
    */
-  private readHeaderFooter(sect: Element | null, prev?: HeaderFooter): { hf: HeaderFooter; linked: boolean } {
+  private readHeaderFooter(sect: Element | null, prev?: HeaderFooter): { hf: HeaderFooter; linked: boolean; titlePg?: boolean } {
     const hf = defaultHeaderFooter();
     hf.numbers = 'none';
     const start = Number(this.a(kid(sect, 'pgNumType'), 'start'));
@@ -3337,7 +3347,7 @@ class DocxReader {
     const refEl = (kind: 'header' | 'footer', type: string) => kids(sect, `${kind}Reference`).find((e) => (this.a(e, 'type') ?? 'default') === type);
     const refOf = (kind: 'header' | 'footer', type: string) => this.relTarget(rAttr(refEl(kind, type), 'id'));
     const own = (kind: 'header' | 'footer') => !!refEl(kind, 'default');
-    if (prev && !own('header') && !own('footer')) return { hf: { ...prev, onFirst: prev.onFirst || !titlePg }, linked: true };
+    if (prev && !own('header') && !own('footer')) return { hf: linkedHf(prev, titlePg), linked: true, titlePg };
     let numberedFirst = false;
     const oddEven = this.evenAndOdd();
     const bodies: NonNullable<HeaderFooter['bodies']> = {};
@@ -3364,8 +3374,9 @@ class DocxReader {
       }
       // a logo, a table or formatted text: kept as Word's paragraphs
       if (part.rich) bodies[kind] = this.hfBody(path!);
-      if (titlePg) {
-        const fp = refOf(kind, 'first');
+      // a first page header and footer: Word keeps them without Different First Page too (a later section linked to this one may show them)
+      const fp = refOf(kind, 'first');
+      if (titlePg || fp) {
         const f = this.hfPart(fp);
         if (f.page) numberedFirst = true;
         if (f.rich) { bodies[`first${Kind}`] = this.hfBody(fp!); firstUsed = true; }
@@ -3386,6 +3397,7 @@ class DocxReader {
     if (titlePg && hf.numbers !== 'none' && !numberedFirst) hf.onFirst = false;
     // a first page with a header or footer of its own (not just an empty one, which is a page without its number)
     if (titlePg && firstUsed) { hf.firstPage = true; hf.first = first; hf.onFirst = numberedFirst; }
+    else if (firstUsed) hf.first = first;
     if (evenUsed) { hf.oddEven = true; hf.even = even; }
     if (Object.keys(bodies).length) hf.bodies = bodies;
     return { hf, linked: false };
@@ -3553,7 +3565,7 @@ class DocxReader {
       name: dflt?.name ?? ws?.name ?? ours,
       font: r.font ?? WORD_FONT, size, bold: !!r.bold, italic: !!r.italic, color: r.color ?? undefined,
       align: p.align ?? 'left', spaceBefore: round(p.before ?? 0), spaceAfter: round(p.after ?? 0), line: this.lineOf(p, size) ?? 1,
-      indent: round(Math.max(0, p.left ?? 0)), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
+      indent: round(p.left ?? 0), firstLine: round(p.first ?? 0), keepNext: !!p.keepNext,
       ...(p.keepLines ? { keepLines: true } : {}), ...(p.widow === false ? { noWidow: true } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
@@ -3562,23 +3574,31 @@ class DocxReader {
     };
   }
 
+  /** The document's page border: the first section's (each later section's own is kept where it differs). */
+  private docBorder: PageBorder | null = null;
+
+  /** A section's page border (Design ▸ Page Borders), or null for none. */
+  private pageBorderOf(sect: Element | null): PageBorder | null {
+    const pb = kid(sect, 'pgBorders');
+    const side = pb && (kid(pb, 'top') ?? kid(pb, 'left') ?? kid(pb, 'bottom') ?? kid(pb, 'right'));
+    const val = this.a(side);
+    if (!side || !val || val === 'none' || val === 'nil') return null;
+    const style: PageBorder['style'] = /^thi(ck|n)Thi/.test(val) || val === 'thick' ? 'thick' : val === 'double' || val === 'triple' ? 'double' : /dot/i.test(val) && !/dash/i.test(val) ? 'dotted' : /dash/i.test(val) ? 'dashed' : 'single';
+    return {
+      style,
+      width: Math.max(0.25, Number(this.a(side, 'sz') ?? 4) / 8),
+      color: colourOf(this.a(side, 'color')) ?? '#000000',
+      from: this.a(pb, 'offsetFrom') === 'page' ? 'page' : 'text',
+      space: Math.max(0, Number(this.a(side, 'space') ?? 0) || 0),
+    };
+  }
+
   /** Design > Page Background: the page colour, the first section's page border and its header's text watermark. */
   private readPageLook(t: DocText, root: Element, sect: Element | null): void {
     const bg = colourOf(this.a(kid(root, 'background'), 'color'));
     if (bg && bg !== '#ffffff') t.pageColor = bg;
-    const pb = kid(sect, 'pgBorders');
-    const side = pb && (kid(pb, 'top') ?? kid(pb, 'left') ?? kid(pb, 'bottom') ?? kid(pb, 'right'));
-    const val = this.a(side);
-    if (side && val && val !== 'none' && val !== 'nil') {
-      const style: PageBorder['style'] = /^thi(ck|n)Thi/.test(val) || val === 'thick' ? 'thick' : val === 'double' || val === 'triple' ? 'double' : /dot/i.test(val) && !/dash/i.test(val) ? 'dotted' : /dash/i.test(val) ? 'dashed' : 'single';
-      t.pageBorder = {
-        style,
-        width: Math.max(0.25, Number(this.a(side, 'sz') ?? 4) / 8),
-        color: colourOf(this.a(side, 'color')) ?? '#000000',
-        from: this.a(pb, 'offsetFrom') === 'page' ? 'page' : 'text',
-        space: Math.max(0, Number(this.a(side, 'space') ?? 0) || 0),
-      };
-    }
+    const border = this.pageBorderOf(sect);
+    if (border) t.pageBorder = border;
     const head = this.relTarget(rAttr(kids(sect, 'headerReference').find((e) => (this.a(e, 'type') ?? 'default') === 'default'), 'id'));
     const hroot = head ? this.pkg.xml(head)?.documentElement : null;
     const shape = hroot ? Array.from(hroot.getElementsByTagNameNS('*', 'shape')).find((e) => /^PowerPlusWaterMarkObject/.test(e.getAttribute('id') ?? '')) : undefined;

@@ -1959,6 +1959,49 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .rb-tabs button.cr-warnings.none, .rb-tabs button.cr-warnings:disabled { opacity: 0.45; cursor: default; }
 .rb-tabs button.cr-warnings:disabled .cr-ok { color: inherit; }
 .cr-warnings .cr-chev { font-size: var(--fs-sm); line-height: 1; }
+/* the Lab Calculator, left of the warnings on every Canvas tab: a picture and its name, the picture only in a narrow window */
+.rb-tabs button.cr-calc { display: inline-flex; align-items: center; gap: 4px; height: 20px; margin-right: 6px; padding: 0 6px 0 4px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; box-shadow: none; color: var(--text); font-size: var(--fs-sm); white-space: nowrap; }
+.rb-tabs button.cr-calc:hover, .rb-tabs button.cr-calc:focus-visible { border-color: var(--line); background: var(--accent-soft); }
+.rb-tabs button.cr-calc svg { width: 16px; height: 16px; flex: none; color: var(--accent); }
+@media (max-width: 1100px) { .rb-tabs button.cr-calc { padding: 0 3px; margin-right: 4px; } .rb-tabs button.cr-calc .cr-calc-name { display: none; } }
+/* the Canvas ribbon's flyouts (canvas-ribbon.ts; opened by ribbon-flyout.ts): a large button three rows tall, its ▾ after its name */
+.canvas-ribbon .cr-rows > .rb-fly { grid-row: span 3; }
+.canvas-ribbon .cr-fly > button.cr-major { flex: 1 1 auto; }
+.canvas-ribbon .cr-fly .cr-caret { margin-left: 3px; font-size: 9px; color: var(--muted); vertical-align: 1px; }
+.canvas-ribbon.cr-simple .cr-rows > .rb-fly { grid-row: auto; }
+.canvas-ribbon.cr-simple .rb-group.rb-small > .rb-row { grid-template-rows: 26px; }
+.canvas-ribbon .rb-group.rb-small > .rb-row > .rb-fly { grid-row: auto; }
+.canvas-ribbon .rb-group.rb-small button.cr-major .cr-line { display: inline; }
+.canvas-ribbon .rb-group.rb-compact button.cr-major .cr-name { display: none; }
+/* (a group of flyouts only, short of room: two rows of pictures, each keeping a small ▾) */
+.canvas-ribbon.cr-classic .rb-group.rb-small > .rb-row:not(:has(> :not(.rb-fly))) { grid-template-rows: repeat(2, auto); }
+.canvas-ribbon .rb-group.rb-compact .cr-fly > button.cr-major { flex-direction: row; gap: 0; }
+.canvas-ribbon .rb-group.rb-compact .cr-fly > button.cr-major::after { content: '▾'; font-size: 8px; color: var(--muted); }
+.canvas-ribbon .rb-fly-btn[aria-expanded='true'] { border-color: var(--line); background: var(--accent-soft); }
+.cr-fly-menu { max-height: calc(100vh - 140px); overflow-y: auto; overscroll-behavior: contain; }
+.ribbon .cr-fly-menu > button { white-space: nowrap; }
+.cr-fly-menu .rb-icon svg { width: 18px; height: 18px; color: var(--accent); }
+.ribbon .cr-fly-menu > button.cr-has-drop { width: 100%; padding-right: 2px; }
+.ribbon .cr-fly-menu > button .cr-drop { margin-left: auto; padding: 3px 5px; }
+.ribbon .cr-fly-menu > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* an on-or-off command (Show Reaction Roles): a check at the end of its row, and its picture boxed, while on */
+.cr-fly-menu .cr-check { margin-left: auto; padding-left: 8px; color: var(--accent); font-weight: 700; visibility: hidden; }
+.cr-fly-menu [aria-checked='true'] .cr-check { visibility: visible; }
+.cr-fly-menu [aria-checked='true'] .rb-icon { border-radius: 2px; background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
+/* a template pane: labeled pictures, in rows under their headings, to look over before picking one */
+.cr-tpl-pane { min-width: 0; padding: 4px 6px 6px; }
+.cr-tpl-pane .rb-fly-head { padding: 4px 2px 2px; }
+.cr-tpl-grid { display: grid; grid-template-columns: repeat(5, 92px); gap: 4px; }
+.ribbon .cr-tpl-pane button.cr-tpl { display: flex; flex-direction: column; align-items: stretch; gap: 2px; width: auto; padding: 3px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); line-height: 1.2; text-align: center; white-space: normal; font-size: var(--fs-xs); }
+.cr-tpl-pic { display: flex; align-items: center; justify-content: center; height: 54px; padding: 2px; box-sizing: border-box; border-radius: 2px; background: #fff; color: #2b2b2b; overflow: hidden; }
+.cr-tpl-pic svg { display: block; max-width: 100%; max-height: 100%; width: 100%; height: 100%; }
+/* (a picture the drawing code drew at small size: its lines kept a pixel wide, so they don't fade away) */
+.cr-tpl-pic[data-drawn] svg * { vector-effect: non-scaling-stroke; }
+.cr-tpl-pic[data-drawn] svg [stroke]:not([stroke='none']) { stroke-width: 1px; }
+.cr-tpl-name { min-height: 2.4em; display: flex; align-items: center; justify-content: center; }
+.ribbon .cr-tpl-pane button.cr-tpl:hover, .ribbon .cr-tpl-pane button.cr-tpl:focus-visible { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); outline: none; background: var(--panel); }
+.ribbon .cr-tpl-pane button.cr-tpl:disabled { opacity: 0.55; }
+@media (max-width: 560px) { .cr-tpl-grid { grid-template-columns: repeat(3, 92px); } }
 .cr-file-warnings { padding: 6px 10px 8px; max-width: 380px; }
 .cr-file-warnings h2 { margin: 0 0 6px; font-size: var(--fs-sm); text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .cr-file-warnings .warn-list { margin: 0; padding: 0; list-style: none; display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 4px 10px; }
@@ -1971,6 +2014,8 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .ribbon button.cr-analysis:hover, .ribbon button.cr-analysis.open { border-color: var(--accent); background: var(--bg); }
 .cr-analysis .cr-an-f { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-analysis .cr-an-f.muted { font-weight: 400; color: var(--muted); }
+/* (on the Simplified ribbon's chip in Dark Gray the fill is the darker --bg #b4b8bf: #434956 is 4.5:1 there) */
+:root[data-gray] .canvas-ribbon:not(.cr-classic) .cr-analysis .cr-an-f.muted { color: #434956; }
 .cr-analysis .cr-an-f sub { line-height: 0; }
 .cr-analysis .cr-an-row { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 .cr-analysis .cr-an-v { font-family: var(--mono-font); color: var(--text); }
@@ -2825,7 +2870,10 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .update-box p { margin: 0; white-space: pre-line; }
 .update-buttons { display: flex; flex-wrap: wrap; gap: 6px; }
 .whats-new-list { display: grid; gap: 6px; max-height: 40vh; overflow-y: auto; }
-.whats-new-list p { margin: 0; white-space: pre-line; font-size: var(--fs-sm); }
+.whats-new-list section { font-size: var(--fs-sm); }
+.whats-new-list ul { margin: 2px 0 0; padding-left: 16px; }
+.whats-new-list li { margin: 1px 0; }
+.whats-new-kind { margin-top: 4px; color: var(--muted, var(--text)); font-size: var(--fs-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .update-progress { font-variant-numeric: tabular-nums; }
 .desktop-only[hidden] { display: none !important; }
 
@@ -4040,6 +4088,8 @@ dialog.crystal-dialog { width: min(96vw, 1060px); max-width: min(96vw, 1060px); 
 .rb-fly { position: relative; display: flex; align-items: stretch; }
 .rb-fly-menu { position: fixed; z-index: 60; min-width: 180px; padding: 4px; display: flex; flex-direction: column; gap: 1px; background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-panel); box-shadow: 0 6px 18px rgba(0, 0, 0, 0.16); }
 .rb-fly-menu[hidden] { display: none; }
+/* (the ribbon's panel is a layer of its own, under the floating toolboxes and the Side Panel: an open list lifts it over them) */
+.ribbon > .rb-panel:has(.rb-fly-menu:not([hidden])) { z-index: 61; }
 .ribbon .rb-fly-menu button, .ribbon .rb-fly-menu button.rb-big { display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 8px; min-width: 0; width: 100%; padding: 4px 8px 4px 6px; text-align: left; line-height: 20px; font-size: var(--fs-sm); }
 .rb-fly-menu .rb-icon { height: 20px; line-height: 20px; font-size: 16px; width: 20px; flex: none; }
 .rb-fly-menu .rb-icon .ci-ic { width: 20px; height: 20px; }
@@ -4225,7 +4275,7 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 /* ---- item 38: Dark Gray (View > Window and Colours > Theme), like Office's: a dark title bar and
    tab band, the ribbon and the panels a lighter gray so the icons read easily; the page stays white.
    It is the light theme underneath (data-theme="light"), with these colours over it. */
-:root[data-gray] { --chrome: #2e3137; --rb-surface: #d3d6db; --pane: #dfe1e5; --bg: #b4b8bf; --surround: #9fa4ad; --line: #bfc3ca; --rb-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
+:root[data-gray] { --chrome: #2e3137; --rb-surface: #d3d6db; --pane: #dfe1e5; --bg: #b4b8bf; --surround: #7d838d; --line: #bfc3ca; --rb-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
 :root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
@@ -4775,16 +4825,22 @@ details.nmr .nmr-mode { font: inherit; font-size: var(--fs-xs); padding: 0 2px; 
 .nmr-set-preview figure { margin: 0; }
 .nmr-set-preview figure > svg { display: block; max-width: 100%; height: auto; border: 1px solid var(--line); border-radius: var(--r-control); }
 .nmr-set-preview figcaption { font-size: var(--fs-sm); color: var(--muted); margin-top: 3px; }
-.nmr-spec .sp-line { fill: none; stroke: var(--text); stroke-width: 1; }
-.nmr-spec .sp-hot { fill: none; stroke: var(--accent); stroke-width: 1.8; }
+/* the trace: dark blue or maroon (Settings ▸ NMR Prediction), apart from the gray axis; lighter in
+   the dark theme (#7fb0ff 7.0:1 and #f08a96 6.4:1 on its #252a32 panel; #1b3f9c 9.6:1 and #800000
+   11:1 on white). Pictures take the white-paper colors (TRACE_ON_PAPER in nmr-settings.ts). */
+:root { --nmr-trace-blue: #1b3f9c; --nmr-trace-maroon: #800000; }
+@media (prefers-color-scheme: dark) { :root:not([data-theme='light']) { --nmr-trace-blue: #7fb0ff; --nmr-trace-maroon: #f08a96; } }
+:root[data-theme='dark'] { --nmr-trace-blue: #7fb0ff; --nmr-trace-maroon: #f08a96; }
+.nmr-spec { --sp-trace: var(--nmr-trace-maroon); }
+.nmr-spec[data-trace='blue'] { --sp-trace: var(--nmr-trace-blue); }
+.nmr-spec .sp-line { fill: none; stroke: var(--sp-trace); stroke-width: 1.5; stroke-linejoin: round; }
+.nmr-spec .sp-hot { fill: none; stroke: var(--accent); stroke-width: 2; stroke-linejoin: round; }
+.nmr-spec .sp-band { fill: var(--accent); fill-opacity: 0.14; stroke: var(--accent); stroke-opacity: 0.6; stroke-width: 1; }
 .nmr-spec .sp-lab { font-size: 10px; fill: var(--text); }
 .nmr-spec .sp-tick { font-size: 9.5px; fill: var(--muted); font-variant-numeric: tabular-nums; }
 .nmr-spec .sp-lead { stroke: var(--muted); stroke-width: 0.6; fill: none; }
 .nmr-spec .sp-cursor { stroke: var(--accent); stroke-width: 0.8; stroke-dasharray: 3 3; }
 .nmr-spec .sp-cursor-at { fill: var(--accent); }
-.nmr-spec-tools .nmr-cmp { display: inline-flex; }
-.nmr-spec-tools .nmr-cmp button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-.nmr-spec-tools .nmr-meas-k { width: 70px; }
 .nmr-spec .sp-ax { stroke: var(--line); }
 .nmr-spec-win { position: fixed; z-index: 60; display: flex; flex-direction: column; min-width: 320px; min-height: 180px; height: 300px; resize: both; overflow: hidden; background: var(--panel); border: 1px solid var(--line); border-radius: 6px; box-shadow: 0 6px 18px rgba(0, 0, 0, .18); }
 .nmr-spec-win[hidden] { display: none; }
@@ -4794,8 +4850,27 @@ details.nmr .nmr-mode { font: inherit; font-size: var(--fs-xs); padding: 0 2px; 
 .nmr-spec-tools { margin-left: auto; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 4px; white-space: nowrap; align-items: center; font-weight: 400; cursor: default; }
 .nmr-spec-tools select, .nmr-spec-tools button { font: inherit; font-size: var(--fs-xs); padding: 0 6px; min-height: 0; line-height: 18px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); }
 .nmr-spec-tools [hidden] { display: none; }
-.nmr-spec-plot { flex: 1; min-height: 0; overflow: hidden; }
+.nmr-spec-plot { position: relative; flex: 1; min-height: 0; overflow: hidden; cursor: crosshair; touch-action: none; user-select: none; -webkit-user-select: none; }
+.nmr-spec-plot:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
 .nmr-spec-plot svg { display: block; }
+/* the left edge (drag for peak height) and the ppm scale (drag to move along) */
+.nmr-yzone { position: absolute; left: 0; top: 0; bottom: 18px; width: 16px; cursor: ns-resize; }
+.nmr-xzone { position: absolute; left: 0; right: 0; bottom: 0; height: 18px; cursor: ew-resize; }
+.nmr-spec-plot:not(.zoomed) .nmr-xzone { cursor: inherit; }
+.nmr-yzone:hover, .nmr-xzone:hover { background: var(--accent-soft); opacity: .55; }
+.nmr-spec-plot:not(.zoomed) .nmr-xzone:hover { background: none; }
+/* the top bar: solvent, Check Data…, settings, then the view */
+.nmr-spec-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 3px; padding: 2px 6px; border-bottom: 1px solid var(--line); font-size: var(--fs-xs); }
+.nmr-spec-bar select, .nmr-spec-bar button { font: inherit; font-size: var(--fs-xs); padding: 0 6px; min-height: 0; line-height: 18px; color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); }
+.nmr-spec-bar button:hover { border-color: var(--accent); }
+.nmr-spec-bar .nmr-yout, .nmr-spec-bar .nmr-yin { min-width: 22px; padding: 0 4px; }
+.nmr-spec-gear { display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 20px; padding: 0 !important; }
+.nmr-spec-gear svg { width: 14px; height: 14px; }
+.nmr-spec-sep { width: 1px; align-self: stretch; margin: 2px 3px; background: var(--line); }
+.nmr-spec-bar [hidden] { display: none; }
+.nmr-spec-bar .nmr-cmp:not([hidden]) { display: inline-flex; }
+.nmr-spec-bar .nmr-cmp button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.nmr-spec-bar .nmr-meas-k { width: 70px; }
 
 /* Check Data (Analysis ▸ NMR): paste box, findings, overlay colors */
 .ck-box { margin: 3px 0; display: flex; flex-direction: column; gap: 3px; }
@@ -5660,3 +5735,177 @@ dialog.tabs-dialog { width: min(94vw, 440px); }
 /* G5-34: the SI tab's status bar ends with the zoom every mode has (it zooms the Live Preview) */
 #si-statusbar[hidden], body:not(.si-mode) #si-statusbar { display: none; }
 #si-statusbar.si-zoom-off { opacity: 0.5; }
+
+/* ---- Toolbox buttons: the size of the ribbon's small buttons (26 × 23 with an 18 px icon) as the
+   app comes, times Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size (--tb-scale), which
+   leaves the rest of the interface alone. Density and touch give their own starting sizes. The
+   fly-out palettes keep their own, larger buttons. */
+html { --tb-scale: 1; --tool-w: 26px; --tool-h: 23px; --tool-ic: 18px; }
+html[data-density='standard'] { --tool-w: 32px; --tool-h: 29px; --tool-ic: 21px; }
+html[data-density='large'] { --tool-w: 38px; --tool-h: 35px; --tool-ic: 25px; }
+html.touch-ui { --tool-w: 44px; --tool-h: 42px; --tool-ic: 24px; }
+body {
+  --tbw: calc(var(--tool-w) * var(--tb-scale)); --tbh: calc(var(--tool-h) * var(--tb-scale)); --tbi: calc(var(--tool-ic) * var(--tb-scale));
+}
+/* (whole pixels where the browser can round, so the cells' lines stay sharp at any size) */
+@supports (width: round(1.5px, 1px)) {
+  body { --tbw: round(calc(var(--tool-w) * var(--tb-scale)), 1px); --tbh: round(calc(var(--tool-h) * var(--tb-scale)), 1px); --tbi: round(calc(var(--tool-ic) * var(--tb-scale)), 1px); }
+}
+body .toolbox .tool, body .toolbox .tb-cmd.tb-icon, body .toolbox .tb-cells > .tb-gap { width: var(--tbw); height: var(--tbh); }
+body .toolbox .tool > :is(svg, img), body .toolbox .tb-cmd.tb-icon > svg { width: var(--tbi); height: var(--tbi); }
+body .toolbox .tool .tool-word { font-size: calc(10px * var(--tb-scale)); }
+body .toolbox .palette-wrap .more { width: 50%; height: 50%; }
+body .toolbox .palette-wrap .more::after { right: 1px; bottom: 1px; border-left-width: calc(var(--tbi) * 0.36); border-bottom-width: calc(var(--tbi) * 0.36); }
+body.cells-grid .toolbox .tb-cells > .tool, body.cells-grid .toolbox .tb-cells > .palette-wrap > .tool, body.cells-grid .toolbox .tb-cells > .tb-cmd.tb-icon { width: 100%; height: 100%; min-width: var(--tbw); min-height: var(--tbh); }
+/* every cell is ruled the same way: a command's button fills its cell and has no border of its own */
+body.cells-grid .toolbox .tb-cells > .tb-cmd { border: 0; border-radius: 0; background: transparent; }
+body.cells-grid .toolbox .tb-cells > .tb-cmd:hover { background: var(--accent-soft); }
+body.cells-grid .toolbox .tb-cells > .tb-cell { border-right: 1px solid var(--cell-line); border-bottom: 1px solid var(--cell-line); }
+body.cells-grid .toolbox .tb-cells > .tb-gap { width: auto; height: auto; }
+body.cells-raised .toolbox .tb-cells > .tb-cmd.tb-icon { border: 1px solid var(--line); border-radius: var(--r-control); background: linear-gradient(var(--panel), color-mix(in srgb, var(--bg) 70%, var(--panel))); box-shadow: 0 1px 0 rgb(0 0 0 / 0.08), inset 0 1px 0 rgb(255 255 255 / 0.5); }
+body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon { border-color: transparent; background: transparent; }
+body:not(.cells-raised):not(.cells-grid) .toolbox .tb-cells > .tb-cmd.tb-icon:hover { background: var(--accent-soft); }
+
+/* a command that is switched on shows it, in every Button Cells look */
+body .toolbox .tb-cells > .tb-cmd[aria-pressed='true'], body .toolbox .tb-cells > .tb-cmd[aria-pressed='true']:hover, body .toolbox .tb-cmd.tb-chip[aria-pressed='true'] { background: var(--accent-soft); box-shadow: inset 0 0 0 1px var(--accent); }
+
+/* a floating toolbox's buttons spread across its width, so a title wider than its buttons leaves no blank strip */
+.toolbox.floating .tb-cells { width: 100%; --tb-track: 1fr; }
+body.cells-grid .toolbox.floating .tb-cells { width: 100%; box-sizing: border-box; }
+
+/* ---- Toolbox frames: a thin line in the ribbon's border gray stands in for the padding there was,
+   and the corners are nearly square. The fill behind a pressed or pointed-at button is a deeper
+   gray than the ribbon's, so it shows on the toolbox's surface. */
+.toolbox { --tb-edge: var(--line); }
+body.cells-grid .toolbox .tb-cells { --cell-line: var(--tb-edge); }
+:root[data-gray] .toolbox { --tb-edge: #b3b8c0; }
+/* (only the grids of buttons and the Highlight toolbox take the deeper gray: the Side Panel, Text Formatting, Guides and Colors keep the mode's own soft accent) */
+:root[data-gray] .toolbox :is(.tb-cells, .tb-hl) { --accent-soft: #aeb5c1; }
+/* on that deeper gray an icon is drawn in the text color, so it keeps its contrast (over 3:1) */
+:root[data-gray] .toolbox :is(.tb-cells, .tb-hl) :is(.tool, .tb-cmd):is(:hover, .active, [aria-pressed='true']) { color: var(--text); --ic-ink: var(--text); }
+.toolbox.floating:not([data-id='details']) { padding: 0; gap: 0; border: 1px solid var(--tb-edge); border-radius: 2px; }
+.toolbox.floating:not([data-id='details']) > .tb-head { padding: 1px 2px 1px 4px; background: var(--tb-edge); color: var(--text); }
+:root:not([data-shadows='off']) .dock > .toolbox:not(.floating), :root:not([data-shadows='off']) .dock > .toolbox:not(.floating) + .toolbox:not(.floating) { padding: 0; border: 1px solid var(--tb-edge); border-radius: 2px; }
+:root:not([data-shadows='off']) .dock > .toolbox:not(.floating) { gap: 0; }
+
+/* ---- The Highlight toolbox: its two commands and Save Style, the parts of a highlight as switches
+   in three even columns, then the saved styles. */
+.tb-body.tb-hl { display: flex; flex-direction: column; align-items: stretch; gap: 3px; width: calc(196px * var(--tb-scale)); padding: 3px; box-sizing: border-box; font-size: max(9px, calc(11px * var(--tb-scale))); }
+.tb-hl :is(.tb-chip, .tb-look, .tb-heading) { font-size: inherit !important; }
+/* down a side it is as wide as its dock (at least four buttons), and Save Style goes under the two commands when there is no room beside them */
+.toolbox.vertical .tb-body.tb-hl { width: auto; min-width: calc(var(--tbw) * 4 + 8px); }
+.toolbox.vertical .tb-hl-row { flex-wrap: wrap; }
+.toolbox.vertical .tb-hl-row > .tb-chip { margin-left: 0; flex: 1 1 auto; }
+/* along the top or bottom its parts stand side by side, and the list of styles is short, so the dock stays low */
+.dock-h .tb-body.tb-hl { flex-direction: row; align-items: flex-start; width: auto; }
+.dock-h .tb-body.tb-hl > * { width: auto; }
+.dock-h .tb-hl-row { flex-direction: row; flex-wrap: wrap; width: calc(var(--tbw) * 2 + 2px) !important; }
+.dock-h .tb-hl-row > .tb-chip { margin-left: 0; white-space: normal; line-height: 1.1; flex: 1 1 100%; }
+.dock-h .tb-hl-chips { width: calc(160px * var(--tb-scale)) !important; }
+.dock-h .tb-hl .tb-looks { width: calc(190px * var(--tb-scale)) !important; max-height: calc(60px * var(--tb-scale)); border-top: 0; border-left: 1px solid var(--line); }
+.tb-hl-row { display: flex; align-items: center; gap: 2px; }
+.tb-hl-row > .tb-chip { margin-left: auto; flex: 0 0 auto; }
+.tb-hl-chips { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 2px; min-width: 0; }
+.tb-body.tb-hl > * { min-width: 0; width: 100%; box-sizing: border-box; }
+.tb-hl .tb-look { overflow: hidden; text-overflow: ellipsis; display: block; flex: 0 0 auto; }
+.tb-hl .tb-look-dot { display: inline-block; margin-right: 5px; vertical-align: -1px; }
+.toolbox.vertical .tb-hl-chips { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.toolbox .tb-cmd.tb-chip { max-width: none; min-width: 0; padding: 1px 3px; overflow: hidden; text-overflow: ellipsis; font-size: var(--fs-xs); text-align: center; border-color: var(--tb-edge, var(--line)); }
+.tb-hl .tb-looks { max-height: calc(168px * var(--tb-scale)); max-width: none; border-top: 1px solid var(--line); }
+.toolbox:not(.floating) > .tb-body.tb-hl { padding: 3px; }
+
+/* toolboxes that hold something other than a grid of buttons (Text Formatting, Guides, Colors) keep a little room inside the frame */
+.toolbox:not([data-id='details']) > .tb-body:not(:has(.tb-cells)):not(.tb-hl) { padding: 3px 4px; }
+/* the Settings preview's buttons, at the toolboxes' size */
+.tbp-tools { grid-template-columns: repeat(2, var(--tbw)); }
+.tbp-tool { width: var(--tbw); height: var(--tbh); }
+.tbp .tbp-tool > svg { width: var(--tbi); height: var(--tbi); }
+
+/* ---- the menu bar off: the menus are in the File tab at the start of the ribbon (src/ui/backstage.ts) */
+body.menus-in-file header > .menu-wrap > button { display: none; }
+/* the quick bar starts the title row: the separator before it went with the menus */
+body.menus-in-file header > .sep:first-of-type { display: none; }
+.rb-tabs > .rb-file { margin-right: 4px; font-weight: 600; }
+.rb-tabs > .rb-file[aria-expanded='true'] { background: var(--panel); color: var(--accent); }
+.rb-file { display: none; }
+body.menus-in-file .rb-file { display: inline-block; }
+/* the page: under the title row, over the ribbon and the work */
+#backstage { position: fixed; z-index: 28; top: var(--bs-top, 32px); left: 0; right: 0; bottom: 0; display: flex; background: var(--panel); color: var(--text); }
+#backstage[hidden] { display: none; }
+.bs-nav { display: flex; flex-direction: column; gap: 1px; width: 168px; flex: none; padding: 6px 0; background: color-mix(in srgb, var(--text) 7%, var(--panel)); border-right: 1px solid var(--line); }
+.bs-nav button { display: block; width: 100%; padding: 7px 20px; border: 0; border-radius: 0; background: transparent; color: var(--text); text-align: left; font-size: var(--fs-md, 14px); }
+.bs-nav button:hover { background: var(--accent-soft); }
+.bs-nav button[aria-current='page'] { background: var(--accent-soft); font-weight: 600; box-shadow: inset 3px 0 0 var(--accent); }
+.bs-nav button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* the ribbon under the page is out of reach (and out of the keys' way) while it shows */
+body.backstage-open .ribbon { visibility: hidden; }
+.bs-nav .bs-back { width: 36px; height: 30px; margin: 0 0 6px 10px; padding: 0; display: grid; place-items: center; border-radius: 50%; }
+/* the chosen menu, as a page: its parts in columns, each submenu under its name */
+.bs-pane { flex: 1 1 auto; min-width: 0; overflow: auto; padding: 14px 20px; }
+.menu.bs-page { position: static; z-index: auto; max-height: none; min-width: 0; translate: none !important; display: block; column-width: 250px; column-gap: 20px; padding: 0; overflow: visible; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.menu.bs-page button { width: 100%; break-inside: avoid; }
+.menu.bs-page hr { break-after: avoid; }
+.menu.bs-page .submenu { display: block; break-inside: avoid; margin: 4px 0 6px; }
+.menu.bs-page .submenu[hidden] { display: none; }
+.menu.bs-page .menu.sub { position: static; display: flex; max-height: none; min-width: 0; padding: 0; border: 0; border-radius: 0; box-shadow: none; background: transparent; }
+.menu.bs-page button.has-sub { pointer-events: none; color: var(--muted); font-size: var(--fs-xs, 11px); font-weight: 600; text-transform: none; background: transparent; }
+.menu.bs-page button.has-sub::after { content: none; }
+/* every command in the page starts at the same place, ticked or not (the menus keep room for a tick) */
+.menu.bs-page button:not([role='menuitemcheckbox'], [role='menuitemradio']) { padding-left: calc(8px + 1.2em); }
+.menu.bs-page { max-width: 1180px; }
+/* a narrow window (a phone, a tablet upright): the menus' names run along the top and the page is one column */
+@media (max-width: 640px) {
+  #backstage { flex-direction: column; }
+  .bs-nav { flex-direction: row; width: auto; padding: 0 4px; overflow-x: auto; border-right: 0; border-bottom: 1px solid var(--line); }
+  .bs-nav button { width: auto; flex: none; padding: 7px 10px; }
+  .bs-nav button[aria-current='page'] { box-shadow: inset 0 -3px 0 var(--accent); }
+  .bs-nav .bs-back { margin: 0 4px 0 0; align-self: center; }
+  .bs-pane { padding: 8px 10px; }
+  .menu.bs-page { columns: 1; }
+  .menu.bs-page button { white-space: normal; }
+}
+/* Focus View hides the ribbon, and with it the File tab: the menu bar shows instead, so the menus stay a click away */
+body.menus-in-file.focus-view header > .menu-wrap > button { display: inline-block; }
+html.touch-ui .bs-nav button { min-height: 40px; }
+
+/* ---- the web app's one row (no title row): Quick Access, the file tabs and Search in the ribbon's row of tabs */
+body.one-row:not(.focus-view) > header { display: none; }
+.rb-tabs > #quick-bar { align-self: center; margin: 0 6px 0 6px; padding: 0 6px; border-left: 1px solid color-mix(in srgb, var(--text) 25%, transparent); border-right: 1px solid color-mix(in srgb, var(--text) 25%, transparent); }
+.rb-tabs > #quick-bar > button { height: 22px; padding: 0 2px; border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: color-mix(in srgb, var(--text) 90%, transparent); }
+.rb-tabs > #quick-bar > button:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 16%, transparent); border-color: transparent; color: var(--text); }
+.rb-tabs > #quick-bar > button:disabled { color: color-mix(in srgb, var(--text) 86%, transparent); opacity: 0.45; }
+.rb-tabs > #tabs { flex: 1 1 0; min-width: 0; display: flex; align-self: stretch; align-items: center; margin: 0 4px 0 12px; padding: 0; background: transparent; border: 0; }
+.rb-tabs > #tabs .tab-strip { align-items: center; }
+.rb-tabs .tab { flex: 0 1 180px; min-width: 0; height: 24px; margin: 0 1px; border: 1px solid transparent; border-radius: var(--r-control); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs .tab:hover { background: color-mix(in srgb, var(--text) 14%, transparent); color: var(--text); }
+.rb-tabs .tab.active { background: color-mix(in srgb, var(--text) 20%, transparent); border-color: color-mix(in srgb, var(--text) 35%, transparent); color: var(--text); box-shadow: inset 0 -2px 0 var(--accent); }
+.rb-tabs .tab .tab-close, .rb-tabs .tab-ctl { width: 22px; height: 20px; padding: 0; border-radius: var(--r-control); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs .tab .tab-close:hover, .rb-tabs .tab-ctl:hover:not(:disabled) { background: color-mix(in srgb, var(--text) 16%, transparent); color: var(--text); }
+.rb-tabs > #btn-search { align-self: center; height: 22px; min-width: 0; margin: 0 6px 0 2px; padding: 0 8px; border: 1px solid color-mix(in srgb, var(--text) 28%, transparent); border-radius: var(--r-control); background: color-mix(in srgb, var(--text) 8%, transparent); color: color-mix(in srgb, var(--text) 86%, transparent); }
+.rb-tabs > #btn-search:hover { background: color-mix(in srgb, var(--text) 16%, transparent); color: var(--text); }
+/* the row's other buttons sit after Search (the warnings box no longer pushes itself to the right) */
+body.one-row .rb-tabs > button.cr-warnings, body.one-row .rb-tabs > .cr-tab-end { margin-left: 0; }
+/* a floating two-column toolbox (the web app's Drawing Tools): its name, then its buttons on one line under it
+   (the whole title bar drags it, so the grip dots make way for ×) */
+html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-grip { display: none; }
+html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-lock { margin-left: auto; }
+
+/* the desktop app's one row: the window's buttons at the end of the ribbon's row of tabs, which moves the window */
+body.own-title-bar.one-row .rb-tabs { user-select: none; }
+body.own-title-bar .rb-tabs > .win-controls { position: static; height: auto; align-self: stretch; margin: -1px -8px 0 6px; }
+/* the desktop app's File page with no title row: its own window buttons along the top (title-bar.ts pageTitleStrip) */
+#backstage.has-strip { padding-top: var(--title-h, 32px); }
+#backstage > .bs-strip { background: var(--chrome); }
+/* the one row in a narrow window: the open files' tabs wrap onto a line of their own under the
+   ribbon's tabs, Quick Access and Search, and the rest wraps as needed, so nothing runs off the window */
+@media (max-width: 1000px) {
+  body.one-row .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+  body.one-row .rb-tabs > #tabs { order: 99; flex: 1 0 100%; height: 28px; margin: 0 0 2px; }
+}
+/* touch: the row's buttons as big as the title row's (36 px) */
+html.touch-ui .rb-tabs > #quick-bar > button, html.touch-ui .rb-tabs > #btn-search { height: 36px; min-width: 36px; }
+html.touch-ui .rb-tabs .tab { height: 36px; }
+html.touch-ui .rb-tabs .tab .tab-close, html.touch-ui .rb-tabs .tab-ctl { width: 36px; height: 32px; }
+html.touch-ui body.one-row .rb-tabs > #tabs { height: auto; }
+/* Mode Colors set to color the window: the row is the mode's color, so its items are white on it */
+body.mode-window .rb-tabs > :is(#quick-bar, #tabs, #btn-search) { --text: #fff; }

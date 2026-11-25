@@ -15,6 +15,8 @@ await page.goto(url);
 await page.evaluate(() => localStorage.removeItem('chem-illustrator.settings'));
 await page.reload();
 await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 20000 });
+// these check the menu bar's menus: the web app starts with them in the File tab, so show the bar
+await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
 const results = [];
 const check = (name, ok, detail = '') => { results.push({ name, ok, detail }); console.log((ok ? 'PASS ' : 'FAIL ') + name + (detail ? ' — ' + detail : '')); };
 
@@ -122,6 +124,8 @@ const saved = await page.evaluate(() => localStorage.getItem('chem-illustrator.s
 check('settings saved', !!saved && saved.includes('"q": "atom bond"'), saved ?? 'nothing');
 await page.reload();
 await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 20000 });
+// these check the menu bar's menus: the web app starts with them in the File tab, so show the bar
+await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
 await page.waitForTimeout(200);
 check('q still grows a bond after a reload', (await page.evaluate(() => window.__app.keymap.lookup('atom', 'q'))) === 'atom bond');
 

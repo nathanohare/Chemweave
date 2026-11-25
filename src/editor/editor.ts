@@ -5590,7 +5590,7 @@ export class Editor {
   /** The ring right-clicked inside last (until the next click). */
   private contextRing: number[] | null = null;
 
-  /** Right-click or Arrange ▸ Set as Focal Point: the selected atom, bond or ring. False when the selection isn't one. */
+  /** Right-click or Home ▸ Focal Point ▸ Set as Focal Point: the selected atom, bond or ring. False when the selection isn't one. */
   setFocalPoint(): boolean {
     const on = this.focalSpot();
     if (!on) return false;
@@ -5608,7 +5608,7 @@ export class Editor {
     return true;
   }
 
-  /** Arrange ▸ Focal Point ▸ Pick (or the Style panel's Pick…): the next click names the focal point. */
+  /** Home ▸ Focal Point ▸ Set as Focal Point with nothing selected (or the Style panel's Pick…): the next click names the focal point. */
   focalPicking = false;
   /** Told when a change took away a structure's focal point (its atom, bond or ring went). */
   onFocalLost: () => void = () => {};
@@ -7093,7 +7093,7 @@ export class Editor {
     if (this.paused) return;
     const target = e.target as HTMLElement;
     if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.tagName === 'SELECT' || target.isContentEditable)) return;
-    if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout')) return;
+    if (e.defaultPrevented || target?.closest?.('dialog, .menu, .flyout, #backstage')) return;
     const chord = chordOf(e);
     if (!chord) return;
     if (this.focalPicking && chord === 'Escape') { e.preventDefault(); this.stopFocalPick(); return; }

@@ -1,0 +1,45 @@
+name: Changelog
+
+# Checks that a pull request into staging which changes the app adds a change file to changes/
+# (changes/README.md), and that every change file it adds is written right. A pull request people
+# won't notice can carry the "no changelog" label instead; adding or removing the label runs this
+# again. The release of each build of main turns the change files into its notes and CHANGELOG.md
+# (desktop.yml, scripts/changelog.mjs), so this also tries those two steps on the pull request.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: changelog-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  changelog:
+    # staging into main carries change files already checked on their own pull requests
+    if: github.head_ref != 'staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      # the script uses only Node's own modules, so no npm ci
+      - name: A change file for a change people will notice
+        env:
+          LABELS: ${{ join(github.event.pull_request.labels.*.name, ',') }}
+        # HEAD is the pull request merged into its base, so its first parent is the base as merged
+        run: node scripts/changelog.mjs check HEAD^1 "$LABELS"
+      # the release job's two steps, tried here: the notes, and CHANGELOG.md made on main and
+      # committed, without the push
+      - name: Try the release notes and CHANGELOG.md
+        run: |
+          node scripts/changelog.mjs notes "$RUNNER_TEMP/notes.md" 0.0.0
+          cat "$RUNNER_TEMP/notes.md"
+          node scripts/changelog.mjs push 0.0.0 --dry-run
+          git show --stat HEAD | head -5

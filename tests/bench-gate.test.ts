@@ -3,7 +3,7 @@
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 // @ts-expect-error (a plain JavaScript module of the scripts)
-import { BUDGETS, overBudget } from '../scripts/bench-gate.mjs';
+import { BUDGETS, STEP_LIMITS, overBudget, slowerThanBase } from '../scripts/bench-gate.mjs';
 
 describe('speed budgets', () => {
   it('fails a measure over its budget, and one whose measure is gone', () => {
@@ -38,5 +38,21 @@ describe('speed budgets', () => {
     const calls = readFileSync('bench/core.bench.ts', 'utf8').match(/\bbench(\.\w+)?\(/g) ?? [];
     expect(measures.length).toBe(calls.length);
     expect(measures.filter((k) => !(k in BUDGETS)), 'add these to BUDGETS in scripts/bench-gate.mjs (about 1.8 times the Checks time)').toEqual([]);
+  });
+});
+
+describe('the step between the base branch and a pull request', () => {
+  it('fails a measure more than 40% slower, ignoring under 10 ms', () => {
+    expect(slowerThanBase('drawing (1,000 rings, 6,000 atoms) / open CDXML', 300, 430)).toBe(true);
+    expect(slowerThanBase('drawing (1,000 rings, 6,000 atoms) / open CDXML', 300, 410)).toBe(false);
+    expect(slowerThanBase('x', 2, 5)).toBe(false);
+  });
+
+  it('gives the two-speed .pptx save a higher step, and only that measure', () => {
+    const k = 'slides (100 slides) / save .pptx';
+    expect(Object.keys(STEP_LIMITS)).toEqual([k]);
+    expect(slowerThanBase(k, 320, 640)).toBe(false); // the usual flip between its two speeds
+    expect(slowerThanBase(k, 320, 900)).toBe(true);
+    expect(k in BUDGETS).toBe(true); // a real slowdown still meets the budget
   });
 });

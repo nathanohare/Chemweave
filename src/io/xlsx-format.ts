@@ -4,7 +4,7 @@
 // bars, star icons, our own table colours) is also kept in this program's part of the file.
 
 import { xml, hex6, kid, kids } from './ooxml';
-import { mainXml } from './xlsx-view';
+import { mainXml, keptWithDxfs, withDxfs } from './xlsx-view';
 import type { CondFormat, CfRule, CfLook, CfValue, CfOp, IconSetName } from '../sheet/conditional';
 import { newCondFormat } from '../sheet/conditional';
 import type { TableDef } from '../sheet/table-styles';
@@ -105,7 +105,7 @@ export const queryHolds = (t: TableDef, names: string[]): boolean =>
  * totals-row cell holds. A table a data query fills (TableDef.query) is written as one while
  * queryHolds.
  */
-export function tableXml(t: TableDef, id: number, names: string[], totals: (string | { formula: string } | null)[] | null, autoFilter: string): string {
+export function tableXml(t: TableDef, id: number, names: string[], totals: (string | { formula: string } | null)[] | null, autoFilter: string, addDxf: (dxf: string) => number): string {
   const R = t.range;
   // a table a query fills: its columns' ids, as its query table part refers to them
   const query = queryHolds(t, names) ? t.query! : null;
@@ -125,7 +125,7 @@ export function tableXml(t: TableDef, id: number, names: string[], totals: (stri
   return `<table xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" id="${id}" name="${xml(t.name)}" displayName="${xml(t.name)}" ref="${rangeName(R)}"` +
     `${query ? ' tableType="queryTable"' : ''}${t.header ? '' : ' headerRowCount="0"'}${t.totals ? ' totalsRowCount="1"' : ' totalsRowShown="0"'}>` +
     // (a table without a header row has no filter buttons)
-    (t.header ? autoFilter + (t.sortState ?? '') : '') +
+    (t.header ? autoFilter + withDxfs(t.sortState, t.sortDxfs, addDxf) : '') +
     `<tableColumns count="${names.length}">${columns}</tableColumns>${info}</table>`;
 }
 
@@ -276,7 +276,7 @@ export function readCondFormats(ws: Element, dxfs: CfLook[], colour: (el: Elemen
  * A table part: the table, and its filter element (for the sheet's filter). `query` is the query
  * table part of a table a data query fills (Excel's tableType="queryTable"), when it can be kept.
  */
-export function readTable(doc: Document, id: number, query?: string | null): { table: TableDef; autoFilter: Element | null } | null {
+export function readTable(doc: Document, id: number, query?: string | null, dxfs: Element[] = []): { table: TableDef; autoFilter: Element | null } | null {
   const t = doc.documentElement;
   const range = parseRange(t.getAttribute('ref') ?? '');
   if (!range) return null;
@@ -302,7 +302,11 @@ export function readTable(doc: Document, id: number, query?: string | null): { t
   });
   if (columns.some((c) => c.calc) || !table.header) table.columns = columns;
   const sort = kid(t, 'sortState');
-  if (sort) table.sortState = mainXml(sort);
+  const sortKept = sort ? keptWithDxfs(sort, dxfs) : undefined;
+  if (sortKept) {
+    table.sortState = sortKept.xml;
+    if (sortKept.dxfs) table.sortDxfs = sortKept.dxfs;
+  }
   if (query && t.getAttribute('tableType') === 'queryTable' && table.header) {
     const attr = (c: Element, name: string) => c.getAttribute(name) ?? undefined;
     table.query = {

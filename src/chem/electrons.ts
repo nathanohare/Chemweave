@@ -438,19 +438,34 @@ export function countsDiffer(c: MetalCount): string | null {
 /** A signed whole number with a real minus sign (+1, 0, −2). */
 export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
 
+/** Settings ▸ Preferences ▸ Electron Counting Method: both columns, or only one of them. */
+export type ElectronMethod = 'both' | 'neutral' | 'ionic';
+export const ELECTRON_METHODS: ElectronMethod[] = ['both', 'neutral', 'ionic'];
+/** The method in use (set from the saved settings when the program starts and when Preferences is saved). */
+export const electronPrefs: { method: ElectronMethod } = { method: 'both' };
+
+/** The count table's rows (Ligand, Type, then the Neutral and Ionic columns that the method shows), the total last. */
+export function countTable(c: MetalCount, method: ElectronMethod = electronPrefs.method): string[][] {
+  const neutral = method !== 'ionic', ionic = method !== 'neutral';
+  const pick = (n: string, i: string): string[] => [...(neutral ? [n] : []), ...(ionic ? [i] : [])];
+  const rows: string[][] = [['Ligand', 'Type', ...pick('Neutral', 'Ionic')]];
+  rows.push([c.symbol, 'metal', ...pick(String(c.group), `d${sup(c.dn)}: ${c.dn}`)]);
+  for (const r of c.ligands) rows.push([ligandText(r), typeText(r.type), ...pick(String(r.neutral * r.count), String(r.ionic * r.count))]);
+  if (c.charge) rows.push([`Charge ${signed(c.charge)}`, '', ...pick(signed(-c.charge), `in d${sup(c.dn)}`)]);
+  rows.push(['Total', '', ...pick(String(c.electrons), String(c.ionicTotal))]);
+  return rows;
+}
+
 /**
  * The count as rows of text (Ligand, Type, Neutral, Ionic): the metal, each ligand, the charge
  * when there is one, and the total; then the oxidation state, the charge and the summary. The
  * same rows the Side Panel shows, for Insert as Table.
  */
-export function countRows(c: MetalCount): string[][] {
-  const rows: string[][] = [['Ligand', 'Type', 'Neutral', 'Ionic']];
-  rows.push([c.symbol, 'metal', String(c.group), `d${sup(c.dn)}: ${c.dn}`]);
-  for (const r of c.ligands) rows.push([ligandText(r), typeText(r.type), String(r.neutral * r.count), String(r.ionic * r.count)]);
-  if (c.charge) rows.push([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
-  rows.push(['Total', '', String(c.electrons), String(c.ionicTotal)]);
-  rows.push(['Oxidation State', signed(c.oxidation), '', '']);
-  rows.push(['Charge', signed(c.charge), '', '']);
+export function countRows(c: MetalCount, method: ElectronMethod = electronPrefs.method): string[][] {
+  const rows = countTable(c, method);
+  const blank = Array(rows[0].length - 2).fill('');
+  rows.push(['Oxidation State', signed(c.oxidation), ...blank]);
+  rows.push(['Charge', signed(c.charge), ...blank]);
   const why = countsDiffer(c);
   if (why) rows.push([why]);
   rows.push([countSummary(c)]);

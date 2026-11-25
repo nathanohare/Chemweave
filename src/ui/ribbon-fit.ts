@@ -9,6 +9,7 @@
 // the tabs): then a click on a tab drops that tab's buttons over the work until they're used.
 
 import { GROUP_ICONS } from './icon-picks';
+import { closeRibbonFlyout } from './ribbon-flyout';
 
 /** The rows of groups: a tabbed ribbon's panels, or a plain ribbon itself. */
 function rows(): HTMLElement[] {
@@ -61,6 +62,8 @@ function foldButton(g: HTMLElement): HTMLButtonElement {
 
 function closePopped(): void {
   for (const g of document.querySelectorAll<HTMLElement>('.rb-group.rb-popped')) {
+    // (a flyout open inside it goes with it, rather than staying "open" with nowhere to show)
+    if (g.querySelector('.rb-fly-menu:not([hidden])')) closeRibbonFlyout();
     g.classList.remove('rb-popped');
     g.querySelector(':scope > .rb-fold-btn')?.setAttribute('aria-expanded', 'false');
   }
@@ -102,6 +105,9 @@ export function fitRow(row: HTMLElement): void {
   if (!row.clientWidth) return;
   const groups = groupsOf(row);
   row.classList.remove('rb-squeeze');
+  // a group dropped down from its folded button, with one of its flyouts open, stays as it is until
+  // that list is put away: fitting again now would fold it back up from under the list
+  if (groups.some((g) => g.classList.contains('rb-popped') && g.querySelector('.rb-fly-menu:not([hidden])'))) return;
   for (const g of groups) g.classList.remove('rb-small', 'rb-compact', 'rb-folded', 'rb-popped', 'rb-bare');
   // the Canvas's tabs other than Home (Classic look): each button's name beside its picture where
   // the tab has room, pictures only where it has not (UI audit U10)
@@ -130,13 +136,16 @@ export function fitRow(row: HTMLElement): void {
   // the first group (Clipboard, usually) keeps its place and its words longest: Cut, Copy and Format
   // Painter keep their names, in every mode, until every other group has given up its words and folded
   for (let i = groups.length - 1; i >= 1 && overflows(row); i--) groups[i].classList.add('rb-compact');
-  for (let i = groups.length - 1; i >= 1 && overflows(row); i--) fold(groups[i]);
+  // (a group that folds late, the Canvas's Arrange flyouts, keeps its buttons until the others have folded)
+  const late = (g: HTMLElement) => g.classList.contains('rb-fold-late');
+  for (let i = groups.length - 1; i >= 1 && overflows(row); i--) if (!late(groups[i])) fold(groups[i]);
+  for (let i = groups.length - 1; i >= 1 && overflows(row); i--) if (late(groups[i])) fold(groups[i]);
   if (overflows(row)) groups[0]?.classList.add('rb-compact');
   // folding a wide group (Styles) can make room for a narrow one folded before it: open those back up
   // (the groups that fold first open last; one with nothing in it stays folded)
   const reopen = groups.slice(1).reverse();
-  const lastOf = (x: HTMLElement) => (x.classList.contains('rb-fold-first') ? 2 : x.classList.contains('rb-open-last') ? 1 : 0);
-  for (const g of [0, 1, 2].flatMap((k) => reopen.filter((x) => lastOf(x) === k))) {
+  const lastOf = (x: HTMLElement) => (x.classList.contains('rb-fold-first') ? 2 : x.classList.contains('rb-open-last') ? 1 : x.classList.contains('rb-fold-late') ? -1 : 0);
+  for (const g of [-1, 0, 1, 2].flatMap((k) => reopen.filter((x) => lastOf(x) === k))) {
     if (!g.classList.contains('rb-folded') || g.classList.contains('rb-fold-always')) continue;
     // a group that opens last (the Canvas's Look Up) stays folded while any other is: a narrow
     // window never trades Font and Paragraph for it (UI audit U18)
@@ -257,8 +266,10 @@ export function fitRibbons(): void {
 let shown: MutationObserver | null = null;
 
 /** A change that makes a row wider or narrower without changing the window: a group or button shown or hidden. */
-const reshaped = (recs: MutationRecord[]) => recs.some((m) => {
+export const reshaped = (recs: MutationRecord[]) => recs.some((m) => {
   const t = m.target as HTMLElement;
+  // (a flyout's list opening or closing floats over the ribbon: the row's width is the same)
+  if (t.classList?.contains('rb-fly-menu')) return false;
   // (a tab's panel shown or hidden is a change of tab, fitted on its own; setting `hidden` to what it
   // already was, as the canvas slide's Keyframes group is on every slide, changes nothing)
   return t.closest?.('.rb-group') !== null && m.oldValue !== t.getAttribute('hidden');
@@ -303,7 +314,8 @@ export function watchRibbons(collapseChanged: (on: boolean) => void = () => {}):
         for (const r of document.querySelectorAll('.ribbon.rb-peek')) if (r !== ribbon) r.classList.remove('rb-peek');
         ribbon.classList.add('rb-peek');
         fitRibbons();
-      } else if (!ribbon || t.closest('.rb-panel button:not(.rb-fold-btn)')) {
+      } else if (!ribbon || t.closest('.rb-panel button:not(.rb-fold-btn, .rb-fly-btn)')) {
+        // (a flyout's button opens its list over the work and keeps the tab down; a command in the list puts both away)
         for (const r of document.querySelectorAll('.ribbon.rb-peek')) r.classList.remove('rb-peek');
       }
     }

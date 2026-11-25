@@ -31,6 +31,8 @@ export interface TableDef {
   columns?: { name: string; calc?: string }[];
   /** The sort Excel remembers for the table (its sortState element), kept to save back. */
   sortState?: string;
+  /** The differential formats a sort by color in sortState names, as elements, by the dxfId it gives them. */
+  sortDxfs?: string[];
   /**
    * A table a data query fills in Excel (Power Query, a database or web query): its query table
    * part, and the table's place and columns as the file had them (with the ids the part refers to

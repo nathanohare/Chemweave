@@ -14,6 +14,14 @@ export const REDRAW_STRUCTURES = 2000;
  */
 export const REDRAW_BUDGETS = { one: 8, many: 115 };
 
+/**
+ * The drawing area the drags are timed in, in CSS pixels at a device pixel ratio of 1, whatever
+ * size the window's ribbon, toolboxes and panels leave it. Zoom to fit depends on that size, and a
+ * structure drawn bigger crosses more tiles: when #749 made the ribbon shorter and a toolbox
+ * narrower, fit zoomed in 7% and dragging one structure timed 60% slower with no change to drawing.
+ */
+export const REDRAW_CANVAS = { width: 1500, height: 820 };
+
 /** Fails the redraw check: the pull request is more than 40% and REDRAW_FLOOR_MS slower than the base. */
 export const REDRAW_LIMIT = 1.4, REDRAW_FLOOR_MS = 2;
 
@@ -23,8 +31,11 @@ export async function redrawOnce(browser, url) {
   try {
     await page.goto(url);
     await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 60000 });
-    return await page.evaluate((n) => {
+    return await page.evaluate(([n, size]) => {
       const { doc, renderer: r, editor, stressTest } = window.__app;
+      // the same drawing area on both sides (the window's own resize handling waits for a frame,
+      // and this runs in one go, so it stays this size until the timing is done)
+      r.resize(size.width, size.height, 1);
       const med = (xs) => +[...xs].sort((a, b) => a - b)[Math.floor(xs.length / 2)].toFixed(2);
       stressTest(n);
       editor.fit();
@@ -40,7 +51,7 @@ export async function redrawOnce(browser, url) {
       const one = drag([...doc.fragmentOf(atoms[Math.floor(atoms.length / 2)].id)], 40);
       const many = drag(atoms.slice(0, 2000).map((a) => a.id), 20);
       return { one, many };
-    }, REDRAW_STRUCTURES);
+    }, [REDRAW_STRUCTURES, REDRAW_CANVAS]);
   } finally {
     await page.close();
   }

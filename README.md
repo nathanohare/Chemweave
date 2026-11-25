@@ -12,7 +12,7 @@ It is free and open source (GPL v3), and runs on Windows, macOS and Linux, with 
 
 > **Beta.** Chemweave is under active development: new features arrive every few days and some things may not work as they should yet. Save often, and please [report anything that goes wrong](https://github.com/nathanohare/Chemweave/wiki/Feedback). If you would rather update less often, choose **Stable** updates in **Edit ▸ Settings ▸ Online**: those versions are tried out on a real computer before they are offered.
 
-### [▶ Try it in your browser](https://nathanohare.github.io/Chemweave/) · [Download the desktop app](https://github.com/nathanohare/Chemweave/releases/latest)
+### [▶ Try it in your browser](https://nathanohare.github.io/Chemweave/) · [Download the desktop app](https://github.com/nathanohare/Chemweave/releases/latest) · [Changelog](CHANGELOG.md)
 
 Nothing to install: the browser version opens immediately. The desktop app adds what a browser can't do: editing drawings inside Word and PowerPoint, AutoSave to your own folders, and automatic updates.
 
