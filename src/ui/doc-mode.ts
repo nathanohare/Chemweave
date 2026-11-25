@@ -6138,7 +6138,7 @@ export class DocumentMode {
     // Layout > Paragraph: indents (inches) and spacing (points); any unit can be typed
     const para = (id: string, unit: 'in' | 'pt', patch: (n: number) => Partial<ParaStyle>) => {
       const el = r.querySelector<HTMLInputElement>(id)!;
-      go(el, () => { const n = parseLength(el.value, unit); if (n !== null && this.file) this.ed.setSelectedParas(patch(Math.max(0, n)), unit === 'in' ? 'indent' : 'spacing'); });
+      go(el, () => { const n = parseLength(el.value, unit); if (n !== null && this.file) this.ed.setSelectedParas(patch(unit === 'in' ? n : Math.max(0, n)), unit === 'in' ? 'indent' : 'spacing'); });
     };
     para('#doc-ind-left', 'in', (n) => ({ indent: n || undefined }));
     para('#doc-ind-right', 'in', (n) => ({ indentRight: n || undefined }));

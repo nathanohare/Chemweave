@@ -100,10 +100,11 @@ export class Ruler {
     const pt = this.ptAt(d.x, d.free);
     const width = (g.colRight - g.colLeft) / g.zoom;
     switch (d.grip.kind) {
-      case 'first': out.first = Math.max(0, Math.min(width - out.right - 9, pt)); break;
-      case 'hang': out.left = Math.max(0, Math.min(width - out.right - 9, pt)); break;
-      case 'left': { const dd = Math.max(-Math.min(out.left, out.first), Math.min(width - out.right - 9, pt) - left); out.left += dd; out.first += dd; break; }
-      case 'right': out.right = Math.max(0, Math.min(width - Math.max(out.left, out.first) - 9, width - pt)); break;
+      // (an indent into the margin, from a Word file, can stay there: no further out than it is, never pushed back to 0)
+      case 'first': out.first = Math.max(Math.min(0, out.first), Math.min(width - out.right - 9, pt)); break;
+      case 'hang': out.left = Math.max(Math.min(0, out.left), Math.min(width - out.right - 9, pt)); break;
+      case 'left': { const dd = Math.max(Math.min(0, -Math.min(out.left, out.first)), Math.min(width - out.right - 9, pt) - left); out.left += dd; out.first += dd; break; }
+      case 'right': out.right = Math.max(Math.min(0, out.right), Math.min(width - Math.max(out.left, out.first) - 9, width - pt)); break;
       case 'tab': if (d.off) out.tabs.splice(d.grip.i, 1); else out.tabs[d.grip.i] = { ...out.tabs[d.grip.i], pos: Math.max(1, Math.min(width, pt)) }; break;
     }
     return out;

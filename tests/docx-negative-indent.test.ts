@@ -7,6 +7,7 @@ import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
+import { TextEditing } from '../src/text/editing';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main"';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -29,5 +30,34 @@ describe('a paragraph indented into the margin (F-W-004)', () => {
     expect(normal.x - out.x).toBeCloseTo(18, 0);
     const xml = strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']);
     expect(xml).toMatch(/<w:ind w:left="-360" w:right="-720"/);
+  });
+});
+
+describe('a paragraph indented into the margin: the review\'s cases', () => {
+  it('keeps a style\'s negative indent through a save', async () => {
+    const styles = `<?xml version="1.0"?><w:styles ${W}><w:style w:type="paragraph" w:styleId="Outdent"><w:name w:val="Outdent"/><w:pPr><w:ind w:left="-360"/></w:pPr></w:style></w:styles>`;
+    const f = zipSync({
+      '[Content_Types].xml': strToU8('<?xml version="1.0"?><Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types"><Default Extension="xml" ContentType="application/xml"/></Types>'),
+      '_rels/.rels': strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rId1" Type="${R}officeDocument" Target="word/document.xml"/></Relationships>`),
+      'word/_rels/document.xml.rels': strToU8(`<?xml version="1.0"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships"><Relationship Id="rIdS" Type="${R}styles" Target="styles.xml"/></Relationships>`),
+      'word/styles.xml': strToU8(styles),
+      'word/document.xml': strToU8(`<?xml version="1.0"?><w:document ${W}><w:body><w:p><w:pPr><w:pStyle w:val="Outdent"/></w:pPr><w:r><w:t>Styled</w:t></w:r></w:p><w:sectPr><w:pgSz w:w="12240" w:h="15840"/></w:sectPr></w:body></w:document>`),
+    });
+    const saved = unzipSync(await writeDocx((await readDocx(f)).doc, deps));
+    expect(strFromU8(saved['word/styles.xml'])).toMatch(/w:styleId="Outdent"[\s\S]*?<w:ind w:left="-360"/);
+  });
+
+  it('is not pushed back to the margin by Decrease Indent or Backspace', () => {
+    const ed = new TextEditing({ runs: [{ text: 'Out\nNext' }], paras: [{ indent: -18 }, {}], justify: 'left' }, { size: 10 }, (s, z) => s.length * z * 0.5, 10);
+    ed.setCaret(1);
+    ed.indent(-1);
+    expect(ed.t.paras?.[0]?.indent).toBe(-18);
+    ed.indent(1);
+    expect(ed.t.paras?.[0]?.indent ?? 0).toBeGreaterThan(-18);
+    // Backspace at the start of an outdented paragraph joins it to the one before, as in Word
+    const ed2 = new TextEditing({ runs: [{ text: 'One\nTwo' }], paras: [{}, { indent: -18 }], justify: 'left' }, { size: 10 }, (s, z) => s.length * z * 0.5, 10);
+    ed2.setCaret(4);
+    ed2.backspace();
+    expect(ed2.text).toBe('OneTwo');
   });
 });
