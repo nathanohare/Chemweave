@@ -75,6 +75,12 @@ export interface NamedStyle {
    * that style is one of these (each is written with all its settings). Its settings here are its own and those it inherits, all written.
    */
   basedOn?: string;
+  /**
+   * Word's numbering in the style (w:numPr: the file's list, by its w:numId, and the level), kept to
+   * write back while that list is in the file. Its paragraphs are lists here as read; one that isn't
+   * says so to Word (list 0).
+   */
+  wnum?: { num: string; ilvl?: number };
 }
 
 /**
@@ -680,7 +686,7 @@ export function noteStyle(t: Pick<DocText, 'styles'>): NamedStyle {
   const own = t.styles.FootnoteText;
   if (own) return own;
   const N = styleOf(t, undefined);
-  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined, basedOn: undefined };
+  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined, basedOn: undefined, wnum: undefined };
 }
 
 // ---------------------------------------------------------------- defaults
@@ -877,7 +883,7 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
   const from = styleOf(t, p);
   const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: NamedStyle = {
-    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined, basedOn: undefined,
+    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined, basedOn: undefined, wnum: undefined,
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
     align: p.align ?? 'left', spaceBefore: p.spaceBefore ?? 0, spaceAfter: p.spaceAfter ?? 0, line: p.line ?? 1,
     indent: p.indent ?? 0, firstLine: p.firstLine ?? 0, keepNext: !!p.keepNext, next: undefined,
