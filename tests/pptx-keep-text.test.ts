@@ -211,7 +211,53 @@ describe('PowerPoint text box frames (G2-05)', () => {
     expect(off(sp).slice(2)).toEqual([800000, 3000000]);
     expect(sp).toContain('vert="vert270"');
   });
+
+  it('puts a vertical or turned box back where it was when saved again (office sampler F-P-004)', async () => {
+    for (const [vert, rot] of [['vert', 0], ['vert270', 0], ['', 1800000], ['vert', 5400000]] as const) {
+      const at = [304800, 292100, 2819400, 1003300];
+      const box = textBox(`<a:p>${run('Sideways')}</a:p>`, `<a:bodyPr${vert ? ` vert="${vert}"` : ''} wrap="square" rtlCol="0"><a:spAutoFit/></a:bodyPr>`, at)
+        .replace('<a:xfrm>', rot ? `<a:xfrm rot="${rot}">` : '<a:xfrm>');
+      // saved, read and saved again: the frame as it was, and the text where it was read
+      const once = readPptx(await saveBytes(deck(box)));
+      const twice = readPptx(await saveBytes(deck(box), 2));
+      const cap = (r: ReturnType<typeof readPptx>) => r.slides[0].contents.captions!.find((c) => c.runs.some((x) => x.text === 'Sideways'))!;
+      const first = readPptx(deck(box));
+      for (const r of [once, twice]) {
+        expect(cap(r).x).toBeCloseTo(cap(first).x, 1);
+        expect(cap(r).y).toBeCloseTo(cap(first).y, 1);
+      }
+      const xml = strFromU8(unzipSync(await saveBytes(deck(box), 2))['ppt/slides/slide1.xml']);
+      expect(off(parasOf(xml, 'Sideways').sp)).toEqual(at);
+    }
+  });
 });
+
+describe('slide number fields (office sampler F-P-004)', () => {
+  const fld = '<a:fld id="{11111111-2222-3333-4444-555555555555}" type="slidenum"><a:rPr lang="en-US" sz="1800" dirty="0"/><a:t>1</a:t></a:fld>';
+  const ids = (bytes: Uint8Array) => [...strFromU8(unzipSync(bytes)['ppt/slides/slide1.xml']).matchAll(/<a:fld id="([^"]+)"/g)].map((m) => m[1]);
+
+  it('numbers them the same in every save, saves made at the same time too', async () => {
+    const file = deck(textBox(`<a:p>${run('Page ')}${fld}</a:p><a:p>${fld}</a:p><a:p>${fld}</a:p>`));
+    const one = ids(await saveBytes(file));
+    expect(one).toHaveLength(3);
+    expect(new Set(one).size).toBe(3);
+    expect(ids(await saveBytes(file, 2))).toEqual(one);
+    const [x, y] = await Promise.all([saveBytes(file), saveBytes(file)]);
+    expect(ids(x)).toEqual(one);
+    expect(ids(y)).toEqual(one);
+  });
+});
+
+/** The deck saved this many times, each time from the last save as read. */
+async function saveBytes(bytes: Uint8Array, times = 1): Promise<Uint8Array> {
+  for (let i = 0; i < times; i++) {
+    const back = readPptx(bytes);
+    const doc = new Doc();
+    doc.restoreContents(back.slides[0].contents);
+    bytes = await writePptx({ size: back.size, master: back.master, slides: [{ layout: 'blank', doc, notes: '' }] }, opts);
+  }
+  return bytes;
+}
 
 describe('PowerPoint boxes that grow with their text, turned, vertical or not wrapping (review F2b-R02, F2b-R03)', () => {
   /** A "resize to fit text" box: turned `rot` (60000ths of a degree), its text direction, wrap and alignment. */
