@@ -8,6 +8,7 @@
 import { zlibSync } from 'fflate';
 import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
+import type { PdfFallbackSource } from './pdf-fallback';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -40,6 +41,8 @@ export interface PdfOptions {
   image(src: string): Promise<PdfImage | null>;
   /** The font files to keep inside the file for a face (left out: the reader's standard fonts). */
   fonts?: PdfFontSource;
+  /** Font files for characters neither a face's files nor the standard fonts can draw (Chinese, Hebrew, symbols: pdf-fallback.ts). */
+  fallback?: PdfFallbackSource;
   /** How far along the writing is (before each page); a rejection stops it. */
   progress?(done: number, total: number): Promise<void>;
 }
@@ -76,6 +79,38 @@ function winAnsi(ch: string): number | null {
   const c = ch.codePointAt(0)!;
   if ((c >= 0x20 && c <= 0x7e) || (c >= 0xa0 && c <= 0xff)) return c;
   return WIN_ANSI_EXTRA[ch] ?? null;
+}
+
+/**
+ * Wingdings' characters that have one in Unicode, by their code in the font (Word keeps them at
+ * U+F020 to U+F0FF; a run in Wingdings may also have them as plain letters): the ones in common use
+ * (hands, faces, zodiac signs, circled numbers, bullets, stars, arrows, check boxes). Others are left
+ * as they are.
+ */
+const WINGDINGS: Record<number, number> = {
+  0x21: 0x270f, 0x22: 0x2702, 0x23: 0x2701, 0x28: 0x260e, 0x29: 0x2706, 0x2a: 0x2709, 0x36: 0x231b, 0x37: 0x2328,
+  0x41: 0x270c, 0x45: 0x261c, 0x46: 0x261e, 0x47: 0x261d, 0x48: 0x261f, 0x49: 0x270b, 0x4a: 0x263a, 0x4c: 0x2639,
+  0x4e: 0x2620, 0x4f: 0x2690, 0x51: 0x2708, 0x52: 0x263c, 0x54: 0x2744, 0x56: 0x271e, 0x58: 0x2720, 0x59: 0x2721,
+  0x5a: 0x262a, 0x5b: 0x262f, 0x5c: 0x0950, 0x5d: 0x2638, 0x6c: 0x25cf, 0x6d: 0x274d, 0x6e: 0x25a0, 0x6f: 0x25a1,
+  0x71: 0x2751, 0x72: 0x2752, 0x73: 0x2b27, 0x74: 0x29eb, 0x75: 0x25c6, 0x76: 0x2756, 0x77: 0x2b25, 0x78: 0x2327,
+  0x7a: 0x2318, 0x7b: 0x2740, 0x7c: 0x273f, 0x7d: 0x275d, 0x7e: 0x275e, 0x80: 0x24ea, 0x8b: 0x24ff, 0x9e: 0x00b7,
+  0x9f: 0x2022, 0xa0: 0x25aa, 0xa1: 0x25cb, 0xa4: 0x25c9, 0xa5: 0x25ce, 0xa7: 0x25aa, 0xa8: 0x25fb, 0xaa: 0x2726,
+  0xab: 0x2605, 0xac: 0x2736, 0xad: 0x2734, 0xae: 0x2739, 0xaf: 0x2735, 0xb1: 0x2316, 0xb2: 0x27e1, 0xb3: 0x2311,
+  0xd5: 0x232b, 0xd6: 0x2326, 0xd8: 0x27a2, 0xe8: 0x2794, 0xef: 0x21e6, 0xf0: 0x21e8, 0xf1: 0x21e7, 0xf2: 0x21e9,
+  0xfb: 0x2717, 0xfc: 0x2713, 0xfd: 0x2612, 0xfe: 0x2611,
+};
+// (the zodiac signs, ① to ⑩ and ❶ to ❿ in a row)
+for (let i = 0; i < 12; i++) WINGDINGS[0x5e + i] = 0x2648 + i;
+for (let i = 0; i < 10; i++) { WINGDINGS[0x81 + i] = 0x2460 + i; WINGDINGS[0x8c + i] = 0x2776 + i; }
+
+/** Text in a symbol font (Wingdings) as the Unicode characters it shows, one for one; other fonts' text as it is. */
+export function symbolFontText(text: string, family: string): string {
+  if (!/^wingdings$/i.test(family.trim())) return text;
+  return [...text].map((ch) => {
+    const c = ch.codePointAt(0)!;
+    const u = WINGDINGS[c >= 0xf020 && c <= 0xf0ff ? c - 0xf000 : c];
+    return u ? String.fromCodePoint(u) : ch;
+  }).join('');
 }
 
 /** Text cut into pieces that one font can write, with each piece's position along the line. */
@@ -348,6 +383,29 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
     }
     return f;
   };
+  // fonts for what a face can't draw (pdf-fallback.ts), each file read once
+  const fallbacks = new Map<string, Promise<EmbeddedFont | null>>();
+  const fallbackFonts = async (text: string, fonts: EmbeddedFont[]): Promise<EmbeddedFont[]> => {
+    if (!opts.fallback) return [];
+    // (what neither the face's files nor the standard fonts, Symbol among them, can draw)
+    const missing = [...new Set(text)].filter((ch) => !/\s|\u00ad/.test(ch) && winAnsi(ch) === null && SYMBOL[ch] === undefined && !fonts.some((f) => f.font.glyph(ch.codePointAt(0)!) !== 0));
+    if (!missing.length) return [];
+    const got = await Promise.all(opts.fallback(missing, text).map((file) => {
+      let f = fallbacks.get(file.key);
+      if (!f) {
+        f = file.load().then((data) => {
+          const tt = new TrueType(data);
+          if (!tt.embeddable) return null;
+          const e = new EmbeddedFont(tt, o.reserve(), subsetTag(kept.length));
+          kept.push(e);
+          return e;
+        }).catch(() => null);
+        fallbacks.set(file.key, f);
+      }
+      return f;
+    }));
+    return got.filter((e): e is EmbeddedFont => !!e);
+  };
   // each picture is stored once, however many times it shows
   const images = new Map<string, number | null>();
   const imageRef = async (src: string): Promise<number | null> => {
@@ -417,14 +475,16 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         ops.push(`${paint.v} rg`);
         // turned text (degrees anticlockwise): along the line, and up from it, on the page
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
-        const kept = await faceFonts(it.family, it.bold, it.italic);
+        const own = await faceFonts(it.family, it.bold, it.italic);
+        const text = symbolFontText(it.text, it.family);
+        const kept = [...own, ...(await fallbackFonts(text, own))];
         const show = (f: string, dx: number, s: string) => {
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
           ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
-        for (const piece of keptPieces(it.text, it.widths, kept)) {
+        for (const piece of keptPieces(text, it.widths, kept)) {
           if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }

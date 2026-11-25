@@ -8,6 +8,7 @@
 
 import { woffToSfnt, type EmbedFace, type FontSource } from './io/font-embed';
 import type { PdfFontSource } from './io/pdf-fonts';
+import { FALLBACK_PACKAGES, fallbackFamily, fallbackPicks, type FallbackFamily, type PdfFallbackSource } from './io/pdf-fallback';
 import { STAND_IN_FONTS, standInFont, useEmbeddedFont } from './text/font-standins';
 
 export interface FontGroup {
@@ -155,6 +156,23 @@ export function pdfFontUrls(family: string, bold: boolean, italic: boolean): str
   }
   return [];
 }
+
+// the fallback fonts' files (regular only) and the characters each holds (pdf-fallback.ts)
+const FALLBACK_WOFF = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/files/*-400-normal.woff', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const FALLBACK_RANGES = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/unicode.json', { import: 'default', eager: true }) as Record<string, Record<string, string>>;
+let fallbackFamilies: FallbackFamily[] | null = null;
+
+/** Font files for the characters a PDF's text can't draw with its own fonts (Chinese, Japanese, Hebrew, Arabic, symbols). */
+export const pdfFallbackFonts: PdfFallbackSource = (chars, text) => {
+  fallbackFamilies ??= FALLBACK_PACKAGES.flatMap((pkg) => {
+    const unicode = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
+    return unicode ? [fallbackFamily(pkg, unicode)] : [];
+  });
+  return fallbackPicks(fallbackFamilies, chars, text).flatMap(({ pkg, subset }) => {
+    const url = Object.entries(FALLBACK_WOFF).find(([path]) => path.endsWith(`/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`))?.[1];
+    return url ? [{ key: url, load: async () => woffToSfnt(new Uint8Array(await (await fetch(url)).arrayBuffer())) }] : [];
+  });
+};
 
 /** Font files for PDF export: every face as TrueType, Symbol left to the reader's own. */
 export const pdfFonts: PdfFontSource = async (family, bold, italic) => {
