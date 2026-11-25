@@ -2018,10 +2018,10 @@ export function connectorSpPr(r: Arrow, lw: number, clr: ColourXml = srgbXml): {
   return { frame, geom, ln, curved: curved || !!r.elbow };
 }
 
-/** A library shape's outline `w` × `h` points big: PowerPoint's preset when it has one, else a custom shape with these outlines (as PowerPoint and Word both write them). */
 /** Adjust values as the reader writes them (Shape.adjust.gd): name and a plain value only. */
 const ADJUST_GD = /^(<a:gd name="[A-Za-z0-9]+" fmla="val -?\d+"\/>)+$/;
 
+/** A library shape's outline `w` × `h` points big: PowerPoint's preset when it has one, else a custom shape with these outlines (as PowerPoint and Word both write them). */
 export function geoGeomXml(geo: string | undefined, w: number, h: number, adjust?: Shape['adjust']): string {
   const def = geoDef(geo);
   // (with the adjust values the file gave this preset, while it is still that preset)
