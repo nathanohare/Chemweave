@@ -532,3 +532,19 @@ describe('a collapsed column group (F-X-003)', () => {
     expect(colsOf(saved).find((c) => c.includes('min="1"'))).toContain('collapsed="1"');
   });
 });
+
+describe('a carriage return in a cell\'s text (F-X-002)', () => {
+  // ECMA-376 Part 1, §22.9.2.19 ST_Xstring: a character XML can't hold as itself is written
+  // _xHHHH_; a carriage return written as itself is read back as a line feed by XML's line-end rules
+  it('is written as _x000D_ and comes back, through two saves', async () => {
+    const bytes = excelBook([['Text', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>line one_x000D_\nline two</t></is></c></row></sheetData>']]);
+    let { book } = await readXlsx(bytes);
+    expect(book.sheet.effectiveInput(0, 0)).toBe('line one\r\nline two');
+    for (let i = 0; i < 2; i++) {
+      const saved = await writeXlsx(book, pictures);
+      expect(part(saved, 'xl/sharedStrings.xml')).toContain('line one_x000D_\nline two');
+      ({ book } = await readXlsx(saved));
+      expect(book.sheet.effectiveInput(0, 0)).toBe('line one\r\nline two');
+    }
+  });
+});

@@ -1459,7 +1459,7 @@ function readTheme(doc: Document | null): string[] {
  * "_x" that would read as one as _x005F_x: undone on reading, and done on writing.
  */
 const excelUnescape = (s: string) => s.replace(/_x([0-9A-Fa-f]{4})_/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
-export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_x005F_').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, (c) => `_x${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`);
+export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_x005F_').replace(/[\u0000-\u0008\u000B-\u001F]/g, (c) => `_x${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`);
 
 /** A run of a shared string as the file has it: its whole look, or none (the cell's). */
 interface FileRun {
