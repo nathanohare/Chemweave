@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 // @ts-expect-error a plain JavaScript script
-import { parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, TYPES } from '../scripts/changelog.mjs';
+import { parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, isRollUp, TYPES } from '../scripts/changelog.mjs';
 
 describe('change files', () => {
   it('reads one change per line, with its type', () => {
@@ -66,6 +66,14 @@ describe('notes and CHANGELOG.md', () => {
     expect(prOf('Merge pull request #45 from nathanohare/x')).toBe(45);
     expect(prOf('Changelog for 0.1.300')).toBeUndefined();
   });
+  it('knows a staging roll-up from the pull request that wrote a change file', () => {
+    expect(isRollUp('Staging (#726)')).toBe(true);
+    expect(isRollUp('Checkpoint: NMR prediction (#532)')).toBe(true);
+    expect(isRollUp('Merge pull request #261 from nathanohare/staging')).toBe(true);
+    expect(isRollUp('Merge pull request #260 from nathanohare/claude/project-thread-6tis11')).toBe(false);
+    expect(isRollUp('Staging area for reagents (#900)')).toBe(true); // a title starting "Staging" loses its number: rare, and only the link is lost
+    expect(isRollUp('Fix undo (#740)')).toBe(false);
+  });
   it('orders versions by number', () => {
     expect(sortTags(['v0.1.10', 'stable', 'v0.1.9', 'v0.2.0'])).toEqual(['v0.1.9', 'v0.1.10', 'v0.2.0']);
   });
@@ -95,5 +103,47 @@ describe('the changelog is part of releases and pull requests', () => {
   it('the template and the agents\' notes ask for one', () => {
     expect(readFileSync('.github/pull_request_template.md', 'utf8')).toContain('changes/');
     expect(readFileSync('AGENTS.md', 'utf8')).toContain('changes/');
+  });
+});
+
+describe('versions and notes from a real history (a throwaway git repository)', () => {
+  // main gets a squashed roll-up released as 0.1.2, then a merged roll-up released as 0.1.3:
+  // the way staging has reached main both ways (#726 squashed, #716 merged)
+  const { execFileSync } = require('node:child_process') as typeof import('node:child_process');
+  const { mkdtempSync, mkdirSync, writeFileSync, copyFileSync } = require('node:fs') as typeof import('node:fs');
+  const { join } = require('node:path') as typeof import('node:path');
+  const { tmpdir } = require('node:os') as typeof import('node:os');
+  const dir = mkdtempSync(join(tmpdir(), 'changelog-'));
+  const git = (...a: string[]) => execFileSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+  const tool = (...a: string[]) => execFileSync('node', ['scripts/changelog.mjs', ...a], { cwd: dir, encoding: 'utf8' });
+  const add = (name: string, line: string, subject: string) => { writeFileSync(join(dir, 'changes', name), line + '\n'); git('add', '-A'); git('commit', '-q', '-m', subject); };
+  mkdirSync(join(dir, 'scripts')); mkdirSync(join(dir, 'changes'));
+  copyFileSync('scripts/changelog.mjs', join(dir, 'scripts/changelog.mjs'));
+  git('init', '-q', '-b', 'main'); git('add', '-A'); git('commit', '-q', '-m', 'Start'); git('tag', 'v0.1.1');
+  git('checkout', '-q', '-b', 'staging');
+  add('a.md', 'Added: Canvas: the first new tool here.', 'First tool (#10)');
+  git('checkout', '-q', 'main'); git('merge', '-q', '--squash', 'staging'); git('commit', '-q', '-m', 'Staging (#11)'); git('tag', 'v0.1.2');
+  git('checkout', '-q', 'staging'); git('merge', '-q', '-X', 'theirs', 'main', '-m', 'Merge main');
+  add('b.md', 'Fixed: Slides: the second change fixes a thing.', 'Second fix (#12)');
+  git('checkout', '-q', 'main'); git('merge', '-q', '--no-ff', 'staging', '-m', 'Merge pull request #13 from x/staging'); git('tag', 'v0.1.3');
+  add('c.md', 'Changed: Document: a third change not released yet.', 'Third change (#14)');
+
+  it('files each change under the version that first shipped it, squashed or merged', () => {
+    tool('write');
+    const md = require('node:fs').readFileSync(join(dir, 'CHANGELOG.md'), 'utf8') as string;
+    const section = (v: string) => md.split(/^## /m).find((s) => s.startsWith(v)) ?? '';
+    expect(section('0.1.2')).toContain('the first new tool');
+    expect(section('0.1.3')).toContain('the second change');
+    expect(section('0.1.3')).not.toContain('the first new tool');
+    expect(section('Unreleased')).toContain('a third change');
+    expect(section('Unreleased')).toContain('#14');
+  });
+  it('the notes are the files added since the last release, even on a re-run with this version tagged', () => {
+    git('tag', 'v0.1.4');
+    const out = join(dir, 'notes.md');
+    tool('notes', out, '0.1.4');
+    const notes = require('node:fs').readFileSync(out, 'utf8') as string;
+    expect(notes).toContain('a third change not released yet. (#14)');
+    expect(notes).not.toContain('second change');
   });
 });

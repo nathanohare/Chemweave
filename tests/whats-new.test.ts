@@ -43,6 +43,10 @@ describe("What's New from change files", () => {
   it('the update notice shows the changes without the headings', () => {
     expect(shortNotes(body, 1)).toBe('Slides: a new tool. (#740)\n…');
   });
+  it("an older release's own headings read as text, not as kinds of change", () => {
+    expect(noteLine('## Summary')).toEqual({ text: 'Summary' });
+    expect(noteLine('### under the hood')).toEqual({ heading: 'under the hood' });
+  });
   it("leaves out an older release's empty pull request template", () => {
     const old = 'Staging (#716)\n\n## What this changes\n\n<!-- A few lines in plain words.\n-->\n\n## Checklist\n\n- **Real-program check**: queued';
     expect(cleanNotes(old)).toBe('Staging (#716)');

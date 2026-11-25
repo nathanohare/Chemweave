@@ -1,4 +1,28 @@
-<!-- The changelog from before change files: written in November 2026 from every merged pull request (each pull request under the first version that held it). Edit freely; scripts/changelog.mjs adds this below the newer versions in CHANGELOG.md. -->
+<!-- The changelog from before change files: written in November 2026 from every merged pull request (each under the first version that shipped it). Edit freely; scripts/changelog.mjs adds this below the newer versions in CHANGELOG.md. -->
+
+## 0.1.257 (2026-11-24)
+
+### Added
+
+- Canvas: d-Orbital Splitting diagrams and inorganic reference tables. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
+
+### Changed
+
+- SI Project: projects open and save as one .chemsi file, with AutoSave, crash recovery and File ▸ Convert SI Project Folder. ([#717](https://github.com/nathanohare/Chemweave/pull/717))
+- Canvas: the Orbital window's Pointing box is now a plain Rotation box, and both phase colors can be picked. ([#719](https://github.com/nathanohare/Chemweave/pull/719))
+- Canvas: MO diagrams are placed and edited on the page, with ready-made molecules and electron counts. ([#721](https://github.com/nathanohare/Chemweave/pull/721))
+- Interface: clicking outside a window closes it, asking first if something changed. ([#733](https://github.com/nathanohare/Chemweave/pull/733))
+
+### Fixed
+
+- Interface: drop-down lists and right-click menus show over windows instead of under them. ([#718](https://github.com/nathanohare/Chemweave/pull/718))
+- Desktop app: the title bar stays usable and windows stay on the screen while a window is open. ([#732](https://github.com/nathanohare/Chemweave/pull/732))
+
+### Under the hood
+
+- Checks that pop-ups show over windows. ([#720](https://github.com/nathanohare/Chemweave/pull/720))
+- Word, PowerPoint and Excel sampler files with an ECMA-376 schema check. ([#722](https://github.com/nathanohare/Chemweave/pull/722))
+- Tests are type-checked for duplicate, missing or misspelled names. ([#723](https://github.com/nathanohare/Chemweave/pull/723))
 
 ## 0.1.256 (2026-11-24)
 
@@ -389,6 +413,80 @@
 
 - Cleared two code scanning alerts in icon switching and the analysis label. ([#605](https://github.com/nathanohare/Chemweave/pull/605))
 
+## 0.1.201 (2026-11-08)
+
+### Added
+
+- Canvas: atom labels and other text can mix formatting within one label. ([#583](https://github.com/nathanohare/Chemweave/pull/583))
+- Design: a template categories window, 113 templates and refined glassware drawings. ([#588](https://github.com/nathanohare/Chemweave/pull/588))
+- Settings: magnifiers on distance settings in the arrow and scheme previews. ([#591](https://github.com/nathanohare/Chemweave/pull/591))
+- Interface: the template window opens over new files, with more document and spreadsheet templates and 30 more slide themes. ([#593](https://github.com/nathanohare/Chemweave/pull/593))
+- Canvas: customize the Analysis panel in place or in Settings ▸ Analysis, with bench values and lab calculations. ([#594](https://github.com/nathanohare/Chemweave/pull/594))
+- Settings: separate settings for text below arrows, allowed ranges, and magnifiers on structure previews. ([#595](https://github.com/nathanohare/Chemweave/pull/595))
+- Help: Help ▸ Support Chemweave and a GitHub Sponsors button. ([#602](https://github.com/nathanohare/Chemweave/pull/602))
+
+### Changed
+
+- Interface: clearer wording for the items in the New menu. ([#585](https://github.com/nathanohare/Chemweave/pull/585))
+- Canvas: the Analysis panel shows the name after the formula and an ion list in the m/z row, drops SMILES, and the Lab Calculator is on the ribbon. ([#586](https://github.com/nathanohare/Chemweave/pull/586))
+- Interface: a new title bar, a ribbon that fits the window, a Problems box in every mode and padlocks on toolboxes. ([#589](https://github.com/nathanohare/Chemweave/pull/589))
+- Canvas: smoother bond joins, a cleaner selection highlight and a tighter selection box around arrows. ([#590](https://github.com/nathanohare/Chemweave/pull/590))
+- Design: New Design opens in the shared template window. ([#596](https://github.com/nathanohare/Chemweave/pull/596))
+- Canvas: the name from the Analysis panel attaches as a descriptor line, replacing the Name caption button. ([#597](https://github.com/nathanohare/Chemweave/pull/597))
+- Interface: a new icon set, with the Classic icons still available in Settings. ([#598](https://github.com/nathanohare/Chemweave/pull/598))
+- Interface: more redrawn icons. ([#599](https://github.com/nathanohare/Chemweave/pull/599))
+- The app is renamed from Chem Illustrator to Chemweave; old files, settings and installs keep working. ([#600](https://github.com/nathanohare/Chemweave/pull/600))
+- Knowledge Base: safety data is looked up by PubChem compound, and CAS number columns are removed; typing a CAS number in search still works. ([#600](https://github.com/nathanohare/Chemweave/pull/600))
+- Interface: redrawn icons for labels, homolysis arrows, shape fill and 3-D models. ([#601](https://github.com/nathanohare/Chemweave/pull/601))
+
+### Fixed
+
+- Design: date ranges such as "3 – 7 Mar 2026" get a bar in timelines, and a treemap box drills in on a single click. ([#581](https://github.com/nathanohare/Chemweave/pull/581))
+- Interface: a folded ribbon group no longer loses its icon after groups are rearranged. ([#584](https://github.com/nathanohare/Chemweave/pull/584))
+- Settings: a round of fixes to layout, wording and previews. ([#587](https://github.com/nathanohare/Chemweave/pull/587))
+- Canvas: bold bonds join without notches in reaction animations. ([#592](https://github.com/nathanohare/Chemweave/pull/592))
+
+### Removed
+
+- Canvas: Chain Ends and Hydrogens taken off the toolboxes. ([#599](https://github.com/nathanohare/Chemweave/pull/599))
+- Web version: the Freeform pen is left out of the web version. ([#603](https://github.com/nathanohare/Chemweave/pull/603))
+
+### Under the hood
+
+- Diagram, timeline, Sankey, treemap and decomposition tree code rewritten, with no change to the look or saved files. ([#581](https://github.com/nathanohare/Chemweave/pull/581))
+
+## 0.1.200 (2026-11-06)
+
+### Added
+
+- Canvas: Animate Reaction has a Whole Scheme style, π-only coloring and colors for breaking and forming bonds. ([#566](https://github.com/nathanohare/Chemweave/pull/566))
+- Canvas: MO diagrams get rich-text orbital names, Autofill, electron arrows, mixing pictures and Fit Width. ([#568](https://github.com/nathanohare/Chemweave/pull/568))
+- Canvas: drag TLC spots to change their Rf, lock spots in place, and edit them in a reworked spots table. ([#569](https://github.com/nathanohare/Chemweave/pull/569))
+- Canvas: catalytic cycle arrows stay on one smooth path, and a Clean Up Cycle command tidies them. ([#571](https://github.com/nathanohare/Chemweave/pull/571))
+- Canvas: crystal structures get an atom list and automatic label placement and are placed as one live picture, and they can be copied as SVG. ([#572](https://github.com/nathanohare/Chemweave/pull/572))
+- Canvas: Space selects the whole molecule and Tab moves to the next one; the Join hint shows only across molecules. ([#576](https://github.com/nathanohare/Chemweave/pull/576))
+
+### Changed
+
+- Interface: the New dialog has icons and colors for each mode, with Open at the bottom left. ([#570](https://github.com/nathanohare/Chemweave/pull/570))
+- Interface: status bar hints follow the current tool, selection and drag. ([#574](https://github.com/nathanohare/Chemweave/pull/574))
+- Canvas: the mode starts on the Select (marquee) tool. ([#578](https://github.com/nathanohare/Chemweave/pull/578))
+
+### Fixed
+
+- Canvas: the three-line Analysis group is back on the full-size ribbon. ([#558](https://github.com/nathanohare/Chemweave/pull/558))
+- Canvas: an element symbol typed on its own with the Text tool becomes a real atom label. ([#559](https://github.com/nathanohare/Chemweave/pull/559))
+- Canvas: several bugs in editing arrows, bonds and orbitals. ([#560](https://github.com/nathanohare/Chemweave/pull/560))
+- Canvas: Newman projection labels on drawn H atoms are fixed, and new diagrams are placed in view. ([#561](https://github.com/nathanohare/Chemweave/pull/561))
+- Canvas: reaction animations start from every starting material, left to right. ([#562](https://github.com/nathanohare/Chemweave/pull/562))
+- Canvas: the My Templates "+" button and Settings ▸ Drawing work and look as they should. ([#564](https://github.com/nathanohare/Chemweave/pull/564))
+- Canvas: fixes to arrows, the stereo toolbox, bracket pairs and the previews in Settings. ([#565](https://github.com/nathanohare/Chemweave/pull/565))
+- 3-D Model: salts with a counterion and conformers with missing energies now work. ([#577](https://github.com/nathanohare/Chemweave/pull/577))
+
+### Removed
+
+- Canvas: the ribbon's contextual tabs. ([#563](https://github.com/nathanohare/Chemweave/pull/563))
+
 ## 0.1.199 (2026-11-06)
 
 ### Under the hood
@@ -417,6 +515,26 @@
 
 - Interface: tooltips, info tips and messages are rewritten to be clearer and more standard. ([#555](https://github.com/nathanohare/Chemweave/pull/555))
 
+## 0.1.195 (2026-11-05)
+
+### Added
+
+- Files (Word, PowerPoint): choose to save structures as ChemDraw objects or as pictures. ([#545](https://github.com/nathanohare/Chemweave/pull/545))
+- Canvas: atom labels can have their own font and size, structure by structure. ([#552](https://github.com/nathanohare/Chemweave/pull/552))
+
+### Changed
+
+- Canvas: bond gaps, double bond spacing and double bond side match ChemDraw. ([#549](https://github.com/nathanohare/Chemweave/pull/549))
+
+### Fixed
+
+- Files (Word, Excel): tracked moves, comments in table cells, soft hyphens and Excel row heights are handled correctly. ([#551](https://github.com/nathanohare/Chemweave/pull/551))
+- Files (Word): line breaks, kept structure pictures, cropped and recolored pictures, and structures in files saved by LibreOffice are handled correctly. ([#553](https://github.com/nathanohare/Chemweave/pull/553))
+
+### Under the hood
+
+- NMR prediction taken out of test builds too, so they match the released app. ([#550](https://github.com/nathanohare/Chemweave/pull/550))
+
 ## 0.1.194 (2026-11-05)
 
 ### Removed
@@ -428,6 +546,63 @@
 ### Fixed
 
 - NMR: Check Data no longer fails in the Spectrum window when the predicted rows change after a check. ([#547](https://github.com/nathanohare/Chemweave/pull/547))
+
+## 0.1.192 (2026-11-05)
+
+### Added
+
+- Files (Word): on open, choose whether to keep EndNote, Mendeley and Zotero bibliographies as Word had them. ([#535](https://github.com/nathanohare/Chemweave/pull/535))
+
+### Fixed
+
+- Files (Word, PowerPoint, Excel): Strict Open XML files, UTF-16 text, password-protected files, EndNote citations, placeholder pictures, transparency and Excel subscripts are handled correctly. ([#533](https://github.com/nathanohare/Chemweave/pull/533))
+- Files (Excel): saving keeps 1904 dates, external links, legacy array formulas and moved rows intact. ([#534](https://github.com/nathanohare/Chemweave/pull/534))
+- Files (PowerPoint): opened decks keep template artwork, stacking order, groups, structure pictures and text. ([#538](https://github.com/nathanohare/Chemweave/pull/538))
+- Files (Word): tables and floating pictures keep their row heights, widths, cell styles, floating positions and wrap distances. ([#539](https://github.com/nathanohare/Chemweave/pull/539))
+- Files (Word, PowerPoint, Excel): saving keeps structure tags, Excel features, file properties, themes and templates. ([#540](https://github.com/nathanohare/Chemweave/pull/540))
+- Files (Word): saving keeps fields, hidden text, list numbering, comments, building blocks and proofing settings. ([#541](https://github.com/nathanohare/Chemweave/pull/541))
+- Files (Excel): saving keeps cell formats, the Normal style, named styles, row heights and chart positions. ([#542](https://github.com/nathanohare/Chemweave/pull/542))
+- Files (Excel, PowerPoint): newer Excel functions, the Office default theme and more file types in Reuse Slides are handled. ([#543](https://github.com/nathanohare/Chemweave/pull/543))
+
+## 0.1.191 (2026-11-05)
+
+### Added
+
+- NMR: predicted ¹H spectra with coupling constants and exact spin simulation. ([#487](https://github.com/nathanohare/Chemweave/pull/487))
+- NMR: Accurate mode simulates up to 12 coupled protons, and Check Data compares a spectrum with a structure. ([#488](https://github.com/nathanohare/Chemweave/pull/488))
+- NMR: Check Data names extra peaks from imported impurity tables. ([#493](https://github.com/nathanohare/Chemweave/pull/493))
+- NMR: Check Data opens JCAMP-DX and zipped Bruker spectra. ([#496](https://github.com/nathanohare/Chemweave/pull/496))
+- NMR: Accurate mode predicts both shifts of diastereotopic CH₂ protons. ([#521](https://github.com/nathanohare/Chemweave/pull/521))
+
+### Changed
+
+- NMR: OH, NH and SH shifts are left out of the prediction. ([#500](https://github.com/nathanohare/Chemweave/pull/500))
+- NMR: shift predictions use networks retrained on checked reference data. ([#516](https://github.com/nathanohare/Chemweave/pull/516))
+- NMR: Accurate spectra use Karplus couplings from 3-D conformers. ([#517](https://github.com/nathanohare/Chemweave/pull/517))
+- NMR: shift predictions use networks trained with NMRexp peak lists. ([#518](https://github.com/nathanohare/Chemweave/pull/518))
+
+## 0.1.190 (2026-11-05)
+
+### Added
+
+- Knowledge Base: Murov solvent table, a solvent miscibility chart, and Acids and Bases. ([#529](https://github.com/nathanohare/Chemweave/pull/529))
+- Canvas: orbitals can be changed after they are placed, and a single-lobe orbital has its own button. ([#530](https://github.com/nathanohare/Chemweave/pull/530))
+
+### Changed
+
+- Interface: the ribbon has one height in every mode, Canvas Home has Clipboard, Font and Paragraph groups, and the floating toolbox keeps its width. ([#526](https://github.com/nathanohare/Chemweave/pull/526))
+
+### Fixed
+
+- Spreadsheet: a cell's structure box stays white and no longer shows the Document Map, and Insert Structure is readable in the Dark Gray theme. ([#524](https://github.com/nathanohare/Chemweave/pull/524))
+- Canvas: lone pairs and orbitals turn with the atom or bond they sit on. ([#525](https://github.com/nathanohare/Chemweave/pull/525))
+- Canvas: selecting a bond no longer makes the view jump, and guides are kept per canvas. ([#527](https://github.com/nathanohare/Chemweave/pull/527))
+- Settings: settings saved before the Canvas teal color was introduced now show the teal. ([#528](https://github.com/nathanohare/Chemweave/pull/528))
+
+### Removed
+
+- Canvas: the old alignment guides. ([#527](https://github.com/nathanohare/Chemweave/pull/527))
+- Knowledge Base: five little-used tabs removed. ([#529](https://github.com/nathanohare/Chemweave/pull/529))
 
 ## 0.1.189 (2026-11-04)
 
@@ -441,6 +616,82 @@
 
 - Canvas: the H of a stacked NH label moves to the open side when a structure is rotated or flipped, instead of sitting on its bonds. ([#522](https://github.com/nathanohare/Chemweave/pull/522))
 
+## 0.1.187 (2026-11-03)
+
+### Changed
+
+- Canvas: warning marks are back to a red box. ([#514](https://github.com/nathanohare/Chemweave/pull/514))
+
+### Fixed
+
+- Files (CDXML): custom line widths, dash lengths and placed labels are kept on a new save. ([#513](https://github.com/nathanohare/Chemweave/pull/513))
+- Files (CDXML): filled circles recolored in ChemDraw keep their new color. ([#514](https://github.com/nathanohare/Chemweave/pull/514))
+
+## 0.1.186 (2026-11-03)
+
+### Added
+
+- Canvas: new bond types, and a bond right-click menu organized into groups. ([#490](https://github.com/nathanohare/Chemweave/pull/490))
+- Canvas: radical ion and dagger symbols, lone pair bar, ring-fusion H, shadowed ovals and label alignment options. ([#492](https://github.com/nathanohare/Chemweave/pull/492))
+- Canvas: arrow marks, an arrow right-click menu, elliptical arc arrows and a Freeform pen. ([#495](https://github.com/nathanohare/Chemweave/pull/495))
+- Canvas: stereo labels from ChemDraw are kept, with a warning where the CIP rules give a different answer. ([#509](https://github.com/nathanohare/Chemweave/pull/509))
+- Spreadsheet: bold, italic or underline part of a cell's text. ([#511](https://github.com/nathanohare/Chemweave/pull/511))
+
+### Changed
+
+- Canvas: the side panel no longer shows the Warnings and Analysis panes. ([#458](https://github.com/nathanohare/Chemweave/pull/458))
+- Canvas: symbols and arrow marks are drawn as ChemDraw draws them, and open curves from ChemDraw open as Freeform curves. ([#498](https://github.com/nathanohare/Chemweave/pull/498))
+
+### Fixed
+
+- Copy and paste: frames pasted from ChemDraw keep their line width. ([#452](https://github.com/nathanohare/Chemweave/pull/452))
+- Files (CDX): print settings, bracket usage, per-object styles, orbital and stereo types and atom lists are kept. ([#453](https://github.com/nathanohare/Chemweave/pull/453))
+- Copy and paste: frames keep their own line width when copied to ChemDraw. ([#454](https://github.com/nathanohare/Chemweave/pull/454))
+- Files (CDXML, CDX): saving keeps print settings and margins, repeat groups as ChemDraw listed them, special bond types, dotted lines and non-English characters. ([#455](https://github.com/nathanohare/Chemweave/pull/455))
+- Files (CDXML, CDX): equations and SVG or WebP pictures are saved for ChemDraw as pictures, and formula or bracket links to deleted objects are cleaned up. ([#456](https://github.com/nathanohare/Chemweave/pull/456))
+- Files (CDXML): reading now follows label direction, counter-ion charges, picture order and rotation, and wedge bonds in rings. ([#457](https://github.com/nathanohare/Chemweave/pull/457))
+- Files (CDXML): atom maps are saved as ChemDraw's own map on the reaction step. ([#459](https://github.com/nathanohare/Chemweave/pull/459))
+- Files (CDXML): rotated pictures and label directions are saved the way ChemDraw reads them. ([#460](https://github.com/nathanohare/Chemweave/pull/460))
+- Copy and paste: ChemDraw label expansions (abbreviations) are kept when copied back to ChemDraw. ([#462](https://github.com/nathanohare/Chemweave/pull/462))
+- Copy and paste: Copy Reaction as SMILES reads reagent text written above and below the arrow. ([#463](https://github.com/nathanohare/Chemweave/pull/463))
+- Files (CDXML): saving leaves ChemDraw's nested groups as they were. ([#464](https://github.com/nathanohare/Chemweave/pull/464))
+- Files (CDXML): Chemweave's own page and step information survives a re-save in ChemDraw. ([#465](https://github.com/nathanohare/Chemweave/pull/465))
+- Files (CDXML): nested groups, curves inside structures and aromatic bonds drawn as one line are read correctly. ([#466](https://github.com/nathanohare/Chemweave/pull/466))
+- Copy and paste: nested groups, closed curves and dashed aromatic bonds are kept when copying to ChemDraw. ([#467](https://github.com/nathanohare/Chemweave/pull/467))
+- Files (CDXML): orbital types, plain bracketed groups and ChemDraw's calculated properties are kept. ([#468](https://github.com/nathanohare/Chemweave/pull/468))
+- Copy and paste: orbitals, plain bracketed groups and calculated properties are kept when copying to ChemDraw. ([#469](https://github.com/nathanohare/Chemweave/pull/469))
+- Files (CDXML): arc arrows drawn on an ellipse follow the ellipse. ([#470](https://github.com/nathanohare/Chemweave/pull/470))
+- Copy and paste: arc arrows on an ellipse stay ChemDraw arc arrows when copied. ([#471](https://github.com/nathanohare/Chemweave/pull/471))
+- Files (CDXML): text line starts are read correctly, and carbons written out as labels stay shown. ([#472](https://github.com/nathanohare/Chemweave/pull/472))
+- Files (CDXML): changes made in ChemDraw to shapes, arrows, group labels, rotation and colors now win over the settings Chemweave saved with them. ([#474](https://github.com/nathanohare/Chemweave/pull/474))
+- Copy and paste: copies to ChemDraw record what was written alongside Chemweave's own settings, so later edits in ChemDraw are respected. ([#475](https://github.com/nathanohare/Chemweave/pull/475))
+- Files (CDXML): bonds attach to the right character of a label, lone pairs get the right default and oval shadows the right size. ([#476](https://github.com/nathanohare/Chemweave/pull/476))
+- Canvas: crossed (E or Z) double bonds, radical ion and dagger symbols and oval shadows from ChemDraw are drawn, and bonds meet the label character ChemDraw chose. ([#477](https://github.com/nathanohare/Chemweave/pull/477))
+- Files (CDXML): captions without a stored width are measured, and formula and mass captions refresh when the structure was changed in ChemDraw. ([#477](https://github.com/nathanohare/Chemweave/pull/477))
+- Files (CDXML): stacked labels and poster-size documents from ChemDraw open correctly. ([#478](https://github.com/nathanohare/Chemweave/pull/478))
+- Copy and paste: stacked labels, poster pages and bond attach points stay as they were when copied to ChemDraw. ([#479](https://github.com/nathanohare/Chemweave/pull/479))
+- Files (CDXML): arrowhead notches, hidden charges (Cl instead of Cl⁻) and Arial text runs are read as ChemDraw shows them. ([#480](https://github.com/nathanohare/Chemweave/pull/480))
+- Copy and paste: arrowhead notches, curved-arrow heads and older graphic-only arrows are kept when copying to ChemDraw. ([#481](https://github.com/nathanohare/Chemweave/pull/481))
+- Files (CDXML): arrows in older files that were saved as plain graphics are read as ChemDraw reads them. ([#482](https://github.com/nathanohare/Chemweave/pull/482))
+- Files (CDXML): dashed aromatic bonds and variable line spacing are read as ChemDraw saves them. ([#483](https://github.com/nathanohare/Chemweave/pull/483))
+- Copy and paste: variable caption line spacing is kept, and separate pieces stay in their fragment when copied to ChemDraw. ([#484](https://github.com/nathanohare/Chemweave/pull/484))
+- Files (CDXML): arc arrows keep their ellipse, and curved arrowheads point the way ChemDraw points them. ([#485](https://github.com/nathanohare/Chemweave/pull/485))
+- Copy and paste: elliptical arc arrows stay ChemDraw arc arrows on new saves and copies. ([#486](https://github.com/nathanohare/Chemweave/pull/486))
+- Copy and paste: highlights are kept through CDX, the format ChemDraw uses on the clipboard. ([#489](https://github.com/nathanohare/Chemweave/pull/489))
+- Copy and paste: hollow and wavy wedges, hydrogen and ionic bonds, second-line styles and variable attachments are kept when copying to ChemDraw. ([#491](https://github.com/nathanohare/Chemweave/pull/491))
+- Files (CDXML): the new bond types are read from ChemDraw, and double bonds sit on the same side ChemDraw puts them. ([#494](https://github.com/nathanohare/Chemweave/pull/494))
+- Copy and paste: ring-fusion H, stacked labels, radical ions, lone pair bars, crossed-out arrows, dipole arrows and open curves are kept when copying to ChemDraw. ([#497](https://github.com/nathanohare/Chemweave/pull/497))
+- Files (CDXML): a ChemDraw file is left unchanged when nothing was edited, and grouped arrows are no longer duplicated on save. ([#501](https://github.com/nathanohare/Chemweave/pull/501))
+- Files (CDXML): forced label directions, label sizes, italics, attachment colors and tints are kept on a new save. ([#502](https://github.com/nathanohare/Chemweave/pull/502))
+- Files (CDXML): files record which way their labels ran, in drawing order, so ChemDraw shows them the same way. ([#504](https://github.com/nathanohare/Chemweave/pull/504))
+- Copy and paste: atom number color and weight, faded objects, Symbol-font spaces and stacked line height are kept when copying to ChemDraw. ([#508](https://github.com/nathanohare/Chemweave/pull/508))
+- Copy and paste: labels ChemDraw could not interpret stay as they were, and minus signs keep their own font when copied to ChemDraw. ([#510](https://github.com/nathanohare/Chemweave/pull/510))
+- Files (CDXML): labels with mixed styles and labels set to run left are drawn as ChemDraw draws them. ([#512](https://github.com/nathanohare/Chemweave/pull/512))
+
+### Under the hood
+
+- ChemDraw's own clipboard contents are checked by a test. ([#451](https://github.com/nathanohare/Chemweave/pull/451))
+
 ## 0.1.185 (2026-11-03)
 
 ### Fixed
@@ -453,6 +704,32 @@
 ### Fixed
 
 - Files: CDXML files list objects in their drawing order, so ChemDraw shows a structure brought to the front in front of the shapes behind it. ([#461](https://github.com/nathanohare/Chemweave/pull/461))
+
+## 0.1.183 (2026-11-03)
+
+### Added
+
+- Copy and paste: ChemDraw objects pasted from PowerPoint, or found in an opened PowerPoint file, become editable structures. ([#436](https://github.com/nathanohare/Chemweave/pull/436))
+
+### Fixed
+
+- Files (CDXML): bold bond width, hash spacing and bond margin set on single bonds in ChemDraw are kept, and filled rings come through CDX files. ([#435](https://github.com/nathanohare/Chemweave/pull/435))
+- Copy and paste: copying to ChemDraw keeps ring fills, settings on single bonds, bond stacking order and label fonts. ([#437](https://github.com/nathanohare/Chemweave/pull/437))
+- Files (CDXML): ChemDraw drawings open looking the way ChemDraw shows them. ([#438](https://github.com/nathanohare/Chemweave/pull/438))
+- Files (Word, PowerPoint): reagent text inside ChemDraw objects stays text when the file is saved and reopened. ([#439](https://github.com/nathanohare/Chemweave/pull/439))
+- Files (CDXML): ChemDraw's crossing bonds and centered element labels are read correctly. ([#440](https://github.com/nathanohare/Chemweave/pull/440))
+- Copy and paste: crossing bonds and centered element labels are kept when copying to ChemDraw. ([#441](https://github.com/nathanohare/Chemweave/pull/441))
+- Files (CDXML): ChemDraw highlights, faded shapes and shapes drawn over structures open as they look in ChemDraw. ([#442](https://github.com/nathanohare/Chemweave/pull/442))
+- Copy and paste: highlights and faded shapes are kept when copying to ChemDraw. ([#443](https://github.com/nathanohare/Chemweave/pull/443))
+- Files (CDXML): turned boxes (diamonds) and hash and dash bonds are drawn the way ChemDraw draws them. ([#444](https://github.com/nathanohare/Chemweave/pull/444))
+- Copy and paste: turned boxes (diamonds) stay turned when copied to ChemDraw. ([#445](https://github.com/nathanohare/Chemweave/pull/445))
+- Files (CDXML): a stray lone carbon in a ChemDraw drawing no longer shows up as a stray atom. ([#446](https://github.com/nathanohare/Chemweave/pull/446))
+- Copy and paste: a stray lone carbon no longer turns into CH₄ when copied to ChemDraw. ([#447](https://github.com/nathanohare/Chemweave/pull/447))
+- Canvas: the wavy attachment line is sized the way ChemDraw sizes it. ([#448](https://github.com/nathanohare/Chemweave/pull/448))
+
+### Under the hood
+
+- Test drawings for checking what ChemDraw puts on the clipboard. ([#434](https://github.com/nathanohare/Chemweave/pull/434))
 
 ## 0.1.182 (2026-11-02)
 
