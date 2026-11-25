@@ -234,7 +234,7 @@ function versions(headVersion) {
   const first = firstTags(tags);
   const by = addedMap();
   const byVersion = new Map();
-  for (const f of changeFiles(readdirSync(DIR).map((n) => `${DIR}/${n}`)).sort()) {
+  for (const f of changeFiles(existsSync(DIR) ? readdirSync(DIR).map((n) => `${DIR}/${n}`) : []).sort()) {
     const a = by.get(f);
     const tag = first.get(f);
     const version = tag ? tag.slice(1) : headVersion;
@@ -295,8 +295,11 @@ const BOT = ['-c', 'user.name=github-actions[bot]', '-c', 'user.email=41898282+g
  * still fails exits non-zero, and scripts/retry.mjs runs it again.
  */
 function push(version, dry = false) {
-  git('fetch', '-q', '--tags', '--force', 'origin', 'main');
-  git('checkout', '-q', '-f', '--detach', 'FETCH_HEAD');
+  // a try-out on a pull request makes it from the pull request's own files instead
+  if (!dry) {
+    git('fetch', '-q', '--tags', '--force', 'origin', 'main');
+    git('checkout', '-q', '-f', '--detach', 'FETCH_HEAD');
+  }
   write('Unreleased');
   if (!git('status', '--porcelain', '--', 'CHANGELOG.md')) { console.log('CHANGELOG.md is already up to date'); return; }
   git('add', 'CHANGELOG.md');
