@@ -83,10 +83,13 @@ import { WORKSPACE, folderOf } from './io/workspace-file';
 import { askLink, followLink, setLinkHost, type LinkPlace } from './ui/links-ui';
 import type { LigandLibraryWindow } from './ui/ligand-library';
 import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink, removeLink, setLink, slideOfLink } from './links';
-import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, type FileType } from './io/files';
+import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
-import { Workspace, Tab } from './workspace';
+import { Workspace, Tab, type SaveHow } from './workspace';
+import { AutoSaveClock } from './keep/autosave';
+import { sameStamp, holderText } from './keep/shared';
+import type { FileStamp } from './keep/recovery';
 import { NEW_ITEMS } from './ui/new-items';
 import { Deck, LayoutId, WIDE, STANDARD, Image as SlideImage, sizeName, SlideSize, slideBackground, slideColours, type SlideSource, contentArea, deckLayouts, type SizeFit, isBuiltinLayout, hasItems, refsBoxRect, placeholderRect, textStyles, frameFields } from './deck/deck';
 import { NOTE_BULLET, bulletEdits, notesCharLooks, notesLookOf, type NotesLook } from './deck/notes-look';
@@ -285,6 +288,7 @@ import { siDrawingStyle } from './si/drawing-style';
 import type { SiView } from './si/manuscript';
 import { JournalFolder, journalOf } from './si/journal';
 import type { SiFolder as SiFolderT } from './si/folder';
+import type { SiFiles as SiFilesT, SiWorking as SiWorkingT, SiSource as SiSourceT, ChangeCounter as ChangeCounterT } from './si/packed';
 import type { SnapshotKeeper as SnapshotKeeperT } from './si/snapshot-docx';
 import type { SiAccess } from './ui/doc-si';
 import { addMolfile, readScene, sceneToDoc } from './io/chem-formats';
@@ -4620,6 +4624,14 @@ const docRead: DocxReadDeps = {
 
 const ws: Workspace = new Workspace(doc, {
   remember: (path) => rememberFile(path),
+  si: {
+    dirty: (t) => { const st = t.si ? siFileStates.get(t.si) : undefined; return !!st && st.counter.dirty; },
+    save: (t, how) => saveSiFile(t, how),
+    saveAs: (t) => saveSiFileAs(t),
+    open: async (path) => { await openSiProject(false, path); },
+    discarded: (t) => { const st = t.si ? siFileStates.get(t.si) : undefined; if (st) st.discarded = true; },
+    flush: async (t) => { if (t.si && siMode) await siMode.saved(t.si).catch(() => {}); },
+  },
   rememberHandle: (handle) => { if (canKeepHandles()) void keepHandle(handle, recentFiles).then(rememberFile, () => {}); },
   leave: (tab) => {
     // the template window belongs to the new file it opened over
@@ -4692,7 +4704,7 @@ function tickAutoSave(): void {
   const b = document.querySelector<HTMLElement>('[data-cmd="autosave"]');
   if (!b) return;
   const t = ws.active;
-  b.setAttribute('aria-checked', String(keeper.autoSaveWanted(t) && ws.canAutoSave(t)));
+  b.setAttribute('aria-checked', String(t.mode === 'si' ? siAutoSaveOn(t) : keeper.autoSaveWanted(t) && ws.canAutoSave(t)));
 }
 
 /**
@@ -6244,7 +6256,7 @@ function renderTabs(): void {
     // the file's name first: a tab squeezed to its icon shows it only here
     el.title = `${ws.label(t)} (${TAB_ICONS[t.mode][1]})` + (t.ref.kind === 'path' ? `\n${t.ref.path}` : '') + (t.dirty ? '\nNot saved' : '')
       + (t.savedAt ? `\n${t.savedHow === 'autosaved' ? 'AutoSaved' : 'Saved'} ${new Date(t.savedAt).toLocaleTimeString(undefined, { hour: '2-digit', minute: '2-digit' })}` : '')
-      + (keeper.autoSaveWanted(t) && ws.canAutoSave(t) ? ' (AutoSave on)' : '') + '\nPress Delete to close it';
+      + ((t.mode === 'si' ? siAutoSaveOn(t) : keeper.autoSaveWanted(t) && ws.canAutoSave(t)) ? ' (AutoSave on)' : '') + '\nPress Delete to close it';
     const icon = document.createElement('span');
     icon.className = 'tab-icon';
     icon.innerHTML = TAB_ICONS[t.mode][0];
@@ -9143,7 +9155,7 @@ function loadSiMode(): Promise<SiMode> {
     siMode = new Mode({
       flash,
       hint: (t) => { if (ws.active.mode === 'si' && !cellEdit) setHint(t); },
-      changed: () => { renderTabs(); updateTitle(); siChanged(ws.active.si?.folder.where ?? null); },
+      changed: () => { renderTabs(); updateTitle(); siChanged(ws.active.si?.key ?? null); },
       contentsOf: (mol) => {
         const scene = readScene('mol', mol);
         return scene ? sceneToDoc(scene, siStyleNow()).doc.contents() : null;
@@ -9196,6 +9208,7 @@ function loadSiMode(): Promise<SiMode> {
       },
       pickFiles: (label, exts) => openManyBytesDialog(label, exts).catch(async (e) => { await showError(String(e)); return []; }),
       newSiProject: isTauri() ? () => openSiProject(true) : null,
+      reloadFile: (p) => reloadSiFile(p),
       siFacts: (mols) => chem.siFacts(mols),
       sizeOf: (c) => figures.size(c, siStyleNow()),
       siStyle: () => siStyleNow(),
@@ -9380,77 +9393,447 @@ function siJournal(folder: SiFolderT): JournalFolder {
   return j;
 }
 
-/** SI project folders being opened now (so one asked for twice opens once). */
+// ---------------------------------------------------------------- SI project files (.chemsi)
+// An SI project is one file: a zip of the project's folder (si/packed.ts). Opening one unpacks it
+// into a working copy in the app's own data folder, where every change is written at once (as in
+// a folder project, so nothing is lost in a crash); Save, and AutoSave (on unless switched off
+// for the project), pack the copy back into the file. A lock file beside the file tells others
+// it is open here. The copy goes when the project closes; one left by a crash is offered back
+// at the next start. A project folder (Chem SI Assistant's) opens converted: Chemweave saves it
+// as a .chemsi file and leaves the folder as it was.
+
+/** What an open project file needs for saving: its working copy and what was saved. */
+interface SiFileState {
+  working: SiWorkingT;
+  counter: ChangeCounterT;
+  /** The file as it was opened or last saved here (to tell when it was changed elsewhere since). */
+  stamp: FileStamp | null;
+  /** A save under way (saves run one at a time). */
+  saving: Promise<boolean> | null;
+  /** source.json says there are unsaved changes (written once per run of changes). */
+  notedDirty: boolean;
+  /** The person chose not to save the changes as it closed: the copy goes without being offered back. */
+  discarded: boolean;
+  /** AutoSave stopped for it (the file was changed elsewhere, or could not be written) until a Save works. */
+  autoPaused: boolean;
+}
+const siFileStates = new WeakMap<SiProjectT, SiFileState>();
+/** SI project files being opened now, by path (so one asked for twice opens once). */
 const siOpening = new Set<string>();
-/** A folder's path to compare by: separators and a trailing one aside, and letter case aside where file names ignore it (Windows, macOS). */
+/** A path to compare by: separators and a trailing one aside, and letter case aside where file names ignore it (Windows, macOS). */
 function folderKey(path: string): string {
   const p = path.replace(/\\/g, '/').replace(/\/+$/, '');
   return /linux|android/i.test(navigator.userAgent) && !/^[a-z]:\//i.test(p) ? p : p.toLowerCase();
 }
-const sameFolder = (a: string, b: string): boolean => folderKey(a) === folderKey(b);
+const samePath = (a: string, b: string): boolean => folderKey(a) === folderKey(b);
+const siCall = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
+let siFilesApi: SiFilesT | null = null;
+async function siFiles(): Promise<SiFilesT> {
+  if (siFilesApi) return siFilesApi;
+  const { SiFiles } = await import('./si/packed');
+  siFilesApi ??= new SiFiles(siCall);
+  return siFilesApi;
+}
+/** The folder a file is in. */
+const dirOfPath = (path: string): string => path.replace(/[\\/][^\\/]*$/, '') || path;
+/** The tab an SI project shows in. */
+const siTabOf = (p: SiProjectT): Tab | undefined => ws.tabs.find((t) => t.si === p);
 
-async function openSiProject(create: boolean, at?: string): Promise<SiProjectT | null> {
-  if (!isTauri()) { flash('SI projects are folders on this computer: open them in the desktop app for now.', 6000); return null; }
-  finishTab();
-  const [{ SiProject, SiProjectError, PROJECT_FILE }, { DiskFolder }, { safeFilename }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/ids')]);
-  let path = at ?? await pickFolder();
-  if (!path) return null;
-  const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
+/** Whether an SI tab saves itself with AutoSave (on unless switched off for it). */
+function siAutoSaveOn(t: Tab): boolean {
+  const st = t.si ? siFileStates.get(t.si) : undefined;
+  return !!st && t.autoSave !== false && !!t.si!.file && !t.si!.readOnly;
+}
+
+/** Note in the working copy which file it is, and whether it has changes not saved (for recovery after a crash). */
+async function noteSiSource(p: SiProjectT, st: SiFileState, unsaved: boolean): Promise<void> {
+  const files = await siFiles();
+  await files.note(st.working, { file: p.file, title: p.title, opened: new Date().toISOString(), unsaved, stamp: st.stamp, root: st.working.root }).catch(() => {});
+}
+
+/**
+ * Open a working copy as an SI project in a tab: `file` is the project file it saves to (null:
+ * not saved yet, so Save asks where); `create` makes a new project titled so; `unsaved`: it has
+ * changes not in any file yet (a converted folder, a recovered copy, a zip that isn't a project file).
+ */
+async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?: string; unsaved?: boolean; readOnly?: boolean; stamp?: FileStamp | null; suggest?: string; recovered?: boolean } = {}): Promise<SiProjectT | null> {
+  const [{ SiProject, SiProjectError }, { DiskFolder }, { ChangeCounter }, { setSnapshotFolder }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/packed'), import('./si/snapshot-docx')]);
+  const counter = new ChangeCounter(new DiskFolder(w.root, siCall));
   let project: SiProjectT;
-  let opening = '';
   try {
-    if (create) {
-      const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Make Project', note: 'The project is a new folder, named after it, inside the folder you chose. Chem SI Assistant opens it too.' });
-      if (!got?.title.trim()) return null;
-      const sep = path.includes('\\') && !path.includes('/') ? '\\' : '/';
-      path = path.replace(/[\\/]+$/, '') + sep + safeFilename(got.title.trim());
-      await invoke('make_folder', { path });
-      project = await SiProject.create(siJournal(new DiskFolder(path, call)), got.title.trim());
-    } else {
-      const folder = new DiskFolder(path, call);
-      if (!(await folder.exists(PROJECT_FILE))) { await showError(`This folder is not an SI project (it has no ${PROJECT_FILE}). Choose the project's own folder: the one Chem SI Assistant made, with project.json and sections inside.`); return null; }
-      const already = ws.tabs.find((t) => t.si && sameFolder(t.si.folder.where, path!));
-      if (already) { ws.activate(already); return already.si ?? null; }
-      // (asked for twice in a row, from a link and the menu say: the first one is opening it)
-      if (siOpening.has(folderKey(path))) return null;
-      siOpening.add(folderKey(path));
-      opening = folderKey(path);
-      project = await SiProject.open(siJournal(folder));
-      const held = project.readOnly ? null : await project.currentLock();
-      if (held) {
-        const pick = await askChoice('SI Project Open Elsewhere', `${held.user} has this project open on ${held.computer}${held.opened_at ? ' since ' + held.opened_at.replace('T', ' ') : ''} (in Chem SI Assistant, or Chemweave). Two programs changing it at once can lose changes.`, [
-          { value: 'read', label: 'Open Read-Only', primary: true },
-          { value: 'edit', label: 'Open for Editing' },
-          { value: 'cancel', label: 'Cancel' },
-        ], 'cancel', 'If it was left open after a crash, or you closed it there, open it for editing: the lock passes to you.');
-        if (pick === 'cancel') return null;
-        if (pick === 'read') project.readOnly = true;
-      }
-    }
+    project = opts.create !== undefined ? await SiProject.create(siJournal(counter), opts.create) : await SiProject.open(siJournal(counter));
+    project.file = file;
+    if (opts.readOnly) project.readOnly = true;
     if (!project.readOnly) {
       const me = await invoke<{ user: string; host: string }>('who_am_i').catch(() => ({ user: '', host: '' }));
       await project.acquireLock(me.user || 'Chemweave', me.host);
       // every project has a Spectra section, as SI Assistant adds it; a new project's links on
       // (an older project's are left off, as SI Assistant's default, so opening it changes nothing it prints)
-      await project.ensureSpectraSection(create ? SPECTRA_START : {}).catch((e: unknown) => flash(`The Spectra section could not be added, so the spectra print at the end of the SI as before (${e instanceof Error ? e.message : String(e)}).`, 8000));
-      // (what an earlier session's Undo set aside, if it ended without closing the project)
+      await project.ensureSpectraSection(opts.create !== undefined ? SPECTRA_START : {}).catch((e: unknown) => flash(`The Spectra section could not be added, so the spectra print at the end of the SI as before (${e instanceof Error ? e.message : String(e)}).`, 8000));
       await journalOf(project.folder)?.clear().catch(() => {});
     }
   } catch (e) {
-    await showError(e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`);
+    const why = e instanceof SiProjectError ? e.message : `The SI project could not be opened: ${e instanceof Error ? e.message : String(e)}`;
+    // (a recovered copy may hold the only copy of the changes: it stays, and is offered again at the next start)
+    if (opts.recovered) { await showError(`${why}\n\nThe unsaved changes are kept in ${w.root}, and are offered again the next time Chemweave starts.`); return null; }
+    await showError(why);
+    await (await siFiles()).discard(w).catch(() => {});
     return null;
-  } finally {
-    if (opening) siOpening.delete(opening);
   }
-  // someone took the project over, or its folder moved: it is read-only from then on, and the person is told
+  const st: SiFileState = { working: w, counter, stamp: opts.stamp ?? (file ? await stampOf({ kind: 'path', path: file }) : null), saving: null, notedDirty: false, discarded: false, autoPaused: false };
+  // what opening changed (the Spectra section added) is part of what the file holds, unless it has unsaved changes already
+  counter.saved = opts.unsaved || opts.create !== undefined ? -1 : counter.changes;
+  siFileStates.set(project, st);
+  if (file) setSnapshotFolder(project, new DiskFolder(dirOfPath(file), siCall));
+  counter.onChange = () => {
+    const t = siTabOf(project);
+    if (t) ws.noteChange(t);
+    if (!st.notedDirty && counter.dirty) { st.notedDirty = true; void noteSiSource(project, st, true); }
+  };
+  // someone took the project over, or its working copy went: it is read-only from then on, and the person is told
   project.onReadOnly = (message) => { void showError(message); siMode?.readOnlyNow(project); };
   await loadSiMode();
-  ws.openSi(project);
+  const tab = ws.openSi(project);
+  tab.ref = file ? { kind: 'path', path: file } : { kind: 'none' };
+  tab.name = file ? baseName(file) : opts.suggest ?? `${project.title}.chemsi`;
+  ws.noteChange(tab);
+  // (open read-only: the lock beside the file is the other person's, left as it is)
+  if (file && !project.readOnly) void keeper.lockFor(tab, file);
+  if (file) rememberFile(file);
+  void noteSiSource(project, st, counter.dirty);
+  st.notedDirty = counter.dirty;
   void siSnapshotKeeper().then((k) => k.opened(project)).catch(() => {});
-  siLinked.delete(project.folder.where);
-  siChanged(project.folder.where);
+  siLinked.delete(project.key);
+  dropLinkedCopy(project.key);
+  siChanged(project.key);
+  renderTabs();
+  updateTitle();
   if (project.warnings.length) flash(`Opened with ${project.warnings.length} problem${project.warnings.length === 1 ? '' : 's'}: see the project's page.`, 6000);
   return project;
+}
+
+/**
+ * Where an SI project is to be saved, from the name chosen in the Save dialog (given the .chemsi
+ * extension if it hasn't it); null when it can't be used: open in another tab, open by someone
+ * else, or (when the extension changed the name, so the dialog never asked) there already and
+ * the person would rather not replace it.
+ */
+async function siTarget(chosen: string, tab?: Tab): Promise<string | null> {
+  const { asSiFile } = await import('./si/packed');
+  const file = asSiFile(chosen);
+  if (ws.tabs.some((t) => t !== tab && t.si?.file && samePath(t.si.file, file))) { await showError(`${baseName(file)} is open in another tab: close it first, or choose another name.`); return null; }
+  if (tab?.si?.file && samePath(tab.si.file, file)) return file;
+  const held = await keeper.heldBy(file).catch(() => null);
+  if (held) { await showError(`${baseName(file)} is open by ${holderText(held)}: choose another name.`); return null; }
+  if (!samePath(file, chosen) && await invoke<boolean>('path_exists', { path: file }).catch(() => false)) {
+    const pick = await askChoice('Replace File', `${baseName(file)} is there already. Replace it?`, [
+      { value: 'replace', label: 'Replace' },
+      { value: 'cancel', label: 'Cancel', primary: true },
+    ], 'cancel');
+    if (pick !== 'replace') return null;
+  }
+  return file;
+}
+
+/** File ▸ Open SI Project… (`at`: a file or folder given), or File ▸ New ▸ SI Project… (`create`). */
+async function openSiProject(create: boolean, at?: string): Promise<SiProjectT | null> {
+  if (!isTauri()) { flash('SI projects open in the desktop app for now.', 6000); return null; }
+  finishTab();
+  const [{ safeFilename }, packed] = await Promise.all([import('./si/ids'), import('./si/packed')]);
+  const files = await siFiles();
+  if (create) {
+    const got = await ask('New SI Project', [{ name: 'title', label: 'Title', value: '', placeholder: 'e.g. NaBH4 Reduction SI' }], { ok: 'Choose Where to Save…', note: 'The project is one file (.chemsi) you can share or move like any other. Next, choose where to save it.' });
+    if (!got?.title.trim()) return null;
+    const title = got.title.trim();
+    const target = await saveFileDialog(`${safeFilename(title)}.${packed.SI_FILE_EXT}`, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
+    if (!target || target.ref.kind !== 'path') return null;
+    const file = await siTarget(target.ref.path);
+    if (!file) return null;
+    let w: SiWorkingT;
+    try { w = await files.fresh(packed.siFileStem(file)); } catch (e) { await showError(`The SI project could not be made: ${e instanceof Error ? e.message : String(e)}`); return null; }
+    const p = await openSiWorking(w, file, { create: title });
+    // (the file is there from the start, as a new Word file saved is)
+    const tab = p && siTabOf(p);
+    if (tab) await saveSiFile(tab, 'saved', true);
+    return p;
+  }
+  const path = at ?? await pickFilePath([{ name: 'SI projects', extensions: [...packed.SI_OPEN_EXTS] }]).catch(async (e) => { await showError(String(e)); return null; });
+  if (!path) return null;
+  // a project folder (Chem SI Assistant's, or from before projects were files): converted
+  if (!packed.isSiFile(path) && await invoke<boolean>('path_exists', { path: path.replace(/[\\/]+$/, '') + '/project.json' }).catch(() => false)) return convertSiFolder(path);
+  const already = ws.tabs.find((t) => t.si?.file && samePath(t.si.file, path));
+  if (already) { ws.activate(already); return already.si ?? null; }
+  if (siOpening.has(folderKey(path))) return null;
+  siOpening.add(folderKey(path));
+  try {
+    // a .zip of a project folder (an SI Assistant snapshot, or a project sent zipped) opens as a new project: Save asks where
+    const projectFile = /\.chemsi$/i.test(path);
+    let readOnly = false;
+    if (projectFile) {
+      const held = await keeper.heldBy(path).catch(() => null);
+      if (held) {
+        const pick = await askChoice('SI Project Open Elsewhere', `${baseName(path)} is open by ${holderText(held)}. If you both save, the last save wins and the other changes are lost.`, [
+          { value: 'read', label: 'Open Read-Only', primary: true },
+          { value: 'edit', label: 'Open for Editing' },
+          { value: 'cancel', label: 'Cancel' },
+        ], 'cancel', 'If it was left open after a crash, or closed there, open it for editing.');
+        if (pick === 'cancel') return null;
+        readOnly = pick === 'read';
+      }
+    }
+    const stamp = projectFile ? await stampOf({ kind: 'path', path }) : null;
+    let w: SiWorkingT;
+    try { w = await files.unpack(path); } catch (e) { await showError(e instanceof Error ? e.message : String(e)); return null; }
+    return await openSiWorking(w, projectFile ? path : null, { unsaved: !projectFile, readOnly, stamp, suggest: projectFile ? undefined : baseName(packed.asSiFile(path)) });
+  } finally {
+    siOpening.delete(folderKey(path));
+  }
+}
+
+/**
+ * Open a project folder (Chem SI Assistant's, or from before SI projects were files): Chemweave
+ * saves it as a .chemsi file (beside the folder unless the person picks elsewhere) and opens
+ * that. The folder itself is left as it was.
+ */
+async function convertSiFolder(dir: string): Promise<SiProjectT | null> {
+  const [packed, { DiskFolder }, { SiProject }] = await Promise.all([import('./si/packed'), import('./si/folder'), import('./si/project')]);
+  const files = await siFiles();
+  const folder = dir.replace(/[\\/]+$/, '');
+  const name = baseName(folder) || 'SI Project';
+  const pick = await askChoice('Save SI Project Folder as a File', `${name} is an SI project folder. Chemweave keeps SI projects as one .chemsi file, which you can share or move like any other file. Save this one as a file to open it; the folder is left as it was.`, [
+    { value: 'save', label: 'Save as File…', primary: true },
+    { value: 'cancel', label: 'Cancel' },
+  ], 'cancel');
+  if (pick !== 'save') return null;
+  const target = await saveFileDialog(`${name}.${packed.SI_FILE_EXT}`, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
+  if (!target || target.ref.kind !== 'path') return null;
+  const file = await siTarget(target.ref.path);
+  if (!file) return null;
+  try {
+    const disk = new DiskFolder(folder, siCall);
+    // (read first, so a folder that isn't a project, or one saved by a newer version, is said before anything is written)
+    const p = await SiProject.open(disk, { readOnly: true });
+    if (p.newerFormat) { await showError(`${name} was saved by a newer version of Chemweave: update Chemweave to convert it.`); return null; }
+    // (open somewhere else now: changes made there after this would not be in the file)
+    const held = await p.currentLock().catch(() => null);
+    if (held) {
+      const go = await askChoice('SI Project Folder Open Elsewhere', `${held.user} has ${name} open on ${held.computer}${held.opened_at ? ' since ' + held.opened_at.replace('T', ' ') : ''}. Changes made there after it is saved as a file won't be in the file.`, [
+        { value: 'go', label: 'Save as File Anyway' },
+        { value: 'cancel', label: 'Cancel', primary: true },
+      ], 'cancel', 'If it was left open after a crash, or is closed there now, save it anyway.');
+      if (go !== 'go') return null;
+    }
+    const skip = packed.packSkips((await disk.entries('')).map((e) => e.name));
+    await files.pack(folder, file, skip);
+  } catch (e) {
+    await showError(`${name} could not be saved as a file: ${e instanceof Error ? e.message : String(e)}`);
+    return null;
+  }
+  // documents open now that were linked to the folder are linked to the file
+  for (const t of ws.tabs) {
+    const f = t.mode === 'document' && !t.windowOf ? t.document : null;
+    const link = f?.t.siLink;
+    if (f && link && samePath(link.path, folder)) f.ed.update({ ...f.t, siLink: { ...link, path: file } } as DocText, 'Link SI');
+  }
+  const p = await openSiProject(false, file);
+  if (p) flash(`Saved ${name} as ${baseName(file)}. The folder was left as it was; you can delete it once you're happy with the file.`, 9000);
+  return p;
+}
+
+/**
+ * Save an SI project's working copy into its file (Ctrl+S, AutoSave, Save As with `to`).
+ * `fresh`: the file is new (no change elsewhere to check for).
+ */
+async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): Promise<boolean> {
+  const p = tab.si;
+  const st = p ? siFileStates.get(p) : undefined;
+  if (!p || !st) { if (how === 'saved') flash('This SI project is kept in memory only (for trying the tab), so it can’t be saved.', 6000); return false; }
+  const file = to ?? p.file;
+  if (!file) return how === 'autosaved' ? false : saveSiFileAs(tab);
+  if (p.readOnly && !to) { if (how === 'saved') flash('This SI project is open read-only: File ▸ Save As saves a copy.', 6000); return false; }
+  while (st.saving) await st.saving.catch(() => false);
+  if (!to && !st.counter.dirty && how === 'autosaved') return true;
+  const run = (async (): Promise<boolean | 'save-as'> => {
+    // what is being typed is written to the working copy first
+    await siMode?.saved(p).catch(() => {});
+    const packed = await import('./si/packed');
+    // changed elsewhere since it was opened or saved here (OneDrive brought someone else's save, say)?
+    if (!fresh && !to) {
+      const now = await stampOf({ kind: 'path', path: file });
+      if (st.stamp && now && !sameStamp(st.stamp, now)) {
+        if (how === 'autosaved') {
+          if (!st.autoPaused) flash(`${baseName(file)} was changed somewhere else since it was opened here, so AutoSave stopped for it. Save (Ctrl+S) to choose what to keep.`, 10000);
+          st.autoPaused = true;
+          return false;
+        }
+        const pick = await askChoice('SI Project Changed Elsewhere', `${baseName(file)} was saved somewhere else (another computer, or OneDrive bringing someone's changes) since it was opened here. Saving now replaces those changes with yours.`, [
+          { value: 'copy', label: 'Save As…', primary: true },
+          { value: 'replace', label: 'Replace It' },
+          { value: 'cancel', label: 'Cancel' },
+        ], 'cancel', 'Save As keeps both: yours in a new file, theirs where it is. Open theirs afterwards to compare.');
+        if (pick === 'cancel') return false;
+        if (pick === 'copy') return 'save-as' as const;
+      }
+    }
+    const changes = st.counter.changes;
+    try {
+      const skip = packed.packSkips((await st.counter.entries('')).map((e) => e.name));
+      await (await siFiles()).pack(st.working.root, file, skip);
+    } catch (e) {
+      const msg = `${baseName(file)} could not be saved: ${e instanceof Error ? e.message : String(e)}`;
+      if (how === 'autosaved') { if (!st.autoPaused) flash(`${msg}. AutoSave stopped for it; your changes are kept, and Save (Ctrl+S) tries again.`, 10000); st.autoPaused = true; }
+      else await showError(`${msg}. Your changes are kept: try again, or File ▸ Save As to save them elsewhere.`);
+      return false;
+    }
+    st.autoPaused = false;
+    st.stamp = await stampOf({ kind: 'path', path: file });
+    st.counter.saved = changes;
+    st.notedDirty = st.counter.dirty;
+    tab.savedAt = Date.now();
+    tab.savedHow = how;
+    ws.noteChange(tab);
+    renderTabs();
+    updateTitle();
+    void noteSiSource(p, st, st.counter.dirty);
+    if (how === 'saved') flash(`Saved ${baseName(file)}`, 3500);
+    return true;
+  })();
+  const plain = run.then((r) => r === true);
+  st.saving = plain;
+  let got: boolean | 'save-as';
+  try { got = await run; } finally { if (st.saving === plain) st.saving = null; }
+  // (Save As chosen for a file changed elsewhere: asked once this save is over)
+  return got === 'save-as' ? saveSiFileAs(tab) : got;
+}
+
+/** Home ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
+async function reloadSiFile(p: SiProjectT): Promise<void> {
+  const tab = siTabOf(p);
+  const st = siFileStates.get(p);
+  const file = p.file;
+  if (!tab || !st || !file) return;
+  await siMode?.saved(p).catch(() => {});
+  if (st.counter.dirty) {
+    const pick = await askChoice('Reload Project', `Open ${baseName(file)} again as it was last saved? The changes made here since are dropped.`, [
+      { value: 'reload', label: 'Reload' },
+      { value: 'cancel', label: 'Cancel', primary: true },
+    ], 'cancel');
+    if (pick !== 'reload') return;
+  }
+  // the file is read first: if it can't be (gone, offline, damaged), the tab stays as it is
+  const files = await siFiles();
+  let w: SiWorkingT;
+  try { w = await files.unpack(file); } catch (e) { await showError(`${baseName(file)} could not be opened again, so the project was left as it is: ${e instanceof Error ? e.message : String(e)}`); return; }
+  const stamp = await stampOf({ kind: 'path', path: file });
+  st.discarded = true;
+  // (closed without asking again: the changes were dropped above)
+  st.counter.saved = st.counter.changes;
+  ws.noteChange(tab);
+  if (!(await ws.close(tab))) { st.discarded = false; await files.discard(w).catch(() => {}); return; }
+  await openSiWorking(w, file, { stamp });
+}
+
+/** File ▸ Save As for an SI project: another file, which the project then saves to. */
+async function saveSiFileAs(tab: Tab): Promise<boolean> {
+  const p = tab.si;
+  const st = p ? siFileStates.get(p) : undefined;
+  if (!p || !st) { flash('This SI project is kept in memory only (for trying the tab), so it can’t be saved.', 6000); return false; }
+  const packed = await import('./si/packed');
+  const { DiskFolder } = await import('./si/folder');
+  const { setSnapshotFolder } = await import('./si/snapshot-docx');
+  const target = await saveFileDialog(tab.name.replace(/\.[^.]*$/, '') + '.' + packed.SI_FILE_EXT, CHEMSI).catch(async (e) => { await showError(String(e)); return null; });
+  if (!target || target.ref.kind !== 'path') return false;
+  const file = await siTarget(target.ref.path, tab);
+  if (!file) return false;
+  const was = p.file;
+  if (p.readOnly) {
+    // (a project open read-only stays as it is: the copy is the person's own, to open and edit)
+    const counter = { changes: st.counter.changes, saved: st.counter.saved };
+    const ok = await saveSiFile(tab, 'saved', true, file);
+    Object.assign(st.counter, counter);
+    if (ok) { rememberFile(file); flash(`Saved a copy as ${baseName(file)}. Open it to edit it (this tab stays read-only).`, 8000); }
+    return ok;
+  }
+  if (!(await saveSiFile(tab, 'saved', true, file))) return false;
+  if (was && !samePath(was, file)) await keeper.unlockFor(tab, was);
+  const oldKey = p.key;
+  p.file = file;
+  tab.ref = { kind: 'path', path: file };
+  tab.name = baseName(file);
+  setSnapshotFolder(p, new DiskFolder(dirOfPath(file), siCall));
+  void keeper.lockFor(tab, file);
+  rememberFile(file);
+  siLinked.delete(oldKey);
+  siChanged(oldKey);
+  siChanged(p.key);
+  void noteSiSource(p, st, st.counter.dirty);
+  renderTabs();
+  updateTitle();
+  return true;
+}
+
+// AutoSave for SI project files: a few seconds after changes stop (AutoSave and Recovery Options'
+// delay), and at least every few minutes while they keep coming
+const siAutoClock = new AutoSaveClock();
+setInterval(() => {
+  const tabs = ws.tabs.filter((t) => t.si && siFileStates.has(t.si));
+  if (!tabs.length) return;
+  const due = siAutoClock.due(tabs.map((t) => {
+    const st = siFileStates.get(t.si!)!;
+    return { id: t.id, token: st.counter.changes, dirty: st.counter.dirty, on: siAutoSaveOn(t) && !st.autoPaused && !st.saving };
+  }), Date.now(), keepPrefs.autoSaveSeconds * 1000);
+  for (const id of due) {
+    const t = ws.tabs.find((x) => x.id === id);
+    if (t) void saveSiFile(t, 'autosaved').then((ok) => { if (ok) siAutoClock.done(id); });
+  }
+}, 2000);
+
+/** File ▸ AutoSave in an SI project's tab: on or off for it. */
+async function toggleSiAutoSave(t: Tab): Promise<void> {
+  if (!t.si || !siFileStates.has(t.si)) { flash('This SI project is kept in memory only, so it can’t be saved.', 6000); return; }
+  const on = t.autoSave === false;
+  if (on && !t.si.file) {
+    flash('Choose where to save the project; AutoSave then keeps it saved.', 5000);
+    if (!(await saveSiFileAs(t))) return;
+  }
+  t.autoSave = on;
+  const st = siFileStates.get(t.si)!;
+  if (on) st.autoPaused = false;
+  flash(on ? `AutoSave on for ${t.name}: it saves itself a few seconds after each change.` : `AutoSave off for ${t.name}: press Ctrl+S to save.`, 5000);
+  renderTabs();
+}
+
+/**
+ * Working copies left by a crash (or the app closing before a project was saved): offered back
+ * once, at start. Copies with nothing unsaved (and linked documents' read-only copies) just go.
+ */
+async function recoverSiCopies(): Promise<void> {
+  if (!isTauri()) return;
+  const files = await siFiles();
+  const left = await files.leftOver().catch(() => []);
+  const { recoveryAction } = await import('./si/packed');
+  const open = new Set(ws.tabs.flatMap((t) => (t.si ? [siFileStates.get(t.si)?.working.working ?? ''] : [])));
+  const offer: { w: SiWorkingT; src: SiSourceT }[] = [];
+  for (const l of left) {
+    const src = await files.source(l.working);
+    const what = recoveryAction(l, src, open);
+    if (what === 'discard') await files.discard({ working: l.working, root: '' }).catch(() => {});
+    if (what !== 'offer') continue;
+    offer.push({ w: { working: l.working, root: l.root }, src: src ?? { file: null, title: baseName(l.root), opened: '', unsaved: true, stamp: null, root: l.root } });
+  }
+  if (!offer.length) return;
+  const names = offer.map((o) => `“${o.src.title || (o.src.file ? baseName(o.src.file) : 'SI Project')}”`).join(', ');
+  const pick = await askChoice('Recover SI Projects', `Chemweave closed before ${offer.length === 1 ? 'this SI project was' : 'these SI projects were'} saved: ${names}. Open ${offer.length === 1 ? 'it' : 'them'} with the changes, to save or close?`, [
+    { value: 'open', label: 'Open', primary: true },
+    { value: 'later', label: 'Not Now' },
+    { value: 'discard', label: 'Discard Changes' },
+  ], 'later', 'Not Now asks again at the next start. Discard Changes deletes the unsaved changes; the saved files are not touched.');
+  if (pick === 'discard') { for (const o of offer) await files.discard(o.w).catch(() => {}); return; }
+  if (pick !== 'open') return;
+  for (const o of offer) {
+    const file = o.src.file && !ws.tabs.some((t) => t.si?.file && samePath(t.si.file, o.src.file!)) ? o.src.file : null;
+    await openSiWorking(o.w, file, { unsaved: true, recovered: true, stamp: o.src.stamp ?? null, suggest: o.src.file ? baseName(o.src.file) : undefined });
+  }
 }
 
 /** Open an SI project kept in memory: for trying the tab in a browser without files (development),
@@ -9493,20 +9876,58 @@ function siChanged(path: string | null): void {
   siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
 }
 
-async function siProjectAt(path: string): Promise<SiProjectT | null> {
-  const tab = ws.tabs.find((t) => t.si?.folder.where === path);
+/** Linked projects being read now (by path), so the pictures and the compile asking at once read it once. */
+const siReading = new Map<string, Promise<SiProjectT | null>>();
+function siProjectAt(path: string): Promise<SiProjectT | null> {
+  const going = siReading.get(path);
+  if (going) return going;
+  const run = readSiProjectAt(path).finally(() => siReading.delete(path));
+  siReading.set(path, run);
+  return run;
+}
+
+async function readSiProjectAt(path: string): Promise<SiProjectT | null> {
+  const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, path));
   if (tab?.si) return tab.si;
   const known = siLinked.get(path);
   if (known) return known;
   if (!isTauri()) return null;
-  const [{ SiProject, PROJECT_FILE }, { DiskFolder }] = await Promise.all([import('./si/project'), import('./si/folder')]);
-  const call = <T,>(cmd: string, args?: Record<string, unknown>, opts?: { headers: Record<string, string> }): Promise<T> => invoke<T>(cmd, args as never, opts as never);
-  const folder = new DiskFolder(path, call);
+  const [{ SiProject, PROJECT_FILE }, { DiskFolder }, { isSiFile }] = await Promise.all([import('./si/project'), import('./si/folder'), import('./si/packed')]);
+  // a project file: read from a copy unpacked for it (deleted when it is read again, and at the next start)
+  if (isSiFile(path)) {
+    const files = await siFiles();
+    const stamp = await stampOf({ kind: 'path', path });
+    if (!stamp) return null;
+    const w = await files.unpack(path);
+    try {
+      const p = await SiProject.open(new DiskFolder(w.root, siCall), { readOnly: true });
+      p.file = path;
+      // (a read-only copy: never offered for recovery)
+      await files.note(w, { file: path, title: p.title, opened: new Date().toISOString(), unsaved: false, stamp, root: w.root });
+      siLinked.set(path, p);
+      siLinkedCopies.set(path, { w, stamp });
+      return p;
+    } catch (e) {
+      await files.discard(w).catch(() => {});
+      throw e;
+    }
+  }
+  const folder = new DiskFolder(path, siCall);
   if (!(await folder.exists(PROJECT_FILE).catch(() => false))) return null;
   const p = await SiProject.open(folder);
   p.readOnly = true;
   siLinked.set(path, p);
   return p;
+}
+
+/** The copies linked project files were read from (by file), and the file as it was then. */
+const siLinkedCopies = new Map<string, { w: SiWorkingT; stamp: FileStamp }>();
+/** A linked project file's copy is no longer needed. */
+function dropLinkedCopy(path: string, keep?: SiWorkingT): void {
+  const c = siLinkedCopies.get(path);
+  if (!c || c.w === keep) return;
+  siLinkedCopies.delete(path);
+  void siFiles().then((f) => f.discard(c.w)).catch(() => {});
 }
 
 /** What a project read from its folder holds, to tell whether Chem SI Assistant changed it since (structures apart: IDs, labels and values are in these). */
@@ -9522,19 +9943,26 @@ function siSignature(p: SiProjectT): string {
  */
 const siRereading = new Map<string, Promise<boolean>>();
 function rereadLinkedSi(path: string, always: boolean): Promise<boolean> {
-  if (ws.tabs.some((t) => t.si?.folder.where === path) || !siLinked.has(path)) return Promise.resolve(false);
+  if (ws.tabs.some((t) => !!t.si && samePath(t.si.key, path)) || !siLinked.has(path)) return Promise.resolve(false);
   const going = siRereading.get(path);
   if (going) return going;
   const run = (async () => {
     const old = siLinked.get(path)!;
+    // (a project file not changed since it was read: nothing to read again)
+    const copy = siLinkedCopies.get(path);
+    if (copy && !always && sameStamp(copy.stamp, await stampOf({ kind: 'path', path }))) return false;
     siLinked.delete(path);
+    if (copy) siLinkedCopies.delete(path);
     let fresh: SiProjectT | null = null;
     try { fresh = await siProjectAt(path); } catch { fresh = null; }
     // (opened in a tab meanwhile: that one is used)
-    if (ws.tabs.some((t) => t.si?.folder.where === path)) { siLinked.delete(path); return false; }
+    const discard = (c: typeof copy): void => { if (c) void siFiles().then((f) => f.discard(c.w)).catch(() => {}); };
+    if (ws.tabs.some((t) => !!t.si && samePath(t.si.key, path))) { siLinked.delete(path); dropLinkedCopy(path); discard(copy); return false; }
     // (it can't be read just now, a cloud folder offline, say: what was read before is kept)
-    if (!fresh) { siLinked.set(path, old); return false; }
-    if (!always && siSignature(fresh) === siSignature(old)) { siLinked.set(path, old); return false; }
+    if (!fresh) { siLinked.set(path, old); if (copy) siLinkedCopies.set(path, copy); return false; }
+    // (the copy read before goes; what was read now is kept)
+    discard(copy);
+    if (!always && siSignature(fresh) === siSignature(old)) return false;
     siBump(path);
     return true;
   })().finally(() => siRereading.delete(path));
@@ -9568,13 +9996,13 @@ async function compileForLink(link: SiLink): Promise<SiView | null> {
 
 /** What documents get of SI projects (the desktop app, and the in-memory projects of a dev browser). */
 const siAccess: SiAccess = {
-  open: () => ws.tabs.filter((t) => t.si).map((t) => ({ path: t.si!.folder.where, title: t.si!.title })),
+  open: () => ws.tabs.filter((t) => t.si).map((t) => ({ path: t.si!.key, title: t.si!.title })),
   pick: async () => {
-    if (!isTauri()) { flash('SI projects are folders on this computer: link them in the desktop app.', 6000); return null; }
-    const path = await pickFolder();
+    if (!isTauri()) { flash('SI projects link in the desktop app.', 6000); return null; }
+    const path = await pickFilePath([{ name: 'SI projects', extensions: [CHEMSI.extension] }]).catch(async (e) => { await showError(String(e)); return null; });
     if (!path) return null;
-    const p = await siProjectAt(path).catch(() => null);
-    if (!p) { await showError('This folder is not an SI project (it has no project.json). Choose the project’s own folder: the one Chem SI Assistant made.'); return null; }
+    const p = await siProjectAt(path).catch(async (e) => { await showError(e instanceof Error ? e.message : String(e)); return null; });
+    if (!p) return null;
     return { path, title: p.title };
   },
   view: (link) => {
@@ -9587,19 +10015,19 @@ const siAccess: SiAccess = {
   },
   reread: async (link) => { await rereadLinkedSi(link.path, true); },
   openCompound: (link, key) => {
-    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (tab) { openSiCompound(tab, key); return; }
     void openSiProject(false, link.path).then(() => {
-      const t = ws.tabs.find((x) => x.si?.folder.where === link.path);
+      const t = ws.tabs.find((x) => !!x.si && samePath(x.si.key, link.path));
       if (t) openSiCompound(t, key);
     });
   },
   openProject: (link) => {
-    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (tab) ws.activate(tab); else void openSiProject(false, link.path);
   },
   renumber: async (link, ids) => {
-    const tab = ws.tabs.find((t) => t.si?.folder.where === link.path);
+    const tab = ws.tabs.find((t) => !!t.si && samePath(t.si.key, link.path));
     if (!tab?.si) { flash('Open the SI project to renumber it (Linked SI ▸ Open).', 6000); siAccess.openProject(link); return null; }
     const p = tab.si;
     if (p.readOnly) { flash('The SI project is open read-only, so it can’t be renumbered.', 6000); return null; }
@@ -9658,10 +10086,16 @@ async function siPicture(link: SiLink, key: string): Promise<string | null> {
  * read-only: those files are the editor's, on this computer or another).
  */
 async function closeSiProject(si: SiProjectT): Promise<void> {
-  if (si.readOnly || !si.lock) return;
-  if (!(await si.lockStillOurs().catch(() => false))) return;
-  await journalOf(si.folder)?.clear().catch(() => {});
-  await si.release().catch(() => {});
+  if (!si.readOnly && si.lock && (await si.lockStillOurs().catch(() => false))) {
+    await journalOf(si.folder)?.clear().catch(() => {});
+    await si.release().catch(() => {});
+  }
+  // a project file's working copy goes, unless it holds changes the person didn't choose to drop (offered back at the next start)
+  const st = siFileStates.get(si);
+  if (st && (!st.counter.dirty || st.discarded)) {
+    siFileStates.delete(si);
+    await (await siFiles()).discard(st.working).catch(() => {});
+  }
 }
 
 /** Every open SI project's changes are in its folder (what is being typed in the one showing too). */
@@ -9674,6 +10108,8 @@ async function siSavedAll(): Promise<void> {
 /** The window is closing: Chem SI Assistant can open the projects for editing again. */
 async function releaseSiProjects(): Promise<void> {
   await Promise.all(ws.tabs.map(async (t) => { if (t.si) await closeSiProject(t.si); }));
+  // (the copies linked project files were read from)
+  await Promise.all([...siLinkedCopies.keys()].map(async (path) => { const c = siLinkedCopies.get(path); siLinkedCopies.delete(path); if (c) await (await siFiles()).discard(c.w).catch(() => {}); }));
 }
 
 // Coming back to the window: has someone taken an open SI project over meanwhile (or its folder been moved)?
@@ -10327,9 +10763,9 @@ const COMMANDS: Record<string, () => unknown> = {
   'new-from-template': () => { const k = sheetActive() ? 'sheet' : 'document'; finishTab(); if (k === 'sheet') ws.newSheet(); else ws.newDocument(); offerTemplates(k, true); },
   open: () => ws.open(),
   // (in an SI project, which saves every change as it is made, Save saves its Word snapshot)
-  save: () => { finishTab(); const t = focusTab(); return t.mode === 'si' && t.si ? siSnapshotKeeper().then((k) => k.saveNow(t.si!)) : ws.save(t); },
+  save: () => { finishTab(); return ws.save(focusTab()); },
   'save-as': () => { finishTab(); return ws.saveAs(focusTab()); },
-  autosave: () => { finishTab(); return keeper.toggleAutoSave(focusTab()); },
+  autosave: () => { finishTab(); const t = focusTab(); return t.mode === 'si' ? toggleSiAutoSave(t) : keeper.toggleAutoSave(t); },
   'version-history': () => { finishTab(); return keeper.historyCommand(focusTab()); },
   'recover-work': () => keeper.recoverCommand(),
   'keep-options': () => settingsWindow.open('autosave'),
@@ -10337,6 +10773,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'save-workspace-as': () => saveWorkspace(true),
   'open-workspace': () => openWorkspace(),
   'open-si-project': () => openSiProject(false),
+  'open-si-folder': async () => { if (!isTauri()) { flash('SI projects open in the desktop app for now.', 6000); return; } finishTab(); const dir = await pickFolder(); if (!dir) return; if (!(await invoke<boolean>('path_exists', { path: dir.replace(/[\\/]+$/, '') + '/project.json' }).catch(() => false))) { await showError('This folder is not an SI project (it has no project.json). Choose the project’s own folder.'); return; } await convertSiFolder(dir); },
   'new-si-project': () => openSiProject(true),
   'close-tab': () => { finishTab(); return ws.close(); },
   'next-tab': () => ws.cycle(1),
@@ -11855,6 +12292,10 @@ async function openRecent(path: string): Promise<void> {
     await ws.openBytes(new Uint8Array(await file.arrayBuffer()), file.name, { kind: 'handle', handle });
     return;
   }
+  // an SI project file opens by where it is (unpacked, not read here)
+  if (/\.chemsi$/i.test(path)) {
+    if (await invoke<boolean>('path_exists', { path }).catch(() => true)) { await openSiProject(false, path); return; }
+  }
   let bytes: Uint8Array;
   try {
     bytes = await readPath(path);
@@ -12106,6 +12547,8 @@ async function openOutsideFiles(): Promise<void> {
   // listening first, so no file is missed between asking and listening
   await listen<string[]>('open-files', (e) => { for (const p of e.payload) void openRecent(p); });
   for (const p of await invoke<string[]>('launch_files').catch(() => [])) await openRecent(p);
+  // SI projects left unsaved by a crash: offered back
+  void recoverSiCopies().catch(() => {});
   // the first time the Windows app starts, it joins the chemistry files' "Open with" lists
   // (never the default: Settings ▸ Apps and System explains how); a portable copy leaves the computer alone
   if (platform === 'windows' && !fileTypesOffered && !(await portableInfo())) {

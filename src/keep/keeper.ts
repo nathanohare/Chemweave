@@ -410,6 +410,30 @@ export class Keeper {
     }
   }
 
+  // ---------------------------------------------------------------- SI project files
+  // (.chemsi: their tabs aren't among the files this keeps, which are saved from what the tab
+  // holds; an SI project saves its own working copy, src/main.ts. They are locked the same way.)
+
+  /** Someone else holding the file at `path` (null: no one, or not known). */
+  heldBy(path: string): Promise<Holder | null> {
+    return desktop ? this.holder(path) : Promise.resolve(null);
+  }
+
+  /** Lock the file at `path` for tab `t` (a lock file beside it, as for the other files), when locks are on. */
+  async lockFor(t: Tab, path: string): Promise<void> {
+    if (!desktop || this.ended || !this.prefs.lockFiles || this.locks.get(t.id) === lockPath(path)) return;
+    try {
+      await invoke('write_lock_file', { path: lockPath(path), contents: lockText(this.me, this.recovery.session) });
+      this.locks.set(t.id, lockPath(path));
+      this.noteLocks();
+    } catch { /* a read-only folder: no lock */ }
+  }
+
+  /** Take tab `t`'s lock off the file at `path` (saved somewhere else, or closed). */
+  unlockFor(t: Tab, path: string): Promise<void> {
+    return this.unlock(t, { kind: 'path', path });
+  }
+
   /** Stop saving to a file someone else has open: the tab becomes an unsaved copy. */
   private workOnCopy(t: Tab): void {
     void this.unlock(t, t.ref);

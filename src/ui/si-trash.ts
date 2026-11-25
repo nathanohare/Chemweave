@@ -35,7 +35,7 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
   form.addEventListener('submit', (e) => e.preventDefault());
   const h = document.createElement('h2');
   h.textContent = 'Trash';
-  addInfo(h, 'What was deleted from this project, newest first. The Trash is the project folder’s trash folder, shared with Chem SI Assistant: either program can put items back. Sections, compounds, scheme pages, general procedures, figures, tables and files are restored here; the rest (old pasted scheme pictures, manuscript check files, unfinished deletions) in Chem SI Assistant.');
+  addInfo(h, 'What was deleted from this project, newest first. Sections, compounds, scheme pages, general procedures, figures, tables and files can be put back here; the rest (old pasted scheme pictures, manuscript check files, unfinished deletions) stay in the project’s trash folder, to move back by hand.');
   const list = document.createElement('div');
   list.className = 'si-trash-list';
   list.setAttribute('role', 'listbox');
@@ -98,7 +98,7 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
       const more = document.createElement('span');
       more.className = 'si-trash-more muted';
       more.textContent = [origin(e), when(e.deletedAt), e.deletedBy ? `by ${e.deletedBy}` : ''].filter(Boolean).join(' · ');
-      if (!RESTORABLE.has(e.kind)) { r.classList.add('si-trash-elsewhere'); r.title = 'Restored in Chem SI Assistant'; }
+      if (!RESTORABLE.has(e.kind)) { r.classList.add('si-trash-elsewhere'); r.title = 'Can’t be put back here: move it back by hand from the project’s trash folder'; }
       r.append(kind, name, more);
       r.addEventListener('click', () => { picked = e.id; say.textContent = ''; update(); });
       r.addEventListener('dblclick', () => { picked = e.id; void doRestore(); });
@@ -132,12 +132,12 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
     void busy(async () => {
       await deleteFromTrash(p, e.id);
       say.textContent = `Deleted “${e.name}”.`;
-    }, 'Delete from Trash', async () => (await askChoice('Delete from Trash', `Delete “${e.name}” permanently? Edit ▸ Undo brings it back while this step is still in the Undo history and the project is open; after that it can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep')) === 'delete');
+    }, 'Delete from Trash', async () => (await askChoice('Delete from Trash', `Delete “${e.name}” permanently? Edit ▸ Undo brings it back while this step is still in the Undo history and the project is open; after that it can’t be restored.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep')) === 'delete');
   });
   empty.addEventListener('click', () => void busy(async () => {
     await emptyTrash(p);
     say.textContent = 'The Trash was emptied.';
-  }, 'Empty Trash', async () => (await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash permanently? Edit ▸ Undo brings them back while this step is still in the Undo history and the project is open; after that they can’t be restored, by Chemweave or by Chem SI Assistant.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep')) === 'empty'));
+  }, 'Empty Trash', async () => (await askChoice('Empty Trash', `Delete all ${entries.length} item${entries.length === 1 ? '' : 's'} in the Trash permanently? Edit ▸ Undo brings them back while this step is still in the Undo history and the project is open; after that they can’t be restored.`, [{ value: 'keep', label: 'Cancel' }, { value: 'empty', label: 'Empty Trash', primary: true }], 'keep')) === 'empty'));
   close.addEventListener('click', () => d.close());
   list.addEventListener('keydown', (ev) => {
     if (ev.key !== 'ArrowUp' && ev.key !== 'ArrowDown' && ev.key !== 'Enter') return;

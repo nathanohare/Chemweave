@@ -8,7 +8,7 @@
 import { zipSync, type Zippable } from 'fflate';
 import { slugify } from './ids';
 import { SiProjectError, type SiProject } from './project';
-import { isSnapshotDocx } from './snapshot-docx';
+import { besideFolderOf, isSnapshotDocx } from './snapshot-docx';
 
 export const SNAPSHOTS_DIR = 'snapshots';
 const SKIP_TOP = new Set(['build', SNAPSHOTS_DIR]);
@@ -31,7 +31,12 @@ export async function snapshotFiles(p: SiProject): Promise<string[]> {
   return out.sort();
 }
 
-/** Zip the project into snapshots/ and give the snapshot's path from the project folder. */
+/**
+ * Zip the project into snapshots/ and give the snapshot's path from the project folder. A
+ * project file's snapshots go beside the file instead, in "<file name> Snapshots" (inside the
+ * file, each would make the file to share, and every save, bigger by a whole project); the path
+ * is then from the file's folder.
+ */
 export async function saveSnapshot(p: SiProject, label = '', now = new Date()): Promise<string> {
   if (p.readOnly) throw new SiProjectError('This SI project is open read-only.');
   const stamp = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
@@ -44,8 +49,11 @@ export async function saveSnapshot(p: SiProject, label = '', now = new Date()): 
     tree[`${top}/${f}`] = [bytes, { level: STORED.test(f) ? 0 : 6 }];
   }
   const zip = zipSync(tree, { mtime: now });
-  let dest = join(SNAPSHOTS_DIR, `${name}.zip`);
-  for (let n = 2; await p.folder.exists(dest); n++) dest = join(SNAPSHOTS_DIR, `${name} (${n}).zip`);
-  await p.folder.writeBytes(dest, zip);
+  const beside = besideFolderOf(p);
+  const into = beside ?? p.folder;
+  const dir = beside ? `${(p.file ?? '').replace(/\\/g, '/').split('/').pop()?.replace(/\.[^.]*$/, '') || top} Snapshots` : SNAPSHOTS_DIR;
+  let dest = join(dir, `${name}.zip`);
+  for (let n = 2; await into.exists(dest); n++) dest = join(dir, `${name} (${n}).zip`);
+  await into.writeBytes(dest, zip);
   return dest;
 }

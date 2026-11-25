@@ -45,6 +45,8 @@ export const SDF: FileType = { description: 'SD file (structures with data)', ex
 /** Text tables that open as sheets (tab-separated as well as CSV). */
 export const TABLE_TEXT_EXTENSIONS = ['csv', 'tsv', 'txt'];
 export const PDF: FileType = { description: 'PDF document', extension: 'pdf', mime: 'application/pdf' };
+/** An SI project kept as one file: a zip of the project's folder (si/packed.ts). */
+export const CHEMSI: FileType = { description: 'Chemweave SI project', extension: 'chemsi', mime: 'application/zip' };
 export const PICTURE: FileType = { description: 'Picture', extension: 'png', mime: 'image/png' };
 export const SVG: FileType = { description: 'SVG picture', extension: 'svg', mime: 'image/svg+xml' };
 export const TIFF: FileType = { description: 'TIFF picture', extension: 'tif', mime: 'image/tiff' };
@@ -98,6 +100,11 @@ async function pickPath(filters: { name: string; extensions: string[] }[]): Prom
   const { open } = await import('@tauri-apps/plugin-dialog');
   const path = await open({ multiple: false, directory: false, filters });
   return typeof path === 'string' ? path : null;
+}
+
+/** Ask for one file of these kinds (the desktop app): its path, or null when the user cancels. */
+export function pickFilePath(filters: { name: string; extensions: string[] }[]): Promise<string | null> {
+  return pickPath(filters);
 }
 
 /** File name without folders. */
@@ -167,11 +174,13 @@ export function extensionOf(name: string): string {
  * Ask for a file and read its bytes. `extensions` lists what may be picked (the first group
  * named `label` holds them all, for "any file this can open"). Null when the user cancels.
  */
-export async function openBytesDialog(label: string, types: FileType[], extra: string[] = []): Promise<{ name: string; bytes: Uint8Array; ref: FileRef } | null> {
+export async function openBytesDialog(label: string, types: FileType[], extra: string[] = [], pathOnly: readonly string[] = []): Promise<{ name: string; bytes: Uint8Array; ref: FileRef } | null> {
   const exts = [...new Set([...types.map((t) => t.extension), ...extra])];
   if (desktop) {
     const path = await pickPath([{ name: label, extensions: exts }, ...types.map((t) => ({ name: t.description, extensions: [t.extension] }))]);
     if (!path) return null;
+    // (files opened by where they are, not read here: an SI project file, which can be large)
+    if (pathOnly.includes(extensionOf(path))) return { name: baseName(path), bytes: new Uint8Array(0), ref: { kind: 'path', path } };
     const buf = await invoke<ArrayBuffer>('read_binary_file', { path });
     return { name: baseName(path), bytes: new Uint8Array(buf), ref: { kind: 'path', path } };
   }

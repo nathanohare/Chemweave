@@ -214,7 +214,7 @@ export class DocSiUI {
       : '';
     const sure = await askChoice('Renumber SI', `Give ${plan.length} SI compound${plan.length === 1 ? '' : 's'} the manuscript’s ID${plan.length === 1 ? '' : 's'}?\n\n${plan.map((x) => `${x.from || 'ID?'} → ${x.to}`).join('\n')}${warn}`,
       [{ value: 'yes', label: twice.length ? 'Renumber SI Anyway' : 'Renumber SI', primary: true }, { value: 'no', label: 'Cancel' }], 'no',
-      'Each becomes the compound’s Manual ID in the SI project (SI Assistant shows it too). The ID table is left as it is; clear a Manual ID on the compound’s page to go back to it.');
+      'Each becomes the compound’s Manual ID in the SI project. The ID table is left as it is; clear a Manual ID on the compound’s page to go back to it.');
     this.host.focus();
     if (sure !== 'yes') return;
     const n = await si.renumber(got.link, plan);
@@ -279,7 +279,7 @@ export class DocSiUI {
     const pick = await askChoice('Check Against SI',
       `${problems.length} problem${problems.length === 1 ? '' : 's'}, ${notes.length} note${notes.length === 1 ? '' : 's'}.\n\n${[...problems, ...notes].map((x) => (x.level === 'problem' ? '⚠ ' : '• ') + line(x)).join('\n')}`,
       fixable.length ? [{ value: 'fix', label: `Use SI Values (${fixable.length})`, primary: true }, { value: 'close', label: 'Close' }] : [{ value: 'close', label: 'Close', primary: true }], 'close',
-      'Compared as SI Assistant’s Manuscript check does: compounds the manuscript gives values for must be in the SI, with the same yield, ee and dr. Values in sentences are notes only.');
+      'Compounds the manuscript gives values for must be in the SI, with the same yield, ee and dr. Values in sentences are notes only.');
     this.host.focus();
     if (pick === 'fix') { let n = 0; for (const x of fixable) if (this.useSiValue(x)) n++; this.host.flash(`${n} value${n === 1 ? '' : 's'} replaced by the SI’s.`); }
   }

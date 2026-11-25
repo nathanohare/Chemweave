@@ -4,16 +4,17 @@ An SI Project tab is where you put together the Supporting Information of a pape
 
 ![An SI project: the list of sections and compounds on the left, a compound's data page in the middle and the live preview on the right](../images/si-project.png)
 
-An SI project is a **folder** on your computer, not a single file. It is the same folder that Chem SI Assistant reads and writes, so a project can be opened in either program. SI projects need the desktop app; the web version cannot open them.
+An SI project is **one file** (`.chemsi`), which you can save, move, email or share in OneDrive like any other file, and double-click to open. Inside it is a zip of the project's folder (`project.json`, `sections/` and so on), so renaming a copy to `.zip` and unzipping it shows every file. SI projects need the desktop app; the web version cannot open them.
 
 ## Making or opening a project
 
-- **File ▸ New ▸ SI Project (Supporting Information)…** asks for a folder and a title, and makes the project as a new folder, named after the title, inside the folder you picked.
-- **File ▸ Open SI Project…** opens an existing project. Pick the project's own folder, the one with `project.json` in it.
+- **File ▸ New ▸ SI Project (Supporting Information)…** asks for a title and then where to save the project file.
+- **File ▸ Open SI Project…** (or **File ▸ Open…**, or double-clicking the file) opens a project file. A `.zip` of a project folder opens too, as a new project that Save then asks where to put.
+- **File ▸ Convert SI Project Folder…** opens an old project kept as a folder: Chemweave saves it as a `.chemsi` file, beside the folder unless you choose elsewhere, and opens that. The folder is left as it was, so you can delete it once you are happy with the file. Documents open at the time that were linked to the folder are linked to the file.
 
-There is no Save command to remember: every change is written to the project folder as you make it. **Edit ▸ Undo** and **Redo** work as usual and take back one command at a time, until the tab is closed.
+**Save** (Ctrl+S) saves the project file, and **AutoSave** is on for SI projects: it saves a few seconds after you stop making changes (the delay is in **File ▸ Versions and Recovery ▸ AutoSave and Recovery Options**). **File ▸ AutoSave** switches it off for one project. While a project is open, Chemweave works in a copy of it in its own data folder, so editing a large project is as quick as a small one, and nothing is lost if Chemweave or the computer stops: the next time Chemweave starts, it offers to open the changes that weren't saved. **Edit ▸ Undo** and **Redo** work as usual and take back one command at a time, until the tab is closed.
 
-While a project is open, a lock in its folder tells Chem SI Assistant (and Chemweave on another computer) that it is in use. If you open a project that someone else has open, Chemweave says who has it and where before you go on, because two programs changing a project at once can lose changes. **Home ▸ Reload Project** reads the folder again after it changed outside Chemweave, for example after a sync.
+While a project is open, a lock file beside it tells Chemweave on another computer that it is in use. If you open a project that someone else has open, Chemweave says who has it before you go on. If the file is saved somewhere else meanwhile (OneDrive bringing a labmate's changes, say), Save asks before it replaces those changes, and AutoSave stops for the project until you choose.
 
 ## The window
 
@@ -22,7 +23,7 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 - **Live Preview**, on the right, shows the whole SI as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). The page picked in the list is brought into view and everything else is washed out, with a bar in the SI color beside it; clicking text in the preview picks its page in the list.
   - **Type in it as in Word.** A change goes into the field the text came from (one step of Undo), and the SI page shows it. Hovering a field on the SI page, or typing in one, lights up its text in the preview, with the field's name; hovering text in the preview lights up its field.
   - **Text Chemweave writes is locked** (the words of a sentence, "calcd for" in HRMS): hovering it shows which field makes it, and clicking it goes to that field. Formatting is changed on the SI page, not in the preview.
-  - **Custom text**: text typed where no field is stays as it was typed, after the field before it, every time the SI is compiled (it is kept in *chemweave-custom-text.json* in the project folder, which SI Assistant leaves alone). It is marked in the preview and listed on the **Warnings** page; if its page is deleted it goes to the end of the SI.
+  - **Custom text**: text typed where no field is stays as it was typed, after the field before it, every time the SI is compiled (it is kept in *chemweave-custom-text.json* in the project folder). It is marked in the preview and listed on the **Warnings** page; if its page is deleted it goes to the end of the SI.
   - **Synchronous Scrolling** (the button with two pages beside ▸ in the preview's header, off at first and remembered on this computer): scroll the preview and, a moment after you stop, the compound, scheme or section you scrolled to opens in the list and the middle, while the preview stays where you scrolled it. A little scroll never leaves the page you picked, and it never changes page while a field of the SI page (or a box on the ribbon) is selected or being typed in. Page Up and Page Down scroll the preview too.
   - **Spectra** show on their own pages when the Spectra section or a compound's spectra page is picked, numbered on from the SI's last page, and can't be typed into.
   - On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. **Preferences ▸ SI Live Preview** sets whether the rest is washed out, and how a field's text and custom text are marked.
@@ -32,8 +33,8 @@ While a project is open, a lock in its folder tells Chem SI Assistant (and Chemw
 
 Click the title at the top of the list. This page holds everything that prints before the first section:
 
-- **Cover page**: the heading, title, authors with their affiliation letters and corresponding-author emails, the affiliations and an optional extra text. **+ Add Author** and **+ Add Affiliation** under the lists (or **Insert ▸ Author** and **Affiliation**) add rows. **Spacing** sets each gap in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line. Chem SI Assistant keeps one spacing for all of them, so it gets the nearest one.
-- **Table of contents**: its title and, under **Lists**, a check box for each kind of heading it lists: sections, sub-sections, headings in section text, General Information, general procedures, compounds, spectra, HRMS reports and references. Chem SI Assistant keeps one depth, so it gets the nearest one. **Links ▸ Link to sections** makes each line of the contents a link to its heading in the PDF and the Word file (on by default).
+- **Cover page**: the heading, title, authors with their affiliation letters and corresponding-author emails, the affiliations and an optional extra text. **+ Add Author** and **+ Add Affiliation** under the lists (or **Insert ▸ Author** and **Affiliation**) add rows. **Spacing** sets each gap in points: above the heading (to start it further down the page), and after the heading, the title, the author line, the last affiliation and the email line.
+- **Table of contents**: its title and, under **Lists**, a check box for each kind of heading it lists: sections, sub-sections, headings in section text, General Information, general procedures, compounds, spectra, HRMS reports and references. **Links ▸ Link to sections** makes each line of the contents a link to its heading in the PDF and the Word file (on by default).
 - **General Information**: materials, instruments and methods.
 
 ## Sections
@@ -126,7 +127,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 - **Home ▸ Compile to Document** makes the Supporting Information as a Chemweave document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed.
 - **Home ▸ Compile to PDF** compiles it and saves a PDF.
 - While it compiles, a window shows how far along it is (compounds, spectra, then the pages and the PDF), with **Cancel**.
-- **Home ▸ Manage ▸ Save Word Snapshot** (or Ctrl+S) saves the whole compiled SI as *(project title) (Snapshot).docx* in the project folder, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it. Each flag on the SI page is a Word comment in it, on the text of its field (who flagged it and what to check); a flag on a field that prints nothing is on the compound's name.
+- **Home ▸ Manage ▸ Save Word Snapshot** saves the whole compiled SI as *(project title) (Snapshot).docx* beside the project file, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it. Each flag on the SI page is a Word comment in it, on the text of its field (who flagged it and what to check); a flag on a field that prints nothing is on the compound's name.
 - **Compile to Document** and **Compile to PDF** ask, when the SI page has flags, whether to put them in as comments too (**Include Comments**) or leave them out.
 
 **Home ▸ Project Settings…** holds the choices for the compiled SI:
@@ -162,7 +163,7 @@ In a Canvas, right-click a structure and choose **Add to SI Project** to add it 
 
 ## Trash and snapshots
 
-- **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is a folder inside the project and is shared with Chem SI Assistant.
-- **Home ▸ Save Snapshot…** zips the whole project into its snapshots folder. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
+- **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is kept inside the project.
+- **Home ▸ Save Snapshot…** zips the whole project into a *(file name) Snapshots* folder beside the project file. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
 
 Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Document](documents.md) · [Libraries](libraries.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)
