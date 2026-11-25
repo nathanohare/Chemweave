@@ -161,7 +161,7 @@ const arrow = {
 const L = 14.4;
 const shape = {
   ...common, ppt: true, kind: oneOf('line', 'rect', 'oval', 'symbol', 'bracket', 'picture', 'table', 'geo', 'ring'), ring: ids, poly: [pt], pin,
-  geo: '', orbital: '', orb, text: orNull((v) => fits(v, { runs: [run], paras: [para] }, 'text', 1) && obj(v) && Array.isArray(v.runs)),
+  geo: '', adjust: { prst: '', gd: '' }, orbital: '', orb, text: orNull((v) => fits(v, { runs: [run], paras: [para] }, 'text', 1) && obj(v) && Array.isArray(v.runs)),
   textAlign: oneOf('left', 'center', 'right', 'justify'), textValign: oneOf('top', 'middle', 'bottom'), lineWidth: 0, transparency: 0,
   x1: 0, y1: 0, x2: 0, y2: 0, rot: 0, dashed: true, hashSpacing: length, dotted: true, filled: true, fill: oneOf('faded', 'shaded', 'gradient'),
   fill2: '', gradAngle: 0, gradRadial: true, pattern: oneOf('hatch', 'backhatch', 'crosshatch', 'horizontal', 'vertical', 'grid', 'dots', 'dense-dots'),

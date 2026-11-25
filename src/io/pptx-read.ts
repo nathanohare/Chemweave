@@ -2038,6 +2038,9 @@ class Reader {
       if (!geo) return null;
       const look = this.look(sp, spPr);
       const sh: Omit<Shape, 'id'> = { kind: 'geo', geo, ...where, color: look.line ?? look.fill ?? '#000000' };
+      // its adjust values (corner size, head length...), kept to write back while it is the same preset
+      const gds = kids(kid(spPr, 'prstGeom', 'avLst'), 'gd').filter((g) => /^[A-Za-z0-9]+$/.test(g.getAttribute('name') ?? '') && /^val -?\d+$/.test(g.getAttribute('fmla') ?? ''));
+      if (gds.length) sh.adjust = { prst, gd: gds.map((g) => `<a:gd name="${g.getAttribute('name')}" fmla="${g.getAttribute('fmla')}"/>`).join('') };
       // an action button, or any shape with an action on a click
       const click = this.hlinkOf(kid(sp, 'nvSpPr', 'cNvPr', 'hlinkClick'));
       if (click) sh.link = click;
@@ -3301,7 +3304,7 @@ function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' |
  */
 // (every field of Shape but those is listed, so a field added to Shape must be added here too)
 const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
-  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', orbital: 'string', orb: 'object',
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', adjust: 'object', orbital: 'string', orb: 'object',
   text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
   hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
   pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',

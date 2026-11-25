@@ -1073,6 +1073,12 @@ export interface Shape {
   pin?: Pin;
   /** A design shape (kind 'geo'): which one, from the shape library (design/geo.ts). */
   geo?: string;
+  /**
+   * A PowerPoint shape's adjust values (its corner size, an arrow's head, a star's depth: prstGeom's
+   * avLst, ECMA-376 Part 1 §20.1.9.5), as the file wrote them for that preset (`prst`), written back
+   * while the shape is still that preset. Not drawn here (the library's shape is drawn as it is).
+   */
+  adjust?: { prst: string; gd: string };
   /** ChemDraw's orbital (an oval it draws as an orbital lobe or s orbital): its OrbitalType, kept for writing back. */
   orbital?: string;
   /** A part of an orbital drawn with Chemistry ▸ Orbital (chem/orbitals.ts): how it was asked for, so it can be changed later. */

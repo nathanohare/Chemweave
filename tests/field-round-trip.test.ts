@@ -317,6 +317,7 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     // it holds it, and worked out again when it points a way it does not say, chem/pins.ts pinSymbols)
     pin: { v: (i) => ({ on: 'atom', ref: [i.a1, i.a2], at: { x: 0, y: 0 }, hand: 1, was: { x: 100, y: 100 }, dir: { x: 1, y: 0 } }), with: { kind: 'symbol', symbol: 'LonePair', x1: 100 - 4 * ALONG.x, y1: 100 - 4 * ALONG.y, x2: 100 + 4 * ALONG.x, y2: 100 + 4 * ALONG.y } },
     geo: { v: 'star5', with: { kind: 'geo' } },
+    adjust: { v: { prst: 'star5', gd: '<a:gd name="adj" fmla="val 30000"/>' }, with: { kind: 'geo', geo: 'star5' } },
     orbital: { v: 's', with: { kind: 'oval' } },
     orb: { v: { kind: 'p', look: 'shaded', part: 0 }, with: { kind: 'symbol', orbital: 'p' } },
     text: { v: { runs: [{ text: 'Inside', italic: true }] }, with: GEO },
