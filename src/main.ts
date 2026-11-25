@@ -54,7 +54,7 @@ import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
-import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
+import { nmrAutoPredict, nmrRange, nmrTraceColor, peakLabels, setNmrAutoPredict, setNmrRange, setNmrTraceColor, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
 import { analysisPrefs, setAnalysisPrefs, onAnalysisPrefs, parseAnalysisPrefs, calcOf, nextCalcId, type AnalysisPrefs } from './chem/analysis-prefs';
 import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
@@ -2878,6 +2878,8 @@ const nmrPanel = new NmrPanel({
     const c = compoundBySmiles((await useLibrary()).now, w.smiles);
     return (c?.spectra ?? []).filter((x) => x.kind === 'measured').sort((a, b) => b.saved - a.saved).map((x) => x.text);
   },
+  openSettings: () => command('nmr-settings'),
+  showPanel: () => showAnalysisList(),
 });
 
 /** NMR ▸ Save to Library: adds the structure to the Compound Library if needed and keeps the peak reports with it. */
@@ -12778,12 +12780,13 @@ function nmrSettingsPreview(v: Record<string, string>, was: PeakLabels): HTMLEle
     size: size >= 6 && size <= 24 ? size : was.size, place: v.plPlace === 'top' || v.plPlace === 'upright' ? v.plPlace : 'above' };
   const sf = Number(v.mhz) > 0 ? Number(v.mhz) : 400;
   const compare: CompareMode = v.compare === 'stacked' || v.compare === 'overlay' ? v.compare : 'inverted';
+  const trace = v.trace === 'maroon' ? 'maroon' : 'blue';
   const box = document.createElement('div');
   box.className = 'nmr-set-preview';
   const pic = (title: string, svg: string) => { const f = document.createElement('figure'); const c = document.createElement('figcaption'); c.textContent = title; f.innerHTML = svg; f.append(c); f.setAttribute('aria-label', title); return f; };
   box.append(
-    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl })),
-    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare })),
+    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl, trace })),
+    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare, trace })),
   );
   return box;
 }
@@ -12804,6 +12807,8 @@ async function nmrSettings(): Promise<void> {
     { name: 'c13lo', label: '¹³C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
     { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
+    { name: 'trace', label: 'Spectrum color', value: nmrTraceColor(), options: [{ value: 'blue', label: 'Blue' }, { value: 'maroon', label: 'Maroon' }],
+      help: 'The color of the spectrum in the Analysis panel and the Spectrum window (lighter in the Dark theme), and in its pictures.' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
       { value: 'inverted', label: 'Inverted' }, { value: 'stacked', label: 'Stacked' }, { value: 'overlay', label: 'Overlay' }],
       help: 'How Check Data in the Spectrum window compares them. Inverted: measured above, predicted mirrored below. Stacked: one above the other, both upright. Overlay: both on one baseline. Its Inverted, Stacked and Overlay buttons change the same setting.' },
@@ -12821,6 +12826,7 @@ async function nmrSettings(): Promise<void> {
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');
+  setNmrTraceColor(r.trace === 'maroon' ? 'maroon' : 'blue');
   if (r.compare === 'inverted' || r.compare === 'stacked' || r.compare === 'overlay') setCompareMode(r.compare);
   if (r.quality === 'fast' || r.quality === 'balanced' || r.quality === 'accurate') setNmrQuality(r.quality);
   if ((NMR_SOLVENTS as readonly string[]).includes(r.solvent)) nmrPanel.solvent = r.solvent;
@@ -16515,7 +16521,7 @@ const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'schemes', group: 'Drawing', title: 'Schemes', words: 'scheme arrow gap plus text reagents conditions boxes', open: schemeSettings },
   { id: 'newman', group: 'Drawing', title: 'Newman Projections', words: 'newman sawhorse projection conformation torsion dihedral gauche anti eclipsed color largest middle smallest group strain a-value energy chart rotation barrier kcal kj', open: () => newmanSettingsPage() },
   { id: 'analysis', group: 'Drawing', title: 'Analysis', words: 'analysis panel rows reorder hide show bench properties density boiling melting point vapor pressure flash refractive index lab calculation calculations mmol mass volume solution molarity ribbon box attached descriptors decimal places units celsius fahrenheit kelvin pubchem name hrms elemental', open: () => analysisSettingsPage(analysisHost) },
-  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection', open: nmrSettings }] : [],
+  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection color trace blue maroon', open: nmrSettings }] : [],
   { id: 'toolboxes', group: 'Appearance', title: 'Toolboxes and Ribbon', words: 'toolbox ribbon classic simplified one row two rows buttons cells grid lines raised bevel borders tooltips hints keys modifiers shortcuts', open: toolboxPreferences },
   { id: 'navigation', group: 'Appearance', title: 'Navigation', words: 'document map navigator minimap map overview edge arrows off screen lost find dot grid dots tint outside fit go to selection orientation zoom', open: navigationSettings },
   { id: 'page-grid', group: 'Appearance', title: 'Page Grid', words: 'pages page grid boundaries dashed dotted lines paper fixed edges hatched wall empty gray print chemdraw paste wrap', open: pageGridSettings },

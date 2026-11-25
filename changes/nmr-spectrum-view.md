@@ -1,0 +1,4 @@
+Changed: NMR: in the Spectrum window, drag across the spectrum to zoom to that range (the tallest peak in it is drawn at about three quarters of the height), double-click to show everything again, and use the mouse wheel or a pinch for the peak height only, keeping the baseline in place. Shift+drag, dragging the ppm scale or the arrow keys move along when zoomed in.
+Added: NMR: the Spectrum window has a bar at its top with the solvent, Check Data…, NMR Settings, and Decrease Intensity, Increase Intensity and Reset View buttons; dragging up or down on the spectrum's left edge and the Up and Down arrows also change the peak height, for a mouse without a wheel.
+Changed: NMR: the spectrum is drawn in dark blue, slightly thicker and just above the ppm axis so the two no longer overlap.
+Added: Settings ▸ NMR Prediction: Spectrum color, Blue or Maroon.

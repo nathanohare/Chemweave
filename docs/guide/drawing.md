@@ -819,7 +819,14 @@ On the Canvas ribbon, **Home ▸ NMR** opens a menu (Predict NMR, Spectrum Windo
 
 The NMR section stays closed until you open it, so selecting things stays quick; check **Predict NMR as soon as a structure is selected** in **Settings ▸ NMR Prediction** to have it predict with every selection. The same page sets the default quality, solvent and spectrometer frequency, and the ppm range the spectra are drawn over: ¹H from −0.5 to 10 ppm and ¹³C from −5 to 200 ppm unless you change them. A peak outside the range widens it. NMR prediction is in the desktop app only.
 
-Above the list is the predicted spectrum. Hover a row to see its peaks, or a peak to find its row and atoms. **⤢** opens it in a window you can move and resize: scroll to zoom, double-click to show everything, and pick the spectrometer frequency (300–800 MHz) and the quality (**Settings ▸ NMR Prediction** sets it too):
+Above the list is the predicted spectrum. Hover a row to see its peaks, or a peak to find its row and atoms. **⤢** opens it in a window you can move and resize. The bar at its top has the **Solvent**, **Check Data…** (opens the paste box for a measured list), the gear for **NMR Settings**, the view buttons and the arrows that step from signal to signal. Moving around the spectrum works as in most NMR programs:
+
+- **Zoom to a range**: drag across the spectrum. The range is shaded while you drag (Esc drops it); when you let go it fills the window and the peaks are scaled so the tallest one in the range reaches about three quarters of the height. A short drag counts as a click.
+- **Show everything**: double-click (double-tap on a touch screen), **Reset View**, or 0.
+- **Peak height (intensity)**: the mouse wheel over the spectrum, or a pinch on a trackpad or touch screen, makes the peaks taller or shorter; the baseline stays where it is and the ppm range doesn't change. Without a wheel: **+** and **−** in the bar (or the + and − keys), the Up and Down arrows once the spectrum has been clicked, or drag up or down along the spectrum's left edge.
+- **Move along** while zoomed in: Shift+drag, drag the ppm scale under the spectrum, scroll sideways on a trackpad, or the Left and Right arrows once the spectrum has been clicked. It stops at the ends of the spectrum.
+
+Each nucleus keeps its own view while the window is open, and resizing the window keeps the ppm range shown; a new prediction or another structure starts from the full spectrum again. The trace is dark blue, or maroon if you prefer (**Spectrum color** in **Settings ▸ NMR Prediction**), drawn just above the ppm axis. Pick the spectrometer frequency (300–800 MHz) and the quality (**Settings ▸ NMR Prediction** sets it too):
 
 - **Fast**: first-order multiplets;
 - **Balanced** (default): coupled protons simulated exactly in groups of up to 8, so roofing and second-order patterns such as AA′XX′ look as they would measured;
@@ -827,7 +834,7 @@ Above the list is the predicted spectrum. Hover a row to see its peaks, or a pea
 
 In a crowded group (long alkyl chains, cages), the weakest long-range couplings to protons outside the group are left out so the spectrum stays quick to draw; the visible splittings are kept.
 
-**Copy as Picture** copies the spectrum; **Put on Canvas** adds it to the drawing as a picture.
+**Copy as Picture** copies the spectrum as it is shown (range and peak height); **Put on Canvas** adds it to the drawing as a picture.
 
 Peaks on the predicted spectrum carry labels. In **Settings ▸ NMR Prediction**, pick any of the atoms, the shift (a range for a multiplet), the multiplicity, the number of H and the *J* values, the label size, and where the labels go: above each peak one part per line, all on one line along the top, or upright. With **show only the first part** checked, each peak shows just its first part until you hover it.
 

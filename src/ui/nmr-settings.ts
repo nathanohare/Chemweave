@@ -64,3 +64,11 @@ export function peakLabels(): PeakLabels {
   } catch { return { ...DEFAULT_PEAK_LABELS }; }
 }
 export function setPeakLabels(v: PeakLabels): void { put('ci-nmr-peak-labels', JSON.stringify(v)); }
+
+/** The color of the spectrum trace (Settings ▸ NMR Prediction): dark blue, or maroon as in many NMR
+ *  programs. Each is a theme color (lighter in the dark theme); pictures use the paper color. */
+export type TraceColor = 'blue' | 'maroon';
+export function nmrTraceColor(): TraceColor { return get('ci-nmr-trace') === 'maroon' ? 'maroon' : 'blue'; }
+export function setNmrTraceColor(v: TraceColor): void { put('ci-nmr-trace', v === 'maroon' ? 'maroon' : null); }
+/** The trace on white paper (Copy as Picture, Put on Canvas). */
+export const TRACE_ON_PAPER: Record<TraceColor, string> = { blue: '#1b3f9c', maroon: '#800000' };

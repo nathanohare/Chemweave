@@ -310,6 +310,10 @@ export interface NmrHost {
   saveSpectra?(molblock: string, entries: { kind: 'predicted' | 'measured'; text: string; solvent: string; quality?: string }[]): Promise<void>;
   /** The measured peak reports kept with the structure in the Compound Library, newest first; optional. */
   savedReports?(molblock: string): Promise<string[]>;
+  /** Opens Settings ▸ NMR Prediction (the Spectrum window's gear); optional. */
+  openSettings?(): void;
+  /** Shows the Analysis panel (Check Data… in the Spectrum window); optional. */
+  showPanel?(): void;
 }
 
 /** The NMR section of the Analysis panel and its markers on the drawing. */
@@ -832,6 +836,33 @@ export class NmrPanel {
     return true;
   }
 
+  /** A solvent chosen in the Spectrum window: as if chosen in the structure's NMR section. */
+  private setSolvent(v: string): void {
+    const sel = document.querySelector<HTMLSelectElement>(`details.nmr[data-item="${this.winItem}"] .nmr-solvent`);
+    if (sel) { sel.value = v; sel.dispatchEvent(new Event('change')); }
+    else { this.solvent = v; this.win?.refresh(); }
+  }
+
+  /** Check Data… in the Spectrum window: the Analysis panel shown, and the paste box for a measured
+   *  list open in the structure's NMR section (the panel may take a moment to draw it). */
+  private openCheck(i: number, tries = 0): void {
+    if (!tries) this.host.showPanel?.();
+    const d = document.querySelector<HTMLDetailsElement>(`details.nmr[data-item="${i}"]`);
+    if (!d || !d.getClientRects().length) {
+      if (tries < 30) setTimeout(() => this.openCheck(i, tries + 1), 100);
+      else this.host.flash('Select a structure to check its NMR data.');
+      return;
+    }
+    const st = this.checkState(i, true);
+    if (!st) { this.host.flash('Select a structure to check its NMR data.'); return; }
+    st.editing = true;
+    if (!d.open) d.open = true;
+    this.render(i, d);
+    d.scrollIntoView({ block: 'nearest' });
+    // (after the click that asked for it has finished, so the box keeps the focus)
+    setTimeout(() => document.querySelector<HTMLTextAreaElement>(`details.nmr[data-item="${i}"] .ck-box textarea`)?.focus(), 0);
+  }
+
   /** Settings ▸ NMR Prediction was saved: draw the open sections and the window again. */
   settingsChanged(panel: HTMLElement | null): void {
     if (panel) {
@@ -860,6 +891,7 @@ export class NmrPanel {
 
   /** The popped-out Spectrum window, made on first use. */
   private popOut(i: number, near: DOMRect | null): void {
+    if (this.win && this.winItem !== i) this.win.forget();
     this.winItem = i;
     this.win ??= new SpectrumWindow({
       data: (sf, q) => this.dataFor(this.winItem, sf, q, this.specNuc(this.winItem)),
@@ -868,6 +900,9 @@ export class NmrPanel {
       putOnCanvas: (png) => { if (this.host.placePicture) this.host.placePicture(png); else this.host.flash('Pictures can\'t be placed on this page.'); },
       flash: (t) => this.host.flash(t),
       closed: () => {},
+      solvent: { ids: NMR_SOLVENTS, label: solventLabel, get: () => this.solvent, set: (v) => this.setSolvent(v) },
+      checkData: () => this.openCheck(this.winItem),
+      ...this.host.openSettings ? { openSettings: () => this.host.openSettings!() } : {},
     });
     this.win.open(near);
   }
