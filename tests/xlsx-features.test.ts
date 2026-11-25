@@ -400,4 +400,34 @@ describe('a sort by color (F-X-010)', () => {
     const { book } = await readXlsx(bytes);
     expect(part(await writeXlsx(book, pictures), 'xl/worksheets/sheet1.xml')).not.toContain('<sortState');
   });
+
+  it('keeps a sort by font color, and two conditions naming one format, pointing at that format', async () => {
+    // §18.3.1.91 sortCondition@sortBy fontColor: its dxf's font color is the one sorted on
+    const bytes = excelBook([['Sorted', `<sheetData>${rows(4)}</sheetData><sortState ref="A1:B4">` +
+      '<sortCondition sortBy="fontColor" ref="A1:A4" dxfId="3"/><sortCondition sortBy="cellColor" ref="B1:B4" dxfId="3"/></sortState>']],
+    { parts: [{ path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` }] });
+    const saved = await writeXlsx((await readXlsx(bytes)).book, pictures);
+    const sheet = part(saved, 'xl/worksheets/sheet1.xml');
+    const ids = [...sheet.matchAll(/<sortCondition [^>]*dxfId="(\d+)"/g)].map((m) => m[1]);
+    expect(ids).toHaveLength(2);
+    expect(ids[0]).toBe(ids[1]);
+    expect(sheet).toContain('sortBy="fontColor"');
+    expect(sortDxf(sheet, dxfsOf(saved))).toBe(`<dxf>${GREEN}</dxf>`);
+  });
+
+  it('leaves out a table\'s sort that names a format the file doesn\'t have', async () => {
+    const bytes = excelBook([['Table', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>No</t></is></c><c r="B1" t="inlineStr"><is><t>Value</t></is></c></row><row r="2"><c r="A2"><v>1</v></c><c r="B2"><v>2</v></c></row></sheetData>']], {
+      parts: [
+        { path: 'xl/styles.xml', xml: `<styleSheet xmlns="${MAIN}">${styles}</styleSheet>`, rel: `${R}/styles` },
+        { path: 'xl/tables/table1.xml', from: 'xl/worksheets/sheet1.xml', rel: `${R}/table`, target: '../tables/table1.xml', type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.table+xml',
+          xml: `<table xmlns="${MAIN}" id="1" name="Table1" displayName="Table1" ref="A1:B2" totalsRowShown="0"><autoFilter ref="A1:B2"/>` +
+            '<sortState ref="A2:B2"><sortCondition sortBy="cellColor" ref="B2:B2" dxfId="7"/></sortState>' +
+            '<tableColumns count="2"><tableColumn id="1" name="No"/><tableColumn id="2" name="Value"/></tableColumns><tableStyleInfo name="TableStyleMedium2" showFirstColumn="0" showLastColumn="0" showRowStripes="1" showColumnStripes="0"/></table>' },
+      ],
+    });
+    const saved = await writeXlsx((await readXlsx(bytes)).book, pictures);
+    const table = Object.keys(unzipSync(saved)).find((n) => /^xl\/tables\/table\d+\.xml$/.test(n))!;
+    expect(part(saved, table)).toContain('<autoFilter');
+    expect(part(saved, table)).not.toContain('<sortState');
+  });
 });
