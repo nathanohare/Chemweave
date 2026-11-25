@@ -72,6 +72,8 @@ describe("a Word shape's place and fill", () => {
     expect(gradientOk(GRAD.replace('<a:gs pos="0">', '<a:gs pos="0" pos="1">'))).toBe(false);
     expect(gradientOk(GRAD.replace('</a:gsLst>', '</a:gsLst x="1">'))).toBe(false);
     expect(gradientOk(GRAD.replace('<a:gs pos="0">', '<a:gs foo:bar="1" pos="0">'))).toBe(false);
+    expect(gradientOk(GRAD + GRAD)).toBe(false);
+    expect(gradientOk(GRAD.replace('<a:gsLst>', '<a:gsLst><a:gradFill></a:gradFill>'))).toBe(false);
   });
 
   it('floats again (written as Word places a figure) when hidden, named, grouped or positioned here', async () => {

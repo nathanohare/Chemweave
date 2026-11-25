@@ -2253,12 +2253,15 @@ const GRAD_TAG = /^<(\/?)a:(gradFill|gsLst|gs|srgbClr|schemeClr|prstClr|sysClr|l
 export function gradientOk(xml: unknown): xml is string {
   if (typeof xml !== 'string' || !/^<a:gradFill[\s>]/.test(xml) || !xml.endsWith('</a:gradFill>') || xml.length > 20000) return false;
   const open: string[] = [];
+  let ended = false;
   for (const p of xml.split(/(<[^<>]*>)/)) {
     if (p === '') continue;
     if (!p.startsWith('<')) { if (p.trim()) return false; continue; }
     const m = GRAD_TAG.exec(p);
-    if (!m) return false;
+    // (one gradFill, with none inside it)
+    if (!m || ended || (m[2] === 'gradFill' && !m[1] && open.length)) return false;
     const [, close, name, attrs, self] = m;
+    if (close && open.length === 1) ended = true;
     if (close) { if (attrs.trim() || self || open.pop() !== name) return false; continue; }
     // (each attribute once)
     const names = [...attrs.matchAll(/([A-Za-z]+)=/g)].map((x) => x[1]);
@@ -2272,7 +2275,7 @@ export function gradientOk(xml: unknown): xml is string {
 export function gradFirst(xml: string): string | undefined {
   const gs = /<a:gs\b[^>]*>([\s\S]*?)<\/a:gs>/.exec(xml)?.[1] ?? '';
   const c = /^\s*<a:srgbClr val="([0-9A-Fa-f]{6})"\s*(\/>|>([\s\S]*?)<\/a:srgbClr>)/.exec(gs);
-  if (!c || /<a:alpha\b/.test(c[3] ?? '')) return undefined;
+  if (!c || /<a:alpha(Mod|Off)?\b/.test(c[3] ?? '')) return undefined;
   return `#${c[1].toLowerCase()}`;
 }
 
