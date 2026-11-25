@@ -29,6 +29,22 @@ pub const TYPES: &[(&str, &str)] = &[
     ("chemsi", "Chemweave SI project"),
 ];
 
+/// Types with their own icon file, installed next to the app on Windows (tauri.windows.conf.json
+/// and the portable zip in scripts/release.mjs; made by scripts/make-file-icons.mjs). The others
+/// show the app's icon.
+pub const OWN_ICONS: &[(&str, &str)] = &[("chemsi", "chemsi.ico")];
+
+/// What Windows shows for a type (its DefaultIcon): the type's own icon next to the app when it
+/// is there, otherwise the app's icon. A copy run from where it was built has no icon file beside
+/// it, so it falls back to the app's icon.
+pub fn default_icon(ext: &str, exe: &std::path::Path) -> String {
+    let own = OWN_ICONS.iter().find(|(e, _)| *e == ext).and_then(|(_, file)| exe.parent().map(|d| d.join(file)));
+    match own {
+        Some(icon) if icon.is_file() => format!("\"{}\",0", icon.to_string_lossy()),
+        _ => format!("\"{}\",0", exe.to_string_lossy()),
+    }
+}
+
 /// Files to open, kept until the page asks for them (it may still be loading). Once it has
 /// asked, it is listening, and later files go straight to it.
 #[derive(Default)]
@@ -228,8 +244,8 @@ pub(crate) mod win {
     }
 
     pub fn set(types: &[String]) -> Result<(), String> {
-        let exe = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
-        let exe = exe.to_string_lossy();
+        let exe_path = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
+        let exe = exe_path.to_string_lossy();
         let mut any = false;
         for (ext, what) in TYPES {
             let id = prog_id(ext);
@@ -237,7 +253,7 @@ pub(crate) mod win {
             if types.iter().any(|t| t == ext) {
                 any = true;
                 set_string(&class, None, what)?;
-                set_string(&format!(r"{class}\DefaultIcon"), None, &format!("\"{exe}\",0"))?;
+                set_string(&format!(r"{class}\DefaultIcon"), None, &super::default_icon(ext, &exe_path))?;
                 set_string(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""))?;
                 set_string(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), Some(&id), "")?;
                 set_string(&format!(r"{CAPABILITIES}\FileAssociations"), Some(&format!(".{ext}")), &id)?;
@@ -277,7 +293,24 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    use super::files_in;
+    use super::{default_icon, files_in};
+
+    #[test]
+    fn a_type_with_its_own_icon_uses_it_when_it_is_beside_the_app() {
+        let dir = std::env::temp_dir().join("ci-file-types-icon-test");
+        std::fs::create_dir_all(&dir).unwrap();
+        let exe = dir.join("Chemweave.exe");
+        let ico = dir.join("chemsi.ico");
+        let _ = std::fs::remove_file(&ico);
+        let app = format!("\"{}\",0", exe.to_string_lossy());
+        // not there yet (a copy run from where it was built): the app's icon
+        assert_eq!(default_icon("chemsi", &exe), app);
+        std::fs::write(&ico, [0u8, 0, 1, 0]).unwrap();
+        assert_eq!(default_icon("chemsi", &exe), format!("\"{}\",0", ico.to_string_lossy()));
+        // other types keep the app's icon
+        assert_eq!(default_icon("cdxml", &exe), app);
+        std::fs::remove_file(&ico).unwrap();
+    }
 
     #[test]
     fn takes_files_from_the_command_line() {

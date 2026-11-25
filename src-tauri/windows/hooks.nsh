@@ -1,6 +1,7 @@
 ; Uninstalling takes the app off the "Open with" lists it joined for the person (Edit > Settings >
-; File Types, written by src-tauri/src/file_types.rs) and removes its object type for Word,
-; PowerPoint and Excel (src-tauri/src/ole.rs). An update (/UPDATE) keeps them.
+; File Types, written by src-tauri/src/file_types.rs: every type in its TYPES list) and removes
+; its object type for Word, PowerPoint and Excel (src-tauri/src/ole.rs). An update (/UPDATE)
+; keeps them.
 !macro CI_FORGET_TYPE EXT
   DeleteRegValue HKCU "Software\Classes\.${EXT}\OpenWithProgids" "ChemIllustrator.${EXT}"
   DeleteRegKey HKCU "Software\Classes\ChemIllustrator.${EXT}"
@@ -17,6 +18,17 @@
     !insertmacro CI_FORGET_TYPE "docx"
     !insertmacro CI_FORGET_TYPE "pptx"
     !insertmacro CI_FORGET_TYPE "xlsx"
+    !insertmacro CI_FORGET_TYPE "cds"
+    !insertmacro CI_FORGET_TYPE "rxn"
+    !insertmacro CI_FORGET_TYPE "mrv"
+    !insertmacro CI_FORGET_TYPE "ket"
+    !insertmacro CI_FORGET_TYPE "cml"
+    !insertmacro CI_FORGET_TYPE "chemsi"
+    ; .chemsi is Chemweave's own type, which it opens by default: that goes too, if it is still ours
+    ReadRegStr $R7 HKCU "Software\Classes\.chemsi" ""
+    ${If} $R7 == "ChemIllustrator.chemsi"
+      DeleteRegValue HKCU "Software\Classes\.chemsi" ""
+    ${EndIf}
     DeleteRegKey HKCU "Software\Classes\CLSID\{171931C4-E8B6-4D52-A649-5D43133B5231}"
     DeleteRegKey HKCU "Software\Classes\ChemIllustrator.Drawing"
     DeleteRegKey HKCU "Software\Classes\ChemIllustrator.Drawing.1"
