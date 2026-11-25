@@ -8,7 +8,7 @@
 import { zlibSync } from 'fflate';
 import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
-import type { PdfFallbackSource } from './pdf-fallback';
+import type { FallbackFile, PdfFallbackSource } from './pdf-fallback';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -88,7 +88,7 @@ function winAnsi(ch: string): number | null {
  * as they are.
  */
 const WINGDINGS: Record<number, number> = {
-  0x21: 0x270f, 0x22: 0x2702, 0x23: 0x2701, 0x28: 0x260e, 0x29: 0x2706, 0x2a: 0x2709, 0x36: 0x231b, 0x37: 0x2328,
+  0x20: 0x0020, 0x21: 0x270f, 0x22: 0x2702, 0x23: 0x2701, 0x28: 0x260e, 0x29: 0x2706, 0x2a: 0x2709, 0x36: 0x231b, 0x37: 0x2328,
   0x41: 0x270c, 0x45: 0x261c, 0x46: 0x261e, 0x47: 0x261d, 0x48: 0x261f, 0x49: 0x270b, 0x4a: 0x263a, 0x4c: 0x2639,
   0x4e: 0x2620, 0x4f: 0x2690, 0x51: 0x2708, 0x52: 0x263c, 0x54: 0x2744, 0x56: 0x271e, 0x58: 0x2720, 0x59: 0x2721,
   0x5a: 0x262a, 0x5b: 0x262f, 0x5c: 0x0950, 0x5d: 0x2638, 0x6c: 0x25cf, 0x6d: 0x274d, 0x6e: 0x25a0, 0x6f: 0x25a1,
@@ -113,13 +113,16 @@ export function symbolFontText(text: string, family: string): string {
   }).join('');
 }
 
+/** What draws nothing: a soft hyphen (the hyphen at a line break is a glyph of its own) and the variation selectors (U+FE00 to U+FE0F, text or emoji style). */
+const INVISIBLE = /^[\u00ad\ufe00-\ufe0f]$/;
+
 /** Text cut into pieces that one font can write, with each piece's position along the line. */
 export function textPieces(text: string, widths: number[]): { symbol: boolean; codes: number[]; dx: number }[] {
   const out: { symbol: boolean; codes: number[]; dx: number }[] = [];
   let x = 0;
   [...text].forEach((ch, i) => {
     // a soft hyphen draws nothing (the hyphen at a line break is a glyph of its own)
-    if (ch === '\u00ad') { x += widths[i] ?? 0; return; }
+    if (INVISIBLE.test(ch)) { x += widths[i] ?? 0; return; }
     let code = winAnsi(ch), symbol = false;
     if (code === null && SYMBOL[ch] !== undefined) { code = SYMBOL[ch]; symbol = true; }
     // a narrow no-break space and other spaces count as spaces; anything else unknown shows as "?"
@@ -133,14 +136,15 @@ export function textPieces(text: string, widths: number[]): { symbol: boolean; c
 }
 
 /** Text cut into runs that one kept font can draw (the first that has each character), and runs that none can. */
-export function keptPieces(text: string, widths: number[], fonts: EmbeddedFont[]): { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] {
+export function keptPieces(text: string, widths: number[], fonts: EmbeddedFont[], fallback?: ReadonlyMap<string, EmbeddedFont>): { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] {
   const out: { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] = [];
   let x = 0;
   [...text].forEach((ch, i) => {
     // a soft hyphen draws nothing (the hyphen at a line break is a glyph of its own)
-    if (ch === '\u00ad') { x += widths[i] ?? 0; return; }
+    if (INVISIBLE.test(ch)) { x += widths[i] ?? 0; return; }
     const c = ch.codePointAt(0)!;
-    const font = fonts.find((f) => f.font.glyph(c) !== 0) ?? null;
+    // (a fallback font only for the characters it was read for: a text's own fonts and the standard ones draw the rest)
+    const font = fonts.find((f) => f.font.glyph(c) !== 0) ?? fallback?.get(ch) ?? null;
     const last = out[out.length - 1];
     if (last && last.font === font) { last.text += ch; last.widths.push(widths[i] ?? 0); }
     else out.push({ font, text: ch, widths: [widths[i] ?? 0], dx: x });
@@ -383,28 +387,36 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
     }
     return f;
   };
-  // fonts for what a face can't draw (pdf-fallback.ts), each file read once
+  // fonts for what a face can't draw (pdf-fallback.ts): each file read once, in the order asked for,
+  // so a file's place in the PDF is the same every time
   const fallbacks = new Map<string, Promise<EmbeddedFont | null>>();
-  const fallbackFonts = async (text: string, fonts: EmbeddedFont[]): Promise<EmbeddedFont[]> => {
-    if (!opts.fallback) return [];
-    // (what neither the face's files nor the standard fonts, Symbol among them, can draw)
-    const missing = [...new Set(text)].filter((ch) => !/\s|\u00ad/.test(ch) && winAnsi(ch) === null && SYMBOL[ch] === undefined && !fonts.some((f) => f.font.glyph(ch.codePointAt(0)!) !== 0));
-    if (!missing.length) return [];
-    const got = await Promise.all(opts.fallback(missing, text).map((file) => {
-      let f = fallbacks.get(file.key);
-      if (!f) {
-        f = file.load().then((data) => {
-          const tt = new TrueType(data);
-          if (!tt.embeddable) return null;
-          const e = new EmbeddedFont(tt, o.reserve(), subsetTag(kept.length));
-          kept.push(e);
-          return e;
-        }).catch(() => null);
-        fallbacks.set(file.key, f);
+  const fallbackFile = (file: FallbackFile): Promise<EmbeddedFont | null> => {
+    let f = fallbacks.get(file.key);
+    if (!f) {
+      f = file.load().then((data) => {
+        const tt = new TrueType(data);
+        if (!tt.embeddable) return null;
+        const e = new EmbeddedFont(tt, o.reserve(), subsetTag(kept.length));
+        kept.push(e);
+        return e;
+      }).catch(() => null);
+      fallbacks.set(file.key, f);
+    }
+    return f;
+  };
+  /** For each character neither a face's files nor the standard fonts (Symbol among them) can draw, the first fallback font that has it. */
+  const fallbackFonts = async (text: string, fonts: EmbeddedFont[]): Promise<Map<string, EmbeddedFont>> => {
+    const out = new Map<string, EmbeddedFont>();
+    if (!opts.fallback) return out;
+    const missing = [...new Set(text)].filter((ch) => !/\s/.test(ch) && !INVISIBLE.test(ch) && winAnsi(ch) === null && SYMBOL[ch] === undefined && !fonts.some((f) => f.font.glyph(ch.codePointAt(0)!) !== 0));
+    for (const ch of missing) {
+      const files = await opts.fallback(ch, text).catch(() => [] as FallbackFile[]);
+      for (const file of files) {
+        const e = await fallbackFile(file);
+        if (e && e.font.glyph(ch.codePointAt(0)!) !== 0) { out.set(ch, e); break; }
       }
-      return f;
-    }));
-    return got.filter((e): e is EmbeddedFont => !!e);
+    }
+    return out;
   };
   // each picture is stored once, however many times it shows
   const images = new Map<string, number | null>();
@@ -477,14 +489,14 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
         const own = await faceFonts(it.family, it.bold, it.italic);
         const text = symbolFontText(it.text, it.family);
-        const kept = [...own, ...(await fallbackFonts(text, own))];
+        const extra = await fallbackFonts(text, own);
         const show = (f: string, dx: number, s: string) => {
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
           ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
-        for (const piece of keptPieces(text, it.widths, kept)) {
+        for (const piece of keptPieces(text, it.widths, own, extra)) {
           if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }

@@ -12,10 +12,11 @@ import { FALLBACK_PACKAGES, fallbackFamily, fallbackPicks, parseRanges, type Pdf
 const latin1 = (b: Uint8Array) => Array.from(b, (c) => String.fromCharCode(c)).join('');
 const families = FALLBACK_PACKAGES.map((pkg) => fallbackFamily(pkg, JSON.parse(readFileSync(`node_modules/@fontsource/${pkg}/unicode.json`, 'utf8'))));
 const woff = (path: string) => woffToSfnt(new Uint8Array(readFileSync(path)));
-/** As the app's pdfFallbackFonts, from the files in node_modules. */
-const fallback: PdfFallbackSource = (chars, text) => fallbackPicks(families, chars, text).map(({ pkg, subset }) => ({
+/** As the app's pdfFallbackFonts, from the files in node_modules; the files read, in order, in `read`. */
+const read: string[] = [];
+const fallback: PdfFallbackSource = async (ch, text) => fallbackPicks(families, [ch], text).map(({ pkg, subset }) => ({
   key: `${pkg}/${subset}`,
-  load: async () => woff(`node_modules/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`),
+  load: async () => { read.push(`${pkg}/${subset}`); return woff(`node_modules/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`); },
 }));
 const arimo = async () => [woff('node_modules/@fontsource/arimo/files/arimo-latin-400-normal.woff')];
 
@@ -52,6 +53,7 @@ describe('fallback fonts in PDFs', () => {
     // Word keeps Wingdings characters at U+F020 to U+F0FF: J is the smiling face, ü the check mark
     expect(symbolFontText('   ', 'Wingdings')).toBe('☺ ✓ ▪ ①');
     expect(symbolFontText('J', 'wingdings')).toBe('☺');
+    expect(symbolFontText('\uf020', 'Wingdings')).toBe(' ');
     expect(symbolFontText('J ', 'Arial')).toBe('J ');
     expect([...symbolFontText('', 'Wingdings')]).toEqual(['♈', '♓']);
   });
@@ -77,8 +79,34 @@ describe('fallback fonts in PDFs', () => {
   it('leaves a PDF with nothing its fonts lack as it was (no fallback font read)', async () => {
     let asked = 0;
     const pdf = await writePdf([{ w: 200, h: 100, items: [{ kind: 'text', text: 'Yield 80% • β', x: 10, y: 50, size: 12, family: 'Arial', bold: false, italic: false, color: '#000000', widths: Array(13).fill(6) }] }],
-      { image: async () => null, fonts: arimo, fallback: (c, t) => { asked++; return fallback(c, t); } });
+      { image: async () => null, fonts: arimo, fallback: async (c, t) => { asked++; return fallback(c, t); } });
     expect(asked).toBe(0);
     expect(latin1(pdf)).not.toContain('Noto');
+  });
+
+  const line = (text: string, family = 'Arial') => ({ kind: 'text' as const, text, x: 10, y: 50, size: 12, family, bold: false, italic: false, color: '#000000', widths: Array([...text].length).fill(10) });
+
+  it('draws with a fallback font only the characters it was read for: Symbol text stays Symbol (review)', async () => {
+    // (in the Symbol font, a b c are α β χ: the standard Symbol font draws them, and only the check mark falls back)
+    const pdf = await writePdf([{ w: 400, h: 200, items: [line('abc ✓ 123', 'Symbol')] }], { image: async () => null, fonts: async () => [], fallback });
+    const page = streams(pdf).find((t) => t.includes(' Tf '))!;
+    expect(page).toMatch(/\(abc \) Tj/);
+    const maps = streams(pdf).filter((t) => t.includes('beginbfchar')).join('\n');
+    expect(maps).toContain('<2713>');
+    expect(maps).not.toContain('<0061>');
+  });
+
+  it('reads the Japanese files only for Japanese text, and nothing for what draws nothing (review)', async () => {
+    read.length = 0;
+    await writePdf([{ w: 400, h: 200, items: [line('化学 ✓\ufe0f')] }], { image: async () => null, fonts: arimo, fallback });
+    expect(read.some((x) => x.startsWith('noto-sans-jp'))).toBe(false);
+    expect(read.some((x) => x.startsWith('noto-sans-sc'))).toBe(true);
+    // (the check mark found in Symbols 2, so no file after it is read for it)
+    expect(read.filter((x) => x.startsWith('noto-sans-symbols/'))).toEqual([]);
+  });
+
+  it('writes the PDF anyway when a fallback font can\'t be had', async () => {
+    const pdf = await writePdf([{ w: 400, h: 200, items: [line('化学')] }], { image: async () => null, fonts: arimo, fallback: async () => { throw new Error('offline'); } });
+    expect(streams(pdf).find((t) => t.includes(' Tf '))).toContain('(??)');
   });
 });

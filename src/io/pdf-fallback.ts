@@ -11,8 +11,11 @@ export interface FallbackFile {
   load(): Promise<Uint8Array>;
 }
 
-/** The fallback files for characters (`chars`) that a text (`text`, the whole run) can't draw with its own fonts. */
-export type PdfFallbackSource = (chars: string[], text: string) => FallbackFile[];
+/**
+ * The files that may draw a character a text (`text`, the whole run) can't draw with its own
+ * fonts, in the order to try them: the first one read that has it draws it.
+ */
+export type PdfFallbackSource = (ch: string, text: string) => Promise<FallbackFile[]>;
 
 /** One fallback font: its Fontsource package and the files it is cut into, each with the characters it holds. */
 export interface FallbackFamily {

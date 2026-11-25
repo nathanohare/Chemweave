@@ -157,18 +157,26 @@ export function pdfFontUrls(family: string, bold: boolean, italic: boolean): str
   return [];
 }
 
-// the fallback fonts' files (regular only) and the characters each holds (pdf-fallback.ts)
-const FALLBACK_WOFF = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/files/*-400-normal.woff', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const FALLBACK_RANGES = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/unicode.json', { import: 'default', eager: true }) as Record<string, Record<string, string>>;
-let fallbackFamilies: FallbackFamily[] | null = null;
+// the fallback fonts' own script's files (regular only: pdf-fallback.ts) and the characters each
+// holds (read on the first PDF that needs one, so they don't load with the app)
+const FALLBACK_WOFF = import.meta.glob([
+  '/node_modules/@fontsource/noto-sans-hebrew/files/noto-sans-hebrew-hebrew-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-{symbols,math}-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-symbols/files/noto-sans-symbols-symbols-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-[0-9]*-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-jp/files/noto-sans-jp-[0-9]*-400-normal.woff',
+], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const FALLBACK_RANGES = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/unicode.json', { import: 'default' }) as Record<string, () => Promise<Record<string, string>>>;
+let fallbackFamilies: Promise<FallbackFamily[]> | null = null;
 
-/** Font files for the characters a PDF's text can't draw with its own fonts (Chinese, Japanese, Hebrew, Arabic, symbols). */
-export const pdfFallbackFonts: PdfFallbackSource = (chars, text) => {
-  fallbackFamilies ??= FALLBACK_PACKAGES.flatMap((pkg) => {
-    const unicode = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
-    return unicode ? [fallbackFamily(pkg, unicode)] : [];
-  });
-  return fallbackPicks(fallbackFamilies, chars, text).flatMap(({ pkg, subset }) => {
+/** Font files that may draw a character a PDF's text can't draw with its own fonts (Chinese, Japanese, Hebrew, Arabic, symbols). */
+export const pdfFallbackFonts: PdfFallbackSource = async (ch, text) => {
+  fallbackFamilies ??= Promise.all(FALLBACK_PACKAGES.map(async (pkg) => {
+    const load = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
+    return load ? [fallbackFamily(pkg, await load())] : [];
+  })).then((x) => x.flat());
+  return fallbackPicks(await fallbackFamilies, [ch], text).flatMap(({ pkg, subset }) => {
     const url = Object.entries(FALLBACK_WOFF).find(([path]) => path.endsWith(`/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`))?.[1];
     return url ? [{ key: url, load: async () => woffToSfnt(new Uint8Array(await (await fetch(url)).arrayBuffer())) }] : [];
   });
