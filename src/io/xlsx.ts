@@ -706,7 +706,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // set (customHeight): Excel fits rows without it again when it opens our save, and a row it
     // showed at 40 pt came back at the default height (laptop check 51)
     const keptFit = new Set<number>();
-    for (const [r, px] of s.fittedRows) if (!auto.has(r)) { auto.set(r, px); keptFit.add(r); }
+    // (the grid's measurer gives a fitted row back at Excel's height where it measures nothing taller: still Excel's)
+    for (const [r, px] of s.fittedRows) if (!auto.has(r) || auto.get(r) === px) { auto.set(r, px); keptFit.add(r); }
     // rows grown for a structure's picture keep their height in Excel (its text can't show how tall the picture is)
     const pictureRows = new Set<number>();
     for (const [k, c] of s.cells) {
@@ -717,7 +718,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
     const rowH = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? auto.get(r) ?? DEFAULT_ROW_H);
     ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r) && !keptFit.has(r));
-    if (keptFit.size) ms.fitRows = [...keptFit].map((r): [number, number] => [r, auto.get(r)!]);
+    if (keptFit.size) ms.fitRows = [...keptFit].map((r): [number, number] => [r, s.fittedRows.get(r)!]);
     const cols = new Axis(colW), rows = new Axis(rowH);
     // a column's style number (the many columns a range to the end of the sheet formats share one look, looked up once)
     const colXfs = new Map<CellStyle, number>();

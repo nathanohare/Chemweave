@@ -243,11 +243,6 @@ export function restoreSheet(
     const to = m.row(r);
     if (to !== null && s.rowHeights.get(to) === px) s.setRowHeight(to, undefined);
   }
-  // rows Excel had fitted, given to it as set heights: fitted rows again while Excel left them so
-  for (const [r, px] of ms.fitRows ?? []) {
-    const to = m.row(r);
-    if (to !== null && s.rowHeights.get(to) === px) { s.setRowHeight(to, undefined); s.setFittedRow(to, px); }
-  }
   const structureCols = new Set<number>();
   ms.cells.forEach((x, i) => {
     const p = at.get(i);
@@ -280,6 +275,12 @@ export function restoreSheet(
     } else s.setCell(p.r, p.c, { ...cur, style });
     if (x.compound && isCard(x.compound)) { const y = s.cell(p.r, p.c); s.setCell(p.r, p.c, { ...y, compound: x.compound }); }
   });
+  // rows Excel had fitted, given to it as set heights: fitted rows again while Excel left them so
+  // (after the cells, as setting a cell in a row takes its fit off)
+  for (const [r, px] of ms.fitRows ?? []) {
+    const to = m.row(r);
+    if (to !== null && s.rowHeights.get(to) === px) { s.setRowHeight(to, undefined); s.setFittedRow(to, px); }
+  }
   // a structure's SMILES that couldn't be put back is shown (its cell's format hid it under the picture)
   const shown = [...s.cells].filter(([k, cell]) => !cell.structure && cell.style?.numFmt === hidden && structureCols.has(colOf(k)) && typeof raw.get(k) === 'string');
   for (const [k, cell] of shown) s.setCell(rowOf(k), colOf(k), { ...cell, style: tidy({ ...cell.style, numFmt: undefined }) });
