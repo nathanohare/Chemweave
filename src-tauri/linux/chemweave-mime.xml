@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- SI project files (.chemsi), Chemweave's own type, for Linux file managers: their name, how to
+     know them, and their icon (application-x-chemweave-si, installed under
+     /usr/share/icons/hicolor by tauri.linux.conf.json). Written from the freedesktop.org
+     Shared MIME-info Database specification. A .chemsi is a zip inside, so it is a kind of zip:
+     the name wins over what is inside. -->
+<mime-info xmlns="http://www.freedesktop.org/standards/shared-mime-info">
+  <mime-type type="application/x-chemweave-si">
+    <comment>Chemweave SI project</comment>
+    <sub-class-of type="application/zip"/>
+    <icon name="application-x-chemweave-si"/>
+    <glob pattern="*.chemsi"/>
+  </mime-type>
+</mime-info>
