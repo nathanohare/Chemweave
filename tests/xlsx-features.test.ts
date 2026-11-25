@@ -532,3 +532,53 @@ describe('a collapsed column group (F-X-003)', () => {
     expect(colsOf(saved).find((c) => c.includes('min="1"'))).toContain('collapsed="1"');
   });
 });
+
+describe('a carriage return in a cell\'s text (F-X-002)', () => {
+  // ECMA-376 Part 1, §22.9.2.19 ST_Xstring: a character XML can't hold as itself is written
+  // _xHHHH_; a carriage return written as itself is read back as a line feed by XML's line-end rules
+  it('is written as _x000D_ and comes back, through two saves', async () => {
+    const bytes = excelBook([['Text', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>line one_x000D_\nline two</t></is></c></row></sheetData>']]);
+    let { book } = await readXlsx(bytes);
+    expect(book.sheet.effectiveInput(0, 0)).toBe('line one\r\nline two');
+    for (let i = 0; i < 2; i++) {
+      const saved = await writeXlsx(book, pictures);
+      expect(part(saved, 'xl/sharedStrings.xml')).toContain('line one_x000D_\nline two');
+      ({ book } = await readXlsx(saved));
+      expect(book.sheet.effectiveInput(0, 0)).toBe('line one\r\nline two');
+    }
+  });
+});
+
+describe('a carriage return in a cell\'s text: the review\'s cases', () => {
+  const twice = async (bytes: Uint8Array) => {
+    let { book } = await readXlsx(bytes);
+    for (let i = 0; i < 2; i++) ({ book } = await readXlsx(await writeXlsx(book, pictures)));
+    return book;
+  };
+  it('keeps a lone carriage return, one at the start or end, and a typed "_x000D_" as typed', async () => {
+    const cell = (r: number, t: string) => `<row r="${r}"><c r="A${r}" t="inlineStr"><is><t xml:space="preserve">${t}</t></is></c></row>`;
+    const book = await twice(excelBook([['Text', `<sheetData>${cell(1, 'a_x000D_b')}${cell(2, '_x000D_start')}${cell(3, 'end_x000D_')}${cell(4, 'typed _x005F_x000D_')}</sheetData>`]]));
+    expect([0, 1, 2, 3].map((r) => book.sheet.effectiveInput(r, 0))).toEqual(['a\rb', '\rstart', 'end\r', 'typed _x000D_']);
+  });
+  it('keeps one in a formula\'s text result', async () => {
+    // a formula's cached text value (t="str") is ST_Xstring too: B1 takes A1's text
+    const bytes = excelBook([['Text', '<sheetData><row r="1"><c r="A1" t="inlineStr"><is><t>a_x000D_b</t></is></c><c r="B1" t="str"><f>A1</f><v>a_x000D_b</v></c></row></sheetData>']]);
+    const { book } = await readXlsx(bytes);
+    expect(book.sheet.shownText(0, 1)).toBe('a\rb');
+    const saved = await writeXlsx(book, pictures);
+    expect(part(saved, 'xl/worksheets/sheet1.xml')).toContain('<f>A1</f><v>a_x000D_b</v>');
+    expect((await readXlsx(saved)).book.sheet.shownText(0, 1)).toBe('a\rb');
+  });
+});
+
+describe('a line break in a data validation message', () => {
+  it('is kept through a save, not read back as a space', async () => {
+    // ECMA-376 Part 1, §18.3.1.32 dataValidation@prompt: attribute text, a line feed written &#10;
+    const bytes = excelBook([['Checked', '<sheetData><row r="1"><c r="A1"><v>1</v></c></row></sheetData><dataValidations count="1"><dataValidation type="whole" allowBlank="1" showInputMessage="1" promptTitle="Yield" prompt="Whole numbers&#10;from 0 to 100" sqref="A1"><formula1>0</formula1><formula2>100</formula2></dataValidation></dataValidations>']]);
+    const { book } = await readXlsx(bytes);
+    expect(book.sheet.validations[0]?.prompt).toBe('Whole numbers\nfrom 0 to 100');
+    const saved = await writeXlsx(book, pictures);
+    expect(part(saved, 'xl/worksheets/sheet1.xml')).toContain('prompt="Whole numbers&#10;from 0 to 100"');
+    expect((await readXlsx(saved)).book.sheet.validations[0]?.prompt).toBe('Whole numbers\nfrom 0 to 100');
+  });
+});
