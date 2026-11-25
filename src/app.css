@@ -1984,6 +1984,10 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .ribbon .cr-fly-menu > button.cr-has-drop { width: 100%; padding-right: 2px; }
 .ribbon .cr-fly-menu > button .cr-drop { margin-left: auto; padding: 3px 5px; }
 .ribbon .cr-fly-menu > button:focus-visible { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* an on-or-off command (Show Reaction Roles): a check at the end of its row, and its picture boxed, while on */
+.cr-fly-menu .cr-check { margin-left: auto; padding-left: 8px; color: var(--accent); font-weight: 700; visibility: hidden; }
+.cr-fly-menu [aria-checked='true'] .cr-check { visibility: visible; }
+.cr-fly-menu [aria-checked='true'] .rb-icon { border-radius: 2px; background: var(--accent-soft); box-shadow: 0 0 0 1px var(--accent); }
 /* a template pane: labeled pictures, in rows under their headings, to look over before picking one */
 .cr-tpl-pane { min-width: 0; padding: 4px 6px 6px; }
 .cr-tpl-pane .rb-fly-head { padding: 4px 2px 2px; }
@@ -2010,6 +2014,8 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .ribbon button.cr-analysis:hover, .ribbon button.cr-analysis.open { border-color: var(--accent); background: var(--bg); }
 .cr-analysis .cr-an-f { font-weight: 600; font-size: 13px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cr-analysis .cr-an-f.muted { font-weight: 400; color: var(--muted); }
+/* (on the Simplified ribbon's chip in Dark Gray the fill is the darker --bg #b4b8bf: #434956 is 4.5:1 there) */
+:root[data-gray] .canvas-ribbon:not(.cr-classic) .cr-analysis .cr-an-f.muted { color: #434956; }
 .cr-analysis .cr-an-f sub { line-height: 0; }
 .cr-analysis .cr-an-row { color: var(--muted); font-size: 11.5px; white-space: nowrap; }
 .cr-analysis .cr-an-v { font-family: var(--mono-font); color: var(--text); }

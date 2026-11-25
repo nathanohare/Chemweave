@@ -177,3 +177,108 @@ describe('the Canvas ribbon around the flyouts', () => {
     expect(out).toEqual({ home: ['g:clipboard', 'g:arrange'], view: ['g:zoom', 'g:3-d'] });
   });
 });
+
+describe('review fixes', () => {
+  it('shows the on-or-off commands in a list as checked or not, as they are when it opens', () => {
+    document.body.innerHTML = '<div id="place"></div>';
+    const lit = new Set(['show-roles']);
+    rb = new CanvasRibbon({ ...host(), checked: (c) => lit.has(c) }, document.getElementById('place')!);
+    const roles = () => menuOf('schemes').querySelector<HTMLElement>('[data-cmd="show-roles"]')!;
+    expect(roles().getAttribute('role')).toBe('menuitemcheckbox');
+    open('schemes');
+    expect(roles().getAttribute('aria-checked')).toBe('true');
+    expect(roles().querySelector('.cr-check')).not.toBeNull();
+    key('Escape');
+    lit.clear();
+    open('schemes');
+    expect(roles().getAttribute('aria-checked')).toBe('false');
+    key('Escape');
+    // Show Focal Points and Show on Drawing are on-or-off too; plain commands are not
+    open('focal');
+    expect(menuOf('focal').querySelector('[data-cmd="show-focal-points"]')!.getAttribute('aria-checked')).toBe('false');
+    expect(menuOf('focal').querySelector('[data-cmd="set-focal-point"]')!.getAttribute('role')).toBe('menuitem');
+    key('Escape');
+    expect(menuOf('nmr').querySelector('[data-cmd="nmr-marks"]')!.getAttribute('role')).toBe('menuitemcheckbox');
+  });
+
+  it('gives the focus back to the list\'s button after a command chosen with the keyboard (not after a mouse click)', () => {
+    open('order');
+    const front = menuOf('order').querySelector<HTMLButtonElement>('[data-cmd="shape-front"]')!;
+    front.focus();
+    // Enter on a button: a click with no pointer (detail 0)
+    front.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 0 }));
+    expect(ran).toEqual(['shape-front']);
+    expect(document.activeElement).toBe(fly('order').querySelector('.rb-fly-btn'));
+    open('order');
+    (document.activeElement as HTMLElement).blur();
+    menuOf('order').querySelector<HTMLButtonElement>('[data-cmd="shape-back"]')!.dispatchEvent(new MouseEvent('click', { bubbles: true, detail: 1 }));
+    expect(document.activeElement).toBe(document.body);
+  });
+
+  it('closes a list open in the ribbon when the ribbon is hidden (another kind of tab) or the tab changes', () => {
+    open('align');
+    rb.show(false);
+    expect(menuOf('align').hidden).toBe(true);
+    expect(fly('align').querySelector('.rb-fly-btn')!.getAttribute('aria-expanded')).toBe('false');
+    rb.show(true);
+    open('align');
+    rb.pick('insert');
+    expect(menuOf('align').hidden).toBe(true);
+  });
+
+  it('keeps Tab, Home and End for a box to type in inside another mode\'s list (Page Color)', () => {
+    document.body.insertAdjacentHTML('beforeend', '<div class="ribbon"><div class="rb-fly"><button class="rb-fly-btn" id="page-color">Page Color</button><div class="rb-fly-menu" hidden><button>White</button><input id="custom"></div></div></div>');
+    const btn = document.getElementById('page-color') as HTMLButtonElement;
+    btn.click();
+    const menu = btn.nextElementSibling as HTMLElement;
+    expect(menu.hidden).toBe(false);
+    document.getElementById('custom')!.focus();
+    key('Tab');
+    key('Home');
+    expect(menu.hidden).toBe(false);
+    expect(document.activeElement!.id).toBe('custom');
+    key('Escape');
+    expect(menu.hidden).toBe(true);
+  });
+});
+
+// The fold-and-flyout path (review: at laptop widths Home ▸ Arrange folded into one button, and its
+// flyouts then opened with nowhere to show). jsdom has no layout, so the row's widths are made up
+// from the groups' states; the same path is checked in a real browser at 900 to 1440 px, both looks.
+describe('a flyout inside a folded group', () => {
+  it('folds the Arrange flyouts last, keeps the group dropped down while its flyout is open, and refits only after', async () => {
+    const { fitRow, reshaped } = await import('../src/ui/ribbon-fit');
+    const panel = rb.el.querySelector<HTMLElement>('[data-cr-panel="home"]')!;
+    const groups = () => [...panel.querySelectorAll<HTMLElement>(':scope > .rb-group')];
+    const width = (g: HTMLElement) => (g.classList.contains('rb-folded') ? 40 : g.classList.contains('rb-compact') ? 120 : g.classList.contains('rb-small') ? 160 : 200);
+    let room = 0;
+    Object.defineProperty(panel, 'clientWidth', { configurable: true, get: () => room });
+    Object.defineProperty(panel, 'scrollWidth', { configurable: true, get: () => groups().reduce((t, g) => t + width(g), 0) });
+    const arrange = groups().find((g) => g.querySelector('.rb-label')?.textContent === 'Arrange')!;
+    expect(arrange.classList.contains('rb-fold-late')).toBe(true);
+    // room for all but a little: others give way first, Arrange keeps its buttons
+    room = 700;
+    fitRow(panel);
+    expect(arrange.classList.contains('rb-folded')).toBe(false);
+    expect(groups().some((g) => g.classList.contains('rb-folded'))).toBe(true);
+    // very little room: Arrange folds too, into its own button
+    room = 400;
+    fitRow(panel);
+    expect(arrange.classList.contains('rb-folded')).toBe(true);
+    arrange.querySelector<HTMLButtonElement>(':scope > .rb-fold-btn')!.click();
+    expect(arrange.classList.contains('rb-popped')).toBe(true);
+    open('rotate');
+    const menu = menuOf('rotate');
+    expect(menu.hidden).toBe(false);
+    // the list opening is no reason to fit the row again
+    expect(reshaped([{ target: menu, oldValue: '' } as unknown as MutationRecord])).toBe(false);
+    // and a fit while it is open (the window resized a pixel) leaves the group dropped down under it
+    fitRow(panel);
+    expect(arrange.classList.contains('rb-popped')).toBe(true);
+    expect(menu.hidden).toBe(false);
+    menu.querySelector<HTMLButtonElement>('[data-cmd="flip-v"]')!.click();
+    expect(ran).toEqual(['flip-v']);
+    expect(menu.hidden).toBe(true);
+    expect(fly('rotate').querySelector('.rb-fly-btn')!.getAttribute('aria-expanded')).toBe('false');
+  });
+});

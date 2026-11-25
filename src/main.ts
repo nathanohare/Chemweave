@@ -869,6 +869,9 @@ const canvasRibbon = new CanvasRibbon({
     if (cmd === 'mo-diagram' && arg) { finishTyping(); editor.putPlateAt(moTemplate(cmd, arg), pasteCentre(), undefined, deckNow()?.size); return; }
     command(cmd);
   },
+  // (the on-or-off commands in the flyouts' lists)
+  checked: (cmd) => (cmd === 'show-roles' ? editor.showAllRoles : cmd === 'show-focal-points' ? editor.showFocal
+    : cmd === 'nmr-marks' ? document.querySelector('#analysis-section .nmr-marks')?.getAttribute('aria-pressed') === 'true' : false),
   // the Diagrams pane's MO and d-orbital pictures, drawn by the drawing code at small size
   thumb: (it) => {
     if (it.cmd !== 'mo-diagram' && it.cmd !== 'd-orbital-splitting') return undefined;
@@ -1201,7 +1204,7 @@ function showAllRoles(on: boolean): void {
   editor.requestScene();
 }
 
-/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+/** Home ▸ Focal Point ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
 function showFocalPoints(on: boolean): void {
   editor.showFocal = on;
   for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
@@ -6099,7 +6102,7 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
 }
 
 /**
- * Arrange ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
+ * Home ▸ Focal Point ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
  * take the focal point of the one that has its own (the first in reading order if several do), on
  * the same atom, bond or ring of the part they share with it (largest common substructure).
  */
@@ -11303,7 +11306,6 @@ const COMMANDS: Record<string, () => unknown> = {
   'diagram-to-shapes': () => editor.ungroupSelectedDiagram() || flash('Select a diagram first.'),
   'edit-energy': () => { const id = editor.selectedEnergy(); if (id === null) flash('Select an energy diagram first.'); else void energyDiagram(id); },
   'animate-reaction': () => animateDialog.open(),
-  'nmr-menu': () => nmrMenu(),
   'predict-nmr': () => nmrRibbon('predict'),
   'nmr-1h': () => nmrRibbon('1H'),
   'nmr-13c': () => nmrRibbon('13C'),
@@ -13823,13 +13825,8 @@ function nmrRibbon(act: Parameters<NmrPanel['ribbon']>[0]): void {
   go();
 }
 
-/** The NMR commands in a menu, under the ribbon's Predict NMR button (or at the top left of the drawing). */
+/** Where an NMR menu drops from: under the ribbon's Predict NMR button (or at the top left of the drawing). */
 const nmrAnchor = () => [...document.querySelectorAll<HTMLElement>('#canvas-ribbon [data-cr-fly="nmr"] > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0);
-function nmrMenu(): void {
-  const b = nmrAnchor();
-  const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
-  popupMenu(r.left, r.bottom + 2, [['Predict NMR', () => nmrRibbon('predict')], ['Spectrum Window', () => nmrRibbon('window')], ['Show on Drawing', () => nmrRibbon('marks')], ['Check Data…', () => nmrRibbon('check')], null, ['NMR Settings…', () => command('nmr-settings')]]);
-}
 
 /** Chemistry ▸ NMR ▸ Solvent…: the solvents in a menu, under the ribbon's Predict NMR button. */
 function nmrSolventMenu(): void {
@@ -15387,7 +15384,7 @@ editor.onFocalPicked = (kind) => {
   else $('#flash').classList.remove('show');
 };
 
-/** Arrange ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
+/** Home ▸ Focal Point ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
 function startFocalPick(): void {
   editor.startFocalPick();
   flash('Click an atom, a bond or inside a ring to make it its structure\'s focal point. Esc cancels.', 60000);
@@ -16480,7 +16477,8 @@ function commandItems(): CommandItem[] {
       if (tab?.hidden) continue; // a tab shown only now and then (Table Design, Chart)
       const label = ribbonLabel(b);
       if (!label) continue;
-      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
+      // (a ready-made form of a command, a template pane's MO Diagram: H₂O, is found on its own)
+      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}${b.dataset.arg ? `:${b.dataset.arg}` : ''}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
       const code = b.dataset.cmd ?? b.dataset.sh ?? b.dataset.doc;
       out.push({
         id: name, label, place: tab ? `${tab.textContent!.trim()} tab` : `${rib.getAttribute('aria-label')} ribbon`, more: b.dataset.tip ?? b.title,

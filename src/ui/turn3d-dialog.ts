@@ -1,4 +1,4 @@
-// Arrange ▸ 3-D Rotation…: the selected structures turned about X, Y and Z by angles slid or typed
+// View ▸ 3-D ▸ 3-D Rotation… (and the 3-D Rotation command in the menus): the selected structures turned about X, Y and Z by angles slid or typed
 // in, shown live on the drawing as they change. The window sits to one side, over a drawing left
 // undimmed, so the structure can be watched while it turns. Rotate keeps the turn (one Undo takes
 // it back); Cancel or Esc puts the structures back as they were; Reset brings every angle to 0.

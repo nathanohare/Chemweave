@@ -1,5 +1,7 @@
+// @vitest-environment jsdom
 import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
+import { INSERT_MENU, type MenuEntry } from '../src/commands/registry';
 import { CANVAS_TABS, buttonsOf, canvasTabFor, isFlyout } from '../src/ui/canvas-ribbon';
 import { RIBBON_ONLY_ICONS, commandIcon } from '../src/ui/command-icons';
 import { CONTEXT_BOXES, TOOLBOX_IDS, defaultToolboxes } from '../src/ui/toolboxes';
@@ -32,7 +34,7 @@ describe('Canvas ribbon', () => {
 
   it('lays the tabs out as the owner asked (Canvas ribbon cleanup)', () => {
     const tab = (id: string) => CANVAS_TABS.find((t) => t.id === id)!.groups.map((g) => g.name);
-    expect(tab('home')).toEqual(['Clipboard', 'Font', 'Paragraph', 'Format Favorites', 'Scheme', 'Arrange']);
+    expect(tab('home')).toEqual(['Clipboard', 'Font', 'Paragraph', 'Format Favorites', 'Clean Up', 'Arrange']);
     expect(tab('insert')).toEqual(['Structures', 'Schemes', 'Diagrams', 'Mechanism', 'Lab']);
     expect(tab('chemistry')).toEqual(['Structure', 'Reaction', 'NMR', 'Look Up']);
     expect(tab('view')).toEqual(['Zoom', 'Show', '3-D']);
@@ -65,15 +67,24 @@ describe('Canvas ribbon', () => {
     expect(CANVAS_TABS[2].groups.find((g) => g.name === 'Look Up')!.items.some((it) => 'cmd' in it && it.cmd === 'lab-calculator')).toBe(true);
   });
 
-  it('keeps every command it no longer shows in the menus (and so in Search)', () => {
-    const html = readFileSync('index.html', 'utf8');
+  it('keeps every command it no longer shows in a top menu (and so in Search and the keymap)', () => {
+    // (as strict as the check it replaced: each one an item of a real menu in the menu bar, parsed, not text anywhere in the page)
+    const page = new DOMParser().parseFromString(readFileSync('index.html', 'utf8'), 'text/html');
+    // (the Insert menu is built from the command list; Format ▸ Align has Distribute as its two spacings)
+    const flat = (m: MenuEntry[]): string[] => m.flatMap((e) => (e === '-' ? [] : 'items' in e ? flat(e.items) : [e.id]));
+    const insertMenu = new Set(flat(INSERT_MENU));
+    const SAME: Record<string, string> = { 'distribute-h': 'distribute-h-gaps', 'distribute-v': 'distribute-v-gaps' };
+    const inMenus = (c: string) => insertMenu.has(c) || [...page.querySelectorAll<HTMLElement>(`header .menu-wrap .menu [data-cmd="${SAME[c] ?? c}"]`)].some((b) => b.matches('button[role^="menuitem"]'));
     const gone = ['clean-up-arrow', 'arrow-reverse', 'flip-arrow-bend', 'arrow-single-curve', 'arrow-s-shape', 'arrow-shape-u', 'arrow-shape-loop', 'arrow-add-bend', 'arrow-remove-bend', 'arrow-smooth-path', 'arrow-simplify-path', 'attach-arrow', 'detach-arrow', 'aromatic-circles', 'fill-rings', 'hapto-bond',
       'predict-nmr', 'nmr-solvent', 'nmr-check', 'nmr-settings'];
     const shown = new Set(CANVAS_TABS.flatMap((t) => t.groups.flatMap(buttonsOf)).flatMap((it) => ('cmd' in it ? [it.cmd] : [])));
     for (const c of gone) {
       expect(shown.has(c), c).toBe(false);
-      expect(html.includes(`data-cmd="${c}"`), c).toBe(true);
+      expect(inMenus(c), c).toBe(true);
     }
+    // and every command the ribbon now hides in a flyout is in a top menu too
+    const inFlyouts = CANVAS_TABS.flatMap((t) => t.groups.flatMap((g) => g.items.filter(isFlyout))).flatMap((f) => f.items.flatMap((x) => (x && 'cmd' in x ? [x.cmd] : [])));
+    expect([...new Set(inFlyouts)].filter((c) => !inMenus(c))).toEqual([]);
   });
 });
 

@@ -17,6 +17,7 @@
 // one-line Analysis drop-down (see canvas-ribbon-boxes.ts).
 
 import { DIAGRAM_THUMBS } from './diagram-thumbs';
+import { closeRibbonFlyout } from './ribbon-flyout';
 
 /** A command button (data-cmd, run as the menus run it). */
 export interface RibbonCmd {
@@ -30,6 +31,8 @@ export interface RibbonCmd {
   arg?: string;
   /** In a template pane: its picture (a DIAGRAM_THUMBS key), until the host draws a better one. */
   thumb?: string;
+  /** Turns something on or off (Show Reaction Roles): in a flyout's list it shows a check while on (CanvasRibbonHost.checked). */
+  check?: boolean;
 }
 /** A drawing tool's button. */
 export interface RibbonTool { tool: string; label: string; major?: boolean; tip?: string }
@@ -65,6 +68,8 @@ const c = (cmd: string, label: string, major = false): RibbonCmd => ({ cmd, labe
 /** A picture in a template pane. */
 const t = (cmd: string, label: string, thumb: string, tip: string, arg?: string): RibbonCmd => ({ cmd, label, thumb, tip, ...(arg ? { arg } : {}) });
 export const isFlyout = (it: RibbonItem): it is RibbonFlyout => 'fly' in it;
+/** A command that is on or off. */
+const onOff = (cmd: string, label: string): RibbonCmd => ({ cmd, label, check: true });
 /** Every button of a group, those in its flyouts too. */
 export const buttonsOf = (g: RibbonGroup): RibbonButton[] => g.items.flatMap((it) => (isFlyout(it) ? it.items.filter((x): x is RibbonButton => !!x && !('head' in x)) : [it]));
 
@@ -79,7 +84,7 @@ export const CANVAS_TABS: RibbonTab[] = [
       // (filled by the shared Format Favorites gallery, as on every mode's Home tab)
       { name: 'Format Favorites', items: [], gallery: 'favorites' },
       // (Smart Clean: a scheme, cycle, mechanism arrow or structure, whichever is selected; both are on Chemistry too)
-      { name: 'Scheme', items: [c('smart-clean', 'Smart Clean', true), c('number-compounds', 'Number Compounds', true)] },
+      { name: 'Clean Up', items: [c('smart-clean', 'Smart Clean', true), c('number-compounds', 'Number Compounds', true)] },
       // lining up, turning and stacking, four flyouts (the Arrange toolbox has them all as buttons)
       { name: 'Arrange', items: [
         { fly: 'align', label: 'Align', icon: 'align-left', tip: 'Align and distribute the selected objects, or arrange them in a row, column or grid', items: [
@@ -96,7 +101,7 @@ export const CANVAS_TABS: RibbonTab[] = [
           c('shape-front', 'Bring to Front'), c('shape-forward', 'Bring Forward'), c('shape-back', 'Send to Back'), c('shape-backward', 'Send Backward'),
         ] },
         { fly: 'focal', label: 'Focal Point', icon: 'set-focal-point', tip: 'Focal points: the spot each structure lines up by when aligned, distributed or arranged', items: [
-          c('set-focal-point', 'Set as Focal Point'), c('match-focal-points', 'Match Focal Points'), c('reset-focal-point', 'Reset Focal Point'), null, c('show-focal-points', 'Show Focal Points'),
+          c('set-focal-point', 'Set as Focal Point'), c('match-focal-points', 'Match Focal Points'), c('reset-focal-point', 'Reset Focal Point'), null, onOff('show-focal-points', 'Show Focal Points'),
         ] },
       ] },
     ],
@@ -111,7 +116,7 @@ export const CANVAS_TABS: RibbonTab[] = [
       ] },
       { name: 'Schemes', items: [
         { fly: 'schemes', label: 'Schemes', icon: 'smart-scheme', tip: 'Schemes: Smart Scheme, reaction roles, stoichiometry, balance and atom maps', items: [
-          c('smart-scheme', 'Smart Scheme'), c('convert-smart-scheme', 'Convert to Smart Scheme'), c('show-roles', 'Show Reaction Roles'), null,
+          c('smart-scheme', 'Smart Scheme'), c('convert-smart-scheme', 'Convert to Smart Scheme'), onOff('show-roles', 'Show Reaction Roles'), null,
           c('stoichiometry-table', 'Stoichiometry Table…'), c('check-balance', 'Check Balance…'), c('map-atoms', 'Map Atoms…'),
         ] },
       ] },
@@ -143,7 +148,7 @@ export const CANVAS_TABS: RibbonTab[] = [
         { fly: 'nmr', label: 'Predict NMR', icon: 'predict-nmr', tip: 'Predict NMR: ¹H or ¹³C shifts for the selected structure, on the drawing or in the spectrum window', items: [
           { cmd: 'nmr-1h', label: 'Predict ¹H NMR', tip: 'Predict the ¹H NMR spectrum of the selected structure' },
           { cmd: 'nmr-13c', label: 'Predict ¹³C NMR', tip: 'Predict the ¹³C NMR spectrum of the selected structure' }, null,
-          c('nmr-marks', 'Show on Drawing'), c('nmr-window', 'Spectrum Window'),
+          onOff('nmr-marks', 'Show on Drawing'), c('nmr-window', 'Spectrum Window'),
         ] },
       ] },
       { name: 'Look Up', items: [c('structure-to-name', 'Structure to Name'), c('find-cas', 'Find CAS RN'), c('pubchem-lookup', 'Look Up on PubChem'), c('knowledge-base', 'Knowledge Base…'), c('compound-library', 'Compound Library…'), c('periodic-table', 'Periodic Table…'), c('lab-calculator', 'Lab Calculator…')] },
@@ -178,6 +183,8 @@ export interface CanvasRibbonHost {
   hasTool(name: string): boolean;
   /** A command's or tool's picture (24×24 SVG), if it has one. */
   icon(item: RibbonButton): string | undefined;
+  /** Whether a command that turns something on or off (RibbonCmd.check) is on now. */
+  checked?(cmd: string): boolean;
   /** A template pane's picture drawn by the drawing code (an SVG), where it can be; undefined keeps the plain one. */
   thumb?(item: RibbonCmd): string | undefined;
   /** Fill the Font and Paragraph groups' rows with the text formatting bar's buttons and boxes. */
@@ -274,6 +281,8 @@ export class CanvasRibbon {
       group.className = 'rb-group';
       // (the least used group on Home: the last to open back up in a narrow window)
       if (g.name === 'Look Up') group.classList.add('rb-open-last');
+      // (the Arrange flyouts are wanted on Home: in a narrow window the other groups fold first)
+      if (g.items.length && g.items.every(isFlyout)) group.classList.add('rb-fold-late');
       const row = document.createElement('div');
       row.className = 'rb-row cr-rows';
       if (g.special === 'clipboard') this.clipboard(row);
@@ -389,6 +398,10 @@ export class CanvasRibbon {
         grid.append(this.template(x));
       } else menu.append(this.menuItem(x));
     }
+    // the on-or-off commands show how they are now, each time the list opens
+    menu.addEventListener('rb-fly-open', () => {
+      for (const x of menu.querySelectorAll<HTMLElement>('[role="menuitemcheckbox"][data-cmd]')) x.setAttribute('aria-checked', String(!!this.host.checked?.(x.dataset.cmd!)));
+    });
     if (f.pane === 'templates') {
       menu.dataset.grid = '';
       // the pictures the drawing code can draw are drawn the first time the pane opens
@@ -412,7 +425,8 @@ export class CanvasRibbon {
   private menuItem(it: RibbonButton): HTMLButtonElement {
     const b = document.createElement('button');
     b.type = 'button';
-    b.setAttribute('role', 'menuitem');
+    b.setAttribute('role', 'cmd' in it && it.check ? 'menuitemcheckbox' : 'menuitem');
+    if ('cmd' in it && it.check) b.setAttribute('aria-checked', 'false');
     if ('cmd' in it) b.dataset.cmd = it.cmd; else b.dataset.crTool = it.tool;
     b.title = it.tip ?? it.label;
     b.innerHTML = `<span class="rb-icon">${this.host.icon(it) ?? ''}</span><span class="cr-fly-name">${esc(it.label)}</span>`;
@@ -420,6 +434,7 @@ export class CanvasRibbon {
       b.classList.add('cr-has-drop');
       b.insertAdjacentHTML('beforeend', '<span class="cr-drop" aria-hidden="true">▸</span>');
     }
+    if ('cmd' in it && it.check) b.insertAdjacentHTML('beforeend', '<span class="cr-check" aria-hidden="true">✓</span>');
     return b;
   }
 
@@ -468,6 +483,8 @@ export class CanvasRibbon {
 
   /** Show it (the Canvas) or hide it (other modes). */
   show(on: boolean): void {
+    // (a list open in it is put away with it, when another kind of tab takes over)
+    if (!on && this.el.querySelector('.rb-fly-menu:not([hidden])')) closeRibbonFlyout();
     this.el.hidden = !on;
   }
 
@@ -489,6 +506,7 @@ export class CanvasRibbon {
   pick(id: string): void {
     id = canvasTabFor(id);
     if (!this.tabs.has(id)) return;
+    if (this.el.querySelector('.rb-fly-menu:not([hidden])')) closeRibbonFlyout();
     for (const [k, b] of this.tabs) b.setAttribute('aria-selected', String(k === id));
     for (const [k, p] of this.panels) p.hidden = k !== id;
     // (the Analysis box stays at the right end of whichever tab is open)

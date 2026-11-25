@@ -11,6 +11,11 @@
 
 let openMenu: HTMLElement | null = null;
 
+/** Put away the ribbon list that is open, if one is. */
+export function closeRibbonFlyout(): void {
+  close();
+}
+
 function close(): void {
   if (!openMenu) return;
   openMenu.hidden = true;
@@ -81,18 +86,28 @@ export function installRibbonFlyouts(): void {
       return;
     }
     // a command in the list has run (the ribbon heard the click first): the list closes
-    if (openMenu && (t.closest('.rb-fly-menu') === openMenu ? t.closest('button') : true)) close();
+    if (openMenu && (t.closest('.rb-fly-menu') === openMenu ? t.closest('button') : true)) {
+      const menu = openMenu;
+      const by = menu.parentElement?.querySelector<HTMLElement>(':scope > .rb-fly-btn');
+      close();
+      // chosen with the keyboard (Enter or Space: a click with no pointer): the focus goes back to
+      // the list's button, unless the command opened a window or put the focus somewhere itself
+      const now = document.activeElement;
+      if (e.detail === 0 && menu.contains(t) && (!now || now === document.body || menu.contains(now))) by?.focus({ preventScroll: true });
+    }
   });
   document.addEventListener('keydown', (e) => {
     if (!openMenu) return;
-    if (e.key === 'Escape' || e.key === 'Tab') {
+    // (a list with a box to type in, Page Color's custom color, keeps Tab, Home, End and the side arrows for it)
+    const field = !!openMenu.querySelector('input, select, textarea');
+    if (e.key === 'Escape' || (e.key === 'Tab' && !field)) {
       const by = openMenu.parentElement?.querySelector<HTMLElement>(':scope > .rb-fly-btn');
       close();
       by?.focus();
       e.stopPropagation();
       // (Tab: back to the button, as Esc, rather than lost with the closed list)
-      e.preventDefault();
-    } else if (['ArrowDown', 'ArrowUp', 'ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key)) {
+      if (e.key === 'Tab') e.preventDefault();
+    } else if (['ArrowDown', 'ArrowUp'].includes(e.key) || (!field && ['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(e.key))) {
       const items = [...openMenu.querySelectorAll<HTMLElement>('button:not([disabled])')];
       if (!items.length) return;
       const at = items.indexOf(document.activeElement as HTMLElement);
