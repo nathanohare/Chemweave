@@ -32,7 +32,7 @@ export function positioned(fl: Float | undefined, place: PositionPlace, size: { 
   const x = col === 'left' ? 0 : col === 'center' ? (roomW - w) / 2 : roomW - w;
   const y = row === 'top' ? 0 : row === 'middle' ? (roomH - h) / 2 : roomH - h;
   const keep = fl && fl.wrap !== 'behind' && fl.wrap !== 'front' ? fl.wrap : 'square';
-  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin', align: undefined };
+  return { ...fl, wrap: keep, x, y, xFrom: 'margin', yFrom: 'margin', align: undefined, side: undefined };
 }
 
 /**

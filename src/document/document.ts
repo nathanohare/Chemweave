@@ -333,6 +333,12 @@ export interface WordPane { name?: string; hidden?: boolean }
 
 export interface Float {
   wrap: WrapKind;
+  /**
+   * Which side of a figure wrapped square the text goes (Word's wrapText): only at its left or
+   * its right, or both sides; left out, the wider side (Word's "largest"). Text on both sides is
+   * laid out here on the wider side.
+   */
+  side?: 'bothSides' | 'left' | 'right';
   x: number;
   y: number;
   xFrom?: 'margin' | 'page';
