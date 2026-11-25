@@ -37,3 +37,6 @@ tests/fixtures/chemdraw-private/
 !tests/fixtures/si-import-pdf/*.pdf
 !tests/fixtures/si-import/files/*.docx
 !tests/fixtures/si-import/spectra/*.docx
+
+# downloaded by scripts/fetch-ooxml-schemas.mjs (the ECMA-376 schemas tests/ooxml-schema.ts checks against)
+.cache/
