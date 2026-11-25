@@ -1863,7 +1863,7 @@ class Reader {
     const box = boxOf(xfrm, xfrm && kid(spPr, 'xfrm') ? t : IDENTITY);
     if (!box) return;
     const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? (kid(spPr, 'custGeom') ? 'cust' : 'rect');
-    if (!ph && /line|Connector/i.test(prst)) { this.line(sp, spPr, t, doc); return; }
+    if (!ph && LINE_PRST.test(prst)) { this.line(sp, spPr, t, doc); return; }
     if (!ph) {
       // a design shape saved here, or a PowerPoint shape that is one (in designs, boxes and ovals too)
       const geoTag = this.tagsOf(s.path, kid(sp, 'nvSpPr', 'nvPr'))[TAG.geo];
@@ -2649,11 +2649,13 @@ class Reader {
     const look = this.look(el, spPr);
     if (!look.line) return;
     const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? 'line';
-    if (!/^(line|straightConnector1)$/.test(prst)) this.warnings.add('Bent and curved connectors came in straight.');
+    if (!/^(line|lineInv|straightConnector1)$/.test(prst)) this.warnings.add('Bent and curved connectors came in straight.');
     const mid = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+    // (lineInv runs from the bottom left to the top right of its box: a line flipped up and down)
+    const flipV = prst === 'lineInv' ? !box.flipV : box.flipV;
     // a turned line: its ends turned about the middle of its box
-    const a = turnAbout({ x: box.flipH ? box.x2 : box.x1, y: box.flipV ? box.y2 : box.y1 }, mid, box.rot);
-    const b = turnAbout({ x: box.flipH ? box.x1 : box.x2, y: box.flipV ? box.y1 : box.y2 }, mid, box.rot);
+    const a = turnAbout({ x: box.flipH ? box.x2 : box.x1, y: flipV ? box.y2 : box.y1 }, mid, box.rot);
+    const b = turnAbout({ x: box.flipH ? box.x1 : box.x2, y: flipV ? box.y1 : box.y2 }, mid, box.rot);
     const ln = kid(spPr, 'ln');
     const end = (n: string) => {
       const e = kid(ln, n);
@@ -3341,3 +3343,11 @@ function restoreLinks(doc: Doc, tag: string, saved: Record<RefKind, Map<number, 
     if (k === 'a') doc.updateAtom(id, patch); else if (k === 'b') doc.updateBond(id, patch); else if (k === 'c') doc.updateCaption(id, patch); else if (k === 'r') doc.updateArrow(id, patch); else doc.updateShape(id, patch);
   }
 }
+
+/**
+ * The preset shapes that are lines (ECMA-376 Part 1, §20.1.10.56 ST_ShapeType): a line and the
+ * straight, bent and curved connectors. Not the flowchart shapes whose names only sound like
+ * lines (flowChartConnector, a circle; flowChartOffpageConnector, flowChartOnlineStorage and
+ * flowChartOfflineStorage).
+ */
+export const LINE_PRST = /^(?:line|lineInv|straightConnector1|bentConnector[2-5]|curvedConnector[2-5])$/;
