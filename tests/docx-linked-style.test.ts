@@ -7,7 +7,7 @@
 import { describe, it, expect } from 'vitest';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
-import { newParaStyle, type DocText } from '../src/document/document';
+import { deleteStyle, newParaStyle, type DocText } from '../src/document/document';
 
 const W = 'xmlns:w="http://schemas.openxmlformats.org/wordprocessingml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships"';
 const R = 'http://schemas.openxmlformats.org/officeDocument/2006/relationships/';
@@ -51,6 +51,33 @@ describe('a linked style pair', () => {
     expect(linkOf(styleOf(x, 'berschrift1Zchn'))).toBe('Heading1');
     const again = strFromU8(unzipSync(await writeDocx((await readDocx(once)).doc, deps))['word/styles.xml']);
     expect(again).toBe(x);
+  });
+
+  it("keeps Normal's link, a link next to w:next, and none to a style not in the file", async () => {
+    const styles = `<w:style w:type="paragraph" w:default="1" w:styleId="Standard"><w:name w:val="Normal"/><w:link w:val="StandardZchn"/></w:style>` +
+      `<w:style w:type="character" w:customStyle="1" w:styleId="StandardZchn"><w:name w:val="Standard Zchn"/><w:link w:val="Standard"/></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Q"><w:name w:val="Q"/><w:basedOn w:val="Standard"/><w:next w:val="Standard"/><w:link w:val="QChar"/><w:rPr><w:i/></w:rPr></w:style>` +
+      `<w:style w:type="character" w:customStyle="1" w:styleId="QChar"><w:name w:val="Q Char"/><w:link w:val="Q"/><w:rPr><w:i/></w:rPr></w:style>` +
+      `<w:style w:type="paragraph" w:customStyle="1" w:styleId="Lonely"><w:name w:val="Lonely"/><w:basedOn w:val="Standard"/><w:link w:val="Missing"/></w:style>`;
+    const files = unzipSync(docx());
+    files['word/styles.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:styles ${W}>${styles}</w:styles>`));
+    files['word/document.xml'] = new Uint8Array(strToU8(`<?xml version="1.0"?><w:document ${W}><w:body><w:p><w:r><w:t>plain</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Q"/></w:pPr><w:r><w:t>q</w:t></w:r></w:p><w:p><w:pPr><w:pStyle w:val="Lonely"/></w:pPr><w:r><w:t>l</w:t></w:r></w:p><w:sectPr/></w:body></w:document>`));
+    const t = (await readDocx(zipSync(files))).doc as DocText;
+    const x = strFromU8(unzipSync(await writeDocx(t, deps))['word/styles.xml']);
+    expect(linkOf(styleOf(x, 'Normal'))).toBe('StandardZchn');
+    expect(linkOf(styleOf(x, 'StandardZchn'))).toBe('Normal');
+    expect(styleOf(x, 'Q')).toMatch(/<w:next w:val="Normal"\/><w:link w:val="QChar"\/>/);
+    expect(x.match(/w:styleId="QChar"/g)).toHaveLength(1);
+    expect(linkOf(styleOf(x, 'Lonely'))).toBeUndefined();
+  });
+
+  it("is taken off the character half when the paragraph half is deleted; New Style doesn't take a kept style's id", async () => {
+    const t = (await readDocx(docx())).doc as DocText;
+    const quote = Object.values(t.styles).find((s) => s.name === 'Sampler Quote')!;
+    const x = strFromU8(unzipSync(await writeDocx(deleteStyle(t, quote.id), deps))['word/styles.xml']);
+    expect(styleOf(x, 'SamplerQuoteChar')).not.toBe('');
+    expect(linkOf(styleOf(x, 'SamplerQuoteChar'))).toBeUndefined();
+    expect(newParaStyle(t, 'SamplerQuoteChar', 0, {}).id).not.toBe('SamplerQuoteChar');
   });
 
   it('is not linked to a style made from one of it (New Style)', async () => {

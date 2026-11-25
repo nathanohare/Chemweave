@@ -1917,7 +1917,7 @@ class DocxWriter {
     if (t.kept?.latentStyles) out.push(t.kept.latentStyles);
     const ids = Object.keys(t.styles);
     // (the character styles the file will have, for the paragraph styles linked to one)
-    const chars = new Set([...(t.kept?.styles ?? []).filter((k) => k.type === 'character').map((k) => k.id), ...Object.keys(this.charStyles)]);
+    const chars = new Set((t.kept?.styles ?? []).filter((k) => k.type === 'character' && !this.charStyles[k.id]).map((k) => k.id));
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
       if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars));
@@ -1976,7 +1976,14 @@ class DocxWriter {
     // the file's styles that aren't styles here (a journal template's unused ones, character and
     // table styles nothing uses), as Word had them, unless one of the same kind and id is written above
     const written = new Set([...out.join('').matchAll(/<w:style\b[^>]*?\bw:type="([^"]+)"[^>]*?\bw:styleId="([^"]+)"/g)].map((m) => `${m[1]}:${unxml(m[2])}`));
-    for (const k of t.kept?.styles ?? []) if (!written.has(`${k.type}:${k.id}`)) out.push(keptStyleXml(k, this.keptNumIds));
+    const paraIds = new Set([...written].filter((k) => k.startsWith('paragraph:')).map((k) => k.slice(10)));
+    for (const k of t.kept?.styles ?? []) if (k.type === 'paragraph' && !written.has(`paragraph:${k.id}`)) paraIds.add(k.id);
+    for (const k of t.kept?.styles ?? []) {
+      if (written.has(`${k.type}:${k.id}`)) continue;
+      const lk = k.type === 'character' ? /<w:link w:val="([^"]*)"\/>/.exec(k.xml) : null;
+      const x = lk && !paraIds.has(unxml(lk[1])) ? { ...k, xml: k.xml.replace(lk[0], '') } : k;
+      out.push(keptStyleXml(x, this.keptNumIds));
+    }
     out.push('</w:styles>');
     return out.join('');
   }
@@ -2560,7 +2567,7 @@ function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => strin
   const word = WORD_NAMES[id] ?? builtIn(s.name);
   const name = word ?? s.name;
   const head = id === 'Normal'
-    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>`
+    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:qFormat/>`
     : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
       `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
   const pPr: string[] = [];

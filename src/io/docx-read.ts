@@ -774,7 +774,7 @@ class DocxReader {
       // (a character style linked to a paragraph style read here under another id: linked to that id)
       const lk = ws.type === 'character' ? this.a(kid(ws.el, 'link')) : null;
       const ours = lk ? this.idMap.get(lk) : undefined;
-      if (lk && ours && ours !== lk && styles[ours]) xml = xml.replace(/(<w:link w:val=")[^"]*(")/, (_m, a: string, b: string) => `${a}${ours}${b}`);
+      if (lk && ours && ours !== lk && styles[ours]) xml = xml.replace(/(<w:link w:val=")[^"]*(")/, (_m, a: string, b: string) => `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}`);
       out.push({ type: ws.type, id: ws.id, xml });
     }
     return out.length ? out : undefined;

@@ -841,7 +841,7 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const p = paras[para] ?? {};
   const from = styleOf(t, p);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: NamedStyle = {
     ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined,
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
@@ -955,7 +955,7 @@ export function modifyCharStyle(t: DocText, s: CharStyle): DocText {
 /** Styles pane > New Style (character): a character style with the look of the selected text, given to it. */
 export function newCharStyle(t: DocText, name: string, start: number, end: number, look: rt.RunStyle, para: ParaStyle): { t: DocText; id: string } {
   const N = styleOf(t, para);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: CharStyle = { id, name: name.trim() || id, custom: true };
   if (look.font && look.font !== N.font) s.font = look.font;
   if (look.size && look.size !== N.size) s.size = look.size;
