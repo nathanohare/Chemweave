@@ -474,12 +474,34 @@ describe('each table\'s filter buttons, saved and opened again (F-X-007 review)'
     expect(Object.keys(again.sheet.filter?.conditions ?? {})).toEqual(['1']);
   });
 
-  it('keeps Data ▸ Filter off through a save and a reopen', async () => {
+  const tablesOf = (saved: Uint8Array) => Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n));
+  const tableAt = (saved: Uint8Array, ref: string) => tablesOf(saved).find((t) => t.includes(`ref="${ref}"`))!;
+
+  it('keeps Data ▸ Filter off through a save and a reopen, every table keeping its buttons', async () => {
     const book = (await readXlsx(file())).book;
-    book.edit('off', () => { const was = book.sheet.filter!.range; book.sheet.setFilter(null); book.sheet.setTableButtons(was, false); });
+    book.edit('off', () => book.sheet.setFilter(null));
     const saved = await writeXlsx(book, pictures);
     expect((await readXlsx(saved)).book.sheet.filter).toBeNull();
-    const t2 = Object.keys(unzipSync(saved)).filter((n) => /^xl\/tables\/table\d+\.xml$/.test(n)).map((n) => part(saved, n)).find((t) => t.includes('ref="A5:B7"'))!;
-    expect(t2).not.toContain('<autoFilter');
+    expect(tableAt(saved, 'A1:B3')).toContain('<autoFilter');
+    expect(tableAt(saved, 'A5:B7')).toContain('<autoFilter ref="A5:B7"/>');
+  });
+
+  it('moves the filter from one table to another without taking the first table\'s buttons off', async () => {
+    const book = (await readXlsx(file())).book;
+    book.edit('off', () => book.sheet.setFilter(null));
+    book.edit('on', () => { book.sheet.setFilter({ range: { r1: 0, c1: 0, r2: 2, c2: 1 }, conditions: {} }); book.sheet.setTableButtons({ r1: 0, c1: 0, r2: 2, c2: 1 }, true); });
+    const saved = await writeXlsx(book, pictures);
+    expect(tableAt(saved, 'A1:B3')).toContain('<autoFilter');
+    expect(tableAt(saved, 'A5:B7')).toContain('<autoFilter');
+    expect((await readXlsx(saved)).book.sheet.filter?.range).toMatchObject({ r1: 0, r2: 2 });
+  });
+
+  it('stops a filter on cells above a table at the row above it, on the page and in the file', async () => {
+    const bytes = excelBook([['Tables', `<sheetData>${head(1)}${row(2)}${row(3)}${head(5)}${row(6)}${row(7)}</sheetData>`]], { parts: [table(2, 'A5:B7', '<autoFilter ref="A5:B7"/>')] });
+    const book = (await readXlsx(bytes)).book;
+    book.edit('on', () => book.sheet.setFilter({ range: { r1: 0, c1: 0, r2: 2, c2: 1 }, conditions: {} }));
+    expect(book.sheet.filterRows()).toEqual({ r1: 1, r2: 3 });
+    const sheet = part(await writeXlsx(book, pictures), 'xl/worksheets/sheet1.xml');
+    expect(sheet).toContain('<autoFilter ref="A1:B4"');
   });
 });

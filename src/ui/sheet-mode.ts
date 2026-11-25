@@ -1456,8 +1456,8 @@ export class SheetMode {
     const v = this.view;
     const s = v.sheet!;
     if (s.filter) {
-      const was = s.filter.range;
-      this.edit('Filter off', (sh) => { sh.setFilter(null); sh.setTableButtons(was, false); });
+      // (a table keeps its filter buttons, as Excel makes tables: the file says the filter is off)
+      this.edit('Filter off', (sh) => sh.setFilter(null));
       this.host.flash('Filter off: every row shows.');
       return;
     }

@@ -1241,8 +1241,8 @@ export class Sheet {
   }
 
   /**
-   * Data ▸ Filter turned on or off over a table: the table's filter buttons go with it (Excel's
-   * Table Design ▸ Filter Button), so its file says the same when the filter is elsewhere or gone.
+   * Data ▸ Filter turned on over a table without filter buttons (Excel's Table Design ▸ Filter
+   * Button off): it has them from then on, as in Excel. (`on` false takes them off.)
    */
   setTableButtons(range: Range, on: boolean): void {
     const t = this.tables.find((x) => x.header && rangesOverlap(x.range, range));
@@ -1269,11 +1269,13 @@ export class Sheet {
     this.applyFilter();
   }
 
-  /** The rows of the filtered table below its headers (reaching down to the last row of data). */
+  /** The rows of the filtered table below its headers (reaching down to the last row of data, but not into a table below it). */
   filterRows(): { r1: number; r2: number } | null {
     const f = this.filter;
     if (!f) return null;
-    return { r1: f.range.r1 + 1, r2: Math.max(f.range.r2, this.lastDataRow) };
+    const F = f.range;
+    const below = this.tables.filter((t) => t.range.r1 > F.r2 && t.range.c1 <= F.c2 && t.range.c2 >= F.c1).map((t) => t.range.r1 - 1);
+    return { r1: F.r1 + 1, r2: Math.max(F.r2, Math.min(this.lastDataRow, ...below)) };
   }
 
   /** Hide the rows that fail the filter's conditions and show the rest (as Excel, once, not as cells change). */

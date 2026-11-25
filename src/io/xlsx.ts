@@ -928,10 +928,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // a filter on a table goes in the table's part (Excel allows no sheet filter over a table)
     const filterTable = s.filter ? s.tables.find((t) => rangesOverlap(t.range, s.filter!.range)) : undefined;
     if (s.filter && !filterTable) {
-      // to the last row with data, stopping above a table below it (a sheet filter can't take in a table)
-      const F = s.filter.range;
-      const below = s.tables.filter((t) => t.range.r1 > F.r2 && t.range.c1 <= F.c2 && t.range.c2 >= F.c1).map((t) => t.range.r1 - 1);
-      const R = { ...F, r2: Math.max(F.r2, Math.min(s.lastDataRow, ...below)) };
+      // the rows it filters: to the last row with data, stopping above a table below it (a sheet filter can't take in a table)
+      const R = { ...s.filter.range, r2: s.filterRows()!.r2 };
       const ref = `${cellName(R.r1, R.c1)}:${cellName(R.r2, R.c2)}`;
       const colsXml = Object.entries(s.filter.conditions).map(([col, cond]) => filterColumnXml(Number(col) - R.c1, cond)).filter(Boolean).join('');
       filterXml = `<autoFilter ref="${ref}">${colsXml}</autoFilter>`;
