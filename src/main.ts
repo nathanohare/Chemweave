@@ -182,7 +182,7 @@ import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprou
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { StylePanel, tidyStyle } from './ui/style-panel';
 import { installCombos } from './ui/combo';
-import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts } from './fonts';
+import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts, pdfFallbackFonts } from './fonts';
 import { applyRibbonIcons } from './ui/ribbon-icons';
 import { iconSet, setIconSet } from './ui/icon-swap';
 import { applyIconSet } from './ui/icon-set';
@@ -8287,7 +8287,7 @@ async function exportPdf(watch?: PdfWatch, currentSlide = false): Promise<void> 
   if (!target) return;
   watch?.show();
   try {
-    const bytes = await writePdf(pages, { title: tab.name.replace(/\.[^.]+$/, ''), image: pdfImage, fonts: pdfFonts, ...(watch ? { progress: (d: number, t: number) => watch.progress(d, t) } : {}) });
+    const bytes = await writePdf(pages, { title: tab.name.replace(/\.[^.]+$/, ''), image: pdfImage, fonts: pdfFonts, fallback: pdfFallbackFonts, ...(watch ? { progress: (d: number, t: number) => watch.progress(d, t) } : {}) });
     await writeFile(target.ref, target.name, bytes, PDF);
   } catch (e) {
     if (watch?.cancelled) { flash(`${target.name} was not saved (canceled)`); return; }

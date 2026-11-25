@@ -8,6 +8,7 @@
 
 import { woffToSfnt, type EmbedFace, type FontSource } from './io/font-embed';
 import type { PdfFontSource } from './io/pdf-fonts';
+import { FALLBACK_PACKAGES, fallbackFamily, fallbackPicks, type FallbackFamily, type PdfFallbackSource } from './io/pdf-fallback';
 import { STAND_IN_FONTS, standInFont, useEmbeddedFont } from './text/font-standins';
 
 export interface FontGroup {
@@ -54,9 +55,9 @@ export function readFontFile(path: string): { pkg: string; subset: string; weigh
   return m ? { pkg: m[1], subset: m[2], weight: Number(m[3]), style: m[4] as 'normal' | 'italic' } : null;
 }
 
-// the bundled files (Vite copies the ones listed and gives each its address)
-const FILES = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff2', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
-const WOFF = import.meta.glob('/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff', { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+// the bundled files (Vite copies the ones listed and gives each its address; the Noto fallback fonts' are their own, below)
+const FILES = import.meta.glob(['/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff2', '!/node_modules/@fontsource/noto-sans-*/**'], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const WOFF = import.meta.glob(['/node_modules/@fontsource/*/files/*-{latin,latin-ext,greek}-{400,700}-{normal,italic}.woff', '!/node_modules/@fontsource/noto-sans-*/**'], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
 
 let registered = false;
 let fontsChanged: (() => void) | null = null;
@@ -155,6 +156,31 @@ export function pdfFontUrls(family: string, bold: boolean, italic: boolean): str
   }
   return [];
 }
+
+// the fallback fonts' own script's files (regular only: pdf-fallback.ts) and the characters each
+// holds (read on the first PDF that needs one, so they don't load with the app)
+const FALLBACK_WOFF = import.meta.glob([
+  '/node_modules/@fontsource/noto-sans-hebrew/files/noto-sans-hebrew-hebrew-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-arabic/files/noto-sans-arabic-arabic-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-symbols-2/files/noto-sans-symbols-2-{symbols,math}-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-symbols/files/noto-sans-symbols-symbols-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-sc/files/noto-sans-sc-[0-9]*-400-normal.woff',
+  '/node_modules/@fontsource/noto-sans-jp/files/noto-sans-jp-[0-9]*-400-normal.woff',
+], { query: '?url', import: 'default', eager: true }) as Record<string, string>;
+const FALLBACK_RANGES = import.meta.glob('/node_modules/@fontsource/{noto-sans-hebrew,noto-sans-arabic,noto-sans-symbols-2,noto-sans-symbols,noto-sans-sc,noto-sans-jp}/unicode.json', { import: 'default' }) as Record<string, () => Promise<Record<string, string>>>;
+let fallbackFamilies: Promise<FallbackFamily[]> | null = null;
+
+/** Font files that may draw a character a PDF's text can't draw with its own fonts (Chinese, Japanese, Hebrew, Arabic, symbols). */
+export const pdfFallbackFonts: PdfFallbackSource = async (ch, text) => {
+  fallbackFamilies ??= Promise.all(FALLBACK_PACKAGES.map(async (pkg) => {
+    const load = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
+    return load ? [fallbackFamily(pkg, await load())] : [];
+  })).then((x) => x.flat());
+  return fallbackPicks(await fallbackFamilies, [ch], text).flatMap(({ pkg, subset }) => {
+    const url = Object.entries(FALLBACK_WOFF).find(([path]) => path.endsWith(`/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`))?.[1];
+    return url ? [{ key: url, load: async () => woffToSfnt(new Uint8Array(await (await fetch(url)).arrayBuffer())) }] : [];
+  });
+};
 
 /** Font files for PDF export: every face as TrueType, Symbol left to the reader's own. */
 export const pdfFonts: PdfFontSource = async (family, bold, italic) => {
