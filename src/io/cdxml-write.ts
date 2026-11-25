@@ -2072,7 +2072,8 @@ class CdxmlWriter {
       this.fillCaption(t, { id: 0, x: area.x1, y: top - lay.box.y1, runs: s.text.runs, paras: s.text.paras, justify, wrap: w });
       g.appendChild(t);
     }
-    const { id: _, ...look } = s;
+    // (not its group's name: that goes with its other settings, cdxml-more, so a group changed here isn't named from this tag)
+    const { id: _, grpName: _gn, ...look } = s;
     // a frame takes what lies inside it again on opening (ids change between files)
     if (look.frame) look.frame = { ...look.frame, atoms: [], captions: [], arrows: [], shapes: [] };
     if (look.newman) look.newman = newmanForFile(this.doc, look.newman);

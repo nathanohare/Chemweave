@@ -86,6 +86,21 @@ describe("a group's name", () => {
     expect([...again.shapes.values()].every((s) => s.grp === undefined && s.grpName === undefined)).toBe(true);
   });
 
+  it("isn't brought back from a design shape's own tag after grouping again (CDXML)", () => {
+    const doc = new Doc();
+    doc.edit('x', () => {
+      doc.addShape(box(0, { geo: 'star5', grp: 1, grpName: 'Scheme' }));
+      doc.addShape(box(100, { geo: 'heart', filled: true, grp: 1, grpName: 'Scheme' }));
+    });
+    const back = readCdxml(writeCdxml(doc)).doc;
+    expect([...back.shapes.values()].map((s) => s.grpName)).toEqual(['Scheme', 'Scheme']);
+    const all = { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set([...back.shapes.keys()]) };
+    back.edit('ungroup', () => { ungroupSelection(back, all as never); });
+    back.edit('group', () => { groupSelection(back, all as never); });
+    const again = readCdxml(writeCdxml(back)).doc;
+    expect([...again.shapes.values()].map((s) => s.grpName)).toEqual([undefined, undefined]);
+  });
+
   it('is taken off by ungrouping, and by grouping again', () => {
     const doc = new Doc();
     let a = 0, b = 0, c = 0;
