@@ -515,7 +515,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
           // (outlined letters: drawn by their outline, PDF's text rendering mode 1)
-          ops.push(`BT ${it.stroke ? `${paint.v} RG ${num(it.stroke)} w 1 Tr ` : ''}/${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
+          ops.push(`BT ${it.stroke ? `${paint.v} RG ${num(it.stroke)} w 1 j 1 Tr ` : ''}/${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
         for (const piece of keptPieces(text, seenText.widths, own, extra)) {
           if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));

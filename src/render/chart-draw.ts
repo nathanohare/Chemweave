@@ -1022,7 +1022,7 @@ function scaleItems(items: Item[], k: number): Item[] {
     const c = one.clip;
     const it = c ? { ...one, clip: { x1: c.x1 * k, y1: c.y1 * k, x2: c.x2 * k, y2: c.y2 * k } } : one;
     if (it.kind === 'path') return { ...it, segs: it.segs.map(seg), ...(it.stroke ? { stroke: { ...it.stroke, width: it.stroke.width * k } } : {}) };
-    if (it.kind === 'text') return { ...it, x: it.x * k, y: it.y * k, size: it.size * k, widths: it.widths.map((w) => w * k) };
+    if (it.kind === 'text') return { ...it, x: it.x * k, y: it.y * k, size: it.size * k, widths: it.widths.map((w) => w * k), ...(it.stroke ? { stroke: it.stroke * k } : {}) };
     return { ...it, x: it.x * k, y: it.y * k, w: it.w * k, h: it.h * k };
   });
 }

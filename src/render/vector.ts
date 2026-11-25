@@ -300,7 +300,6 @@ export class VectorContext {
     this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}), ...(this.direction === 'rtl' ? { rtl: true } : {}) });
   }
 
-  /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
   /** Letters outlined (Word's outline and hollow text): as fillText, with the outline's colour and width. */
   strokeText(text: string, x: number, y: number): void {
     const n = this.items.length;
@@ -311,6 +310,7 @@ export class VectorContext {
     if (it?.kind === 'text') it.stroke = this.st.lineWidth;
   }
 
+  /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
   fillTextTurned(text: string, x: number, y: number, angle: number): void {
     this.fillText(text, x, y);
     const it = this.items[this.items.length - 1];
@@ -488,4 +488,10 @@ export function itemBounds(items: Item[]): { x1: number; y1: number; x2: number;
     }
   }
   return x1 === Infinity ? null : { x1, y1, x2, y2 };
+}
+
+/** A text item drawn by its outline (strokeText) over the same text just filled: left out where outlines can't be drawn. */
+export function outlineOfPrevious(items: readonly Item[], i: number): boolean {
+  const it = items[i], prev = items[i - 1];
+  return it.kind === 'text' && !!it.stroke && prev?.kind === 'text' && !prev.stroke && prev.text === it.text && Math.abs(prev.x - it.x) < 1e-6 && Math.abs(prev.y - it.y) < 1e-6;
 }

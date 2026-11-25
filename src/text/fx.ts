@@ -36,12 +36,13 @@ export function withFx(ctx: CanvasRenderingContext2D, fx: TextFx, size: number):
     ctx.lineWidth = fx.outlineW ?? OUTLINE_W;
     ctx.lineJoin = 'round';
   }
-  // (where shadows can't be drawn, as in a picture for a PDF: a see-through copy below and to the right)
+  // (where shadows can't be drawn, as in a picture for a PDF: a grey copy below and to the right, as
+  // 40 % black on white looks, opaque so that PDF, EPS and EMF, whose text takes no transparency, draw it so)
   const copy = !!fx.shadow && !('shadowColor' in (ctx as object));
   return (text, x, y) => {
     if (copy) {
       const was = ctx.fillStyle;
-      ctx.fillStyle = 'rgba(0, 0, 0, 0.4)';
+      ctx.fillStyle = '#999999';
       ctx.fillText(text, x + size * 0.06, y + size * 0.06);
       ctx.fillStyle = was;
     }

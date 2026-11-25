@@ -9,7 +9,7 @@ import { unzlibSync } from 'fflate';
 import { wordLook } from '../src/text/word-look';
 import { layoutText } from '../src/text/layout';
 import { drawLayout } from '../src/text/draw';
-import { VectorContext } from '../src/render/vector';
+import { VectorContext, outlineOfPrevious } from '../src/render/vector';
 import { itemsToSvg } from '../src/render/svg';
 import { writePdf } from '../src/io/pdf';
 import type { TextRun } from '../src/model';
@@ -71,6 +71,8 @@ describe("Word's character effects", () => {
     const shadowed = drawn({ text: 'Shadow', size: 10, shadow: true }).filter((i) => i.kind === 'text') as { x: number; color: string }[];
     expect(shadowed).toHaveLength(2);
     expect(shadowed[0].x).toBeGreaterThan(shadowed[1].x);
+    // (opaque grey: PDF, EPS and EMF text take no transparency) (review)
+    expect(shadowed[0].color).toBe('#999999');
     const pdf = await writePdf([{ w: 100, h: 40, items: outlined }], { image: async () => null });
     const s = Array.from(pdf, (c) => String.fromCharCode(c)).join('');
     const streams: string[] = [];
@@ -80,5 +82,14 @@ describe("Word's character effects", () => {
       i = end;
     }
     expect(streams.join('\n')).toMatch(/RG [\d.]+ w 1 Tr/);
+  });
+
+  it('leaves out, where outlines can't be drawn (EMF, EPS), an outline over its own letters, but not one on its own (review)', () => {
+    const both = drawn({ text: 'Both', size: 10, color: '#ffffff', outline: '#000000' });
+    const i = both.findIndex((x) => x.kind === 'text' && x.stroke);
+    expect(i).toBeGreaterThan(0);
+    expect(outlineOfPrevious(both, i)).toBe(true);
+    const alone = drawn({ text: 'Alone', size: 10, outline: '#000000', noFill: true });
+    expect(outlineOfPrevious(alone, alone.findIndex((x) => x.kind === 'text' && x.stroke))).toBe(false);
   });
 });

@@ -135,8 +135,11 @@ function drawOver(ctx: CanvasRenderingContext2D, lay: TextLayout, g: Glyphs, x: 
     // above the letters, or (underDot) below the line
     const my = look.em === 'underDot' ? y + g.size * 0.3 : y - g.size * 0.95;
     for (let k = 0; k < g.text.length; k++) {
-      if (/\s/.test(g.text[k])) continue;
-      const cx = x + (pieceX(lay, g, k) + pieceX(lay, g, k + 1)) / 2;
+      // (none at spaces and soft hyphens, nor at the second half of a character beyond the basic plane)
+      const code = g.text.charCodeAt(k);
+      if (/[\s\u00ad]/.test(g.text[k]) || (code >= 0xdc00 && code <= 0xdfff)) continue;
+      // (at the middle of the letter, not of the letter and the spacing after it)
+      const cx = x + (pieceX(lay, g, k) + pieceX(lay, g, k + 1) - (g.spacing ?? 0)) / 2;
       ctx.beginPath();
       if (look.em === 'circle') { ctx.arc(cx, my, r * 1.4, 0, Math.PI * 2); ctx.stroke(); continue; }
       ctx.arc(cx, my, r, 0, Math.PI * 2);
