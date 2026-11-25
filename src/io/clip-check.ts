@@ -133,6 +133,7 @@ const atom = {
   supDigits: true, labelMarks: '', centred: true, stacked: oneOf('up', 'down'), hDot: oneOf('dot', 'dash'), stackedLoose: true, fixedDir: true,
   showStereo: true, stereoLabel, ignoreWarnings: true, highlight: '', hl: highlight, radical: oneOf('singlet', 'doublet', 'triplet'), attach: '',
   attachNum: 0, atomNumber: '', showNumber: true, numberLabel, mapNo: 0, focal: true, enhStereo: enh, multi: ids, kekule: true, variable: true, ringOf: ids,
+  ecount: { types: (v: unknown) => !!v && typeof v === 'object' && !Array.isArray(v) && Object.values(v).every((t) => typeof t === 'string'), ox: 0, charge: 0, expect: 0 },
 } satisfies Record<keyof Atom, Spec>;
 const bond = {
   id: 0, a1: 0, a2: 0, order: 0,

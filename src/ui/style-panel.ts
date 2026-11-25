@@ -48,6 +48,8 @@ import { straightenAt } from '../chem/chemgeom';
 import type { EnergyData } from '../design/energy';
 import { TLC_LOOKS, GEL_LOOKS, LOCK_SPOTS_INFO, type PlateData } from '../design/plates';
 import { DIAGRAM_COLOURS, DIAGRAM_LAYOUTS, type DiagramData } from '../design/diagrams';
+import { LIGAND_TYPES, countRows, countSummary, ligandText, roman, selectedComplex, signed, sup, typeText, type MetalCount } from '../chem/electrons';
+import type { ElectronCountSettings } from '../model';
 
 /** What the table controls need from the editor. */
 export interface TableHooks {
@@ -178,6 +180,8 @@ export class StylePanel {
   orbital: { edit(): void; restyle(shapeIds: number[], patch: Partial<OrbitalSpec>): void } | null = null;
   /** Tie captions to the structure nearest each (Tie to Structure). */
   tie: ((captionIds: number[]) => void) | null = null;
+  /** Electron Count's Insert as Table (set up by the app): the count's rows as a table beside the metal's structure. */
+  electronTable: ((metal: number, rows: string[][]) => void) | null = null;
   /** Brackets drawn as a pair: whether the other halves can be selected or deselected now, and doing it. */
   bracketPartner: { state(): 'select' | 'deselect' | null; toggle(): void } | null = null;
 
@@ -274,6 +278,10 @@ export class StylePanel {
     if (tables.length) this.tableControls(tables[0]);
     if (caps.length) this.captionControls(caps);
     if (centres.length || dbls.length) this.stereoControls(centres, dbls);
+    if (atom || several) {
+      const c = selectedComplex(this.doc, s.atoms);
+      if (c) this.electronControls(c);
+    }
     const boxes = shapes.filter((x) => x.kind === 'rect' || x.kind === 'oval' || x.kind === 'geo');
     if (diagram) { /* the diagram keeps its own frame fitted */ }
     else if (boxes.length === 1 && all.length === 1 && !caps.length && !arrows.length && !s.atoms.size) this.frameControls(boxes[0]);
@@ -1669,6 +1677,188 @@ export class StylePanel {
     });
   }
 
+  // ------------------------------------------------------------------ electron count
+
+  /**
+   * A metal complex's electron count (chem/electrons.ts): the summary, how it compares with the
+   * count expected, the ligands with their types (each can be changed), and the oxidation state,
+   * charge and expected count, each automatic or set by hand (kept on the metal, Atom.ecount).
+   */
+  private electronControls(c: MetalCount): void {
+    const metal = c.metal;
+    const set = (label: string, patch: (now: ElectronCountSettings) => ElectronCountSettings) => this.edit(label, () => {
+      const now = this.doc.atoms.get(metal)?.ecount ?? {};
+      const next: ElectronCountSettings = { ...patch({ ...now }) };
+      if (next.types && !Object.keys(next.types).length) delete next.types;
+      for (const k of Object.keys(next) as (keyof ElectronCountSettings)[]) if (next[k] === undefined) delete next[k];
+      this.doc.updateAtom(metal, { ecount: Object.keys(next).length ? next : undefined });
+    });
+    this.heading('Electron Count');
+    this.help('Two ways of counting that give the same total. Neutral: the metal atom\'s own electrons, two from each L ligand and one from each X, then the charge taken away (or added for an anion). Ionic: the metal ion\'s d electrons (after its oxidation state), two from each L and two from each X counted as an anion. L gives a lone pair, X shares one electron, Z takes two (Green\'s classes). Change a ligand\'s type below when the automatic one is wrong.');
+    const box = document.createElement('div');
+    box.className = 'ec-panel';
+    const head = document.createElement('p');
+    head.className = 'ec-sum';
+    const [lead, cls] = countSummary(c).split(' · ');
+    const strong = document.createElement('b');
+    strong.textContent = lead;
+    head.append(strong, ` · ${cls}`);
+    // how it compares with the count expected: a quiet note, here only (never in the drawing)
+    const status = document.createElement('p');
+    status.className = 'ec-status' + (c.electrons === c.expected.value ? '' : ' off');
+    status.textContent = `${c.electrons} of ${c.expected.value} expected: ${c.expected.reason}`;
+    box.append(head, status);
+
+    const table = document.createElement('table');
+    table.className = 'ec-panel-table';
+    const tr = (cells: (string | HTMLElement)[], cls = '') => {
+      const row = document.createElement('tr');
+      if (cls) row.className = cls;
+      for (const x of cells) {
+        const td = document.createElement('td');
+        td.append(typeof x === 'string' ? scripted(x) : x);
+        row.append(td);
+      }
+      table.append(row);
+      return row;
+    };
+    const th = document.createElement('tr');
+    for (const [t, tip] of [['Ligand', ''], ['Type', ''], ['Neutral', 'Neutral counting: the metal atom\'s electrons, one from each X, two from each L'], ['Ionic', 'Ionic counting: the metal ion\'s d electrons, two from each X and each L']]) {
+      const h = document.createElement('th');
+      h.textContent = t;
+      if (tip) h.title = tip;
+      th.append(h);
+    }
+    table.append(th);
+    tr([c.symbol, 'metal', String(c.group), `d${sup(c.dn)}: ${c.dn}`]).cells[1].className = 'muted';
+    const own = c.settings.types ?? {};
+    for (const r of c.ligands) {
+      let type: string | HTMLElement = typeText(r.type);
+      if (!r.mm) {
+        const sel = document.createElement('select');
+        sel.setAttribute('aria-label', `Type of ${r.name}`);
+        const codes = [...new Set([r.type, r.auto, ...LIGAND_TYPES])];
+        for (const code of codes) {
+          const o = document.createElement('option');
+          o.value = code;
+          o.textContent = code === r.auto && own[r.name] ? `${typeText(code)} (auto)` : typeText(code);
+          sel.append(o);
+        }
+        sel.value = r.type;
+        if (own[r.name]) sel.classList.add('own');
+        sel.title = own[r.name] ? `Set by hand (automatic: ${typeText(r.auto)})` : 'Calculated from the drawing; choose another type to change it';
+        sel.addEventListener('change', () => set('Ligand Type', (now) => {
+          const types = { ...now.types };
+          // choosing the automatic type again forgets the one set by hand
+          if (sel.value === r.auto) delete types[r.name];
+          else types[r.name] = sel.value;
+          return { ...now, types };
+        }));
+        type = sel;
+      }
+      tr([ligandText(r), type, String(r.neutral * r.count), String(r.ionic * r.count)]);
+    }
+    if (c.charge) tr([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
+    tr(['Total', '', String(c.electrons), String(c.ionicTotal)], 'ec-total');
+    box.append(table);
+    this.body.append(box);
+
+    // the oxidation state: automatic (from the X ligands and the charge) or chosen
+    const ox = document.createElement('select');
+    const oxOpt = (v: string, text: string) => { const o = document.createElement('option'); o.value = v; o.textContent = text; ox.append(o); };
+    oxOpt('auto', `Auto (${signed(c.autoOxidation)})`);
+    const lo = Math.min(-3, c.oxidation), hi = Math.max(8, c.oxidation);
+    for (let v = lo; v <= hi; v++) oxOpt(String(v), `${signed(v)} (${roman(v)})`);
+    ox.value = c.settings.ox === undefined ? 'auto' : String(c.settings.ox);
+    ox.addEventListener('change', () => set('Oxidation State', (now) => ({ ...now, ox: ox.value === 'auto' ? undefined : Number(ox.value) })));
+    this.infoRow('Oxidation State', ox, 'Automatic: the number of X ligands plus the complex\'s charge (a Z ligand takes none of the metal\'s electrons). Choose a value to use another; the neutral count does not depend on it, the ionic one does.');
+
+    // the complex's charge: the charges drawn on it, or typed here (empty goes back to the drawing's)
+    const q = document.createElement('input');
+    q.type = 'number';
+    q.step = '1';
+    q.min = '-8';
+    q.max = '8';
+    q.value = String(c.charge);
+    q.placeholder = String(c.autoCharge);
+    if (c.settings.charge !== undefined) q.classList.add('own');
+    q.title = c.settings.charge !== undefined ? `Set by hand (the drawing has ${signed(c.autoCharge)}); clear the box to use the drawing's charge` : 'The charges drawn on the complex, added up; type another to use it here';
+    const setQ = () => {
+      const v = q.value.trim() === '' ? undefined : Math.round(Number(q.value));
+      if (v !== undefined && (!Number.isFinite(v) || Math.abs(v) > 8)) return;
+      const keep = v === undefined || v === c.autoCharge ? undefined : v;
+      if (keep !== c.settings.charge) set('Complex Charge', (now) => ({ ...now, charge: keep }));
+    };
+    q.addEventListener('change', setQ);
+    q.addEventListener('keydown', (e) => { if (e.key === 'Enter') q.blur(); e.stopPropagation(); });
+    this.row('Charge', q);
+
+    // the count expected: automatic, a usual one, or any other typed in
+    const exp = document.createElement('select');
+    const expOpt = (v: string, text: string) => { const o = document.createElement('option'); o.value = v; o.textContent = text; exp.append(o); };
+    expOpt('auto', `Auto (${c.expected.auto})`);
+    const usual = ['18', '16', '14'];
+    for (const v of usual) expOpt(v, v);
+    const mine = c.settings.expect;
+    if (mine !== undefined && !usual.includes(String(mine))) expOpt(String(mine), String(mine));
+    expOpt('other', 'Other…');
+    exp.value = mine === undefined ? 'auto' : String(mine);
+    const holder = document.createElement('span');
+    holder.className = 'ec-expect';
+    holder.append(exp);
+    exp.addEventListener('change', () => {
+      if (exp.value !== 'other') { set('Expected Count', (now) => ({ ...now, expect: exp.value === 'auto' ? undefined : Number(exp.value) })); return; }
+      // any other number, typed in place of the list
+      const n = document.createElement('input');
+      n.type = 'number';
+      n.min = '2';
+      n.max = '30';
+      n.step = '1';
+      n.value = String(c.expected.value);
+      n.setAttribute('aria-label', 'Expected Count');
+      const done = () => {
+        const v = Math.round(Number(n.value));
+        if (n.value.trim() && Number.isFinite(v) && v >= 2 && v <= 30) set('Expected Count', (now) => ({ ...now, expect: v }));
+        else { this.key = ''; this.refresh(); }
+      };
+      n.addEventListener('change', done);
+      n.addEventListener('keydown', (e) => { if (e.key === 'Enter') n.blur(); if (e.key === 'Escape') { this.key = ''; this.refresh(); } e.stopPropagation(); });
+      holder.replaceChildren(n);
+      n.focus();
+      n.select();
+    });
+    this.infoRow('Expected Count', holder, 'Automatic: 18 (the 18-electron rule), or 16 for a d⁸ metal of groups 9 and 10 with four ligands, which is usually square planar (Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed., section 13.3). Many complexes have other counts; choose or type the one you expect.');
+
+    const buttons = document.createElement('div');
+    buttons.className = 'style-buttons';
+    const ins = document.createElement('button');
+    ins.type = 'button';
+    ins.textContent = 'Insert as Table';
+    ins.title = 'Put this count beside the structure as an ordinary table (a copy: it does not change with the structure)';
+    ins.disabled = !this.electronTable;
+    ins.addEventListener('click', () => this.electronTable?.(metal, countRows(c)));
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset Types';
+    const anyOwn = Object.keys(own).length > 0;
+    reset.disabled = !anyOwn;
+    reset.title = anyOwn ? 'Use the ligand types calculated from the drawing again' : 'Every ligand type is already the automatic one';
+    reset.addEventListener('click', () => set('Reset Types', (now) => ({ ...now, types: undefined })));
+    buttons.append(ins, reset);
+    this.body.append(buttons);
+  }
+
+  /** A row whose label has an "i" tip beside it. */
+  private infoRow(label: string, control: HTMLElement, tip: string): void {
+    const row = document.createElement('label');
+    row.className = 'style-row';
+    const name = document.createElement('span');
+    name.textContent = label;
+    addInfo(name, tip);
+    row.append(name, control);
+    this.body.appendChild(row);
+  }
+
   // ------------------------------------------------------------------ stereo labels
 
   private stereoControls(centres: Atom[], dbls: Bond[]): void {
@@ -1901,6 +2091,21 @@ export class StylePanel {
   private color(label: string, value: string | undefined, on: (v: string | undefined) => void, auto?: string, autoSwatch?: string): void {
     this.row(label, colourButton(this.doc, value, (v) => on(v && v.toLowerCase() === '#000000' && !auto ? undefined : v), auto ? { autoLabel: auto, autoSwatch } : { autoSwatch: '#000000' }));
   }
+}
+
+/** Text with subscript and superscript characters (PPh₃, d⁸) shown with real sub and sup elements. */
+function scripted(text: string): DocumentFragment {
+  const f = document.createDocumentFragment();
+  for (const m of text.matchAll(/([₀-₉]+)|([⁰¹²³⁴-⁹⁺⁻]+)|([^₀-₉⁰¹²³⁴-⁹⁺⁻]+)/g)) {
+    if (m[3]) { f.append(m[3]); continue; }
+    const el = document.createElement(m[1] ? 'sub' : 'sup');
+    el.textContent = [...(m[1] ?? m[2])].map((ch) => {
+      const k = '₀₁₂₃₄₅₆₇₈₉'.indexOf(ch), j = '⁰¹²³⁴⁵⁶⁷⁸⁹'.indexOf(ch);
+      return k >= 0 ? String(k) : j >= 0 ? String(j) : ch === '⁺' ? '+' : '−';
+    }).join('');
+    f.append(el);
+  }
+  return f;
 }
 
 /** A picture's kind, from its data, as people know it. */

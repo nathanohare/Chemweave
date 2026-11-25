@@ -7,8 +7,18 @@
 // ionic ways of counting give the same totals; they only split them differently (an X ligand is
 // one electron from a neutral radical, or two from an anion on an oxidised metal), so both are
 // shown for each ligand.
+//
+// The two ways of counting follow Miessler, Fischer and Tarr, Inorganic Chemistry, 5th ed. (Pearson,
+// 2014), section 13.3.1, pp. 480–483: Method A (donor pairs: each ligand gives pairs, X ligands as
+// anions, the metal counted as its ion) is the ionic column, Method B (neutral ligands: the metal
+// atom's own electrons, X ligands as neutral one-electron donors, the complex's charge added or taken
+// away) the neutral one. Their Table 13.1 (p. 482) gives the same per-ligand numbers as electronsOf
+// below (H, Cl: 2 and 1; η³-allyl: 4 and 3; η⁵-C₅H₅: 6 and 5; CO, PR₃: 2 and 2).
+//
+// Anything worked out here can be set by hand on the metal (Atom.ecount, from the Side Panel's
+// Electron Count): a ligand's type, the oxidation state, the complex's charge and the count expected.
 
-import { Doc, isMetalAtom, outsideValence, radicalElectrons, type Atom, type Bond } from '../model';
+import { Doc, isMetalAtom, type ElectronCountSettings, outsideValence, radicalElectrons, type Atom, type Bond } from '../model';
 import { SYMBOLS, elementNumber, lowestValence, tablePosition, valenceOfBonds } from './elements';
 import { labelDonates, labelGraph } from './labels';
 import { metalCarbonyl } from './hapto';
@@ -31,6 +41,9 @@ export interface LigandCount {
   hapto?: number;
   /** How many such ligands (rows with the same name and class are put together). */
   count: number;
+  /** Its type as letters and digits (L, X, L2X, Z…; M–M for a metal–metal bond), and the type worked out from the drawing. */
+  type: string;
+  auto: string;
 }
 
 export interface MetalCount {
@@ -59,6 +72,49 @@ export interface MetalCount {
   classification: string;
   /** Why the count may be off (a metal label with ligands written in it that weren't understood). */
   notes: string[];
+  /** The ionic (Method A) total: dⁿ and what each ligand gives; the same as `electrons` unless the oxidation state was set by hand. */
+  ionicTotal: number;
+  /** The values worked out from the drawing, where something was set by hand in their place. */
+  autoCharge: number;
+  autoOxidation: number;
+  /** The count expected, why, and the automatic one (see expectedCount). */
+  expected: { value: number; auto: number; reason: string; set: boolean };
+  /** What was set by hand (Atom.ecount). */
+  settings: ElectronCountSettings;
+}
+
+/** A ligand type as letters and digits (L2X), from its L, X and Z (and metal–metal bonds). */
+export function typeCode(l: number, x: number, z: number, mm = 0): string {
+  if (mm) return 'M–M';
+  const part = (k: string, n: number) => (n ? k + (n > 1 ? n : '') : '');
+  return part('L', l) + part('X', x) + part('Z', z) || '—';
+}
+
+/** A type code read back (L2X → l 2, x 1), or null when it isn't one. */
+export function parseType(code: string): { l: number; x: number; z: number } | null {
+  const m = /^(?:L(\d?))?(?:X(\d?))?(?:Z(\d?))?$/.exec(code);
+  if (!m || !code) return null;
+  const n = (k: string, d: string | undefined) => (code.includes(k) ? Number(d || 1) : 0);
+  return { l: n('L', m[1]), x: n('X', m[2]), z: n('Z', m[3]) };
+}
+
+/** A type code as shown, with real subscripts (L₂X). */
+export const typeText = (code: string) => code.replace(/\d/g, (d) => SUB[d]);
+
+/** The types offered for a ligand (Green's classes: one site or a chelate, π ligands up to η⁶). */
+export const LIGAND_TYPES = ['L', 'X', 'Z', 'X2', 'X3', 'LX', 'L2', 'L2X', 'LX2', 'L3', 'L2X2'];
+
+/**
+ * The electron count expected for a metal: 18 (the 18-electron rule), or 16 for a d⁸ metal of
+ * groups 9 and 10 with four ligand sites, which is square planar: Miessler, Fischer and Tarr,
+ * Inorganic Chemistry, 5th ed., section 13.3.3, pp. 485–486 (sixteen-electron square-planar
+ * complexes are most common for d⁸ Ni²⁺, Pd²⁺, Pt²⁺, Rh⁺ and Ir⁺). The sites are the ligand bond
+ * number l + x + z (section 13.7, p. 522: often the coordination number). A rule of thumb only:
+ * the value can be set by hand.
+ */
+export function expectedCount(c: { group: number; dn: number; l: number; x: number; z: number }): { value: number; reason: string } {
+  if (c.dn === 8 && (c.group === 9 || c.group === 10) && c.l + c.x + c.z === 4) return { value: 16, reason: 'usual for square planar d⁸' };
+  return { value: 18, reason: '18-electron rule' };
 }
 
 /** Ligand labels whose class is not simply one L or one X: π ligands and chelates written as labels. */
@@ -180,9 +236,10 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
   }
 
   const rows = new Map<number, LigandCount[]>(metals.map((m) => [m, []]));
-  const add = (metal: number, row: Omit<LigandCount, 'neutral' | 'ionic' | 'count' | 'mm'> & { mm?: number }) => {
+  const add = (metal: number, row: Omit<LigandCount, 'neutral' | 'ionic' | 'count' | 'mm' | 'type' | 'auto'> & { mm?: number }) => {
     const e = electronsOf(row.l, row.x);
-    rows.get(metal)!.push({ mm: 0, ...row, neutral: e.neutral + (row.mm ?? 0), ionic: e.ionic + (row.mm ?? 0), count: 1 });
+    const type = typeCode(row.l, row.x, row.z, row.mm);
+    rows.get(metal)!.push({ mm: 0, ...row, neutral: e.neutral + (row.mm ?? 0), ionic: e.ionic + (row.mm ?? 0), count: 1, type, auto: type });
   };
   const xSoFar = new Map<number, number>(metals.map((m) => [m, 0]));
   const notes = new Map<number, string[]>(metals.map((m) => [m, []]));
@@ -294,6 +351,15 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const group = groups.get(m);
     if (group === undefined) continue;
     const a = doc.atoms.get(m)!;
+    const settings = a.ecount ?? {};
+    // a type set by hand for a ligand (by its name) takes the place of the one worked out
+    for (const r of rows.get(m)!) {
+      const own = r.mm ? null : settings.types?.[r.name];
+      const t = own ? parseType(own) : null;
+      if (!t) continue;
+      const e = electronsOf(t.l, t.x);
+      Object.assign(r, t, { type: own, neutral: e.neutral, ionic: e.ionic });
+    }
     // the same ligand more than once goes on one row
     const merged: LigandCount[] = [];
     for (const r of rows.get(m)!) {
@@ -305,17 +371,79 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const x = merged.reduce((s, r) => s + r.x * r.count, 0);
     const z = merged.reduce((s, r) => s + r.z * r.count, 0);
     const mm = merged.reduce((s, r) => s + r.mm * r.count, 0);
-    const q = share.get(m)!;
-    const oxidation = x + q;
+    const autoCharge = share.get(m)!;
+    const q = settings.charge ?? autoCharge;
+    const autoOxidation = x + q;
+    const oxidation = settings.ox ?? autoOxidation;
+    const dn = group - oxidation;
+    const exp = expectedCount({ group, dn, l, x, z });
     const symbol = a.label ? (metalLabelParts(a.label) ? SYMBOLS[metalLabelParts(a.label)!.z] : a.label) : SYMBOLS[a.z];
     const cls = `M${l ? 'L' + (l > 1 ? sub(l) : '') : ''}${x ? 'X' + (x > 1 ? sub(x) : '') : ''}${z ? 'Z' + (z > 1 ? sub(z) : '') : ''}`;
     out.push({
-      metal: m, symbol, group, l, x, z, mm, charge: q, oxidation, dn: group - oxidation,
+      metal: m, symbol, group, l, x, z, mm, charge: q, oxidation, dn,
       ...(z ? { green: { vn: oxidation + 2 * z, dn: group - oxidation - 2 * z } } : {}),
       electrons: group + 2 * l + x + mm - q, ligands: merged,
       classification: q ? `[${cls}]${sup(Math.abs(q) > 1 ? Math.abs(q) : '')}${q > 0 ? '⁺' : '⁻'}` : cls,
       notes: notes.get(m)!,
+      ionicTotal: dn + merged.reduce((s, r) => s + r.ionic * r.count, 0),
+      autoCharge, autoOxidation,
+      expected: { value: settings.expect ?? exp.value, auto: exp.value, reason: settings.expect !== undefined ? 'set by hand' : exp.reason, set: settings.expect !== undefined },
+      settings,
     });
   }
   return out;
+}
+
+/** A d-block metal (groups 3 to 12), the metals the 18-electron rule is about. */
+export const isTransitionCount = (c: MetalCount) => c.group >= 3 && c.group <= 12;
+
+/**
+ * The one transition-metal complex the Side Panel's Electron Count shows for a selection: the
+ * structures the selected atoms are in must hold exactly one d-block metal with ligands; with
+ * several (a dimer, or two complexes), only a metal atom selected on its own is counted.
+ */
+export function selectedComplex(doc: Doc, atomIds: Iterable<number>): MetalCount | null {
+  const ids = [...atomIds];
+  const seen = new Set<number>();
+  const found: MetalCount[] = [];
+  for (const id of ids) {
+    if (seen.has(id) || !doc.atoms.has(id)) continue;
+    const frag = doc.fragmentOf(id);
+    for (const x of frag) seen.add(x);
+    if (![...frag].some((x) => isMetalAtom(doc.atoms.get(x)))) continue;
+    for (const c of countElectrons(doc, id)) if (isTransitionCount(c) && c.ligands.length) found.push(c);
+  }
+  if (found.length === 1) return found[0];
+  if (ids.length === 1) return found.find((c) => c.metal === ids[0]) ?? null;
+  return null;
+}
+
+/** A ligand's name as shown: the digits of a formula written low (PPh₃), with ×n for repeats. */
+export function ligandText(r: LigandCount): string {
+  return r.name.replace(/(?<=[A-Za-z)\]])(\d+)/g, (d) => sub(Number(d))) + (r.count > 1 ? ` ×${r.count}` : '');
+}
+
+/** The one-line summary: Rh(I), d⁸, 16 electrons · ML₃X. */
+export function countSummary(c: MetalCount): string {
+  return `${c.symbol}(${roman(c.oxidation)}), d${sup(c.dn)}, ${c.electrons} electrons · ${c.classification}`;
+}
+
+/** A signed whole number with a real minus sign (+1, 0, −2). */
+export const signed = (n: number) => (n > 0 ? `+${n}` : n < 0 ? `−${-n}` : '0');
+
+/**
+ * The count as rows of text (Ligand, Type, Neutral, Ionic): the metal, each ligand, the charge
+ * when there is one, and the total; then the oxidation state, the charge and the summary. The
+ * same rows the Side Panel shows, for Insert as Table.
+ */
+export function countRows(c: MetalCount): string[][] {
+  const rows: string[][] = [['Ligand', 'Type', 'Neutral', 'Ionic']];
+  rows.push([c.symbol, 'metal', String(c.group), `d${sup(c.dn)}: ${c.dn}`]);
+  for (const r of c.ligands) rows.push([ligandText(r), typeText(r.type), String(r.neutral * r.count), String(r.ionic * r.count)]);
+  if (c.charge) rows.push([`Charge ${signed(c.charge)}`, '', signed(-c.charge), `in d${sup(c.dn)}`]);
+  rows.push(['Total', '', String(c.electrons), String(c.ionicTotal)]);
+  rows.push(['Oxidation State', signed(c.oxidation), '', '']);
+  rows.push(['Charge', signed(c.charge), '', '']);
+  rows.push([countSummary(c)]);
+  return rows;
 }

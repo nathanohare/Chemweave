@@ -750,7 +750,7 @@ Select a structure and the **Analysis** panel shows the list below. In the Canva
 - any of the properties as a row of its own (cLogP, tPSA, H-bond donors and acceptors, logS, pKa and so on), when you turn it on;
 - lab calculations: one is there to start with, the mass and volume of 0.5 mmol of the selection (see below);
 - **Isotope pattern**: the peaks of that ion, drawn and listed (useful for Cl, Br and metals such as Pd, Ru, Ir and Pt). Every element with a stable isotope is known, so only Tc, Pm and the radioactive heavy elements give no pattern;
-- **Electron count**, for a structure with a metal: the metal's oxidation state, its dⁿ count and the complex's electron count (18 for a closed shell), with its covalent bond classification (ML₃X for Wilkinson's catalyst). Each ligand is listed as L (gives two electrons), X (shares one) or Z (takes two), with the electrons it gives counted both ways: **Neutral** (covalent: the metal atom's electrons plus one per X and two per L) and **Ionic** (the metal ion's d electrons plus two per X⁻ and per L). Both give the same total. It reads ligand labels (PPh3, CO, Cl, Cp, COD, dppe, acac…), drawn ligands, hapto (η) bonds (η⁵-Cp is L₂X, η⁶-arene L₃, η³-allyl LX), dative arrows (to the metal: L; from the metal to a Lewis acid such as BF₃: Z), bridging ligands (a μ-Cl is X to one metal and L to the other), metal–metal bonds (one electron to each metal) and charges. A carbene drawn M=C counts as an alkylidene (X₂), so Grubbs' catalyst comes out Ru(IV), 16 electrons; drawn M–C with a lone pair (singlet) on the carbon, or as an NHC, it is L. A metal label with its ligands written in (PdCl2, Pd(PPh3)4) is counted too.
+- **Electron count**, for a structure with a metal: the metal's oxidation state, its dⁿ count and the complex's electron count (18 for a closed shell), with its covalent bond classification (ML₃X for Wilkinson's catalyst). Each ligand is listed as L (gives two electrons), X (shares one) or Z (takes two), with the electrons it gives counted both ways: **Neutral** (covalent: the metal atom's electrons plus one per X and two per L) and **Ionic** (the metal ion's d electrons plus two per X⁻ and per L). Both give the same total. It reads ligand labels (PPh3, CO, Cl, Cp, COD, dppe, acac…), drawn ligands, hapto (η) bonds (η⁵-Cp is L₂X, η⁶-arene L₃, η³-allyl LX), dative arrows (to the metal: L; from the metal to a Lewis acid such as BF₃: Z), bridging ligands (a μ-Cl is X to one metal and L to the other), metal–metal bonds (one electron to each metal) and charges. A carbene drawn M=C counts as an alkylidene (X₂), so Grubbs' catalyst comes out Ru(IV), 16 electrons; drawn M–C with a lone pair (singlet) on the carbon, or as an NHC, it is L. A metal label with its ligands written in (PdCl2, Pd(PPh3)4) is counted too. Ligand types, the oxidation state and the charge can be set by hand in the Side Panel (see [Electron Count in the Side Panel](#electron-count-in-the-side-panel)).
 - **Properties**: cLogP, molar refractivity, TPSA, H-bond donors and acceptors, rotatable bonds, heavy atoms, Fsp3, and estimates (treat these as rough guides): boiling and melting points (Joback method), water solubility as logS and mg/mL (Delaney's ESOL), the most acidic pKa and the most basic pKaH with the group each belongs to (Perrin, Dempsey and Serjeant's Hammett and Taft rules, typically within 0.5–1 unit). **Critical point and thermochemistry** opens Joback's critical temperature, pressure and volume, gas-phase ΔHf°, ΔGf° and Cp, ΔHvap and ΔHfus, with vapor pressure and Henry's law constant at 25 °C calculated from them. **All pKa sites** lists every acidic and basic group when there are more than two. In Spreadsheet mode the same estimates are columns: `LOGS`, `PKA`, `PKAH`, `BP` and `MP`;
 
 Buttons put text under the structure:
@@ -762,6 +762,23 @@ Buttons put text under the structure:
 Everything they insert is ordinary text you can change.
 
 A structure with R groups (R1, R2, X, Ar, also inside labels such as OR1) shows only its core: the formula is written C7H5O·R (core only), with no masses, since R could be anything. **R-Group Table…** calculates each compound.
+
+### Electron Count in the Side Panel
+
+Select a metal complex (a structure with one transition metal, groups 3 to 12, and its ligands) and the Side Panel shows **Electron Count** under the style settings. For a structure with more than one metal (a dimer such as Mn₂(CO)₁₀), select one metal atom on its own to see its count. The section shows:
+
+- a summary, such as **Rh(I), d⁸, 16 electrons** · ML₃X;
+- a quiet note on how the count compares with the one expected, such as "16 of 16 expected: usual for square planar d⁸". The count expected is 18 (the 18-electron rule), or 16 for a d⁸ metal of groups 9 and 10 (Ni, Pd, Pt, Rh, Ir) with four ligands, which is usually square planar (Miessler, Fischer and Tarr, *Inorganic Chemistry*, 5th ed., section 13.3). The note is only in the panel, never in the drawing;
+- a table of the metal and each ligand (repeats on one row, as PPh₃ ×3) with its **Type** and the electrons it gives counted **Neutral** and **Ionic**, then the total. The "i" by the title explains the two ways of counting.
+
+Everything in it can be changed by hand, and each change is one Undo step:
+
+- **Type**: choose another type for a ligand (L, X, Z, LX, L₂, L₂X and so on) when the automatic one is wrong for how it bonds. The choice is kept for that ligand on that metal, saved with the drawing, and used by the Analysis panel too. **Reset Types** goes back to the automatic types.
+- **Oxidation State**: Auto (the number of X ligands plus the charge) or a value you choose. The neutral count does not depend on it; the ionic count does, so the two totals differ when the value chosen doesn't fit the ligand types.
+- **Charge**: the complex's charge, from the charges drawn on it. Type another to count it with that charge without changing the drawing; clear the box to use the drawing's again.
+- **Expected Count**: Auto, 18, 16, 14, or **Other…** to type any number.
+
+**Insert as Table** puts the count beside the structure as an ordinary table (the rows above, the oxidation state and charge, and the summary on the last row). It is a copy: it doesn't change when the structure does, and you can edit it like any other table.
 
 ### Choosing what the panel shows
 

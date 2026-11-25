@@ -2135,6 +2135,19 @@ dialog.periodic-table { position: fixed; inset: 64px 16px auto auto; max-height:
 .ec-table th { font-weight: 600; color: var(--muted); text-align: left; padding: 1px 10px 1px 0; }
 .ec-table td { padding: 1px 10px 1px 0; }
 .ec-table tr.ec-total td { border-top: 1px solid var(--line); font-weight: 600; }
+/* the Side Panel's Electron Count: summary, a quiet note on the count expected, the ligands with their types */
+.ec-panel { margin: 2px 0 4px; }
+.ec-panel .ec-sum { margin: 0 0 4px; }
+.ec-panel .ec-status { margin: 0 0 4px; padding: 2px 8px; border-left: 3px solid var(--accent); background: var(--accent-soft); font-size: var(--fs-sm); }
+.ec-panel .ec-status.off { border-left-color: var(--muted); background: none; color: var(--muted); }
+.ec-panel-table { width: 100%; font-size: var(--fs-sm); border-collapse: collapse; }
+.ec-panel-table th { font-weight: 400; color: var(--muted); text-align: left; padding: 1px 4px 1px 0; }
+.ec-panel-table td, #side-content .ec-panel-table td { padding: 1px 4px 1px 0; font-family: inherit; font-variant-numeric: tabular-nums; }
+.ec-panel-table th:nth-child(n+3), .ec-panel-table td:nth-child(n+3) { text-align: right; }
+.ec-panel-table select { width: 60px; padding: 0 2px; font-size: var(--fs-sm); }
+.ec-panel-table select.own, .style-row input.own { font-weight: 600; }
+.ec-panel-table tr.ec-total td { border-top: 1px solid var(--line); font-weight: 600; }
+.ec-expect { display: contents; }
 .an-buttons { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 6px; }
 .an-buttons button { padding: 2px 8px; font-size: var(--fs-sm); }
 .an-cas button { padding: 0 8px; font-size: var(--fs-sm); }

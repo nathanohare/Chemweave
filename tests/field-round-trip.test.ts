@@ -427,6 +427,8 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
   ArrowTextLook: { align: { v: { above: 'left' } } },
   Attachment: { atoms: { v: (i) => [i.a1, i.a2, i.a3] }, show: { v: ['formula', 'mw'] } },
   BackgroundRemoval: { drop: { v: [[0.2, 0.3]] }, keep: { v: [[0.6, 0.5]] } },
+  // (a metal's ligand types set by hand, by the ligand's name)
+  ElectronCountSettings: { types: { v: { Cl: 'L', PPh3: 'L2X' } } },
   Frame: { atoms: { v: (i) => [i.a1, i.a2, i.a3] }, arrows: { v: (i) => [i.arrow] }, captions: { v: [] }, shapes: { v: (i) => [i.shape] } },
   HighlightStyle: { pattern: { v: 'crosshatch' } },
   MadeLabel: { runs: { v: [{ text: 'OMe', bold: true }] } },

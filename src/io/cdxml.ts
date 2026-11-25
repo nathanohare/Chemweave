@@ -416,6 +416,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
       const mapTag = Number(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === MAP_TAG)?.getAttribute('Value'));
       if (Number.isInteger(mapTag) && mapTag > 0) extra.mapNo = mapTag;
       if (kids(n).some((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === FOCAL_TAG)) extra.focal = true;
+      const ecount = readEcount(kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === ECOUNT_TAG)?.getAttribute('Value'));
+      if (ecount) extra.ecount = ecount;
       const hlA = kids(n).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === HIGHLIGHT_TAG)?.getAttribute('Value');
       if (hlA && /^#[0-9a-f]{6}$/i.test(hlA)) extra.highlight = hlA.toLowerCase();
       // ChemDraw's own atom highlight
@@ -2070,6 +2072,28 @@ function geoFromTag(saved: Partial<Shape> & Record<string, unknown>): (Partial<S
 export const MORPH_TAG = 'Chem Illustrator animation';
 /** An atom that is part of its structure's focal point (Atom.focal), value "yes". */
 export const FOCAL_TAG = 'Chem Illustrator focal point';
+/** A metal's electron count as set by hand (Atom.ecount, as JSON). */
+export const ECOUNT_TAG = 'Chem Illustrator electron count';
+
+/** Atom.ecount read back from its tag: only the fields it has, each of its own kind; null when nothing fits. */
+export function readEcount(text: string | null | undefined): import('../model').ElectronCountSettings | null {
+  if (!text) return null;
+  let v: unknown;
+  try { v = JSON.parse(text); } catch { return null; }
+  if (!v || typeof v !== 'object' || Array.isArray(v)) return null;
+  const o = v as Record<string, unknown>;
+  const out: import('../model').ElectronCountSettings = {};
+  const int = (x: unknown) => typeof x === 'number' && Number.isInteger(x) && Math.abs(x) <= 99;
+  if (o.types && typeof o.types === 'object' && !Array.isArray(o.types)) {
+    const types: Record<string, string> = {};
+    for (const [k, t] of Object.entries(o.types as Record<string, unknown>)) if (k !== '__proto__' && typeof t === 'string' && /^[LXZ\d]{1,8}$/.test(t)) types[k] = t;
+    if (Object.keys(types).length) out.types = types;
+  }
+  if (int(o.ox)) out.ox = o.ox as number;
+  if (int(o.charge)) out.charge = o.charge as number;
+  if (int(o.expect)) out.expect = o.expect as number;
+  return Object.keys(out).length ? out : null;
+}
 /** An atom's atom-atom map number across a reaction (Atom.mapNo). */
 export const MAP_TAG = 'Chem Illustrator map';
 /** Auto-Animate Steps: the piece a thing moves with in the slide show (Atom.piece, Caption.piece and so on). */

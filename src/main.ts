@@ -1360,6 +1360,35 @@ function placeTable(t: TableData, label: string, top?: Vec): number {
   return id;
 }
 
+/** Text with subscript and superscript characters (PPh₃, d⁸, ML₃X) as runs with real subscripts and superscripts. */
+function scriptRuns(text: string): TextRun[] {
+  const SUBS = '₀₁₂₃₄₅₆₇₈₉', SUPS = '⁰¹²³⁴⁵⁶⁷⁸⁹';
+  const runs: TextRun[] = [];
+  for (const ch of text) {
+    const sb = SUBS.indexOf(ch), sp = SUPS.indexOf(ch) >= 0 ? SUPS.indexOf(ch) : '⁺⁻'.indexOf(ch) >= 0 ? -2 : -1;
+    const run: TextRun = sb >= 0 ? { text: String(sb), sub: true } : sp >= 0 ? { text: String(sp), sup: true } : sp === -2 ? { text: ch === '⁺' ? '+' : '−', sup: true } : { text: ch };
+    const last = runs[runs.length - 1];
+    if (last && !!last.sub === !!run.sub && !!last.sup === !!run.sup) last.text += run.text;
+    else runs.push(run);
+  }
+  return runs;
+}
+
+/**
+ * Electron Count's Insert as Table: the count's rows as an ordinary table to the right of the
+ * metal's structure, its last row (the summary) across every column. A copy, not linked.
+ */
+function electronCountTable(metal: number, rows: string[][]): void {
+  if (!doc.atoms.has(metal)) return;
+  const n = Math.max(...rows.map((r) => r.length));
+  const t = tableFromCells(rows.map((r) => r.length < n ? [{ runs: scriptRuns(r[0]), span: n }] : r.map((x) => ({ runs: scriptRuns(x) }))), textMeasure, doc.style.captionSize);
+  const atoms = [...doc.fragmentOf(metal)].map((id) => doc.atoms.get(id)!);
+  renderer.useStyle(doc);
+  const lay = renderer.tableLayout(t);
+  const right = Math.max(...atoms.map((a) => a.x)), top = Math.min(...atoms.map((a) => a.y));
+  placeTable(t, 'Insert Electron Count Table', { x: right + doc.style.bondLength * 3.5 + lay.width / 2, y: top });
+}
+
 /** The table style last picked for a slide table (PowerPoint's default, Medium Style 2 – Accent 1, at first). */
 let lastTableStyle = DEFAULT_SLIDE_TABLE_STYLE;
 
@@ -14790,6 +14819,7 @@ stylePanel.energy = {
 };
 stylePanel.ringFill = () => void command('fill-rings');
 stylePanel.focalPick = () => startFocalPick();
+stylePanel.electronTable = (metal, rows) => electronCountTable(metal, rows);
 editor.onFocalLost = () => flash('A focal point\'s atom, bond or ring was taken away, so that structure lines up by the middle of its box again.', 5000);
 // ---------------------------------------------------------------- Reaction roles by hand
 
