@@ -513,8 +513,11 @@ class DocxWriter {
     const paras = oneWordList(fitted, lists);
     // tracked changes on the paragraph marks (a line break typed or deleted while tracking)
     const markRev: (string | undefined)[] = [];
-    for (const r of t.runs) for (const ch of r.text) if (ch === '\n') markRev.push(r.rev);
+    // (and each paragraph mark's look: the run its line break is in)
+    const markRuns: TextRun[] = [];
+    for (const r of t.runs) for (const ch of r.text) if (ch === '\n') { markRev.push(r.rev); markRuns.push(r); }
     this.markRev = markRev;
+    this.markRuns = markRuns;
     const out: string[] = [];
     let lastWasTable = false, lastFloats = false;
     let listNum = 0;
@@ -621,6 +624,8 @@ class DocxWriter {
 
   /** Each paragraph mark's tracked change, if any. */
   private markRev: (string | undefined)[] = [];
+  /** Each paragraph mark's run (how the mark looks: Word's w:pPr/w:rPr). */
+  private markRuns: TextRun[] = [];
   // tracked changes count apart from the bookmarks (Word wants each id used once)
   private revId = 10001;
 
@@ -857,7 +862,10 @@ class DocxWriter {
     // (and a list number's own bold or italic, which Word takes from the mark)
     const nl = ps.list === 'number' ? ps.numLook : undefined;
     const markLook = `${nl?.bold !== undefined ? (nl.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${nl?.italic !== undefined ? (nl.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}`;
-    if (mr || markLook) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}</w:rPr>`);
+    // (else the mark's own look, where it isn't the paragraph style's)
+    const mk = index >= 0 && !markLook ? this.markRuns[index] : undefined;
+    const markOwn = mk ? this.runProps({ ...mk, text: '', rev: undefined, fmt: undefined, cmt: undefined, link: undefined, obj: undefined }, st, { cs: this.charStyleOf(mk) }) : '';
+    if (mr || markLook || markOwn) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}${markOwn}</w:rPr>`);
     // the section ending with this paragraph
     if (sectXml) pPr.push(sectXml);
 
