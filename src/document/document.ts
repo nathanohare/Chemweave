@@ -70,6 +70,11 @@ export interface NamedStyle {
   custom?: boolean;
   /** Word's character style linked to it (w:link: the same look for words, Quote Char for Quote), by its Word id, written back while that style is in the file. */
   link?: string;
+  /**
+   * The style it is based on in Word (w:basedOn), by id, where it isn't Normal: written back while
+   * that style is in the file. Its settings here are its own and those it inherits, all written.
+   */
+  basedOn?: string;
 }
 
 /**
@@ -665,7 +670,7 @@ export function noteStyle(t: Pick<DocText, 'styles'>): NamedStyle {
   const own = t.styles.FootnoteText;
   if (own) return own;
   const N = styleOf(t, undefined);
-  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined };
+  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined, basedOn: undefined };
 }
 
 // ---------------------------------------------------------------- defaults
@@ -862,7 +867,7 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
   const from = styleOf(t, p);
   const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: NamedStyle = {
-    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined,
+    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined, basedOn: undefined,
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
     align: p.align ?? 'left', spaceBefore: p.spaceBefore ?? 0, spaceAfter: p.spaceAfter ?? 0, line: p.line ?? 1,
     indent: p.indent ?? 0, firstLine: p.firstLine ?? 0, keepNext: !!p.keepNext, next: undefined,

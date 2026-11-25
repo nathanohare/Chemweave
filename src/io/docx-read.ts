@@ -776,6 +776,12 @@ class DocxReader {
       const lk = ws.type === 'character' ? this.a(kid(ws.el, 'link')) : null;
       const ours = lk ? this.idMap.get(lk) : undefined;
       if (lk && ours && ours !== lk && styles[ours]) xml = xml.replace(/(<w:link w:val=")[^"]*(")/, (_m, a: string, b: string) => `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}`);
+      if (ws.type === 'paragraph') {
+        xml = xml.replace(/(<w:(?:basedOn|next) w:val=")([^"]*)(")/g, (m, a: string, v: string, b: string) => {
+          const ours = this.idMap.get(v);
+          return ours && ours !== v && styles[ours] ? `${a}${ours.replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;')}${b}` : m;
+        });
+      }
       out.push({ type: ws.type, id: ws.id, xml });
     }
     return out.length ? out : undefined;
@@ -3585,6 +3591,8 @@ class DocxReader {
     const size = r.size ?? WORD_SIZE;
     const dflt = defaultStyles()[ours];
     const next = ws?.next ? this.idMap.get(ws.next) : undefined;
+    // the style it is based on (by our id where it is read as one, else as the file has it)
+    const parent = ws?.basedOn && this.wstyles.has(`paragraph:${ws.basedOn}`) ? this.idMap.get(ws.basedOn) ?? ws.basedOn : undefined;
     return {
       id: ours,
       name: dflt?.name ?? ws?.name ?? ours,
@@ -3595,6 +3603,7 @@ class DocxReader {
       // its lines and shading
       ...(cleanBorders(p.border) ? { border: cleanBorders(p.border) } : {}), ...(p.shade && p.shade !== '#ffffff' ? { shade: p.shade } : {}),
       next: next && next !== ours ? next : ours === 'Normal' ? undefined : dflt?.next,
+      ...(parent && parent !== 'Normal' && parent !== ours && ours !== 'Normal' ? { basedOn: parent } : {}),
       outline: OUTLINE[ours] ?? (p.outline && p.outline <= 9 && ours !== 'Normal' ? p.outline : undefined),
       // its theme colour and font, written back while it has the colour and font they gave
       ...(r.thc || r.thf ? { wth: JSON.stringify({ ...(r.thc ? { c: r.thc, cv: r.thcv ?? '' } : {}), ...(r.thf ? { f: r.thf, fv: r.thfv ?? '' } : {}) }) } : {}),
