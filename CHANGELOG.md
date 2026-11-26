@@ -2,7 +2,7 @@
 
 <!-- Made by scripts/changelog.mjs from changes/ each time a version is published. Edit the files in changes/, not this one. -->
 
-Every version of Chemweave, newest first: 171 versions and 693 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
+Every version of Chemweave, newest first: 172 versions and 700 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
 
 ## Milestones
 
@@ -20,6 +20,50 @@ Every version of Chemweave, newest first: 171 versions and 693 pull requests so 
 - **2026-10-22**: Office-style Document, Presentation and Spreadsheet modes finished in five waves ([#83](https://github.com/nathanohare/Chemweave/pull/83) to [#126](https://github.com/nathanohare/Chemweave/pull/126)).
 - **2026-10-14**: The first published release, 0.1.72, with installers for Windows, macOS and Linux.
 - **2026-10-12**: The first line of code: a speed prototype, the desktop app, and saving CDXML files ([#1](https://github.com/nathanohare/Chemweave/pull/1), [#2](https://github.com/nathanohare/Chemweave/pull/2)).
+
+## 0.1.281 (2026-11-26)
+
+### Added
+
+- SI Assistant projects: flags get replies, @mentions, Resolve and Reopen, and Delete, as Word's comments do; replies and resolved flags are kept beside SI Assistant's own files, which stay as SI Assistant writes them.
+- SI Assistant projects: Review ▸ New Comment puts a comment or a flag (Flag for checking) on the words at the Live Preview's caret: on a field, or on the nearest heading for other text. Review ▸ Previous, Next, Show Comments and Show Resolved go through them.
+- SI Assistant projects: flags and comments show as cards beside the Live Preview (small markers when the pane is narrow), and a field's flag button on the SI page opens its flags and comments to reply or resolve there.
+- SI Assistant projects: compiled documents and Word snapshots carry the flags' and comments' replies, and flags on section headings, as Word comments.
+- SI projects: Layout ▸ Watermark puts words such as DRAFT or CONFIDENTIAL (or your own) across every page of the compiled SI, behind the text, in the Live Preview, Word document and PDF.
+- SI projects: Layout ▸ Hyphenation turns automatic hyphenation of the compiled SI on or off.
+- SI projects: Layout ▸ Orientation turns the pages of one section to landscape, for wide tables and schemes; the pages after it turn back.
+- SI projects: Layout ▸ Breaks ▸ Section: Next Page starts a compound or section on a new page, the same setting as SI Assistant's Start on a new page.
+- SI Assistant projects: Picture Format ▸ Crop, Rotate (Rotate Right or Left 90°, Flip Vertical or Horizontal) and Reset Picture for figures, on the SI page and in the Live Preview. The edited picture is saved as a copy beside the original, so SI Assistant prints it the same way, and each edit is made again from the original.
+- SI Project: format words in the Live Preview with Home ▸ Font or Ctrl+B, Ctrl+I and Ctrl+U. Bold, italics, underline, subscripts and superscripts go into the field itself; the rest, and formatting on words the program writes, is kept in the project folder and comes back every time the SI is compiled. ([#816](https://github.com/nathanohare/Chemweave/pull/816))
+- SI Project: Project Settings ▸ Styles (also Layout ▸ Styles) sets the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions, with Use for New SI Projects. ([#816](https://github.com/nathanohare/Chemweave/pull/816))
+- SI Project: Project Settings ▸ Page sets the paper size (Letter or A4) and the margins of the compiled SI. ([#816](https://github.com/nathanohare/Chemweave/pull/816))
+- SI Project: Home ▸ Format Painter copies the formatting of words in the Live Preview to the words you click or drag over next; double-click it to keep painting until Esc. ([#818](https://github.com/nathanohare/Chemweave/pull/818))
+- SI Project: Home ▸ Font has Small Caps and Highlight for words selected in the Live Preview. ([#818](https://github.com/nathanohare/Chemweave/pull/818))
+- SI Project: Home ▸ Paragraph aligns, indents and sets the line spacing of paragraphs in the Live Preview, kept every time the SI is compiled. ([#818](https://github.com/nathanohare/Chemweave/pull/818))
+- SI Project: Home ▸ Replace (Ctrl+H) changes found words in the Live Preview in the fields they come from, one place or all, in one step of Undo. ([#818](https://github.com/nathanohare/Chemweave/pull/818))
+- SI Project: Insert ▸ Page Break starts the Live Preview paragraph the cursor is in on a new page, kept every time the SI is compiled. ([#818](https://github.com/nathanohare/Chemweave/pull/818))
+
+### Changed
+
+- Document, Spreadsheet, Presentation and Design: the template window for a new file now opens on All, every template in one scrolling list with a divider before each category, and the blank file at the top, already chosen, so Enter keeps it. The categories on the left still show one category at a time. ([#811](https://github.com/nathanohare/Chemweave/pull/811))
+- Desktop app: on a Mac, Title Bar in Menu Bar keeps the Mac's own red, yellow and green window buttons at the top left, instead of Windows-style buttons at the right. ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- In the browser, the welcome card now shows each time Chemweave opens on an empty drawing, until you tick "Don't show this again" on it; Settings ▸ Preferences can turn it back on. The desktop app still shows it once. ([#820](https://github.com/nathanohare/Chemweave/pull/820))
+
+### Fixed
+
+- Desktop app: File ▸ Print works again on a Mac; it stopped with "Command plugin:webview|print not allowed by ACL". ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- Slides: Slide Show ▸ Record asks for the microphone on a Mac (it was refused without asking, so narration could not be recorded). ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- Slides: ⌘Q quits during a full-screen slide show on a Mac; the show ends first, so the question about unsaved work can be seen. ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- Desktop app: with Title Bar in Menu Bar on, every empty part of the menu bar moves the window, not just thin strips at its edges. ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- Slides: narration recorded with Slide Show ▸ Record on a Mac keeps the whole of each slide, not just its first 3 seconds. ([#824](https://github.com/nathanohare/Chemweave/pull/824))
+- Slides: each slide recorded with Slide Show ▸ Record keeps its own narration; later slides no longer get the first slide's sound. ([#824](https://github.com/nathanohare/Chemweave/pull/824))
+- On macOS 12 with "Show scroll bars: Always", scroll bar thumbs are easy to see in every theme (some could not be seen at all). ([#819](https://github.com/nathanohare/Chemweave/pull/819))
+- The welcome card goes away when you switch to another tab, as the Start screen does. ([#820](https://github.com/nathanohare/Chemweave/pull/820))
+
+### Under the hood
+
+- a check that every desktop-app command the app's code can reach is allowed by its permissions and registered. ([#821](https://github.com/nathanohare/Chemweave/pull/821))
+- the Mac installer (.dmg) is notarized and stapled too, not just the app inside it. ([#821](https://github.com/nathanohare/Chemweave/pull/821))
 
 ## 0.1.273 (2026-11-26)
 
