@@ -62,8 +62,9 @@ const clamp255 = (v: number) => (v < 0 ? 0 : v > 255 ? 255 : v);
 /**
  * Brightness and contrast, in place, as Office draws a:lum (office sampler F-V-06): contrast
  * stretches round the middle grey by 128 / (128 - 127c) for more (c > 0) and (128 + 127c) / 128 for
- * less, then brightness adds its share of white; the scale LibreOffice uses to show Office's
- * pictures as Office does (vcl, BitmapEx::Adjust), where a steeper curve made pictures too strong.
+ * less, with half the brightness added before it and half after, as Office does; LibreOffice's
+ * way of showing Office's pictures as Office does (vcl, Bitmap::Adjust, its Office brightness),
+ * where a steeper curve made pictures too strong (and Washout blank white).
  */
 export function brightContrast(d: Px, bright = 0, contrast = 0): void {
   if (!bright && !contrast) return;
@@ -71,7 +72,7 @@ export function brightContrast(d: Px, bright = 0, contrast = 0): void {
   const k = c >= 0 ? 128 / (128 - 127 * c) : (128 + 127 * c) / 128;
   const add = bright * 255;
   const lut = new Uint8ClampedArray(256);
-  for (let v = 0; v < 256; v++) lut[v] = clamp255((v - 128) * k + 128 + add);
+  for (let v = 0; v < 256; v++) lut[v] = clamp255((v + add / 2 - 128) * k + 128 + add / 2);
   for (let i = 0; i < d.length; i += 4) {
     d[i] = lut[d[i]];
     d[i + 1] = lut[d[i + 1]];

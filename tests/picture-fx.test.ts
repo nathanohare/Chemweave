@@ -45,6 +45,13 @@ describe('changing the pixels', () => {
     const g = new Uint8ClampedArray([100, 128, 160, 255]);
     brightContrast(g, 0, 0.4);
     expect(Array.from(g.slice(0, 3))).toEqual([82, 128, 181]);
+    // both: half the brightness before the contrast and half after, as Office does; Washout
+    // (+70 % brightness, -70 % contrast) leaves a faint picture, not blank white (review)
+    const w = new Uint8ClampedArray([0, 128, 255, 255]);
+    recolor(w, { kind: 'washout' });
+    expect(w[0]).toBeGreaterThan(195);
+    expect(w[0]).toBeLessThan(215);
+    expect(w[1]).toBeLessThan(255);
   });
 
   it('recolours: greys, black and white, two colours, sepia', () => {
