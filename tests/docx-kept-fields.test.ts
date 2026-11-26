@@ -195,6 +195,32 @@ describe('a list field in the middle of a paragraph', () => {
     expect(await kinds(`<w:p>${fld(' PAGE ', '1')}${fld(INDEX, 'benzene, 1')}</w:p>`)).toEqual(['field', 'index']);
   });
 
+  it('counts only shown text after it on its line, not another field, hidden text or text after a break (re-check)', async () => {
+    const hidden = (s: string) => `<w:r><w:rPr><w:vanish/></w:rPr><w:t>${s}</w:t></w:r>`;
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${fld(' PAGE ', '1')}</w:p>`)).toEqual(['index', 'field']);
+    expect((await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${hidden('note')}</w:p>`))[0]).toBe('index');
+    expect(await kinds(`<w:p>${fld(TOF, 'Figure 1. a caption')}<w:r><w:br w:type="page"/><w:t>next page</w:t></w:r></w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(TOF, 'Figure 1. a caption')}<w:r><w:br/></w:r>${text('next line')}</w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}<w:hyperlink><w:r><w:t>linked</w:t></w:r></w:hyperlink></w:p>`)).toEqual(['field']);
+  });
+
+  it('makes one whose result is only hidden text a list of ours (re-check)', async () => {
+    const hiddenResult = fld(INDEX, 'benzene, 1').replace('<w:r><w:t>benzene, 1', '<w:r><w:rPr><w:vanish/></w:rPr><w:t>benzene, 1');
+    expect(await kinds(`<w:p>${text('Index: ')}${hiddenResult}</w:p>`)).toEqual(['index']);
+  });
+
+  it('saves one with text after it, and a short one, back in place with its result', async () => {
+    const simple = `<w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple>`;
+    for (const body of [`<w:p>${fld(INDEX, 'benzene, 1')}${text(' and more')}</w:p>`, `<w:p>${simple}${text(' after')}</w:p>`]) {
+      const xml = partOf(await writeDocx((await readDocx(wordFile(body))).doc, deps), 'word/document.xml');
+      const paras = xml.match(/<w:p[ >].*?<\/w:p>/g) ?? [];
+      expect(paras).toHaveLength(1);
+      expect(instrs(paras[0])).toEqual([INDEX]);
+      expect(paras[0]).toMatch(/benzene, 1.*(and more| after)/);
+      expect(xml).not.toContain('w:dirty');
+    }
+  });
+
   it('leaves a contents list Word wrote, a title in its first paragraph, a list of ours', async () => {
     const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
     expect(await kinds(`<w:p>${text('Contents ')}${begin}${text('Introduction 1')}</w:p><w:p>${text('Results 2')}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`)).toEqual(['toc']);
