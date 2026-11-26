@@ -22,7 +22,8 @@ export function cleanPastedHtml(html: string, multiline: boolean): string {
   const walk = (node: Node, look: Look): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       // (a non-breaking space, as in "400\u00a0MHz", is kept: only ordinary white space is folded)
-      const t = (node.textContent ?? '').replace(/[\r\n\t ]+/g, ' ');
+      // (a bare U+FFFC, a picture or equation's place in the copied text, is left out)
+      const t = (node.textContent ?? '').replace(/\uFFFC/g, '').replace(/[\r\n\t ]+/g, ' ');
       if (!t) return;
       let s = esc(t);
       if (look.pos) s = `<${look.pos}>${s}</${look.pos}>`;

@@ -48,8 +48,12 @@ export const SI_ICONS: Record<string, string> = {
   'si:to-library': books(13.75) + arrowR(2.75, 10.75, 12),
   'si:name-pubchem': hex(8, 9.5, 5.25) + '<circle class="a" cx="15.5" cy="15" r="3.75"/><path class="a" d="M18.25 17.75l3 3"/>',
   'si:structure-to-name': hex(6.5, 7.75, 4.5) + arrowR(13, 20.5, 7.75) + '<path d="M3.75 15.75h16.5M3.75 19.75h10"/>',
+  // Home ▸ Structure ▸ Structure from Name: a name's lines, an arrow, the structure (Structure to Name the other way)
+  'si:structure-from-name': '<path d="M3.75 4.25h16.5M3.75 8.25h10"/>' + arrowR(3.75, 11, 16.25) + hex(16.5, 16.25, 4.5),
   // Insert ▸ Figures and Schemes
   'si:new-figure-compound': '<rect class="p" x="2.75" y="3.75" width="18.5" height="16.5" rx="2"/>' + hex(12, 11, 4.75, 'a') + '<path d="M8.5 18h7"/>',
+  // Insert ▸ Figures ▸ Structure from Name: a figure, a name above its structure
+  'si:new-figure-name': '<rect class="p" x="2.75" y="3.75" width="18.5" height="16.5" rx="2"/>' + '<path d="M6 7.25h12"/>' + hex(12, 14.25, 4, 'a'),
   'si:to-scheme': hex(5.75, 12, 3.25) + arrowR(10.25, 15.5, 12) + hex(19, 12, 2.75, 'f a'),
   'si:out-of-scheme': '<rect class="p" x="2.75" y="4.75" width="11.5" height="14.5" rx="1.5"/>' + arrowR(8.5, 21.25, 12),
   'si:into-scheme': '<rect class="p" x="9.75" y="4.75" width="11.5" height="14.5" rx="1.5"/>' + arrowR(2.75, 15.5, 12),
