@@ -46,7 +46,7 @@ import { SheetPivots } from './sheet-pivot-ui';
 import { SheetQueries } from './sheet-query-ui';
 import { SheetCompounds } from './sheet-compound-ui';
 import { CATEGORIES, type Category } from '../sheet/fn-help';
-import { askLink, followLink, type LinkPlace } from './links-ui';
+import { askLink, followLink, linkMenuLines, type LinkPlace } from './links-ui';
 import { LINK_COLOUR, cellLink, cellOfLink, describeLink } from '../links';
 import { describeValidation, KIND_NAMES } from '../sheet/validation';
 import type { ChartKind } from '../sheet/chart';
@@ -76,6 +76,7 @@ import { paintCanRun } from './can-run';
 import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
 import { typedSize, installFontGroups } from './font-group';
 import { stepSize } from '../text/format';
+import { askStructureFromName } from './structure-from-name';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
 const HAMMETT_HEADS: Record<HammettColumn, string> = { group: 'Group', sigma: 'σ', F: 'F', R: 'R', sm: 'σm', sp: 'σp' };
@@ -1707,15 +1708,13 @@ export class SheetMode {
       return;
     }
     const { r, c } = v.sel.active;
-    const ans = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
-      ok: 'Draw', note: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs (50-78-2) are looked up on PubChem.`,
+    const got = await askStructureFromName({
+      toStructure: (t, st) => this.host.toStructure(t, st), style, flash: (m, ms) => this.host.flash(m, ms), ms: 9000,
+      ok: 'Draw', where: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs are looked up on PubChem.`,
     });
-    const text = ans?.text.trim();
-    if (!text) return;
-    const res = await this.host.toStructure(text, style);
-    if ('error' in res) { this.host.flash(res.error, 9000); return; }
-    if (!this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, res.contents), { r1: r, c1: c, r2: r, c2: c })) return;
-    if (res.notes.length) this.host.flash('Note from the name reader: ' + res.notes.join(' '), 9000);
+    if (!got) return;
+    if (!this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, got.contents), { r1: r, c1: c, r2: r, c2: c })) return;
+    if (got.notes.length) this.host.flash('Note from the name reader: ' + got.notes.join(' '), 9000);
   }
 
   /**
@@ -2420,7 +2419,7 @@ export class SheetMode {
       // links, as Excel's right-click menu has them
       const link = v.linkOf(v.sel.active.r, v.sel.active.c);
       items.push(null);
-      if (link) items.push(act('Edit Link…', () => void this.run('insert-link'), 'insert-link'), act('Open Link', () => void followLink(link)), act('Copy Link', () => void navigator.clipboard?.writeText(link).catch(() => {})), act('Remove Link', () => this.run('remove-link')));
+      if (link) items.push(...linkMenuLines(link, () => void this.run('insert-link'), () => this.run('remove-link')).map((l, i): MenuItem => ({ label: l.label, run: l.run, ...(i === 0 ? { cmd: 'insert-link' } : {}), ...(l.title ? { title: l.title } : {}) })));
       else items.push(act('Link…', () => void this.run('insert-link'), 'insert-link'));
     }
     items.push(null,

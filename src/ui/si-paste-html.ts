@@ -28,8 +28,9 @@ function pieces(html: string, cells: boolean): Piece[] {
   const out: Piece[] = [];
   const walk = (node: Node, look: Look): void => {
     if (node.nodeType === Node.TEXT_NODE) {
-      // (a non-breaking space, as in "400 MHz", is kept: only ordinary white space is folded)
-      const t = (node.textContent ?? '').replace(/[\r\n\t ]+/g, ' ');
+      // (a non-breaking space, as in "400\u00a0MHz", is kept: only ordinary white space is folded)
+      // (a bare U+FFFC, a picture or equation's place in the copied text, is left out)
+      const t = (node.textContent ?? '').replace(/\uFFFC/g, '').replace(/[\r\n\t ]+/g, ' ');
       if (t) out.push({ k: 'text', s: t, look });
       return;
     }

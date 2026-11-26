@@ -3,7 +3,7 @@
 // changes, and put back on each compile.
 
 import { describe, expect, it } from 'vitest';
-import { addFormat, applyPreviewFormats, blockSrc, clearFormats, docRanges, locateFormat, markupFormat, parsePreviewFormats, previewFormatsJson, type PreviewFormat } from '../src/si/preview-format';
+import { addFormat, applyPreviewFormats, blockSrc, clearFormats, linkPieceOn, removeLinks, docRanges, locateFormat, markupFormat, parsePreviewFormats, previewFormatsJson, type PreviewFormat } from '../src/si/preview-format';
 import * as rt from '../src/richtext';
 import type { DocText } from '../src/document/document';
 
@@ -134,5 +134,57 @@ describe('finding the words again safely', () => {
     const busy = { readText: () => Promise.reject(new Error('EBUSY')) } as unknown as Parameters<typeof readPreviewFormatsToChange>[0];
     await expect(readPreviewFormatsToChange(busy)).rejects.toThrow();
     expect(parsePreviewFormats('{"version":4,"items":[]}')).toBeNull();
+  });
+});
+
+describe('links (Insert ▸ Link in the Live Preview)', () => {
+  it('puts a link back on the compiled document, as a real link with its blue and underline', () => {
+    const d = doc('See the data deposit for details');
+    const spans = [{ start: 0, end: 32, src: 'k:1' }];
+    const out = applyPreviewFormats(d, spans, [], [{ id: 'x', src: 'k:1', start: 8, end: 20, text: 'data deposit', look: { link: 'https://doi.org/10.1000/xyz123', color: '#0563c1', underline: true } }]);
+    const run = out.runs.find((r) => r.text === 'data deposit');
+    expect(run?.link).toBe('https://doi.org/10.1000/xyz123');
+    expect(run?.underline).toBe(true);
+    expect(out.runs.find((r) => r.text === 'See the ')?.link).toBeUndefined();
+  });
+
+  it('keeps links in the file as version 3, and reads them back', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'k:1', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', underline: true } }];
+    const json = previewFormatsJson(items);
+    expect(JSON.parse(json).version).toBe(3);
+    expect(parsePreviewFormats(json)?.[0].look).toEqual({ link: 'https://example.org/', underline: true });
+    // (a newer file is never read, so never written over)
+    expect(parsePreviewFormats(JSON.stringify({ version: 4, items: [] }))).toBeNull();
+    // (a link that isn't text is dropped)
+    expect(parsePreviewFormats(JSON.stringify({ version: 3, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { link: true } }] }))?.[0].look).toEqual({});
+  });
+
+  it('Remove Link takes off only the link pieces, with their blue and underline', () => {
+    const items: PreviewFormat[] = [
+      // the person's own red underline over all the words, then a link on one of them
+      { id: 'own', src: 'p', start: 0, end: 9, text: 'data here', look: { color: '#c00000', underline: true } },
+      { id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } },
+    ];
+    const out = removeLinks(items, 'p', 'data here', 0, 4);
+    expect(out.map((f) => f.look)).toEqual([{ color: '#c00000', underline: true }, { bold: true }]);
+    expect(linkPieceOn(items, 'p', 'data here', 0, 4)).toBe(true);
+    expect(linkPieceOn(items, 'p', 'data here', 5, 9)).toBe(false);
+  });
+
+  it('Remove Link keeps a color other than the link blue (Document mode’s rule)', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#00a000', underline: true } }];
+    expect(removeLinks(items, 'p', 'data here', 0, 4).map((f) => f.look)).toEqual([{ color: '#00a000', underline: true }]);
+  });
+
+  it('Clear All Formatting keeps a link, with the blue and underline it came with', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } }];
+    expect(clearFormats(items, 'p', 'data here', 0, 9).map((f) => f.look)).toEqual([{ link: 'https://example.org/', color: '#0563c1', underline: true }]);
+  });
+
+  it('keeps keys a newer Chemweave added to a piece or its look', () => {
+    const got = parsePreviewFormats(JSON.stringify({ version: 3, items: [{ id: 'x', src: 'p', start: 0, end: 3, text: 'abc', future: 1, look: { bold: true, glow: 'blue' } }] }))!;
+    expect(got[0]).toMatchObject({ future: 1, look: { bold: true, glow: 'blue' } });
+    // (and when the piece is found again and kept)
+    expect(clearFormats(got, 'p', 'abc def', 4, 7)[0]).toMatchObject({ future: 1 });
   });
 });

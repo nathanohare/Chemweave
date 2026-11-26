@@ -114,8 +114,24 @@ export interface SnapshotHost {
   idle?(): Promise<void>;
 }
 
-/** Two hashes and the length of a file's bytes: the same file, to keep its pages by. */
-function bytesKey(b: Uint8Array): string {
+/**
+ * A file's bytes as a key to keep its pages by: its length and SHA-256, worked out by the
+ * browser's own code (off this thread, far faster than a loop here), else two hashes in a loop.
+ */
+async function bytesKey(b: Uint8Array): Promise<string> {
+  const subtle = globalThis.crypto?.subtle;
+  if (subtle) {
+    try {
+      const d = new Uint8Array(await subtle.digest('SHA-256', b as Uint8Array<ArrayBuffer>));
+      let hex = '';
+      for (const x of d) hex += x.toString(16).padStart(2, '0');
+      return `${b.length}:${hex}`;
+    } catch { /* (the loop below) */ }
+  }
+  return loopKey(b);
+}
+
+function loopKey(b: Uint8Array): string {
   let h1 = 0x811c9dc5, h2 = 5381;
   for (let i = 0; i < b.length; i++) { h1 = Math.imul(h1 ^ b[i], 0x01000193); h2 = (Math.imul(h2, 33) + b[i]) | 0; }
   return `${b.length}:${(h1 >>> 0).toString(36)}:${(h2 >>> 0).toString(36)}`;
@@ -192,7 +208,7 @@ export class SnapshotKeeper {
     return {
       ...h,
       pdfPages: async (bytes, most) => {
-        const key = `${bytesKey(bytes)}:${most ?? 0}`;
+        const key = `${await bytesKey(bytes)}:${most ?? 0}`;
         const hit = this.pages.get(key);
         if (hit) { this.pages.delete(key); this.pages.set(key, hit); return hit.got; }
         await this.host.idle?.();

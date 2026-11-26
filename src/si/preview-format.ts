@@ -11,6 +11,10 @@
 // page), the same words nearest to where they were are formatted; when they are gone, so is the
 // formatting (nothing else is formatted by mistake).
 //
+// A link (Insert ▸ Link in the Live Preview: a web page, a DOI, a place in the SI) is kept here
+// too, as a look (`link`, with the link's blue and underline): SI Assistant's text format has no
+// links of its own, only mentions and citations.
+//
 // Bold, italic, underline, subscript and superscript on a field kept as formatted text (a
 // procedure, a note, an NMR report) go into the field itself instead (preview-edit.ts), so the SI
 // page and SI Assistant show them too.
@@ -19,6 +23,7 @@ import type { DocText } from '../document/document';
 import type { Justify, ParaStyle, TabStop, TextRun } from '../model';
 import { fitParas, paraCount } from '../text/paragraphs';
 import * as rt from '../richtext';
+import { plainLook } from '../links';
 import type { SiFolder } from './folder';
 import { parseMarkup, writeMarkup, type Run as MarkupRun } from './markup';
 import { lineUp, printedOf } from './preview-edit';
@@ -27,7 +32,7 @@ import type { SourceBlock, SourceSpan } from './source-map';
 export const PREVIEW_FORMAT_FILE = 'chemweave-preview-format.json';
 
 /** The looks a piece can set. `false` (or '', or 0 for character spacing) takes a look off that the text has from elsewhere. */
-export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight' | 'allCaps' | 'spacing' | 'noKern'>>;
+export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight' | 'allCaps' | 'spacing' | 'noKern' | 'link'>>;
 export type FormatLook = RunFormatLook & ParaLook;
 /** The paragraph settings a piece can set (Home ▸ Paragraph, its Paragraph box, Bullets and Numbering, Tabs, the Ruler). */
 type ParaKey = 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line' | 'pageBreak' | 'firstLine' | 'indentRight' | 'linePt' | 'lineRule' | 'keepNext' | 'keepLines' | 'list' | 'level' | 'bullet' | 'scheme' | 'tabs';
@@ -51,9 +56,9 @@ export function paraLookOf(patch: Partial<ParaStyle>): ParaLook {
 export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak', 'firstLine', 'indentRight', 'linePt', 'lineRule', 'keepNext', 'keepLines', 'list', 'level', 'bullet', 'scheme', 'tabs'];
 const ALIGNS: readonly Justify[] = ['left', 'center', 'right', 'justify'];
 
-export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight', 'allCaps', 'spacing', 'noKern'];
-/** The keys a Chemweave reading only version 1 or 2 of the file doesn't know (it would drop them and write over the file). */
-const V3_KEYS: readonly (keyof FormatLook)[] = ['allCaps', 'spacing', 'noKern', 'firstLine', 'indentRight', 'linePt', 'lineRule', 'keepNext', 'keepLines', 'list', 'level', 'bullet', 'scheme', 'tabs'];
+export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight', 'allCaps', 'spacing', 'noKern', 'link'];
+/** The keys a Chemweave reading only version 1 or 2 of the file doesn't know (links, All Caps, spacing, lists, tabs and Word's other paragraph settings) (it would drop them and write over the file). */
+const V3_KEYS: readonly (keyof FormatLook)[] = ['link', 'allCaps', 'spacing', 'noKern', 'firstLine', 'indentRight', 'linePt', 'lineRule', 'keepNext', 'keepLines', 'list', 'level', 'bullet', 'scheme', 'tabs'];
 const V2_KEYS: readonly (keyof FormatLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak'];
 const TAB_KINDS: readonly TabStop['kind'][] = ['left', 'center', 'right', 'decimal'];
 const TAB_LEADERS: readonly NonNullable<TabStop['leader']>[] = ['dot', 'hyphen', 'underscore'];
@@ -87,6 +92,8 @@ function paraValueOf(k: keyof ParaLook, v: unknown): unknown {
     default: return num(v, 0, 1000) ? v : undefined;
   }
 }
+/** The newest version of the file this Chemweave reads (2: paragraph looks; 3: links, All Caps, spacing, lists, tabs and the rest). */
+const FORMAT_VERSION = 3;
 
 export interface PreviewFormat {
   id: string;
@@ -113,8 +120,19 @@ let counter = 0;
 export const newFormatId = (): string => `pf-${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export async function readPreviewFormats(folder: SiFolder): Promise<PreviewFormat[]> {
+  return (await readPreviewFormatsForCompile(folder)).items;
+}
+
+/** The file's pieces for a compile, and whether it was written by a newer Chemweave (so isn't used: said in the compile's notes). */
+export async function readPreviewFormatsForCompile(folder: SiFolder): Promise<{ items: PreviewFormat[]; newer: boolean }> {
   const raw = await folder.readText(PREVIEW_FORMAT_FILE).catch(() => null);
-  return (raw && parsePreviewFormats(raw)) || [];
+  if (!raw) return { items: [], newer: false };
+  return { items: parsePreviewFormats(raw) ?? [], newer: newerFile(raw, FORMAT_VERSION) };
+}
+
+/** Whether a side file's text says it is a version newer than `known`. */
+export function newerFile(raw: string, known: number): boolean {
+  try { const v = (JSON.parse(raw) as { version?: unknown })?.version; return typeof v === 'number' && v > known; } catch { return false; }
 }
 
 /** The file's pieces, to change and write back; throws when the file is there but can't be read (it is never written over). */
@@ -150,22 +168,25 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
     const j = JSON.parse(raw) as { items?: unknown; version?: unknown };
     if (!j || !Array.isArray(j.items)) return null;
     // (written by a newer Chemweave: read as far as it goes, but never written over)
-    if (typeof j.version === 'number' && j.version > 3) return null;
+    if (typeof j.version === 'number' && j.version > FORMAT_VERSION) return null;
     const out: PreviewFormat[] = [];
     for (const x of j.items as Record<string, unknown>[]) {
       if (!x || typeof x.src !== 'string' || typeof x.start !== 'number' || typeof x.end !== 'number' || typeof x.text !== 'string' || !x.look || typeof x.look !== 'object') continue;
+      // (looks and keys a newer Chemweave added are kept as they are, so writing the file back keeps them)
       const look: FormatLook = {};
+      for (const [k, v] of Object.entries(x.look as Record<string, unknown>)) if (!(LOOK_KEYS as readonly string[]).includes(k) && !(PARA_KEYS as readonly string[]).includes(k)) (look as Record<string, unknown>)[k] = v;
       for (const k of LOOK_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
-        // (All Caps and kerning on or off; character spacing in points, as the Font box takes it)
-        const ok = k === 'allCaps' || k === 'noKern' ? typeof v === 'boolean' : k === 'spacing' ? num(v, -20, 100) : typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number';
+        // (All Caps and kerning on or off; character spacing in points, as the Font box takes it; a link is where it goes, or '' to take one off)
+        const ok = k === 'allCaps' || k === 'noKern' ? typeof v === 'boolean' : k === 'spacing' ? num(v, -20, 100) : k === 'link' ? typeof v === 'string' && v.length <= 4000 : typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number';
         if (ok) (look as Record<string, unknown>)[k] = v;
       }
       for (const k of PARA_KEYS) {
         const v = paraValueOf(k, (x.look as Record<string, unknown>)[k]);
         if (v !== undefined) (look as Record<string, unknown>)[k] = v;
       }
-      const piece: PreviewFormat = { id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
+      const { id: _i, src: _s, start: _a, end: _b, text: _t, before: _bf, after: _af, look: _l, ...other } = x;
+      const piece: PreviewFormat = { ...other, id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
       if (typeof x.before === 'string') piece.before = x.before;
       if (typeof x.after === 'string') piece.after = x.after;
       out.push(piece);
@@ -294,6 +315,8 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
   const bySrc = new Map<string, SourceSpan[]>();
   for (const sp of sources) { const l = bySrc.get(sp.src); if (l) l.push(sp); else bySrc.set(sp.src, [sp]); }
   const printedBySrc = new Map<string, string>();
+  // (the looks put on all at once at the end: one pass over the runs, not one for each piece)
+  const edits: { start: number; end: number; patch: Partial<rt.RunStyle> }[] = [];
   for (const f of items) {
     const mine = bySrc.get(f.src) ?? [];
     if (!mine.length && !(f.src.startsWith('b:') && blocks.some((x) => x.node === f.src.slice(2)))) continue;
@@ -304,7 +327,7 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
     const patch = patchOf(f.look);
     const para = paraPatchOf(f.look);
     for (const [a, b] of docRanges(text, mine, f.src, at[0], at[1], blocks)) {
-      if (Object.keys(patch).length) runs = rt.applyStyle(runs, a, b, patch);
+      if (Object.keys(patch).length) edits.push({ start: a, end: b, patch });
       if (para) {
         paras ??= fitParas(doc.paras, paraCount(text));
         nls ??= [...text.matchAll(/\n/g)].map((m) => m.index!);
@@ -316,6 +339,7 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
       }
     }
   }
+  if (edits.length) runs = rt.applyStyles(runs, edits);
   return runs === doc.runs && !paras ? doc : { ...doc, runs, ...(paras ? { paras } : {}) };
 }
 
@@ -340,7 +364,7 @@ export function addFormat(items: readonly PreviewFormat[], src: string, printed:
     if (covered && restEmpty) continue;
     if (covered) { out.push(pieceAt(src, printed, fa, fb, rest, f.id)); continue; }
     // (overlapping only in part: kept as it is; the new piece comes after it and wins)
-    out.push(pieceAt(src, printed, fa, fb, f.look, f.id));
+    out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) });
   }
   out.push(pieceAt(src, printed, a, b, { ...look }));
   return out;
@@ -357,16 +381,55 @@ export function clearFormats(items: readonly PreviewFormat[], src: string, print
     const at = locateFormat(printed, f);
     if (!at) continue;
     const [fa, fb] = at;
-    if (fb <= a || fa >= b) { out.push(pieceAt(src, printed, fa, fb, f.look, f.id)); continue; }
-    if (keys) {
+    if (fb <= a || fa >= b) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
+    // (Clear All Formatting leaves a link, with the blue and underline it came with, as Word does)
+    if (!keys && f.look.link) {
+      const lo = Math.max(fa, a), hi = Math.min(fb, b);
+      out.push(pieceAt(src, printed, lo, hi, linkLook(f.look)));
+    } else if (keys) {
       const rest: FormatLook = { ...f.look };
       for (const k of keys) delete rest[k];
-      if (Object.keys(rest).length === Object.keys(f.look).length) { out.push(pieceAt(src, printed, fa, fb, f.look, f.id)); continue; }
+      if (Object.keys(rest).length === Object.keys(f.look).length) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
       // (inside [a, b) only the other looks stay)
       const lo = Math.max(fa, a), hi = Math.min(fb, b);
       if (Object.keys(rest).length) out.push(pieceAt(src, printed, lo, hi, rest));
     }
     // the parts of it outside [a, b) stay
+    if (fa < a) out.push(pieceAt(src, printed, fa, a, f.look));
+    if (fb > b) out.push(pieceAt(src, printed, b, fb, f.look));
+  }
+  return out;
+}
+
+/** The link of a look, with the blue and underline that came with it. */
+function linkLook(look: FormatLook): FormatLook {
+  const out: FormatLook = { link: look.link };
+  if (look.color !== undefined) out.color = look.color;
+  if (look.underline !== undefined) out.underline = look.underline;
+  return out;
+}
+
+/** Whether a piece with a link is on the printed text [a, b) of `src`. */
+export function linkPieceOn(items: readonly PreviewFormat[], src: string, printed: string, a: number, b: number): boolean {
+  return items.some((f) => { if (f.src !== src || !f.look.link) return false; const at = locateFormat(printed, f); return !!at && at[0] < b && at[1] > a; });
+}
+
+/**
+ * The pieces after Remove Link on the printed text [a, b) of `src`: the pieces that carry a link
+ * lose it there, and the link's blue and underline with it (Document mode's rule, links.ts
+ * plainLook: a color other than the link blue stays); other pieces are left as they are.
+ */
+export function removeLinks(items: readonly PreviewFormat[], src: string, printed: string, a: number, b: number): PreviewFormat[] {
+  const out: PreviewFormat[] = [];
+  for (const f of items) {
+    if (f.src !== src || !f.look.link) { out.push(f); continue; }
+    const at = locateFormat(printed, f);
+    if (!at) continue;
+    const [fa, fb] = at;
+    if (fb <= a || fa >= b) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
+    const rest = plainLook(f.look as Partial<TextRun>) as FormatLook;
+    const lo = Math.max(fa, a), hi = Math.min(fb, b);
+    if (Object.keys(rest).length) out.push(pieceAt(src, printed, lo, hi, rest));
     if (fa < a) out.push(pieceAt(src, printed, fa, a, f.look));
     if (fb > b) out.push(pieceAt(src, printed, b, fb, f.look));
   }

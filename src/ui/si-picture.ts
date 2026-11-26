@@ -31,11 +31,29 @@ const enc = (s: string): Uint8Array => new TextEncoder().encode(s);
 export const PICTURE_MIME: Record<string, string> = { svg: 'image/svg+xml', png: 'image/png', jpg: 'image/jpeg', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp' };
 const extOf = (name: string): string => name.slice(name.lastIndexOf('.') + 1).toLowerCase();
 
+/** What a picture method gives with `deferWrite`: the picture is chosen, and written by `writePending` (in the change's own step of Undo). */
+export const PENDING_PICTURE = 'pending:';
+
 export class SiPictures {
-  constructor(private host: SiPictureHost) {}
+  /**
+   * `deferWrite`: the picture chosen is kept, not written, until `writePending` (a new figure:
+   * the picture is written in the same step of Undo as the figure, so one Undo takes both out).
+   */
+  constructor(private host: SiPictureHost, private deferWrite = false) {}
+
+  private pending: { name: string; bytes: Uint8Array; others: Record<string, Uint8Array> } | null = null;
 
   private add(name: string, bytes: Uint8Array, others: Record<string, Uint8Array> = {}): Promise<string> {
+    if (this.deferWrite) { this.pending = { name, bytes, others }; return Promise.resolve(PENDING_PICTURE + name); }
     return this.host.project.addSectionPicture(this.host.section, name, bytes, others);
+  }
+
+  /** The picture chosen with `deferWrite`, written now: its path in the section's folder. */
+  writePending(): Promise<string> {
+    const p = this.pending;
+    if (!p) return Promise.reject(new Error('No picture was chosen.'));
+    this.pending = null;
+    return this.host.project.addSectionPicture(this.host.section, p.name, p.bytes, p.others);
   }
 
   /** A picture file chosen (PNG, JPG, SVG or PDF); null when none was. */

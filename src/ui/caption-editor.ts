@@ -16,7 +16,7 @@ import { afterTyping, finishWord, setTypingPrefs, typingPrefs } from '../text/ty
 import { findIssues, type Issue } from '../text/chemtext';
 import { loadSpeller, type Speller } from '../text/spelling';
 import { linkAtPoint } from '../links';
-import { askLink, followLink, linkTip, type LinkPlace } from './links-ui';
+import { askLink, followLink, linkMenuLines, linkTip, type LinkPlace } from './links-ui';
 import { touchOn } from './touch-ui';
 import { placeTextMenu } from './text-menu';
 import { buildTextBar, type TextBar } from './text-bar';
@@ -275,11 +275,6 @@ export class CaptionEditor {
     }
   }
 
-  /** Copy where the link the caret is in goes. */
-  private copyLink(link: string): void {
-    void navigator.clipboard?.writeText(link).catch(() => {});
-  }
-
   /** A screen point (from a pointer event) as a point on the page. */
   private pagePoint(e: PointerEvent): Vec {
     const r = this.h.host.getBoundingClientRect(), o = this.h.toScreen({ x: 0, y: 0 }), k = this.h.view.scale;
@@ -460,10 +455,7 @@ export class CaptionEditor {
       if (word || issue) menu.appendChild(d.createElement('hr'));
       // the caret goes into the link, so the commands below act on all of it
       if (this.ed.collapsed || !this.ed.linkHere()) this.ed.setCaret(o);
-      item('Edit Link…', () => void this.editLink());
-      item('Open Link', () => void followLink(link));
-      item('Copy Link', () => this.copyLink(link));
-      item('Remove Link', () => this.ed.removeLink());
+      for (const l of linkMenuLines(link, () => void this.editLink(), () => this.ed.removeLink())) item(l.label, l.run, l.title);
     }
     this.menuDone = placeTextMenu(menu, clientX, clientY, d, () => { this.closeMenu(); this.ta.focus({ preventScroll: true }); });
     this.menu = menu;
