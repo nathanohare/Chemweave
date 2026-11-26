@@ -3,7 +3,7 @@
 // each side's cut; Crop to Proportions fits a frame of those proportions. Nothing changes until
 // Crop; the picture saved is made again from the original, so a crop can be undone or changed later.
 
-import { cleanCrop, cropRect, editSvg, NO_CROP, orientation, type Crop, type PictureEdit } from '../si/picture-edit';
+import { cleanCrop, cropRect, editSvg, NO_CROP, orientation, svgSize, type Crop, type PictureEdit } from '../si/picture-edit';
 import { pictureDpi } from '../si/compile-doc';
 import { PICTURE_MIME } from './si-picture';
 import { ASPECTS, aspectCrop } from './picture-dialog';
@@ -31,6 +31,8 @@ export function askCrop(url: string, w: number, h: number, start: Crop): Promise
     addInfo(head, 'Drag the handles to cut the sides, or drag inside the frame to move it. SI Assistant shows pictures without Chemweave’s crop, so the cropped picture is saved as a copy beside the original (named “(edited)”) and the figure uses it; Reset Picture goes back to the original.');
     const canvas = document.createElement('canvas');
     canvas.className = 'si-crop-canvas';
+    canvas.setAttribute('role', 'img');
+    canvas.setAttribute('aria-label', 'The picture, with the part kept framed: drag the handles to crop it');
     const k = Math.min(PREVIEW_W / w, PREVIEW_H / h, 4);
     const cw = Math.max(1, Math.round(w * k)), ch = Math.max(1, Math.round(h * k));
     const dpr = window.devicePixelRatio || 1;
@@ -52,7 +54,15 @@ export function askCrop(url: string, w: number, h: number, start: Crop): Promise
       n.max = '99';
       n.step = 'any';
       n.className = 'md-num';
-      n.addEventListener('change', () => { crop = cleanCrop({ ...crop, [s]: (Number(n.value) || 0) / 100 }); ratio.value = ''; show(); });
+      n.addEventListener('change', () => {
+        // (a side typed past the one across from it stops short of it, and the box says where it stopped)
+        const opp = ({ l: 'r', r: 'l', t: 'b', b: 't' } as Record<Side, Side>)[s];
+        const v = Math.max(0, Math.min(0.99 - crop[opp], (Number(n.value) || 0) / 100));
+        crop = cleanCrop({ ...crop, [s]: v });
+        n.value = String(Math.round(crop[s] * 1000) / 10);
+        ratio.value = '';
+        show();
+      });
       boxes[s] = n;
       l.append(label, n, '%');
       sides.append(l);
@@ -143,8 +153,10 @@ export function askCrop(url: string, w: number, h: number, start: Crop): Promise
         const mx = Math.max(-f.l, Math.min(f.r, dx)), my = Math.max(-f.t, Math.min(f.b, dy));
         crop = { l: f.l + mx, r: f.r - mx, t: f.t + my, b: f.b - my };
       } else {
+        // (the side dragged stops short of the one across from it, which stays where it is)
         const next = { ...f };
-        for (const s of drag.grip) next[s] = s === 'l' ? f.l + dx : s === 'r' ? f.r - dx : s === 't' ? f.t + dy : f.b - dy;
+        const across: Record<Side, Side> = { l: 'r', r: 'l', t: 'b', b: 't' };
+        for (const s of drag.grip) next[s] = Math.max(0, Math.min(0.99 - f[across[s]], s === 'l' ? f.l + dx : s === 'r' ? f.r - dx : s === 't' ? f.t + dy : f.b - dy));
         crop = cleanCrop(next);
       }
       show();
@@ -175,40 +187,83 @@ export function editableKind(rel: string): 'svg' | 'bitmap' | null {
   return ext === 'svg' ? 'svg' : ['png', 'jpg', 'jpeg', 'gif', 'bmp', 'webp'].includes(ext) ? 'bitmap' : null;
 }
 
+/** An SVG file's text, read in the encoding it says it is in, its declaration saying UTF-8 (as it is written back). */
+function svgText(bytes: Uint8Array): string {
+  const head = new TextDecoder('latin1').decode(bytes.subarray(0, 200));
+  const declared = /<\?xml[^>]*encoding\s*=\s*["']([^"']+)["']/i.exec(head)?.[1];
+  const utf16 = (bytes[0] === 0xff && bytes[1] === 0xfe) || (bytes[0] === 0xfe && bytes[1] === 0xff);
+  let text: string;
+  try { text = new TextDecoder(utf16 ? 'utf-16' : declared || 'utf-8').decode(bytes); } catch { text = new TextDecoder().decode(bytes); }
+  return text.replace(/^(\uFEFF?<\?xml[^>]*encoding\s*=\s*)(["'])[^"']*\2/i, '$1$2UTF-8$2');
+}
+
+/** The original picture's size as it is drawn (a photo the way up its camera marked), or null when it can't be read. */
+export async function sourceSize(rel: string, bytes: Uint8Array): Promise<{ w: number; h: number } | null> {
+  const kind = editableKind(rel);
+  if (kind === 'svg') return svgSize(svgText(bytes));
+  if (kind !== 'bitmap') return null;
+  const ext = rel.slice(rel.lastIndexOf('.') + 1).toLowerCase();
+  try {
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: PICTURE_MIME[ext] ?? `image/${ext}` }), { imageOrientation: 'from-image' });
+    const size = { w: bmp.width, h: bmp.height };
+    bmp.close();
+    return size.w > 0 && size.h > 0 ? size : null;
+  } catch { return null; }
+}
+
 /**
- * The original picture turned and cropped as `e` says: an SVG stays SVG; a bitmap is saved as
- * PNG at the original's resolution (so it prints at the same size). Null when it can't be read.
+ * The original picture rotated and cropped as `e` says: an SVG stays SVG; a photo stays JPEG
+ * (other bitmaps become PNG), at the original's resolution so it prints at the same size. With
+ * `maxSide`, a bitmap is made no bigger than that (a preview). Null when it can't be read.
  */
-export async function renderEdited(rel: string, bytes: Uint8Array, e: PictureEdit): Promise<{ bytes: Uint8Array; svg: boolean } | null> {
+export async function renderEdited(rel: string, bytes: Uint8Array, e: PictureEdit, maxSide = 0): Promise<{ bytes: Uint8Array; svg: boolean; mime: string } | null> {
   const kind = editableKind(rel);
   if (kind === 'svg') {
-    const got = editSvg(new TextDecoder().decode(bytes), e);
-    return got ? { bytes: new TextEncoder().encode(got), svg: true } : null;
+    const got = editSvg(svgText(bytes), e);
+    if (!got) return null;
+    // (a picture that isn't well-formed after the change is not saved)
+    if (typeof DOMParser !== 'undefined' && new DOMParser().parseFromString(got, 'image/svg+xml').getElementsByTagName('parsererror').length) return null;
+    return { bytes: new TextEncoder().encode(got), svg: true, mime: 'image/svg+xml' };
   }
   if (kind !== 'bitmap') return null;
   const ext = rel.slice(rel.lastIndexOf('.') + 1).toLowerCase();
   const mime = PICTURE_MIME[ext] ?? `image/${ext}`;
   let bmp: ImageBitmap;
-  try { bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime })); } catch { return null; }
+  // (a photo's own orientation, as a camera marks it, is the picture's way up, as everywhere else)
+  try { bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }), { imageOrientation: 'from-image' }); } catch { return null; }
   const o = orientation(bmp.width, bmp.height, e.rotate, e.flip);
-  const turnedC = document.createElement('canvas');
-  turnedC.width = o.w;
-  turnedC.height = o.h;
-  const g = turnedC.getContext('2d')!;
-  g.setTransform(...o.m);
-  g.drawImage(bmp, 0, 0);
-  bmp.close();
   const r = cropRect(o.w, o.h, cleanCrop(e.crop));
   const x = Math.round(r.x), y = Math.round(r.y);
+  const w = Math.max(1, Math.min(o.w - x, Math.round(r.w))), h = Math.max(1, Math.min(o.h - y, Math.round(r.h)));
+  const k = maxSide > 0 ? Math.min(1, maxSide / Math.max(w, h)) : 1;
+  // (one canvas the size of the part kept: the original drawn into it rotated and moved)
   const out = document.createElement('canvas');
-  out.width = Math.max(1, Math.min(o.w - x, Math.round(r.w)));
-  out.height = Math.max(1, Math.min(o.h - y, Math.round(r.h)));
-  out.getContext('2d')!.drawImage(turnedC, x, y, out.width, out.height, 0, 0, out.width, out.height);
-  const blob = await new Promise<Blob | null>((ok) => out.toBlob(ok, 'image/png'));
+  out.width = Math.max(1, Math.round(w * k));
+  out.height = Math.max(1, Math.round(h * k));
+  const g = out.getContext('2d');
+  if (!g) { bmp.close(); return null; }
+  const [a, b, c, d, tx, ty] = o.m;
+  g.setTransform(a * k, b * k, c * k, d * k, (tx - x) * k, (ty - y) * k);
+  g.drawImage(bmp, 0, 0);
+  bmp.close();
+  const jpeg = mime === 'image/jpeg' && !maxSide;
+  const blob = await new Promise<Blob | null>((ok) => out.toBlob(ok, jpeg ? 'image/jpeg' : 'image/png', jpeg ? 0.95 : undefined));
   if (!blob) return null;
-  const png = new Uint8Array(await blob.arrayBuffer());
-  const dpi = pictureDpi(bytes, mime);
-  if (!dpi) return { bytes: png, svg: false };
+  const made = new Uint8Array(await blob.arrayBuffer());
+  const dpi = maxSide ? null : pictureDpi(bytes, mime);
+  if (!dpi) return { bytes: made, svg: false, mime: jpeg ? 'image/jpeg' : 'image/png' };
+  if (jpeg) return { bytes: jfifWithDpi(made, dpi), svg: false, mime: 'image/jpeg' };
   const { pngWithDpi } = await import('../render/emf-read');
-  return { bytes: pngWithDpi(png, dpi), svg: false };
+  return { bytes: pngWithDpi(made, dpi), svg: false, mime: 'image/png' };
+}
+
+/** A JPEG marked with its resolution in its JFIF header (as the original was), when it has one. */
+export function jfifWithDpi(jpg: Uint8Array, dpi: number): Uint8Array {
+  if (jpg.length < 18 || jpg[0] !== 0xff || jpg[1] !== 0xd8 || jpg[2] !== 0xff || jpg[3] !== 0xe0 || String.fromCharCode(jpg[6], jpg[7], jpg[8], jpg[9]) !== 'JFIF') return jpg;
+  const out = jpg.slice();
+  const v = Math.max(1, Math.min(65535, Math.round(dpi)));
+  out[13] = 1;
+  out[14] = v >> 8; out[15] = v & 0xff;
+  out[16] = v >> 8; out[17] = v & 0xff;
+  return out;
 }

@@ -1,7 +1,7 @@
 // Picture Format ▸ Crop and Rotate on SI figures: the edit kept with the figure, turns that keep
 // the same part cropped, and an SVG picture turned and cropped as SVG.
 import { describe, expect, it } from 'vitest';
-import { cleanCrop, editRecord, editSvg, editedName, isPlain, orientation, pictureEditOf, turned, type PictureEdit } from '../src/si/picture-edit';
+import { cleanCrop, editRecord, editSvg, editedName, isPlain, orientation, pictureEditOf, shownWidth, svgSize, turned, type PictureEdit } from '../src/si/picture-edit';
 
 const plain: PictureEdit = { original: 'images/a.png', rotate: 0, flip: false, crop: { l: 0, t: 0, r: 0, b: 0 } };
 const apply = (m: number[], x: number, y: number): [number, number] => [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
@@ -53,36 +53,75 @@ describe('turning', () => {
   });
 });
 
+describe('a width set by hand', () => {
+  // (geometry only: the width shown, as a share of the original's, after a rotation or a crop)
+  it('follows the part kept and a quarter turn', () => {
+    const plain: PictureEdit = { original: 'a.png', rotate: 0, flip: false, crop: { l: 0, t: 0, r: 0, b: 0 } };
+    expect(shownWidth(200, 100, plain)).toBeCloseTo(1);
+    expect(shownWidth(200, 100, { ...plain, crop: { l: 0.25, t: 0, r: 0.25, b: 0 } })).toBeCloseTo(0.5);
+    expect(shownWidth(200, 100, { ...plain, rotate: 1 })).toBeCloseTo(0.5);
+    expect(shownWidth(200, 100, { ...plain, rotate: 1, crop: { l: 0.5, t: 0, r: 0, b: 0 } })).toBeCloseTo(0.25);
+  });
+  it('reads an SVG’s size from the file', () => {
+    expect(svgSize('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 30"/>')).toBeNull();
+    expect(svgSize('<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 40 30"></svg>')).toEqual({ w: 40, h: 30 });
+  });
+});
+
 describe('the record', () => {
   it('reads safely, keeps only what differs, and never crops everything away', () => {
     expect(pictureEditOf({ file: 'x.png' })).toBeNull();
-    expect(pictureEditOf({ chemweave_picture: { original: 'images/a.png', rotate: 5, crop: { l: 'x', r: 0.2 } } })).toEqual({ original: 'images/a.png', rotate: 1, flip: false, crop: { l: 0, t: 0, r: 0.2, b: 0 } });
+    const rec = { original: 'images/a.png', copy: 'images/a (edited).png', rotate: 5, crop: { l: 'x', r: 0.2 } };
+    expect(pictureEditOf({ file: 'images/a (edited).png', chemweave_picture: rec })).toEqual({ original: 'images/a.png', copy: 'images/a (edited).png', rotate: 1, flip: false, crop: { l: 0, t: 0, r: 0.2, b: 0 } });
+    // (the picture changed elsewhere, in SI Assistant or by hand: the record is left behind)
+    expect(pictureEditOf({ file: 'images/new.png', chemweave_picture: rec })).toBeNull();
+    // (after Reset Picture: the original, nothing applied, the copy's name kept for the next edit)
+    expect(pictureEditOf({ file: 'images/a.png', chemweave_picture: rec })).toEqual({ original: 'images/a.png', copy: 'images/a (edited).png', rotate: 0, flip: false, crop: { l: 0, t: 0, r: 0, b: 0 } });
     expect(editRecord(plain)).toEqual({ original: 'images/a.png' });
     expect(isPlain(plain)).toBe(true);
     const c = cleanCrop({ l: 0.8, t: 0, r: 0.8, b: 0 });
     expect(c.l + c.r).toBeLessThanOrEqual(0.99);
-    expect(editedName('images/TLC plate.jpg', false)).toBe('TLC plate (edited).png');
+    expect(editedName('images/TLC plate.jpg', 'image/jpeg')).toBe('TLC plate (edited).jpg');
+    expect(editedName('images/scheme.svg', 'image/svg+xml')).toBe('scheme (edited).svg');
   });
 });
 
 describe('an SVG picture', () => {
   const svg = '<?xml version="1.0"?>\n<svg xmlns="http://www.w3.org/2000/svg" width="40pt" height="20pt" viewBox="10 5 40 20"><rect x="10" y="5" width="40" height="20"/></svg>';
-  it('turned right: half as wide, the drawing in a turned group, the size in the same units', () => {
+  // (40 pt = 53.333333 px and 20 pt = 26.666667 px, at 96 px and 72 pt to the inch)
+  it('rotated right: the size swapped in the same units, the drawing with its own view box in a rotated group', () => {
     const got = editSvg(svg, { ...plain, rotate: 1 })!;
     expect(got).toContain('width="20pt"');
     expect(got).toContain('height="40pt"');
-    expect(got).toContain('viewBox="0 0 20 40"');
-    // the original's top left (10, 5) goes to the turned picture's top right (20, 0)
+    expect(got).toContain('viewBox="0 0 26.666667 53.333333"');
+    expect(got).toContain('<svg x="0" y="0" width="53.333333" height="26.666667" viewBox="10 5 40 20" overflow="visible">');
+    // the original's top left goes to the rotated picture's top right
     const m = /matrix\(([^)]*)\)/.exec(got)![1].split(' ').map(Number);
-    expect(apply(m, 10, 5)).toEqual([20, 0]);
+    expect(apply(m, 0, 0)).toEqual([26.666667, 0]);
     expect(got.startsWith('<?xml')).toBe(true);
-    expect(got.endsWith('</g></svg>')).toBe(true);
+    expect(got.endsWith('</svg></g></svg>')).toBe(true);
   });
   it('cropped: the view box is the part kept, and the size follows', () => {
     const got = editSvg(svg, { ...plain, crop: { l: 0.25, t: 0, r: 0.25, b: 0.5 } })!;
-    expect(got).toContain('viewBox="10 0 20 10"');
+    expect(got).toContain('viewBox="13.333333 0 26.666667 13.333333"');
     expect(got).toContain('width="20pt"');
     expect(got).toContain('height="10pt"');
+  });
+  it('finds the root past comments and the prolog, with a ">" in a value, and keeps preserveAspectRatio', () => {
+    const tricky = '<?xml version="1.0"?><!-- made <svg width="1" height="1"> --><svg xmlns="http://www.w3.org/2000/svg" data-x="a>b" preserveAspectRatio="none" width="40" height="20" viewBox="0 0 40 20"><rect width="40" height="20"/></svg>';
+    const got = editSvg(tricky, { ...plain, rotate: 1 })!;
+    expect(got).toContain('<!-- made <svg width="1" height="1"> -->');
+    expect(got).toContain('data-x="a>b"');
+    expect(got).toContain('preserveAspectRatio="none"');
+    expect(got.indexOf('<g transform')).toBeGreaterThan(got.indexOf('data-x="a>b"'));
+  });
+  it('with no view box, the size in centimeters is read in pixels', () => {
+    // 10 cm = 377.95 px (96 px to the inch, 2.54 cm to the inch)
+    const got = editSvg('<svg xmlns="http://www.w3.org/2000/svg" width="10cm" height="5cm"><rect width="300" height="100"/></svg>', { ...plain, rotate: 1 })!;
+    expect(got).toContain('width="5cm"');
+    const [w, h] = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(got)!.slice(1).map(Number);
+    expect(w).toBeCloseTo(188.976, 2);
+    expect(h).toBeCloseTo(377.953, 2);
   });
   it('a picture whose size can’t be read is left as it is', () => {
     expect(editSvg('<svg xmlns="http://www.w3.org/2000/svg"><g/></svg>', plain)).toBeNull();
@@ -106,14 +145,19 @@ describe('in a project', () => {
     const got = await p.figureOwnerOf(id);
     expect(got?.owner).toBe(s);
     expect(got?.entry.file).toBe('images/photo.png');
-    const rel = await p.writeEditedPicture(s.folder, editedName('images/photo.png', false), new Uint8Array([4]), 'images/photo.png');
+    const name = editedName('images/photo.png', 'image/png');
+    const rel = await p.writeEditedPicture(s.folder, name, new Uint8Array([4]), undefined, 'images/photo.png');
     expect(rel).toBe('images/photo (edited).png');
     // (made again: written over its own copy)
-    expect(await p.writeEditedPicture(s.folder, editedName('images/photo.png', false), new Uint8Array([5]), rel)).toBe(rel);
-    // (another figure of the same picture: a name of its own, the first copy left alone)
-    expect(await p.writeEditedPicture(s.folder, editedName('images/photo.png', false), new Uint8Array([6]), 'images/photo.png')).toBe('images/photo (edited) (2).png');
+    expect(await p.writeEditedPicture(s.folder, name, new Uint8Array([5]), rel, 'images/photo.png')).toBe(rel);
+    // (another figure of the same picture: a name of its own, the first copy left alone; then its own reused)
+    const other = await p.writeEditedPicture(s.folder, name, new Uint8Array([6]), undefined, 'images/photo.png');
+    expect(other).toBe('images/photo (edited) (2).png');
+    expect(await p.writeEditedPicture(s.folder, name, new Uint8Array([7]), other, 'images/photo.png')).toBe(other);
+    // (never over the original)
+    expect(await p.writeEditedPicture(s.folder, 'photo.png', new Uint8Array([8]), 'images/photo.png', 'images/photo.png')).not.toBe('images/photo.png');
     expect([...(f.files.get(`${s.folder}/images/photo (edited).png`) ?? [])]).toEqual([5]);
-    await p.setFigureEntry(s, id, { ...got!.entry, file: rel, chemweave_picture: editRecord({ ...plain, original: 'images/photo.png', rotate: 2 }) });
+    await p.setFigureEntry(s, id, { ...got!.entry, file: rel, chemweave_picture: editRecord({ ...plain, original: 'images/photo.png', rotate: 2, copy: rel }) });
     const again = await SiProject.open(f);
     expect(pictureEditOf((await again.figureOwnerOf(id))!.entry)?.rotate).toBe(2);
   });

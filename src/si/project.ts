@@ -24,6 +24,7 @@ import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFil
 import { checkIds, type IdReport } from './compound-ids';
 import { NEW_PROJECT_PER_PAGE, defaultsJson, sectionDefaults, type SpectrumLayout } from './spectra';
 import { newProjectStyleLooks, SI_STYLES_FILE, styleLooksJson } from './si-styles';
+import { EDIT_KEY, pictureEditOf } from './picture-edit';
 import { compoundAnchor, emptyFlagFile, FLAGS_FILE, flagFileJson, flagRecord, newFlagId, noteAnchor, parseAnchor, parseFlagFile, sectionAnchor, threadOf, type FlagFile, type FlagRecord, type FlagThread } from './flag-threads';
 
 /** A flag or comment as the project lists it (`isFlag` false: a comment only). */
@@ -1009,14 +1010,16 @@ export class SiProject {
   }
 
   /**
-   * An edited picture of a figure's (Crop, Rotate) written as `name` in the text's images/,
-   * over the one it had made before (`was`); under a name no other picture has otherwise, so a
-   * picture of the person's own is never written over.
+   * An edited picture of a figure's (Crop, Rotate) written into the text's images/: over the
+   * figure's own copy (`copy`, from its last edit) when it has one, else as `name`, or under a name
+   * no picture there has, so a picture of the person's own (or another figure's copy) is never
+   * written over. Never over the original.
    */
-  async writeEditedPicture(folder: string, name: string, bytes: Uint8Array, was: string): Promise<string> {
+  async writeEditedPicture(folder: string, name: string, bytes: Uint8Array, copy: string | undefined, original: string): Promise<string> {
     this.checkWritable();
+    if (copy && copy !== original && copy.startsWith('images/')) { await this.folder.writeBytes(join(folder, copy), bytes); return copy; }
     const rel = `images/${safeFilename(name)}`;
-    if (rel === was || !(await this.folder.exists(join(folder, rel)))) { await this.folder.writeBytes(join(folder, rel), bytes); return rel; }
+    if (rel !== original && !(await this.folder.exists(join(folder, rel)))) { await this.folder.writeBytes(join(folder, rel), bytes); return rel; }
     return this.addPictureIn(folder, name, bytes);
   }
 
@@ -1184,9 +1187,22 @@ export class SiProject {
       const stem = main.replace(/\.[^./]+$/, '');
       const companions = kind === 'figure' && stem !== main ? [`${stem}.cdxml`, `${stem}.emf`].filter((x) => x !== main) : [];
       const plain = parseMarkup(caption).map((p) => p.runs.map((r) => r.text).join('')).join(' ').trim();
-      await this.moveToTrash([main, ...companions], kind, `${kind === 'figure' ? 'Figure' : 'Table'}: ${plain.slice(0, 40) || nameOf(file)} (${s.name})`, {
+      // (a cropped or rotated picture: its original goes too, with how it was edited, so Restore
+      // brings back both, unless another figure of the section shows that original)
+      const edit = kind === 'figure' ? pictureEditOf(fig) : null;
+      const origPaths: string[] = [];
+      if (edit && file !== edit.original) {
+        const shared = Object.entries(figs).some(([k, v]) => k !== id && isObj(v) && (str(v.file) === edit.original || (isObj(v[EDIT_KEY]) && str((v[EDIT_KEY] as Json).original) === edit.original)));
+        const om = join(s.folder, edit.original);
+        const os = om.replace(/\.[^./]+$/, '');
+        if (!shared && nameOf(om) !== nameOf(main) && (await this.folder.exists(om))) origPaths.push(om, ...(os !== om ? [`${os}.cdxml`, `${os}.emf`].filter((x) => x !== om) : []));
+      }
+      const origHere: string[] = [];
+      for (const x of origPaths) if (await this.folder.exists(x)) origHere.push(x);
+      await this.moveToTrash([main, ...companions, ...origHere], kind, `${kind === 'figure' ? 'Figure' : 'Table'}: ${plain.slice(0, 40) || nameOf(file)} (${s.name})`, {
         owner: s.id, owner_name: s.name, object_id: id, caption, label: str(fig.label),
         ...(align ? { align } : {}), ...(fig.width ? { width: fig.width } : {}),
+        ...(origHere.length ? { edited_original: nameOf(origHere[0]), edited_files: origHere.map(nameOf), edited: { rotate: edit!.rotate, flip: edit!.flip, crop: edit!.crop } } : {}),
       });
     }
     if (at >= 0) { lines.splice(at, 1); await this.writeSectionText(s, lines.join('\n')); }

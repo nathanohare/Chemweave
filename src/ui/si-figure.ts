@@ -61,9 +61,11 @@ export class SiFigureEditor {
   }
 
   /** The figure's file and printed width in cm (0: its own size). */
-  get state(): { file: string; width: number } {
+  get state(): { file: string; width: number; edited: boolean } {
     const e = this.entry;
-    return { file: typeof e.file === 'string' ? e.file : '', width: Math.max(0, Number(e.width ?? e.width_cm ?? 0) || 0) };
+    const file = typeof e.file === 'string' ? e.file : '';
+    const was = pictureEditOf(e);
+    return { file, width: Math.max(0, Number(e.width ?? e.width_cm ?? 0) || 0), edited: !!was && file !== was.original };
   }
 
   /** The figure's label as the compiled SI gives it; `auto`: the numbered one it gets without a typed label (the Label box's placeholder). */
@@ -92,6 +94,9 @@ export class SiFigureEditor {
   private gone = false;
 
   focus(): void { scrollToItem(this.el); this.el.focus(); }
+
+  /** Its picture changed outside the editor (Crop, Rotate): painted again. */
+  refresh(): void { this.paint(); }
 
   private paint(): void {
     for (const u of this.urls) URL.revokeObjectURL(u);

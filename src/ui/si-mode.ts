@@ -18,8 +18,8 @@ import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesB
 import type { FlagChange, SiPreview } from './si-preview';
 import { addFlagComments } from '../si/flag-comments';
 import { mentionPicker, threadCard } from './comment-cards';
-import { EDIT_KEY, NO_CROP, editRecord, editedName, isPlain, pictureEditOf, turned, type PictureEdit, type Turn } from '../si/picture-edit';
-import { askCrop, editableKind, renderEdited } from './si-crop';
+import { EDIT_KEY, NO_CROP, editRecord, editedName, isPlain, pictureEditOf, shownWidth, turned, type Crop, type PictureEdit, type Turn } from '../si/picture-edit';
+import { askCrop, editableKind, renderEdited, sourceSize } from './si-crop';
 import { popupHost } from './popup-host';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
@@ -359,7 +359,7 @@ const RIBBON = `
         <button class="rb-labelled" data-si-place="reset" data-ic="picture-reset" title="Back to the Position and Wrap Text of Project Settings ▸ Layout"><span class="rb-lead"></span>Reset to Project Default</button>
         <button class="rb-labelled" data-si-place="apply-all" data-ic="format-painter" title="Use these Position and Wrap Text for every one of its kind (Project Settings ▸ Layout); those with their own go back to it"><span class="rb-lead"></span><span data-si-place-all>Apply to All Structures</span></button>
       </div>
-      <button class="rb-big" data-si-place="rotate" data-si-place-for="figures" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: a quarter turn right or left, or flipped. Saved as a copy beside the original, so SI Assistant shows it turned too"><span class="rb-icon"></span>Rotate ▾</button>
+      <button class="rb-big" data-si-place="rotate" data-si-place-for="figures" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: rotate the picture 90° right or left, or flip it. Saved as a copy beside the original, so SI Assistant shows the same picture"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group" data-si-place-for="figures"><div class="rb-row">
       <button class="rb-big" data-si-place="crop" data-ic="crop" title="Crop: cut the picture's sides. Saved as a copy beside the original, so SI Assistant shows it cropped too"><span class="rb-icon"></span>Crop</button>
@@ -388,7 +388,7 @@ const RIBBON = `
           <option value="square">Square</option>
           <option value="topBottom">Top and Bottom</option>
         </select></div>
-      <button class="rb-big" data-si-fig="rotate" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: a quarter turn right or left, or flipped. Saved as a copy beside the original, so SI Assistant shows it turned too"><span class="rb-icon"></span>Rotate ▾</button>
+      <button class="rb-big" data-si-fig="rotate" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: rotate the picture 90° right or left, or flip it. Saved as a copy beside the original, so SI Assistant shows the same picture"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
@@ -1134,58 +1134,99 @@ export class SiMode {
   }
 
   /**
-   * Crop or turn a figure's picture, or put the original back: the picture is made again from the
-   * original and saved as a copy beside it ("(edited)"), which the figure then uses, so SI
-   * Assistant prints it the same. One step of Undo.
+   * Crop or rotate a figure's picture, or put the original back: the picture is made again from
+   * the original and saved as the figure's copy beside it ("(edited)"), which the figure then uses,
+   * so SI Assistant prints it the same. One step of Undo, named for the command.
    */
   private async editPicture(id: string, how: Turn | 'crop' | 'reset'): Promise<void> {
     const p = this.project;
     if (!p) return;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
-    // (what is being typed in the figure's label is written first)
-    await this.activeFigure?.settled();
-    const found = await p.figureOwnerOf(id);
-    if (!found) { this.host.flash('This figure is no longer in the project.'); return; }
-    const file = typeof found.entry.file === 'string' ? found.entry.file : '';
-    const was = pictureEditOf(found.entry);
-    const original = was?.original ?? file;
-    if (!original) { this.host.flash('This figure has no picture yet.'); return; }
-    if (how === 'reset') {
-      if (!was) { this.host.flash('This picture is the original already.'); return; }
-    } else if (!editableKind(original)) { this.host.flash('A PDF picture can’t be cropped or rotated here: crop or rotate it before adding it, or paste it as a picture.'); return; }
-    const bytes = how === 'reset' ? null : await p.folder.readBytes([found.folder, original].filter(Boolean).join('/'));
-    if (how !== 'reset' && !bytes) { this.host.flash(`${original.slice(original.lastIndexOf('/') + 1)} is no longer in the project.`); return; }
-    let next: PictureEdit | null = was ?? { original, rotate: 0, flip: false, crop: { ...NO_CROP } };
-    if (how === 'reset') next = null;
-    else if (how === 'crop') {
-      // (the window shows the picture turned as it is, uncropped)
-      const whole = await renderEdited(original, bytes!, { ...next, crop: { ...NO_CROP } });
+    // (what is being typed, a figure's label too, is written first: the figure's entry is read after it)
+    await this.commitAll();
+    const pathOf = (folder: string, rel: string): string => [folder, rel].filter(Boolean).join('/');
+    const stateOf = (entry: Json): { file: string; was: PictureEdit | null; original: string } => {
+      const file = typeof entry.file === 'string' ? entry.file : '';
+      const was = pictureEditOf(entry);
+      return { file, was, original: was?.original ?? file };
+    };
+    const kindName = (rel: string): string => rel.slice(rel.lastIndexOf('.') + 1).toUpperCase();
+    let crop: Crop | null = null;
+    if (how === 'crop') {
+      // (the window shows the picture rotated as it is, uncropped, at a size the window needs)
+      const found = await p.figureOwnerOf(id);
+      if (!found) { this.host.flash('This figure is no longer in the project.'); return; }
+      const st = stateOf(found.entry);
+      if (!st.original) { this.host.flash('This figure has no picture yet.'); return; }
+      if (!editableKind(st.original)) { this.host.flash(`A ${kindName(st.original)} picture can’t be cropped here: crop it before adding it, or paste it as a picture.`); return; }
+      const bytes = await p.folder.readBytes(pathOf(found.folder, st.original));
+      if (!bytes) { this.host.flash(`${st.original.slice(st.original.lastIndexOf('/') + 1)} is no longer in the project.`); return; }
+      const now = st.was ?? { original: st.original, rotate: 0 as const, flip: false, crop: { ...NO_CROP } };
+      const whole = await renderEdited(st.original, bytes, { ...now, crop: { ...NO_CROP } }, 1600);
       if (!whole) { this.host.flash('This picture could not be read.'); return; }
-      const url = URL.createObjectURL(new Blob([whole.bytes as BlobPart], { type: whole.svg ? 'image/svg+xml' : 'image/png' }));
+      const url = URL.createObjectURL(new Blob([whole.bytes as BlobPart], { type: whole.mime }));
       try {
-        const dims = await new Promise<{ w: number; h: number } | null>((ok) => { const im = new Image(); im.onload = () => ok({ w: im.naturalWidth || 1, h: im.naturalHeight || 1 }); im.onerror = () => ok(null); im.src = url; });
+        // (its size read from the file itself: an SVG without a set size has no natural width in an image)
+        const dims = await sourceSize(whole.svg ? 'preview.svg' : 'preview.png', whole.bytes);
         if (!dims) { this.host.flash('This picture could not be read.'); return; }
-        const got = await askCrop(url, dims.w, dims.h, next.crop);
-        if (!got) return;
-        next = { ...next, crop: got };
+        crop = await askCrop(url, dims.w, dims.h, now.crop);
       } finally { URL.revokeObjectURL(url); }
-    } else next = turned(next, how);
+      if (!crop) return;
+    }
     if (this.project !== p || p.readOnly) return;
-    const edit = next;
-    const label = how === 'crop' ? 'Crop' : how === 'reset' ? 'Reset Picture' : 'Rotate';
+    const LABELS: Record<string, string> = { crop: 'Crop', reset: 'Reset Picture', right: 'Rotate Right 90°', left: 'Rotate Left 90°', flipV: 'Flip Vertical', flipH: 'Flip Horizontal' };
+    // (the figure shown on the SI page is painted again by itself: the page and its selection stay)
+    const shown = this.activeFigure?.id === id ? this.activeFigure : null;
+    let say = '';
+    // (read again in the queue: the change is made to the figure as it is then, one after another)
     await this.act(async () => {
+      const found = await p.figureOwnerOf(id);
+      if (!found) { say = 'This figure is no longer in the project.'; return; }
+      const { file, was, original } = stateOf(found.entry);
+      if (!original) { say = 'This figure has no picture yet.'; return; }
       const entry: Json = { ...found.entry };
-      if (!edit || isPlain(edit)) {
+      // (the copy's name is kept, so the next edit writes over it rather than making another)
+      const copy = was?.copy ?? (was && file !== original ? file : undefined);
+      const plainOf = (): PictureEdit => ({ original, rotate: 0, flip: false, crop: { ...NO_CROP }, ...(copy ? { copy } : {}) });
+      // (a width set by hand is for the picture as it was: the same scale is kept, so a crop makes it narrower, not bigger)
+      const keepScale = async (folder: string, rel: string, from: PictureEdit, to: PictureEdit, data?: Uint8Array | null): Promise<void> => {
+        const key = Number(entry.width) > 0 ? 'width' : Number(entry.width_cm) > 0 ? 'width_cm' : '';
+        if (!key) return;
+        const src = data ?? await p.folder.readBytes(pathOf(folder, rel));
+        const size = src ? await sourceSize(rel, src) : null;
+        if (!size) return;
+        const a = shownWidth(size.w, size.h, from), b = shownWidth(size.w, size.h, to);
+        if (a > 0 && b > 0 && Math.abs(a - b) > 1e-9) entry[key] = Math.max(0.01, Math.round(Number(entry[key]) * (b / a) * 100) / 100);
+      };
+      if (how === 'reset') {
+        if (!was || file === original) { say = 'This picture is the original already.'; return; }
+        if (!(await p.folder.exists(pathOf(found.folder, original)))) { say = `The original, ${original.slice(original.lastIndexOf('/') + 1)}, is no longer in the project, so the edited picture stays.`; return; }
+        await keepScale(found.folder, original, was, plainOf());
         entry.file = original;
-        delete entry[EDIT_KEY];
+        entry[EDIT_KEY] = editRecord(plainOf());
       } else {
-        const made = await renderEdited(original, bytes!, edit);
-        if (!made) throw new Error('This picture could not be read.');
-        entry.file = await p.writeEditedPicture(found.folder, editedName(original, made.svg), made.bytes, file);
-        entry[EDIT_KEY] = editRecord(edit);
+        if (!editableKind(original)) { say = `A ${kindName(original)} picture can’t be ${how === 'crop' ? 'cropped' : 'rotated'} here: ${how === 'crop' ? 'crop' : 'rotate'} it before adding it, or paste it as a picture.`; return; }
+        const bytes = await p.folder.readBytes(pathOf(found.folder, original));
+        if (!bytes) { say = `${original.slice(original.lastIndexOf('/') + 1)} is no longer in the project.`; return; }
+        const now = was ?? plainOf();
+        const next: PictureEdit = how === 'crop' ? { ...now, crop: crop! } : turned(now, how);
+        await keepScale(found.folder, original, now, next, bytes);
+        if (isPlain(next)) {
+          entry.file = original;
+          entry[EDIT_KEY] = editRecord({ ...plainOf() });
+        } else {
+          const made = await renderEdited(original, bytes, next);
+          if (!made) { say = 'This picture could not be read, so it was left as it was.'; return; }
+          const rel = await p.writeEditedPicture(found.folder, editedName(original, made.mime), made.bytes, copy, original);
+          entry.file = rel;
+          entry[EDIT_KEY] = editRecord({ ...next, copy: rel });
+        }
       }
       await p.setFigureEntry(found.owner, id, entry);
-    }, true, undefined, undefined, label);
+    }, !shown, undefined, undefined, LABELS[how]);
+    if (say) { this.host.flash(say, 6000); return; }
+    shown?.refresh();
+    if (shown && this.activeFigure === shown) this.figureChosen(shown);
     this.liveSoon(0);
   }
 
@@ -1539,6 +1580,9 @@ export class SiMode {
     const w = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="fig-width"]')!;
     const st = f.state;
     w.value = st.width ? String(st.width) : '';
+    // (Reset Picture only does something to a cropped or rotated picture)
+    const reset = this.ribbon.querySelector<HTMLButtonElement>('[data-si-fig="reset-picture"]');
+    if (reset) reset.disabled = !st.edited;
     this.figurePlaceState();
   }
 

@@ -18,7 +18,11 @@ export const EDIT_KEY = 'chemweave_picture';
 export type Quarter = 0 | 1 | 2 | 3;
 /** The fractions of the turned picture cut off each side. */
 export interface Crop { l: number; t: number; r: number; b: number }
-export interface PictureEdit { original: string; rotate: Quarter; flip: boolean; crop: Crop }
+export interface PictureEdit {
+  original: string; rotate: Quarter; flip: boolean; crop: Crop;
+  /** The edited copy this figure writes (made again over the same file on each edit; kept after Reset Picture for the next). */
+  copy?: string;
+}
 export type Turn = 'right' | 'left' | 'flipH' | 'flipV';
 
 type Json = Record<string, unknown>;
@@ -36,19 +40,29 @@ export function cleanCrop(c: Crop): Crop {
   return { l: round(l), t: round(t), r: round(r), b: round(b) };
 }
 
-/** How a figure's picture was edited (null: it wasn't, or the record can't be read). */
+/**
+ * How a figure's picture was edited (null: it wasn't, or the record can't be read). The record
+ * holds only while the figure shows its original or its edited copy: a picture changed elsewhere
+ * (in SI Assistant, or by hand) leaves it behind, and the new picture is edited from scratch.
+ */
 export function pictureEditOf(entry: unknown): PictureEdit | null {
   const e = isObj(entry) ? entry[EDIT_KEY] : null;
   if (!isObj(e) || typeof e.original !== 'string' || !e.original) return null;
+  const copy = typeof e.copy === 'string' && e.copy ? e.copy : undefined;
+  const file = isObj(entry) && typeof entry.file === 'string' ? entry.file : '';
+  if (file !== e.original && file !== copy) return null;
   const q = Math.round(Number(e.rotate) || 0);
   const c = isObj(e.crop) ? e.crop : {};
-  return { original: e.original, rotate: (((q % 4) + 4) % 4) as Quarter, flip: e.flip === true, crop: cleanCrop({ l: frac(c.l), t: frac(c.t), r: frac(c.r), b: frac(c.b) }) };
+  const out: PictureEdit = { original: e.original, rotate: (((q % 4) + 4) % 4) as Quarter, flip: e.flip === true, crop: cleanCrop({ l: frac(c.l), t: frac(c.t), r: frac(c.r), b: frac(c.b) }) };
+  // (showing the original: Reset Picture, so nothing is applied; the copy's name is kept for the next edit)
+  if (file === e.original) return { original: out.original, rotate: 0, flip: false, crop: { ...NO_CROP }, ...(copy ? { copy } : {}) };
+  return { ...out, ...(copy ? { copy } : {}) };
 }
 
 /** The record kept in the figure's entry (only what differs from the original). */
 export function editRecord(e: PictureEdit): Json {
   const c = cleanCrop(e.crop);
-  return { original: e.original, ...(e.rotate ? { rotate: e.rotate } : {}), ...(e.flip ? { flip: true } : {}), ...(c.l || c.t || c.r || c.b ? { crop: c } : {}) };
+  return { original: e.original, ...(e.copy ? { copy: e.copy } : {}), ...(e.rotate ? { rotate: e.rotate } : {}), ...(e.flip ? { flip: true } : {}), ...(c.l || c.t || c.r || c.b ? { crop: c } : {}) };
 }
 
 /** Nothing changed from the original. */
@@ -90,47 +104,76 @@ export function cropRect(w: number, h: number, c: Crop): { x: number; y: number;
   return { x: c.l * w, y: c.t * h, w: Math.max(1e-6, (1 - c.l - c.r) * w), h: Math.max(1e-6, (1 - c.t - c.b) * h) };
 }
 
-/** The edited picture's file name, beside the original ("<name> (edited).<ext>"). */
-export function editedName(original: string, svg: boolean): string {
+/** The edited picture's file name, beside the original ("<name> (edited).<ext>", for its type). */
+export function editedName(original: string, mime: string): string {
   const name = original.slice(original.lastIndexOf('/') + 1).replace(/\.[^.]+$/, '');
-  return `${name} (edited).${svg ? 'svg' : 'png'}`;
+  return `${name} (edited).${mime === 'image/svg+xml' ? 'svg' : mime === 'image/jpeg' ? 'jpg' : 'png'}`;
 }
 
 const num = (s: string): number => Number.parseFloat(s);
-const fmt = (n: number): string => String(Math.round(n * 1e4) / 1e4);
+/** CSS's pixels in an SVG length (its user units when it has no view box); NaN for a percentage. */
+const PX: Record<string, number> = { '': 1, px: 1, pt: 4 / 3, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, q: 96 / 101.6 };
+function px(v: string): number {
+  const m = /^\s*([-+]?[\d.]+(?:[eE][-+]?\d+)?)\s*([a-z%]*)\s*$/i.exec(v);
+  const k = m ? PX[m[2].toLowerCase()] : undefined;
+  return m && k ? Number(m[1]) * k : NaN;
+}
+const fmt = (n: number): string => String(Math.round(n * 1e6) / 1e6);
 
 /**
  * An SVG picture turned and cropped: its drawing in a group that turns it, the crop as the view
  * box, the printed size following. Null when it isn't an SVG whose size can be read.
  */
-export function editSvg(text: string, e: PictureEdit): string | null {
-  const open = /<svg\b[^>]*>/i.exec(text);
-  const close = text.lastIndexOf('</svg>');
-  if (!open || close < open.index) return null;
-  const tag = open[0];
+/** An SVG's root tag (its place in the text) and its size in pixels as drawn; null when it has none. */
+function svgRoot(text: string): { at: number; tag: string; close: number; attr: (n: string) => string | null; box: { w: number; h: number }; sized: boolean; hasVb: boolean } | null {
+  // (the root tag: past the prolog, comments, a DOCTYPE and CDATA; a ">" inside a quoted value is part of it)
+  const blank = text.replace(/<!--[\s\S]*?-->|<!\[CDATA\[[\s\S]*?\]\]>|<!DOCTYPE(?:[^[>]|\[[^\]]*\])*>|<\?[\s\S]*?\?>/gi, (m) => ' '.repeat(m.length));
+  const open = /<svg\b(?:"[^"]*"|'[^']*'|[^'">])*>/i.exec(blank);
+  const close = blank.lastIndexOf('</svg>');
+  if (!open || close < open.index || open[0].endsWith('/>')) return null;
+  const tag = text.slice(open.index, open.index + open[0].length);
   const attr = (name: string): string | null => new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(tag)?.[2] ?? null;
   const vb = (attr('viewBox') ?? '').trim().split(/[\s,]+/).map(num);
+  const hasVb = vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0;
   const wAttr = attr('width'), hAttr = attr('height');
-  const box = vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0
-    ? { x: vb[0], y: vb[1], w: vb[2], h: vb[3] }
-    : wAttr && hAttr && num(wAttr) > 0 && num(hAttr) > 0 && !wAttr.endsWith('%') && !hAttr.endsWith('%') ? { x: 0, y: 0, w: num(wAttr), h: num(hAttr) } : null;
-  if (!box) return null;
+  // (the picture's size in pixels, as it is drawn: its width and height, else its view box's)
+  const sized = !!wAttr && !!hAttr && px(wAttr) > 0 && px(hAttr) > 0;
+  const box = sized ? { w: px(wAttr!), h: px(hAttr!) } : hasVb ? { w: vb[2], h: vb[3] } : null;
+  return box ? { at: open.index, tag, close, attr, box, sized, hasVb } : null;
+}
+
+/** An SVG picture's size in pixels as drawn (null when it can't be read). */
+export const svgSize = (text: string): { w: number; h: number } | null => svgRoot(text)?.box ?? null;
+
+/** How wide the part shown is, over the original's width (the original w × h): a figure's printed width follows it. */
+export function shownWidth(w: number, h: number, e: PictureEdit): number {
+  const o = orientation(w, h, e.rotate, e.flip);
+  return cropRect(o.w, o.h, cleanCrop(e.crop)).w / w;
+}
+
+export function editSvg(text: string, e: PictureEdit): string | null {
+  const r = svgRoot(text);
+  if (!r) return null;
+  const { tag, attr, box, sized, hasVb, close } = r;
+  const open = { index: r.at };
+  const vbAttr = attr('viewBox');
+  const wAttr = attr('width'), hAttr = attr('height');
   const o = orientation(box.w, box.h, e.rotate, e.flip);
   const cut = cropRect(o.w, o.h, cleanCrop(e.crop));
-  // (the printed size: the original's, turned, times the part kept; in each side's own unit)
+  // (the printed size: the original's, rotated, times the part kept; in each side's own unit)
   const size = (v: string | null, along: number, kept: number): string | null => {
-    if (!v || v.endsWith('%')) return null;
-    const n = num(v);
-    if (!(n > 0)) return null;
-    return fmt((n * kept) / along) + v.replace(/^\s*[-+]?[\d.]+(?:[eE][-+]?\d+)?\s*/, '');
+    if (!v || !sized) return null;
+    return fmt((num(v) * kept) / along) + v.replace(/^\s*[-+]?[\d.]+(?:[eE][-+]?\d+)?\s*/, '');
   };
   const [sw, sh] = e.rotate % 2 ? [hAttr, wAttr] : [wAttr, hAttr];
   const nw = size(sw, o.w, cut.w), nh = size(sh, o.h, cut.h);
+  // (the root keeps everything but its size; the original drawing, with its own view box and
+  // preserveAspectRatio, goes in an <svg> of the original's size inside the rotated group, so
+  // percentages and stretching inside it work as before)
+  const pAR = attr('preserveAspectRatio');
   let root = tag.replace(/\s(width|height|viewBox|preserveAspectRatio)\s*=\s*(["']).*?\2/gi, '');
   root = root.replace(/\s*\/?>$/, '') + `${nw ? ` width="${nw}"` : ''}${nh ? ` height="${nh}"` : ''} viewBox="${fmt(cut.x)} ${fmt(cut.y)} ${fmt(cut.w)} ${fmt(cut.h)}">`;
-  // (the drawing moved to the origin, then turned)
-  const [a, b, c, d, ex, fy] = o.m;
-  const tx = ex - a * box.x - c * box.y, ty = fy - b * box.x - d * box.y;
-  const g = `<g transform="matrix(${[a, b, c, d, tx, ty].map(fmt).join(' ')})">`;
-  return text.slice(0, open.index) + root + g + text.slice(open.index + tag.length, close) + '</g>' + text.slice(close);
+  const inner = `<svg x="0" y="0" width="${fmt(box.w)}" height="${fmt(box.h)}"${hasVb ? ` viewBox="${vbAttr}"` : ''}${pAR ? ` preserveAspectRatio="${pAR}"` : ''} overflow="visible">`;
+  const g = `<g transform="matrix(${o.m.map(fmt).join(' ')})">`;
+  return text.slice(0, open.index) + root + g + inner + text.slice(open.index + tag.length, close) + '</svg></g>' + text.slice(close);
 }
