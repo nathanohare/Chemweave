@@ -7,7 +7,7 @@
 // character by character (a diff), so a change to the printed text is made at the same place in
 // the stored value; a change that touches only what the program added is refused.
 
-import { escapeMarkup } from './markup';
+import { escapeMarkupLines } from './markup';
 import { editableSrc, parseSrc, type SourceSpan } from './source-map';
 
 /** What an edit of the preview's text at [start, end) is. */
@@ -181,7 +181,8 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
     }
   }
   let rb = pb > pa ? map[pb - 1] + 1 : ra;
-  const put = markup ? escapeMarkup(typed) : typed;
+  // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object)
+  const put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
   if (!markup || rb <= ra) return raw.slice(0, ra) + put + raw.slice(rb);
   // (an escaped character starts with its backslash)
   if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
@@ -255,4 +256,62 @@ export function locateEdit(before: string, after: string, selStart: number, selE
     for (const w of wants) for (let s = lo; s <= pre; s++) if (w(s) && fits(s)) return at(s);
   }
   return at(pre);
+}
+
+/**
+ * The fields' stretches after an edit of [start, end) of the text by `delta` characters (`into`:
+ * the field edited, which grows or shrinks; null for custom text, whose own stretch is added by
+ * the caller). A field's stretch ending at `start` is the one edited only when text is put in at
+ * its end (start === end); taking out what follows it (the paragraph mark joining it to the
+ * field's next paragraph) leaves it as it is.
+ */
+export function shiftSpans(spans: readonly SourceSpan[], start: number, end: number, delta: number, into: string | null): SourceSpan[] {
+  const out: SourceSpan[] = [];
+  for (const s of spans) {
+    if (s.end <= start && !(into && s.src === into && s.end === start && start === end && !spans.some((x) => x.src === into && x.start <= start && start < x.end))) { out.push(s); continue; }
+    if (s.start >= end && !(into && s.src === into && s.start === end && s.end > end && start === end && !spans.some((x) => x.src === into && x.end === start))) {
+      out.push({ ...s, start: s.start + delta, end: s.end + delta });
+      continue;
+    }
+    // the stretch edited (or one the edit reaches into)
+    if (into && s.src === into) out.push({ ...s, end: Math.max(s.start, s.end + delta) });
+    else if (s.start >= start) out.push({ ...s, start: s.start + delta, end: s.end + delta });
+    else out.push({ ...s, end: Math.max(s.start, s.end + (s.end >= end ? delta : 0)) });
+  }
+  return out.filter((s) => s.end > s.start || isCustomSrc(s.src));
+}
+
+/**
+ * The changes from one printed text of a field to another, each on its own ([pa, pb) of `before`
+ * replaced by `typed`), in order. Two edits far apart in one field (made before it was saved) are
+ * two changes, so what is between them is left as it is stored, formatting and all.
+ */
+export function printedHunks(before: string, now: string): { pa: number; pb: number; typed: string }[] {
+  const map = lineUp(before, now);
+  const out: { pa: number; pb: number; typed: string }[] = [];
+  let prev = -1;
+  let open: number | null = null;
+  for (let i = 0; i <= now.length; i++) {
+    const m = i < now.length ? map[i] : before.length;
+    const same = i === now.length || (m > prev && before[m] === now[i]);
+    if (!same) { if (open === null) open = i; continue; }
+    const from = open ?? i;
+    if (m > prev + 1 || i > from) out.push({ pa: prev + 1, pb: m, typed: now.slice(from, i) });
+    open = null;
+    prev = m;
+  }
+  return out;
+}
+
+/** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
+export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean): string | null {
+  let out = raw, printed = before;
+  // (from the last change back: the places of the ones before it don't move)
+  for (const h of printedHunks(before, now).reverse()) {
+    const next = applyToRaw(out, printed, h.pa, h.pb, h.typed, markup);
+    if (next === null) return null;
+    out = next;
+    printed = printed.slice(0, h.pa) + h.typed + printed.slice(h.pb);
+  }
+  return out;
 }
