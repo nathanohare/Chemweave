@@ -2207,6 +2207,7 @@ CaptionEditor.linkPlaces = () => slidePlaces();
 
 setLinkHost({
   goTo(place) {
+    if (siActive()) return siMode?.goToPlace(place) ?? false;
     if (docActive()) return docMode.goToPlace(place);
     if (sheetActive()) return sheetMode.goToPlace(place);
     const d = deckNow();
@@ -2226,6 +2227,7 @@ setLinkHost({
     return false;
   },
   placeName(place) {
+    if (siActive()) return siMode?.placeName(place) ?? null;
     if (docActive()) return docMode.placeName(place);
     const d = deckNow();
     const id = slideOfLink(place);
@@ -9468,6 +9470,7 @@ function loadSiMode(): Promise<SiMode> {
       contentsOfCdxml: (text) => { try { const d = readCdxml(text).doc; return { contents: d.contents(), style: { ...d.style } }; } catch { return null; } },
       openSymbols: () => symbolWindow.open(),
       copyRich: (text, html) => crystalOptions().copy(text, html),
+      toStructure: (text, style) => textToStructure(text, style),
       nameStructure: async (mol) => {
         if (!chem.ready) return { ok: false, message: 'The chemistry engine is still loading. Try again in a moment.' };
         const smiles = await chem.molToSmiles(mol);

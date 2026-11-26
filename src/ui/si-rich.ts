@@ -111,7 +111,8 @@ function read(box: HTMLElement, multiline = true): Paragraph[] {
   let cur: Paragraph | null = null;
   const walk = (node: Node, f: { bold?: boolean; italic?: boolean; underline?: boolean; valign?: VAlign }): void => {
     if (node.nodeType === Node.TEXT_NODE) {
-      const t = spaces(node.textContent ?? '', !cur?.runs.length || breaks > 0, !following(node));
+      // (U+FFFC stands for a picture or an equation in the Live Preview's text: never kept in a field, however it got there)
+      const t = spaces((node.textContent ?? '').replace(/\uFFFC/g, ''), !cur?.runs.length || breaks > 0, !following(node));
       if (t) begin().runs.push({ text: t, ...f });
       return;
     }
@@ -197,10 +198,12 @@ export class SiRichBox {
     el.addEventListener('paste', (e) => {
       // pasted text keeps its bold, italics, sub- and superscripts (from Word or MestReNova), nothing else
       e.preventDefault();
-      const plain = e.clipboardData?.getData('text/plain') ?? '';
+      // (a bare U+FFFC, copied from a document with a picture or equation in it, is left out)
+      const raw = e.clipboardData?.getData('text/plain') ?? '';
+      const plain = raw.replace(/\uFFFC/g, '');
       const html = e.clipboardData?.getData('text/html') ?? '';
       // a drawing or picture: a figure where the caret is (when the box's text can hold one)
-      if (multiline && this.host.pasteObject && ((!plain.trim() && !html.trim()) || /^\s*(<\?xml[^>]*>\s*)?(<!DOCTYPE[^>]*>\s*)?<CDXML[\s>]/i.test(plain) || this.host.holdsObject?.(e) === true)) {
+      if (multiline && this.host.pasteObject && ((!raw.trim() && !html.trim()) || /^\s*(<\?xml[^>]*>\s*)?(<!DOCTYPE[^>]*>\s*)?<CDXML[\s>]/i.test(plain) || this.host.holdsObject?.(e) === true)) {
         const sel = getSelection();
         const at = sel && sel.rangeCount && el.contains(sel.getRangeAt(0).startContainer) ? sel.getRangeAt(0).cloneRange() : null;
         this.host.pasteObject(e, (p) => this.place(at, p));

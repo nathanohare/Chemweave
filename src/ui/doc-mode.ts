@@ -39,7 +39,7 @@ import { editTabStops } from './tabs-dialog';
 import { FontBox } from './font-box';
 import { WORD_HIGHLIGHTS } from '../io/docx-base';
 import { DocFind } from './doc-find';
-import { askLink, followLink, linkTip } from './links-ui';
+import { askLink, followLink, linkMenuLines, linkTip } from './links-ui';
 import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
 import { bookmarkName, linkAtPoint, shownLinkAt } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
@@ -52,6 +52,7 @@ import { combineDocuments, compareDocuments } from '../document/compare';
 import { ask } from './ask';
 import { askReviewName } from './review-name';
 import { askEquation } from './equation-dialog';
+import { askStructureFromName } from './structure-from-name';
 import { chooseReferences } from './references-dialog';
 import { citeSuper, formatOf, type Reference } from '../document/references';
 import { replaceInCells, runZotero, type ZoteroCommand, type ZoteroHost, type ZoteroPost } from '../document/zotero-live';
@@ -111,7 +112,7 @@ import { lookOfTable } from '../document/table-styles';
 import type { BorderLine, BorderSide, TableLook } from '../model';
 import { BREAK_NAMES, changeSection, hasTitlePg, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
-  type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
+  type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, equationRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
   floatOf, lookExtent, lookOf, cellHolding, innerObjects, emptyContents, traceOf, type TraceLook,
   WATERMARKS, applyCharStyle, charStylesOf, clearCharStyle, clearFormatting, defaultPageBorder, defaultWatermark, samePageBorder, deleteStyle, modifyCharStyle, newCharStyle, newParaStyle, withStyle,
   type CharStyle, type PageBorder, type Watermark,
@@ -1757,10 +1758,7 @@ export class DocumentMode {
     if (linkHere) {
       if (word || issue) line();
       if (ed.collapsed || !ed.linkHere()) ed.setCaret(offset);
-      item('Edit Link…', () => void this.editLink());
-      item('Open Link', () => void followLink(linkHere), 'Or Ctrl+click the link');
-      item('Copy Link', () => void navigator.clipboard?.writeText(linkHere).catch(() => {}));
-      item('Remove Link', () => ed.removeLink());
+      for (const l of linkMenuLines(linkHere, () => void this.editLink(), () => ed.removeLink())) item(l.label, l.run, l.title);
     }
     // the usual commands, as on the ribbon
     if (word || issue || linkHere) line();
@@ -4689,16 +4687,15 @@ export class DocumentMode {
   private async fromName(): Promise<void> {
     const f = this.file!;
     const spot = this.cellSpot();
-    const got = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
-      ok: 'Insert', note: 'A systematic or common name (ethyl acetate, 4-bromoanisole), a SMILES string or a CAS RN (50-78-2). The structure goes in the text at the cursor.',
+    const got = await askStructureFromName({
+      toStructure: (t, st) => this.host.toStructure(t, st), style: f.t.drawingStyle, flash: (m, ms) => this.host.flash(m, ms),
+      ok: 'Insert', where: 'The structure goes in the text at the cursor.',
+      closed: () => { this.focus(); return this.file === f; },
     });
-    this.focus();
-    if (!got?.text.trim() || this.file !== f) return;
-    const r = await this.host.toStructure(got.text, f.t.drawingStyle);
-    if ('error' in r) { this.host.flash(r.error, 8000); return; }
+    if (!got || this.file !== f) return;
     this.backToCell(spot);
-    this.insertObject({ kind: 'drawing', contents: r.contents }, 'Insert structure');
-    if (r.notes.length) this.host.flash(r.notes.join(' '), 8000);
+    this.insertObject({ kind: 'drawing', contents: got.contents }, 'Insert structure');
+    if (got.notes.length) this.host.flash(got.notes.join(' '), 8000);
   }
 
   private async insertPicture(): Promise<void> {
@@ -5662,7 +5659,7 @@ export class DocumentMode {
     if (!got) return;
     const id = nextObjectId(f.t);
     ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'math', tex: got.tex } } } as DocText, 'Insert equation');
-    const run = objectRun(id, rt.cleanStyle({ ...style, sub: undefined, sup: undefined }));
+    const run = equationRun(id, style);
     if (!got.display) {
       ed.replace(ed.start, ed.end, [run], undefined, null);
     } else {
