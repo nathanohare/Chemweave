@@ -2268,6 +2268,74 @@ class DocxReader {
     return false;
   }
 
+  /**
+   * Whether a field shows some text of its own (its result, after the separator, up to its end in
+   * the same paragraph): a field with no result, or an empty one, has none (review).
+   */
+  private hasResultText(f: Field, simple?: Element): boolean {
+    const shown = (r: Element) => !kid(kid(r, 'rPr'), 'vanish');
+    if (simple) return kids(simple, 'r').some((r) => shown(r) && kids(r, 't').some((t) => t.textContent?.trim()));
+    const sep = f.sep, own = sep?.parentElement;
+    if (!sep || !own) return false;
+    for (let el: Element | null = own; el; el = el.nextElementSibling) {
+      const ks = kids(el);
+      for (let i = el === own ? ks.indexOf(sep) + 1 : 0; i < ks.length; i++) {
+        if (ks[i].localName === 'fldChar' && this.a(ks[i], 'fldCharType') === 'end') return false;
+        // (hidden text isn't what the field shows: it isn't kept as its result)
+        if (ks[i].localName === 't' && ks[i].textContent?.trim() && shown(el)) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Whether a field has text on its line beside it: before it (read so far: not before a line or
+   * page break, and not an object such as another field) or after its end, up to a break (shown
+   * text of the paragraph's own runs, not another field's, hidden text, an equation's or a text box's).
+   */
+  private amidText(f: Field, ctx: Ctx, simple?: Element): boolean {
+    if (ctx.pieces[ctx.pieces.length - 1]?.runs.some((r) => r.obj === undefined && r.text.trim())) return true;
+    // the runs after a place, in order, through the wrappers text sits in (a link, an insertion, a content control)
+    const WRAP = new Set(['hyperlink', 'ins', 'moveTo', 'smartTag', 'sdt', 'sdtContent', 'customXml']);
+    let depth = 0;
+    /** true: text found; false: a break first; null: neither in these. */
+    const scan = (els: Element[]): boolean | null => {
+      for (const el of els) {
+        if (WRAP.has(el.localName)) { const got = scan(kids(el)); if (got !== null) return got; continue; }
+        if (el.localName !== 'r') continue;
+        const shown = !kid(kid(el, 'rPr'), 'vanish');
+        const got = scanRun(kids(el), shown);
+        if (got !== null) return got;
+      }
+      return null;
+    };
+    const scanRun = (ks: Element[], shown: boolean): boolean | null => {
+      for (const k of ks) {
+        if (k.localName === 'fldChar') { const ty = this.a(k, 'fldCharType'); if (ty === 'begin') depth++; else if (ty === 'end') depth = Math.max(0, depth - 1); continue; }
+        if (depth > 0) continue;
+        if (k.localName === 'br' || k.localName === 'cr') return false;
+        if (k.localName === 't' && shown && k.textContent?.trim()) return true;
+      }
+      return null;
+    };
+    const after = (start: Element): Element[] => { const out: Element[] = []; for (let el = start.nextElementSibling; el; el = el.nextElementSibling) out.push(el); return out; };
+    if (simple) return scan(after(simple)) === true;
+    // (after the field's end, in the same paragraph: plainResult has checked the end is there)
+    const sep = f.sep, own = sep?.parentElement;
+    if (!sep || !own) return false;
+    let el: Element | null = own, i = kids(own).indexOf(sep) + 1;
+    for (; el; el = el.nextElementSibling, i = 0) {
+      const ks = kids(el);
+      const end = ks.findIndex((k, n) => n >= i && k.localName === 'fldChar' && this.a(k, 'fldCharType') === 'end');
+      if (end < 0) continue;
+      const shown = !kid(kid(el, 'rPr'), 'vanish');
+      const got = scanRun(ks.slice(end + 1), shown);
+      if (got !== null) return got;
+      return scan(after(el)) === true;
+    }
+    return false;
+  }
+
   /** How a field's result looks: its first run of text after the separator, in the same paragraph. */
   private resultLook(sep: Element, ctx: Ctx): RProps | undefined {
     const own = sep.parentElement;
@@ -2317,6 +2385,14 @@ class DocxReader {
       const pc = this.piece(ctx);
       if (xe) (pc.xe ??= []).push(xe);
       if (ta) (pc.ta ??= []).push(ta);
+      return;
+    }
+    // a list field (contents, figures, an index, authorities) in the middle of a paragraph's text, its
+    // result in that paragraph: kept in its place as Word had it, showing that result, not made a list
+    // of paragraphs of its own (office sampler F-W-016)
+    if (/^(TOC|INDEX|TOA)\b/i.test(ins) && !ctx.cell && !f.inner && this.plainResult(f, simple) && this.hasResultText(f, simple) && this.amidText(f, ctx, simple)) {
+      const id = this.emitObject(ctx, { kind: 'field', code: 'word', instr: f.instr, text: '' }, f.shown ?? f.props);
+      if (id !== null) { f.kept = id; f.swallow = true; }
       return;
     }
     // an index or a table of authorities: ours again, its lines (Word's last update) left out, as they are worked out here
