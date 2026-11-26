@@ -136,8 +136,8 @@ export class SiPreview {
   private bumpPending = false;
   /** The edit the last write that stored something was made at. */
   private realGen = 0;
-  /** Where the selections typed over (not yet written) began, in the preview's text. */
-  private selStarts: number[] = [];
+  /** The text typed over selections (not yet written), in the preview's text. */
+  private typedOver: { start: number; end: number }[] = [];
   /** Custom text taken out to nothing (and so out of the file): put back where it was if typed again. */
   private gone = new Map<string, CustomText>();
   /** The page chosen in the list. */
@@ -667,8 +667,10 @@ export class SiPreview {
   private shift(start: number, end: number, delta: number, into: string | null): void {
     this.spans = shiftSpans(this.spans, start, end, delta, into);
     const put0 = end - start + delta;
-    this.selStarts = this.selStarts.map((a) => (a < start ? a : a >= end ? a + delta : start));
-    if (into && end > start && put0 > 0 && !this.selStarts.includes(start)) this.selStarts.push(start);
+    // (the selections typed over: the typed text's place, moved along by later edits)
+    const at = (x: number): number => (x < start ? x : x >= end ? x + delta : start);
+    this.typedOver = this.typedOver.map((r) => ({ start: at(r.start), end: Math.max(at(r.start), r.end >= end ? r.end + delta : r.end > start ? start + put0 : r.end) }));
+    if (into && end > start && put0 > 0) this.typedOver.push({ start, end: start + put0 });
     // (the pages' stretches and the custom text's places move along too: the wash and new custom text's places use them)
     const put = end - start + delta;
     const move = (x: number, edge: 'start' | 'end'): number => (x < start || (x === start && (edge === 'start' || end > start)) ? x : x >= end ? x + delta : edge === 'start' ? start : start + put);
@@ -691,12 +693,12 @@ export class SiPreview {
     const gen = this.editGen;
     const owner = this.owner;
     const srcs = [...this.dirty];
-    const starts = this.selStarts;
-    this.selStarts = [];
+    const over = this.typedOver;
+    this.typedOver = [];
     this.dirty.clear();
     this.busy = true;
     let wrote = true;
-    try { wrote = await this.writeEach(text, spans, srcs, owner, starts); } finally { this.busy = false; }
+    try { wrote = await this.writeEach(text, spans, srcs, owner, over); } finally { this.busy = false; }
     this.writtenGen = Math.max(this.writtenGen, gen);
     if (this.bumpPending && !this.dirty.size && !this.fresh.size) { this.bumpPending = false; this.writtenGen = this.editGen; }
     // (nothing to write, as a letter typed and taken out again: no compile follows, and the text
@@ -718,6 +720,7 @@ export class SiPreview {
   private bumpWritten(gen0: number): void {
     const typed = this.editGen !== gen0;
     this.editGen++;
+    this.realGen = this.editGen;
     // (typing already written while this one saved: all written; typing still to write: its write says so)
     if (!typed || (!this.dirty.size && !this.fresh.size && !this.busy)) this.writtenGen = this.editGen;
     else this.bumpPending = true;
@@ -740,7 +743,7 @@ export class SiPreview {
   private failed = false;
 
   /** Whether anything was written (or a write failed). */
-  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown, starts: readonly number[] = []): Promise<boolean> {
+  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown, over: readonly { start: number; end: number }[] = []): Promise<boolean> {
     const customs: { id: string; text: string }[] = [];
     let failed = false;
     let wrote = false;
@@ -762,7 +765,7 @@ export class SiPreview {
       }
       const mine = printedOf(text, spans, src);
       const now = mine.printed;
-      const at = starts.filter((a) => spans.some((x) => x.src === src && x.start <= a && a < x.end)).map(mine.at);
+      const at = over.filter((r) => spans.some((x) => x.src === src && x.start <= r.start && r.end <= x.end)).map((r) => ({ start: mine.at(r.start), end: mine.at(r.start) + r.end - r.start }));
       // (each change on its own: two edits far apart in the field leave what is between them as stored)
       const next = applyPrintedChange(before.raw, before.printed, now, markupSrc(src), at);
       if (next === null) {

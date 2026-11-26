@@ -58,15 +58,24 @@ describe('two edits far apart in one field, saved together', () => {
     expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'xCH2Cl2 was addedy', true)).toBe('xCH_{2}Cl_{2} was addedy');
   });
 
-  it('many changes close together are one change', () => {
-    expect(applyPrintedChange('abcdefghijklmnop', 'abcdefghijklmnop', 'aXcXeXgXiXkXmXoX', true)).toBe('aXcXeXgXiXkXmXoX');
+  it('a selection typed over doesn’t reach changes outside it', () => {
+    // "foo" retyped as "foo" (no change), then "X" typed at the end: the formatting between stays
+    expect(applyPrintedChange('foo H_{2}O and **bold** end', 'foo H2O and bold end', 'foo H2O and bold endX', true, [{ start: 0, end: 3 }])).toBe('foo H_{2}O and **bold** endX');
+  });
+
+  it('two changes a few letters apart keep the formatting between them', () => {
+    expect(applyPrintedChange('H_{2}O is wet', 'H2O is wet', 'D2S is wet', true)).toBe('D_{2}S is wet');
+  });
+
+  it('a change that lands inside a mention is refused, not saved into its id', () => {
+    expect(applyToRaw('foo @{c1} end', 'foo 1a end', 4, 10, '1a endX', true)).toBeNull();
   });
 
   it('a selection typed over takes the look of its first letter', () => {
     // "CH2Cl2" selected from its plain "C" and "CHCl3" typed: plain, as the "C" was
-    expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'CHCl3 was added', true, [0])).toBe('CHCl3 was added');
+    expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'CHCl3 was added', true, [{ start: 0, end: 5 }])).toBe('CHCl3 was added');
     // only the "2 h" in bold selected and "3 h" typed: bold, as the "2" was
-    expect(applyPrintedChange('stirred for **2 h**', 'stirred for 2 h', 'stirred for 3 h', true, [12])).toBe('stirred for **3 h**');
+    expect(applyPrintedChange('stirred for **2 h**', 'stirred for 2 h', 'stirred for 3 h', true, [{ start: 12, end: 15 }])).toBe('stirred for **3 h**');
   });
 
   it('one edit is as before', () => {
@@ -98,6 +107,14 @@ describe('"#" typed at the start of a paragraph', () => {
 
   it('"!" typed before "image{" at a paragraph’s start stays text', () => {
     expect(applyToRaw('image{x} y', 'image{x} y', 0, 0, '!', true)).toBe('\\!image{x} y');
+  });
+
+  it('a heading after a paragraph taken out whole stays a heading', () => {
+    expect(applyPrintedChange('ab\ncd\n# Real', 'ab\ncd\nReal', 'ab\nReal', true)).toBe('ab\n# Real');
+  });
+
+  it('a figure after a bold word taken out at a paragraph’s end stays a figure', () => {
+    expect(applyToRaw('a**b**\n!image{x}', 'ab\n!image{x}', 1, 2, '', true)).toBe('a\n!image{x}');
   });
 
   it('inside a paragraph it needs no escape', () => {

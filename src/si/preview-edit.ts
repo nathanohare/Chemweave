@@ -181,10 +181,15 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
     }
   }
   let rb = pb > pa ? map[pb - 1] + 1 : ra;
-  // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object)
-  const put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
+  // (a change that would land inside a mention or citation: its printed label was matched to letters of its id)
+  if (markup && insideLink(raw, ra, rb)) return null;
+  // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object; so
+  // does one already after the place, when the typed text ends with a paragraph mark)
+  let put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
+  const nl = put.lastIndexOf('\n');
+  if (markup && nl >= 0 && !startsMarker(put.slice(nl + 1)) && startsMarker(put.slice(nl + 1) + raw.slice(rb))) put = put.slice(0, nl + 1) + '\\' + put.slice(nl + 1);
   if (!markup) return raw.slice(0, ra) + put + raw.slice(rb);
-  if (rb <= ra) return keepParagraphText(raw, raw.slice(0, ra) + put + raw.slice(rb), ra, put.length);
+  if (rb <= ra) return keepParagraphText(raw, raw.slice(0, ra) + put + raw.slice(rb), ra, rb);
   // (an escaped character starts with its backslash)
   if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
   if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
@@ -202,7 +207,7 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
       if (i >= 0 && i + e.length <= hi && !escapedAt(out, i)) { out = out.slice(0, i) + out.slice(i + e.length); hi -= e.length; again = true; }
     }
   }
-  return keepParagraphText(raw, out, ra, put.length + kept.length);
+  return keepParagraphText(raw, out, ra, rb);
 }
 
 /**
@@ -210,14 +215,24 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
  * which it didn't before (the "{" of "!image{" typed after a pause, or the text before a "#"
  * taken out): the paragraph's start escaped, so it stays the text it reads as.
  */
-function keepParagraphText(raw: string, out: string, ra: number, put = 0): string {
+function keepParagraphText(raw: string, out: string, ra: number, rb: number): string {
   const ps = ra > 0 ? raw.lastIndexOf('\n', ra - 1) + 1 : 0;
-  if (startsMarker(out.slice(ps)) && !startsMarker(raw.slice(ps))) { out = out.slice(0, ps) + '\\' + out.slice(ps); put++; }
-  // (a paragraph mark typed before a "#" or "!image{" already there: the paragraph it starts stays text)
-  for (let i = out.indexOf('\n', ps); i >= 0 && i < ra + put; i = out.indexOf('\n', i + 1)) {
-    if (startsMarker(out.slice(i + 1))) { out = out.slice(0, i + 1) + '\\' + out.slice(i + 1); put++; }
+  if (!startsMarker(out.slice(ps)) || startsMarker(raw.slice(ps))) return out;
+  // (a heading or object of the stored text's own, after a paragraph taken out whole, stays one)
+  const rest = raw.slice(rb);
+  if ((rb === 0 || raw[rb - 1] === '\n') && startsMarker(rest) && out.slice(ps) === rest) return out;
+  return out.slice(0, ps) + '\\' + out.slice(ps);
+}
+
+const LINKS = /@(?:cite|struct)?\{[^{}]*\}/g;
+/** Whether ra or rb falls strictly inside a mention, citation or structure link of the stored text. */
+function insideLink(raw: string, ra: number, rb: number): boolean {
+  for (const m of raw.matchAll(LINKS)) {
+    if (escapedAt(raw, m.index)) continue;
+    const a = m.index, b = a + m[0].length;
+    if ((a < ra && ra < b) || (a < rb && rb < b)) return true;
   }
-  return out;
+  return false;
 }
 
 /** Formatting with nothing in it, taken out after an edit. */
@@ -231,10 +246,12 @@ function escapedAt(s: string, i: number): boolean {
 }
 
 /** The formatting markers of a stretch of markup text, in order (its characters left out). */
+const LINK_AT = /@(?:cite|struct)?\{[^{}]*\}/y;
 export function markersIn(s: string): string {
   let out = '';
   for (let i = 0; i < s.length;) {
     if (s[i] === '\\') { i += 2; continue; }
+    if (s[i] === '@') { LINK_AT.lastIndex = i; const m = LINK_AT.exec(s); if (m) { i += m[0].length; continue; } }
     const two = s.slice(i, i + 2);
     if (two === '**' || two === '__' || two === '^{' || two === '_{') { out += two; i += 2; continue; }
     if (s[i] === '*' || s[i] === '}') { out += s[i]; i++; continue; }
@@ -334,10 +351,9 @@ export function printedHunks(before: string, now: string): { pa: number; pb: num
 
 /** More changes than this in one write are taken as one rewrite of the field. */
 const MAX_HUNKS = 6;
-const NEAR = 4;
 
 /** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
-export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean, starts: readonly number[] = []): string | null {
+export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean, typedOver: readonly { start: number; end: number }[] = []): string | null {
   let out = raw, printed = before;
   let hunks = printedHunks(before, now);
   // (many changes, as a field retyped, aren't separate edits but one rewrite: one change, as before)
@@ -348,23 +364,22 @@ export function applyPrintedChange(raw: string, before: string, now: string, mar
     while (suf < before.length - pre && suf < now.length - pre && before[before.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
     hunks = [{ pa: pre, pb: before.length - suf, typed: now.slice(pre, now.length - suf) }];
   }
-  // (changes a few letters apart, as a word retyped over, are one change: what was typed takes the looks around it, as before)
-  hunks = hunks.reduce<typeof hunks>((acc, h) => {
-    const last = acc[acc.length - 1];
-    if (last && h.pa - last.pb < NEAR) acc[acc.length - 1] = { pa: last.pa, pb: h.pb, typed: last.typed + before.slice(last.pb, h.pa) + h.typed };
-    else acc.push(h);
-    return acc;
-  }, []);
-  // (a selection typed over begins where it began, not where the first changed letter is: what was
-  // typed takes the look of the first letter selected, as "CHCl3" typed over a plain "C" in "CH2Cl2")
-  if (starts.length) {
-    let shift = 0, prevEnd = 0;
-    hunks = hunks.map((h) => {
-      const at = h.pa + shift;
-      const from = Math.min(...starts.filter((x) => x >= prevEnd && x < at), at);
-      shift += h.typed.length - (h.pb - h.pa);
-      prevEnd = h.pb + shift;
-      return from < at ? { pa: h.pa - (at - from), pb: h.pb, typed: now.slice(from, at) + h.typed } : h;
+  // (a selection typed over is one change, from where it began: what was typed takes the look of the
+  // first letter selected, as "CHCl3" typed over a plain "C" of "CH2Cl2"; changes elsewhere stay apart)
+  if (typedOver.length) {
+    let shift = 0;
+    const placed = hunks.map((h) => { const at = h.pa + shift; shift += h.typed.length - (h.pb - h.pa); return { ...h, at, to: at + h.typed.length }; });
+    const within = (x: { at: number; to: number }): { start: number; end: number } | undefined => typedOver.find((r) => r.start <= x.at && x.to <= r.end);
+    const merged: typeof placed = [];
+    for (const h of placed) {
+      const last = merged[merged.length - 1];
+      const r = within(h);
+      if (last && r && within(last) === r) merged[merged.length - 1] = { pa: last.pa, pb: h.pb, typed: last.typed + before.slice(last.pb, h.pa) + h.typed, at: last.at, to: h.to };
+      else merged.push(h);
+    }
+    hunks = merged.map((h, i) => {
+      const r = within(h);
+      return r && r.start < h.at && (i === 0 || merged[i - 1].to <= r.start) ? { pa: h.pa - (h.at - r.start), pb: h.pb, typed: now.slice(r.start, h.at) + h.typed } : { pa: h.pa, pb: h.pb, typed: h.typed };
     });
   }
   // (from the last change back: the places of the ones before it don't move)

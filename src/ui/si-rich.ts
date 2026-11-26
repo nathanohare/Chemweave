@@ -167,6 +167,8 @@ export class SiRichBox {
   private menu: HTMLDivElement | null = null;
   /** A one-line box's stored paragraphs after its first (a value another program wrote on several lines): not shown, kept as they are when the first is saved. */
   private rest: Paragraph[] = [];
+  /** Its text couldn't be read (load()): locked until set() gives it. */
+  private unread = false;
 
   constructor(text: string, private host: SiRichHost, private multiline = true, placeholder = '') {
     const el = (this.el = document.createElement('div'));
@@ -230,11 +232,13 @@ export class SiRichBox {
     this.el.setAttribute('aria-busy', 'true');
     const done = (): void => { this.el.contentEditable = 'true'; this.el.removeAttribute('aria-busy'); };
     // (text that couldn't be read stays locked: typing into the empty box would save over it)
-    void text.then((t) => { done(); this.set(t); }, () => { this.el.removeAttribute('aria-busy'); this.el.title = 'This text could not be read. Reopen the project to try again.'; });
+    void text.then((t) => { done(); this.set(t); }, () => { this.el.removeAttribute('aria-busy'); this.unread = true; this.el.title = 'This text could not be read. Reopen the project to try again.'; });
   }
 
   /** Show other text (the page was changed elsewhere). */
   set(text: string): void {
+    // (text read after all: the box can be typed into again)
+    if (this.unread) { this.unread = false; this.el.contentEditable = 'true'; this.el.removeAttribute('title'); }
     if (text === this.last) return;
     this.show(text);
     this.last = this.text;
