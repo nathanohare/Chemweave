@@ -111,6 +111,24 @@ describe('split screen of any two tabs', () => {
   });
 });
 
+describe('split screen and Reload', () => {
+  it('brings the canvas back in beside a document reloaded in its place', async () => {
+    const { ws, host } = workspace();
+    const d = ws.active;
+    host.edit('draw', () => host.addAtom(0, 0));
+    ws.noteChange();
+    const w = ws.newDocument();
+    w.ref = { kind: 'path', path: '/x/report.docx' };
+    w.name = 'report.docx';
+    ws.setSplit({ left: w, right: d });
+    expect(ws.pane).toBe(d);
+    const t = (await ws.openAs(new Uint8Array([1, 2, 3]), 'v.docx', { name: w.name, ref: w.ref, dirty: false, stamp: null, replace: w }))!;
+    expect(ws.split).toEqual({ left: t, right: d });
+    expect(ws.pane).toBe(d);
+    expect(ws.docOf(d).atoms.size).toBe(1);
+  });
+});
+
 describe('closing tabs', () => {
   it('lets the app finish what is being drawn before any tab closes', async () => {
     const closing = vi.fn();

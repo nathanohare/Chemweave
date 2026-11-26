@@ -8,7 +8,7 @@ import './old-webkit';
 // the menus made from the command list, before anything looks for their items
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
 import { infoTipsOnOpen } from './ui/info-tip';
-import { bothLive, clampShare, dropSide, fitPicture, insertLabel, pictureOf, shareAt, splitAfterDrop, type Side as SplitSide } from './ui/split-screen';
+import { bothLive, clampShare, dropSide, fitPicture, insertLabel, pictureOf, splitAfterDrop, type Side as SplitSide } from './ui/split-screen';
 import './commands/menus';
 // every mode's Font group, the same controls in the same order (G5-26), before anything looks for them
 import './ui/font-groups-install';
@@ -3232,6 +3232,7 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
 }
 /** Why a command cannot run in the mode now (the sheet answers for its own); undefined: no check. */
 function whyCannotRun(cmd: string, lazy = false): string | null | undefined {
+  if (cmd === 'close-split') return ws.split ? null : 'No split screen: drag a tab down into the window to show it beside the tab you are working on.';
   const mode = menuMode();
   if (mode === 'sheet') return sheetMode?.cannotRun(cmd, lazy);
   if (mode === 'drawing' || mode === 'slides' || mode === 'design') return whyDrawingCannotRun(cmd, lazy);
@@ -4685,6 +4686,7 @@ const ws: Workspace = new Workspace(doc, {
     if (tab.deck) { tab.deck.onChange = () => {}; tab.deck.onSwitch = () => {}; tab.deck.onLeave = () => {}; tab.deck.onMotion = () => {}; }
   },
   enter: (tab, opened) => enterTab(tab, opened),
+  besideKeys: () => setSplitSide(true),
   // every way of closing a tab (×, middle-click, Delete, Ctrl+W) finishes a figure or cell structure first
   closing: () => finishTab(),
   changed: () => { renderTabs(); updateTitle(); layoutSplit(); tickAutoSave(); },
@@ -6322,7 +6324,12 @@ function renderTabs(): void {
     close.addEventListener('click', (e) => { e.stopPropagation(); void ws.close(t); });
     el.addEventListener('click', () => { if (!tabDragged) showTab(t); });
     el.addEventListener('pointerdown', (e) => dragTab(e, el, t));
-    el.addEventListener('contextmenu', (e) => { e.preventDefault(); tabMenu(t, e.clientX, e.clientY); });
+    el.addEventListener('contextmenu', (e) => {
+      e.preventDefault();
+      // (a long press on a touch screen holds the tab to drag it down: no menu then)
+      if (tabPressing) return;
+      tabMenu(t, e.clientX, e.clientY);
+    });
     el.dataset.tab = String(t.id);
     // the middle mouse button closes a tab, as in browsers
     el.addEventListener('auxclick', (e) => { if (e.button === 1) { e.preventDefault(); void ws.close(t); } });
@@ -6425,9 +6432,13 @@ function showTabArrows(): void {
 // it into the window to show them beside the tab showing (split screen: see splitDrop). On a
 // touch screen or with a pen, a tab is held still for a moment before it can be dragged down.
 let tabDragged = false;
+/** A finger or pen is down on a tab (its long press is for dragging, not the right-click menu). */
+let tabPressing = false;
 function dragTab(e: PointerEvent, el: HTMLElement, t: Tab): void {
   if (e.button !== 0 || (e.target as HTMLElement).closest('.tab-close')) return;
   tabDragged = false;
+  tabPressing = e.pointerType !== 'mouse';
+  const slack = e.pointerType === 'mouse' ? 6 : 10;
   const startX = e.clientX, startY = e.clientY;
   const tabs = [...tabStrip.querySelectorAll<HTMLElement>('.tab')];
   const from = tabs.indexOf(el);
@@ -6437,15 +6448,15 @@ function dragTab(e: PointerEvent, el: HTMLElement, t: Tab): void {
   const hold = held ? 0 : window.setTimeout(() => { held = true; el.classList.add('tab-held'); }, 450);
   let lifted = false, side: SplitSide | null = null, cancelled = false;
   const unshift = () => { for (const o of tabs) o.style.transform = ''; };
-  const move = (ev: PointerEvent) => {
+  const move = (ev: { clientX: number; clientY: number; pointerId?: number }) => {
     if (cancelled) return;
     const dx = ev.clientX - startX, dy = ev.clientY - startY;
     if (!tabDragged) {
-      if (Math.abs(dx) < 6 && Math.abs(dy) < 6) return;
+      if (Math.abs(dx) < slack && Math.abs(dy) < slack) return;
       // (a finger moved before the long press: the strip scrolls or the tab moves along it)
       if (!held) window.clearTimeout(hold);
       tabDragged = true;
-      el.setPointerCapture(ev.pointerId);
+      if (ev.pointerId !== undefined && !touchOn) el.setPointerCapture(ev.pointerId);
       el.classList.add('tab-dragging');
     }
     // below the tab row: lifted out of it, to split the screen (not the tab showing on its own: it can't go beside itself)
@@ -6502,9 +6513,10 @@ function dragTab(e: PointerEvent, el: HTMLElement, t: Tab): void {
   };
   const up = () => {
     window.clearTimeout(hold);
+    tabPressing = false;
     window.removeEventListener('pointermove', move);
     window.removeEventListener('pointerup', up);
-    window.removeEventListener('pointercancel', up);
+    window.removeEventListener('pointercancel', cancel);
     window.removeEventListener('keydown', key, true);
     el.classList.remove('tab-held');
     if (!tabDragged) return;
@@ -6519,19 +6531,50 @@ function dragTab(e: PointerEvent, el: HTMLElement, t: Tab): void {
     // the click that ends a drag doesn't switch tabs
     setTimeout(() => { tabDragged = false; }, 0);
   };
+  // A finger held still on a tab: the browser ends its pointer there (its own long-press gesture),
+  // but the touch goes on, so the drag follows the touch from then on.
+  let touchOn = false;
+  const touchMove = (ev: TouchEvent) => { const p = ev.touches[0]; if (p) { ev.preventDefault(); move(p); } };
+  const touchEnd = () => {
+    window.removeEventListener('touchmove', touchMove);
+    window.removeEventListener('touchend', touchEnd);
+    window.removeEventListener('touchcancel', touchEnd);
+    up();
+  };
+  // the browser or system took the pointer (a gesture of its own): nothing is moved or split
+  const cancel = (ev: PointerEvent) => {
+    if (ev.pointerType === 'touch' && !touchOn && !tabDragged) {
+      touchOn = true;
+      window.clearTimeout(hold);
+      held = true;
+      el.classList.add('tab-held');
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', up);
+      window.addEventListener('touchmove', touchMove, { passive: false });
+      window.addEventListener('touchend', touchEnd);
+      window.addEventListener('touchcancel', touchEnd);
+      return;
+    }
+    cancelled = true;
+    up();
+  };
   window.addEventListener('pointermove', move);
   window.addEventListener('pointerup', up);
-  window.addEventListener('pointercancel', up);
+  window.addEventListener('pointercancel', cancel);
   window.addEventListener('keydown', key, true);
 }
 
 /** A tab's right-click menu: split the screen with it, or close it. */
 function tabMenu(t: Tab, x: number, y: number): void {
   const inSplit = !!ws.besideOf(t);
-  const can = (s: SplitSide) => !!splitAfterDrop(t, s, ws.active, splitState() ? ws.split : null);
+  const why = (s: SplitSide): string | null => {
+    if (splitAfterDrop(t, s, ws.active, splitState() ? ws.split : null)) return null;
+    return ws.split?.[s] === t && splitState() ? `${ws.label(t)} is on the ${s} already` : 'A tab can\'t be shown beside itself: click another tab first';
+  };
+  const wl = why('left'), wr = why('right');
   showContextMenu(x, y, [
-    { cmd: 'tab-split-left', label: 'Split Screen Left', disabled: !can('left'), title: `Show ${ws.label(t)} on the left, beside the tab you are working on` },
-    { cmd: 'tab-split-right', label: 'Split Screen Right', disabled: !can('right'), title: `Show ${ws.label(t)} on the right, beside the tab you are working on` },
+    { cmd: 'tab-split-left', label: 'Split Screen Left', disabled: !!wl, title: wl ?? `Show ${ws.label(t)} on the left, beside the tab you are working on` },
+    { cmd: 'tab-split-right', label: 'Split Screen Right', disabled: !!wr, title: wr ?? `Show ${ws.label(t)} on the right, beside the tab you are working on` },
     ...(inSplit ? [{ cmd: 'close-split', label: 'Close Split', title: 'Show only the tab you are working on (both stay open)' }] : []),
     null,
     { cmd: 'tab-close', label: 'Close', title: `Close ${ws.label(t)}` },
@@ -11994,7 +12037,7 @@ const splitInsert = $<HTMLButtonElement>('#split-insert');
 const splitMark = $<HTMLDivElement>('#split-mark');
 const workEl = $<HTMLElement>('#work');
 /** Each split-screen tab as it looked when last left: its side shows this while the other is worked on. */
-const splitPictures = new WeakMap<Tab, HTMLCanvasElement>();
+const splitPictures = new Map<Tab, HTMLCanvasElement>();
 
 interface SplitView {
   /** The tab showing (being worked on, or a document or sheet with the canvas beside it live). */
@@ -12029,21 +12072,44 @@ function insertPair(st: SplitView): { drawing: Tab; target: Tab } | null {
   return null;
 }
 
+/** The width the two sides share: the working area less the slide list and Slide Master panel beside them. */
+function splitRoom(): number {
+  const cols = getComputedStyle(workEl).gridTemplateColumns.split(' ').map((c) => parseFloat(c) || 0);
+  // (the columns: list, host, split, panel; split screen on the right: split, list, host, panel)
+  const others = cols.length === 4 ? (document.body.classList.contains('split-flip') ? cols[1] : cols[0]) + cols[3] : 0;
+  return Math.max(0, workEl.clientWidth - others);
+}
+
 /** The side not being worked on takes its share of the width (Settings keeps the right side's share). */
 function applySplitWidth(): void {
   const st = splitState();
   const right = clampShare(splitWidth);
   const share = !st || st.mainLeft ? right : 1 - right;
-  workEl.style.setProperty('--split-w', `${Math.round(workEl.clientWidth * share)}px`);
+  workEl.style.setProperty('--split-w', `${Math.round(splitRoom() * share)}px`);
   $('#split-handle').setAttribute('aria-valuenow', String(Math.round((1 - right) * 100)));
 }
 new ResizeObserver(() => { if (ws.split) applySplitWidth(); }).observe(workEl);
 
 /** Put the drawing area, the picture and the marks where the split (or no split) needs them. */
+let wasLive = false;
 function layoutSplit(): void {
   const st = splitState();
   const live = !!st?.live;
   const b = document.body.classList;
+  // the canvas beside had the keys and has gone (closed, or the split ended): the pages or cells have them again
+  if (splitDrawing && !ws.pane) {
+    splitDrawing = false;
+    const m = ws.active.mode;
+    if ((m === 'document' || m === 'sheet') && !cellEdit) editor.paused = true;
+    queueMicrotask(() => { showSheetParts(); refreshKeys(); });
+  }
+  // the canvas came in beside a document or sheet, or went (a tab reloaded in its place): sized and drawn for where it is now
+  if (live !== wasLive) {
+    wasLive = live;
+    requestAnimationFrame(() => { resize(); renderer.repaintAll(); editor.requestScene(); });
+  }
+  // pictures only of the tabs in the split
+  for (const t of splitPictures.keys()) if (!ws.besideOf(t)) splitPictures.delete(t);
   splitPane.hidden = !st;
   b.toggle('split-view', !!st);
   b.toggle('split-live', live);
@@ -12073,12 +12139,13 @@ function layoutSplit(): void {
   splitInsert.hidden = !label;
   if (label) {
     splitInsert.textContent = label;
-    splitInsert.title = `Put the selected structures (or the whole canvas, when nothing is selected) into the ${pair!.target.mode === 'sheet' ? 'selected cell' : pair!.target.mode === 'document' ? 'document at the cursor' : pair!.target.mode === 'design' ? 'design' : 'slide'}`;
+    const what = live || ws.active === pair!.drawing ? 'the selected structures (or the whole canvas, when nothing is selected)' : 'the whole canvas';
+    splitInsert.title = `Put ${what} into the ${pair!.target.mode === 'sheet' ? 'selected cell' : pair!.target.mode === 'document' ? 'document at the cursor' : pair!.target.mode === 'design' ? 'design' : 'slide'}`;
   }
   // while a figure's or cell's structure is drawn, Done puts that in; the canvas beside waits
   splitInsert.disabled = !!cellEdit;
   splitSnap.hidden = live;
-  if (live) $('#split-empty').hidden = true;
+  if (live) { $('#split-empty').hidden = true; pictureKey = ''; }
   else drawSplitPicture(st.other);
 }
 
@@ -12091,10 +12158,16 @@ function splitTabMark(el: HTMLElement): void {
   el.dataset.split = side ?? '';
 }
 
+/** What the picture side shows now, so it is drawn again only when that changes. */
+let pictureKey = '';
 /** The side not being worked on: its tab as it looked when last left (a canvas never seen here: its drawing, fitted). */
 function drawSplitPicture(t: Tab): void {
   const r = splitBody.getBoundingClientRect();
   if (r.width < 2 || r.height < 2) return;
+  const kept0 = splitPictures.get(t);
+  const key = `${t.id} ${Math.round(r.width)}x${Math.round(r.height)} ${kept0 ? kept0.dataset.n : `v${ws.docOf(t).version}`} ${document.body.classList.contains('dark-page')}`;
+  if (key === pictureKey) return;
+  pictureKey = key;
   const dpr = window.devicePixelRatio || 1;
   splitSnap.width = Math.round(r.width * dpr);
   splitSnap.height = Math.round(r.height * dpr);
@@ -12104,8 +12177,9 @@ function drawSplitPicture(t: Tab): void {
   ctx.clearRect(0, 0, splitSnap.width, splitSnap.height);
   const empty = $('#split-empty');
   const kept = splitPictures.get(t);
-  // (a canvas's drawing, drawn here, takes Reading Mode's dark page as the canvas does; a picture kept has it already)
-  splitSnap.classList.toggle('page-picture', !kept);
+  // (a canvas's drawing, drawn here, takes Reading Mode's dark page as the canvas does; a picture kept has it
+  // already, unless the browser couldn't draw it with the page's filter)
+  splitSnap.classList.toggle('page-picture', !kept || kept.dataset.cssFilter === '1');
   if (kept) {
     const f = fitPicture(Number(kept.dataset.w), Number(kept.dataset.h), r.width, r.height);
     ctx.drawImage(kept, f.x * dpr, f.y * dpr, f.w * dpr, f.h * dpr);
@@ -12128,11 +12202,12 @@ new ResizeObserver(() => {
   if (st && !st.live) drawSplitPicture(st.other);
 }).observe(splitBody);
 
-/** Keep a picture of a split-screen tab as it shows now, for its side while the other is worked on. */
+let pictureCount = 0;
+/** Keep a picture of a split-screen tab as it shows now, for its side while the other is worked on (not its selection or hover marks). */
 function keepSplitPicture(t: Tab): void {
   const el = t.mode === 'document' ? $('#doc-pane') : t.mode === 'sheet' ? $('#sheet-pane') : t.mode === 'si' ? document.querySelector<HTMLElement>('#si-pane') : host;
-  const pic = el && el.offsetParent ? pictureOf(el) : null;
-  if (pic) splitPictures.set(t, pic);
+  const pic = el && el.offsetParent ? pictureOf(el, (c) => c !== overlay) : null;
+  if (pic) { pic.dataset.n = String(++pictureCount); splitPictures.set(t, pic); }
   else splitPictures.delete(t);
 }
 
@@ -12176,13 +12251,7 @@ function setSplitSide(drawing: boolean): void {
 /** Show a tab (its tab clicked): a canvas live beside a document or sheet gets the keys there instead of showing alone. */
 function showTab(t: Tab): void {
   const st = splitState();
-  if (st?.live && t === st.other) { setSplitSide(true); return; }
-  const beside = ws.besideOf(t);
-  if (t.mode === 'drawing' && beside && bothLive(t.mode, beside.mode)) {
-    if (ws.active !== beside) ws.activate(beside);
-    if (ws.pane === t) setSplitSide(true);
-    return;
-  }
+  if (st?.live && t === st.main) { setSplitSide(false); return; }
   ws.activate(t);
 }
 
@@ -12203,9 +12272,16 @@ const nextFrame = () => new Promise<void>((r) => requestAnimationFrame(() => r()
  * Right on its menu): split the screen with it there, the tab showing (or the split's other tab)
  * on the other side, and work on it.
  */
+let splitDropping = false;
 async function splitDrop(dragged: Tab, side: SplitSide): Promise<void> {
+  if (splitDropping) return;
   const next = splitAfterDrop(dragged, side, ws.active, splitState() ? ws.split : null);
   if (!next) return;
+  splitDropping = true;
+  try { await splitDropNow(dragged, next); } finally { splitDropping = false; }
+}
+
+async function splitDropNow(dragged: Tab, next: { left: Tab; right: Tab }): Promise<void> {
   finishTab();
   if (ws.pane) ws.pane.view = { ...renderer.view };
   editor.clearSelection();
@@ -12237,21 +12313,24 @@ async function splitDrop(dragged: Tab, side: SplitSide): Promise<void> {
     editor.requestWholeScene();
     await nextFrame();
     await nextFrame();
+    // (a tab closed, or another split made, meanwhile)
+    if (ws.split !== next || !ws.tabs.includes(dragged)) return;
   }
   if (ws.active === dragged) { layoutSplit(); mainResized(); return; }
   ws.activate(dragged);
   mainResized();
 }
 
-/** View ▸ Close Split: the tab being worked on shows on its own; both stay open. */
-function closeSplit(): void {
-  if (!ws.split) {
-    flash('No split screen. Drag a tab down into the window to show it beside the tab you are working on.', 6000);
-    return;
-  }
+/**
+ * View ▸ Close Split: the tab being worked on shows on its own; both stay open. The × on the bar
+ * over the other side (`keepMain`) closes that side: beside a document or sheet, the canvas goes even when it has the keys.
+ */
+function closeSplit(keepMain = false): void {
+  if (!ws.split) return;
   // the canvas beside a document or sheet had the keys: it is the one that shows on its own
-  const keyed = splitDrawing && ws.pane ? ws.pane : null;
-  finishTyping();
+  const keyed = splitDrawing && ws.pane && !keepMain ? ws.pane : null;
+  // (a structure being drawn for a cell or figure is finished first: the canvas beside comes back in its place)
+  finishTab();
   if (ws.pane) ws.pane.view = { ...renderer.view };
   editor.clearSelection();
   ws.setSplit(null);
@@ -12298,7 +12377,7 @@ splitInsert.addEventListener('click', () => {
   }
 });
 
-$('#split-close').addEventListener('click', () => closeSplit());
+$('#split-close').addEventListener('click', () => closeSplit(true));
 
 // clicking a side works on it
 splitBody.addEventListener('pointerdown', (e) => {
@@ -12309,6 +12388,8 @@ splitBody.addEventListener('pointerdown', (e) => {
   e.stopPropagation();
   ws.activate(st.other);
   if (ws.active.mode === 'drawing' || ws.active.deck) overlay.focus();
+  else if (ws.active.mode === 'document') docMode?.focus();
+  else if (ws.active.mode === 'sheet') sheetMode?.focus();
 }, true);
 for (const sel of ['#doc-pane', '#sheet-pane', '#doc-ribbon', '#sheet-ribbon']) {
   $(sel).addEventListener('pointerdown', () => { if (ws.pane && splitDrawing) setSplitSide(false); }, true);
@@ -12324,8 +12405,12 @@ splitHandle.addEventListener('pointerdown', (e) => {
   const h = splitHandle;
   h.setPointerCapture(e.pointerId);
   h.classList.add('dragging');
-  const box = workEl.getBoundingClientRect();
-  const move = (ev: PointerEvent) => setSplitShare(shareAt(ev.clientX, box));
+  // the pane's far edge stays put; its width over the room the two sides share
+  const pane = splitPane.getBoundingClientRect(), room = splitRoom() || 1, flip = document.body.classList.contains('split-flip');
+  const move = (ev: PointerEvent) => {
+    const w = flip ? ev.clientX - pane.left : pane.right - ev.clientX;
+    setSplitShare(flip ? 1 - w / room : w / room);
+  };
   const up = () => {
     h.classList.remove('dragging');
     h.removeEventListener('pointermove', move);
@@ -12363,9 +12448,9 @@ const ghostLeft = ghostSide('sg-left'), ghostRight = ghostSide('sg-right');
 splitGhost.append(ghostLeft, ghostRight);
 document.body.append(tabLift, splitGhost);
 
-/** Where the split would divide, as the left side's share: the split's own, or half. */
+/** Where the split would divide, as the left side's share (the width last chosen). */
 function ghostDivider(): number {
-  return splitState() ? 1 - clampShare(splitWidth) : 0.5;
+  return 1 - clampShare(splitWidth);
 }
 
 /** The ghost of the split a tab held at (x, y) would make; returns the side it would go on (null: none). */

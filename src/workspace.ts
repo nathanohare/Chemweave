@@ -78,6 +78,8 @@ export interface Tab {
 export type SaveHow = 'saved' | 'autosaved';
 
 export interface WorkspaceHooks {
+  /** A canvas in the split screen, beside a document or sheet, was asked for: it gets the keys and menus there. */
+  besideKeys?(tab: Tab): void;
   /** Before another tab shows: finish any typing, remember the view. */
   leave(tab: Tab): void;
   /** After a tab shows. `opened` is true for a file just opened or a new tab. */
@@ -251,6 +253,13 @@ export class Workspace {
 
   /** Show another tab. */
   activate(tab: Tab, opened = false): void {
+    // a canvas live beside a document or sheet: the document or sheet shows, with the canvas beside having the keys
+    const beside = this.besideOf(tab);
+    if (!opened && tab.mode === 'drawing' && beside && bothLive(tab.mode, beside.mode) && this.tabs.includes(beside)) {
+      if (beside !== this.active) this.activate(beside);
+      if (this.pane === tab) this.hooks.besideKeys?.(tab);
+      return;
+    }
     if (tab === this.active && !opened) return;
     if (tab !== this.active) {
       this.putAway(this.active);
@@ -743,9 +752,13 @@ export class Workspace {
     const old = as.replace;
     if (old && this.tabs.includes(old)) {
       t.autoSave = old.autoSave;
-      // in the split screen in the old tab's place
+      // in the split screen in the old tab's place (a canvas beside a document or sheet comes back in beside it)
       const sp = this.split;
-      if (sp && (sp.left === old || sp.right === old)) this.split = { left: sp.left === old ? t : sp.left, right: sp.right === old ? t : sp.right };
+      if (sp && (sp.left === old || sp.right === old)) {
+        this.paneOut();
+        this.split = { left: sp.left === old ? t : sp.left, right: sp.right === old ? t : sp.right };
+        this.paneIn();
+      }
       // the other windows of the document show the new copy (and save to its file)
       for (const w of this.tabs) {
         if (w.windowOf !== old) continue;
@@ -1064,14 +1077,15 @@ export class Workspace {
     }
     // the split screen (the first one listed: workspaces saved before split screen could list one per
     // document, sheet or deck, each with a canvas on its right), then the tab that was showing
+    const show = opened[list.active] ?? opened.find((t) => t);
     let pair: SplitPair<Tab> | null = null;
     list.tabs.forEach((e, i) => {
       const t = opened[i], p = e.beside !== undefined ? opened[e.beside] : null;
-      if (!pair && t && p && t !== p) pair = { left: t, right: p };
+      // (the one with the tab that was showing, if there were several)
+      if (t && p && t !== p && (!pair || ((t === show || p === show) && pair.left !== show && pair.right !== show))) pair = { left: t, right: p };
     });
-    const show = opened[list.active] ?? opened.find((t) => t);
-    if (show) this.activate(show);
     if (pair) this.setSplit(pair);
+    if (show) this.activate(show);
     this.workspacePath = path;
     this.hooks.remember?.(path);
     const n = opened.filter((t) => t).length;

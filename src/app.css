@@ -2466,6 +2466,8 @@ body.split-flip #split-handle { left: auto; right: -4px; }
 .tab.tab-split[data-split='left'] { background-image: linear-gradient(to right, var(--accent) 50%, transparent 50%); background-size: 100% 2px; background-position: bottom; background-repeat: no-repeat; }
 .tab.tab-split[data-split='right'] { background-image: linear-gradient(to right, transparent 50%, var(--accent) 50%); background-size: 100% 2px; background-position: bottom; background-repeat: no-repeat; }
 .tab.tab-held { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* a finger moving along the tab row scrolls it; moving down drags the tab held (dragTab) */
+.tab-strip .tab { touch-action: none; }
 /* a tab dragged down out of the tab row, and the ghost of the split it would make */
 .tab-lift { position: fixed; left: 0; top: 0; z-index: 9000; display: flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25); pointer-events: none; white-space: nowrap; }
 .tab-lift[hidden] { display: none; }

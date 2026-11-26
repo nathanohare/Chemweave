@@ -3,7 +3,7 @@
 // The pieces of Slides mode around the deck: tabs for open files, pictures (their type, size
 // and cropping), pasted drawings fitted to the slide master, and pictures kept in CDX files.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Doc, Shape } from '../src/model';
 import { Workspace, WorkspaceHooks } from '../src/workspace';
 import { Deck } from '../src/deck/deck';
@@ -285,11 +285,14 @@ describe('split screen: a canvas beside a document or sheet', () => {
     ws.activate(words);
     expect(ws.pane).toBe(drawing);
     expect(host.atoms.size).toBe(2);
-    // showing the drawing's own tab takes it out of the document's drawing area
+    // asking for the drawing's own tab keeps it live beside the document, with the keys
+    const keys = vi.fn();
+    ws['hooks'].besideKeys = keys;
     ws.activate(drawing);
-    expect(ws.pane).toBe(null);
+    expect(ws.active).toBe(words);
+    expect(ws.pane).toBe(drawing);
+    expect(keys).toHaveBeenCalledWith(drawing);
     expect(host.atoms.size).toBe(2);
-    ws.activate(words);
     ws.setSplit(null);
     expect(ws.pane).toBe(null);
     expect(host.atoms.size).toBe(0);

@@ -99,11 +99,11 @@ export function insertLabel(target: string): string | null {
  * A picture of what an element shows, from the canvases in it (the drawing, slide, pages and
  * cells are all drawn on canvases), over its background color. Null when it shows no canvas.
  */
-export function pictureOf(el: HTMLElement): HTMLCanvasElement | null {
+export function pictureOf(el: HTMLElement, keep: (c: HTMLCanvasElement) => boolean = () => true): HTMLCanvasElement | null {
   const box = el.getBoundingClientRect();
   if (box.width < 2 || box.height < 2) return null;
   const canvases = [...el.querySelectorAll('canvas')].filter((c) => {
-    if (c.width < 1 || c.height < 1) return false;
+    if (c.width < 1 || c.height < 1 || !keep(c)) return false;
     const r = c.getBoundingClientRect();
     return r.width > 0 && r.height > 0 && r.right > box.left && r.left < box.right && r.bottom > box.top && r.top < box.bottom
       && getComputedStyle(c).visibility !== 'hidden';
@@ -125,6 +125,8 @@ export function pictureOf(el: HTMLElement): HTMLCanvasElement | null {
     const f = getComputedStyle(c).filter;
     // (Reading Mode's dark page filter, where the browser can draw with one)
     if ('filter' in ctx) ctx.filter = f && f !== 'none' ? f : 'none';
+    // (a browser that can't: the picture takes the page's filter where it shows instead)
+    else if (f && f !== 'none') out.dataset.cssFilter = '1';
     try {
       ctx.drawImage(c, (r.left - box.left) * dpr, (r.top - box.top) * dpr, r.width * dpr, r.height * dpr);
     } catch { /* a canvas that can't be read is left out */ }
