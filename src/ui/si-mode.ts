@@ -241,6 +241,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="cover-page" data-ic="cover-page" title="Cover Page: the SI's title, authors, affiliations and date, on the project's page"><span class="rb-icon">▤</span>Cover Page</button>
+      <button class="rb-big" data-si-para="page-break" data-ic="page-break" title="Page Break: the paragraph the cursor is in, in the Live Preview, starts a new page (click again to take it off); kept every time the SI is compiled"><span class="rb-icon">⤓</span>Page Break</button>
     </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
@@ -1250,6 +1251,7 @@ export class SiMode {
       case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
       case 'indent': case 'outdent': await pv.paraFormat({ indent: Math.max(0, (pv.paraValue('indent') ?? 0) + (cmd === 'indent' ? INDENT : -INDENT)) }); break;
       case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n }); break; }
+      case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, true); break;
     }
     pv.input.focus();
   }

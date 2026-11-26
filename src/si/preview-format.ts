@@ -30,8 +30,8 @@ export const PREVIEW_FORMAT_FILE = 'chemweave-preview-format.json';
 export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight'>>;
 export type FormatLook = RunFormatLook & ParaLook;
 /** A paragraph's own look (Home ▸ Paragraph): on every paragraph the words are in. */
-export type ParaLook = Partial<Pick<ParaStyle, 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line'>>;
-export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line'];
+export type ParaLook = Partial<Pick<ParaStyle, 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line' | 'pageBreak'>>;
+export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak'];
 const ALIGNS: readonly Justify[] = ['left', 'center', 'right', 'justify'];
 
 export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight'];
@@ -92,7 +92,7 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
       }
       for (const k of PARA_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
-        if (k === 'align' ? ALIGNS.includes(v as Justify) : typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000) (look as Record<string, unknown>)[k] = v;
+        if (k === 'align' ? ALIGNS.includes(v as Justify) : k === 'pageBreak' ? typeof v === 'boolean' : typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000) (look as Record<string, unknown>)[k] = v;
       }
       if (!Object.keys(look).length) continue;
       const piece: PreviewFormat = { id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };

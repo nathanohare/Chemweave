@@ -2,3 +2,4 @@ Added: SI Project: Home ▸ Format Painter copies the formatting of words in the
 Added: SI Project: Home ▸ Font has Small Caps and Highlight for words selected in the Live Preview.
 Added: SI Project: Home ▸ Paragraph aligns, indents and sets the line spacing of paragraphs in the Live Preview, kept every time the SI is compiled.
 Added: SI Project: Home ▸ Replace (Ctrl+H) changes found words in the Live Preview in the compound fields they come from, one place or all, in one step of Undo.
+Added: SI Project: Insert ▸ Page Break starts the Live Preview paragraph the cursor is in on a new page, kept every time the SI is compiled.

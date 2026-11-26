@@ -1225,9 +1225,11 @@ export class SiPreview {
   }
 
   /** Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is): kept across compiles as Font's looks are. */
-  async paraFormat(look: ParaLook): Promise<boolean> {
+  async paraFormat(look: ParaLook, one = false): Promise<boolean> {
     const ed = this.file?.ed;
     if (!ed) return false;
+    // (one paragraph only: the first selected, as for Page Break)
+    if (one && !ed.collapsed) ed.setCaret(ed.start);
     if (ed.collapsed) {
       const t = ed.text, at = ed.start;
       const a = t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
