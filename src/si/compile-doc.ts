@@ -183,7 +183,7 @@ function textObjects(text: string): TextObject[] {
 // ---------------------------------------------------------------- pictures
 
 /** Dots per inch a PNG or JPEG says it was made at (null when it doesn't say). */
-function pictureDpi(b: Uint8Array, mime: string): number | null {
+export function pictureDpi(b: Uint8Array, mime: string): number | null {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   if (mime === 'image/png') {
     for (let i = 8; i + 12 <= b.length;) {

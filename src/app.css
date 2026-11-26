@@ -3649,6 +3649,12 @@ dialog.query-pane { width: min(calc(100vw - 32px), 420px); max-height: calc(100v
 
 /* Picture Format */
 .pic-dialog .md-grid { max-height: 46vh; }
+/* SI Picture Format ▸ Crop: the picture with its crop frame, and each side's cut */
+dialog.si-crop-dialog { width: auto; max-width: min(94vw, 560px); }
+.si-crop-dialog .si-crop-canvas { display: block; margin: 4px auto 8px; background: #fff; box-shadow: 0 0 0 1px var(--line); touch-action: none; }
+.si-crop-sides { display: flex; flex-wrap: wrap; gap: 4px 12px; align-items: center; justify-content: center; font-size: var(--fs-sm); }
+.si-crop-sides label { display: inline-flex; align-items: center; gap: 4px; white-space: nowrap; }
+.si-crop-sides .md-num { width: 4.5em; }
 .pic-dialog .pic-preview { background: #fff; }
 .pic-dialog .pic-hint { min-height: 1.2em; margin: 0 0 4px; text-align: center; }
 .pic-dialog .md-controls button[aria-pressed='true'] { outline: 2px solid var(--accent); outline-offset: 1px; }

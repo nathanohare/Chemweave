@@ -1,0 +1,1 @@
+Added: SI Assistant projects: Picture Format ▸ Crop, Rotate (Rotate Right or Left 90°, Flip Vertical or Horizontal) and Reset Picture for figures, on the SI page and in the Live Preview. The edited picture is saved as a copy beside the original, so SI Assistant prints it the same way, and each edit is made again from the original.
