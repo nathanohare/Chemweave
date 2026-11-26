@@ -33,7 +33,7 @@ These came first and every later rule builds on them.
 | S8 | The Quick Access Toolbar has a divider after its ▾ and minimal spacing between buttons. | Small screens. |
 | S9 | New canvases open at 100% with the top of the page in view (replaces Fit, which fitted the first page in the window). | People start drawing at the top, at real size. |
 | S10 | Canvas mode starts on the Select tool for new and opened tabs. | A stray click must not draw. |
-| S11 | No first-run pop-ups over the canvas (replaces the welcome card shown on first launch). | They cover the work and are dismissed unread. |
+| S11 | No first-run pop-ups over the canvas, apart from the welcome card on an empty first page (once in the desktop app; at each start in a browser until "Don't show this again" is ticked, Nate 2026-11-26), which drawing puts away. | They cover the work and are dismissed unread. |
 | S12 | A template window appears over the new blank file, categories left and cards right; a click outside closes it; one shared window for every mode. | Office's New window, the same everywhere. |
 | S42 | Menus never break into columns. Long menus are regrouped into submenus, and a short window scrolls the menu. | Columns are hard to scan and jump around between window sizes. |
 | S43 | File tabs sit in the menu row by default (their own row is a setting); tabs collapse to icons with the name in a tooltip; the ribbon does not fold by itself on short windows unless turned on. The OS title bar is hidden and thin tabs are merged. | Height (UI rule 4). |

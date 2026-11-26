@@ -29,8 +29,9 @@ describe('the welcome card', () => {
   it('in a browser, is kept away only by the box, never by closing it', () => {
     // a browser decides on welcomeOff, the desktop app on welcomed
     expect(body).toMatch(/if \(web \? welcomeOff : welcomed\)/);
-    // closing without the box ticked stores nothing in a browser
-    expect(body).toMatch(/if \(!web\) welcomed = true;\s*else if \(never\.checked\) welcomeOff = true;\s*else return;/);
+    // closing stores nothing in a browser; only the box does, as soon as it changes
+    expect(body).toMatch(/if \(web\) return;\s*welcomed = true;/);
+    expect(body).toMatch(/never\.onchange = \(\) => \{ welcomeOff = never\.checked; storeSettings\(\); \};/);
   });
 
   it('remembers the choice per computer, off by default', () => {

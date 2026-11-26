@@ -740,7 +740,7 @@ body.slides-mode #go-buttons { display: none; }
 .welcome-card ul { margin: 0 0 12px; padding-left: 18px; }
 .welcome-card li + li { margin-top: 4px; }
 .welcome-card kbd { font: var(--fs-xs) var(--ui-font); padding: 0 4px; border: 1px solid var(--line); border-radius: var(--r-control); }
-.welcome-buttons { display: flex; align-items: center; margin: 0; }
+.welcome-buttons { display: flex; flex-wrap: wrap; row-gap: 6px; align-items: center; margin: 0; }
 /* the start view: new tabs, recent files, and drawing straight away */
 .start-view { width: min(500px, calc(100% - 32px)); padding: 10px 12px; }
 .sv-new { display: grid; grid-template-columns: repeat(2, 1fr); gap: 6px; margin-bottom: 6px; }

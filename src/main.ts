@@ -17624,11 +17624,13 @@ function showWelcome(): void {
     welcomeWatch = null;
     if (welcomeCard.hidden) return;
     welcomeCard.hidden = true;
-    if (!web) welcomed = true;
-    else if (never.checked) welcomeOff = true;
-    else return;
+    if (web) return;
+    welcomed = true;
     storeSettings();
   };
+  // in a browser the box is kept as soon as it is ticked (or cleared), not only when the card closes,
+  // so closing the browser tab with the box ticked still counts
+  never.onchange = () => { welcomeOff = never.checked; storeSettings(); };
   $('#welcome-close').addEventListener('click', () => { off(); $('#overlay').focus({ preventScroll: true }); }, { once: true });
   welcomeCard.querySelector('[data-cmd="user-guide"]')?.addEventListener('click', (e) => { e.preventDefault(); off(); command('user-guide'); }, { once: true });
   // drawing anything, or going to another tab, puts it away (looked for on each change, not on every frame)
