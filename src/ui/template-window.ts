@@ -42,12 +42,10 @@ export interface TemplateWindowOptions {
   categories: TemplateCategory[];
   /** An "All" category first, with every category's cards. */
   all?: boolean;
-  /** The category shown first (else the one last used, else the first). */
+  /** The category shown first (else the first). */
   initial?: string;
   /** The card chosen when the window opens (the blank file): marked, and focused so Enter picks it. */
   initialCard?: string;
-  /** Where the category last used is kept (a localStorage key). */
-  remember?: string;
   /** The "Show templates when creating new …" checkbox. */
   showPref?: { label: string; get(): boolean; set(on: boolean): void };
   /** Block the program until a card is picked or the window closed (Design's New window). */
@@ -233,6 +231,11 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     }, 450);
   };
   grid.addEventListener('scroll', hideZoom);
+  // the default card's mark goes once another card takes the keyboard (one card looks chosen)
+  grid.addEventListener('focusin', (e) => {
+    const to = (e.target as HTMLElement).closest?.('.tw-card');
+    if (to && !to.classList.contains('tw-default')) grid.querySelector('.tw-default')?.classList.remove('tw-default');
+  });
 
   const makeCard = (c: TemplateCard): HTMLButtonElement => {
     const b = document.createElement('button');
@@ -301,7 +304,6 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     showing = id;
     for (const [k, b] of tabs) { b.setAttribute('aria-selected', String(k === id)); b.tabIndex = k === id ? 0 : -1; }
     if (focus) tabs.get(id)?.focus();
-    if (o.remember) try { localStorage.setItem(o.remember, id); } catch { /* not kept */ }
     const cards = await cats.find((c) => c.id === id)!.cards();
     if (showing !== id || !isOpen) return;
     io?.disconnect();
@@ -356,7 +358,6 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     setTimeout(() => { if (isOpen) document.addEventListener('pointerdown', outside, true); }, 0);
   }
   let first = o.initial ?? '';
-  if (!first && o.remember) try { first = localStorage.getItem(o.remember) ?? ''; } catch { /* the first */ }
   if (!tabs.has(first)) first = cats[0]?.id ?? '';
   if (first) void show(first, true, true);
   // the new file's own view takes the keyboard as it opens: take it back (to the blank file's card when

@@ -10737,7 +10737,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     get: () => templatesOnNew[kind],
     set: (on: boolean) => { templatesOnNew = { ...templatesOnNew, [kind]: on }; storeSettings(); },
   };
-  const note = 'Choose a template, or click outside this window to keep the blank file. Type over the text in [brackets].';
+  const note = 'Choose a template, or press Enter or click outside this window to keep the blank file. Type over the text in [brackets].';
   if (kind === 'document') {
     showTemplateWindow({ mode: 'document', title: 'New Document', note, showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: documentCategories((t) => {
       ws.newDocument(t.make(), blank);
@@ -10752,7 +10752,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     const d = blank.deck;
     if (!d) return;
     const fresh = () => ws.active === blank && d.edits === 0;
-    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Choose a theme or a starter deck, or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: slideCategories({
+    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Choose a theme or a starter deck, or press Enter or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: slideCategories({
       master: d.master, size: d.size, mine: slideThemes,
       paint: (c, m, size, w, h, stacked) => { void import('./ui/slide-templates').then((x) => x.paintTemplate(c, m, size, w, h, stacked)); },
       useTheme: (t) => {

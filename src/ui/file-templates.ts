@@ -156,17 +156,17 @@ const blankCategory = (card: Omit<TemplateCard, 'id' | 'pick'>): TemplateCategor
 
 export function documentCategories(use: (t: DocTemplate) => void): TemplateCategory[] {
   return [
-    blankCategory({ name: 'Blank Document', tip: 'An empty document.', preview: (host) => realPicture(host, emptyPage, (m) => m.docPage(newDocument())) }),
+    blankCategory({ name: 'Blank document', tip: 'An empty document.', preview: (host) => realPicture(host, emptyPage, (m) => m.docPage(newDocument())) }),
     ...DOC_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DOC_TEMPLATES.filter((t) => t.category === c.id).map((t) => docCard(t, use)) })),
   ];
 }
 
-/** An empty grid, the Blank Spreadsheet card's icon. */
+/** An empty grid, the Blank spreadsheet card's icon. */
 const BLANK_SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M3 14.5h18M9 4v16M15 4v16"/></svg>';
 
 export function sheetCategories(use: (t: SheetTemplate) => void): TemplateCategory[] {
   return [
-    blankCategory({ name: 'Blank Spreadsheet', about: 'An empty spreadsheet.', icon: BLANK_SHEET_ICON, preview: () => {} }),
+    blankCategory({ name: 'Blank spreadsheet', about: 'An empty spreadsheet.', icon: BLANK_SHEET_ICON, preview: () => {} }),
     ...SHEET_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => SHEET_TEMPLATES.filter((t) => t.category === c.id).map((t) => sheetCard(t, use)) })),
   ];
 }
@@ -204,7 +204,7 @@ export function slideCategories(o: SlideChoices): TemplateCategory[] {
   const groups = ['Mine', 'Light', 'Dark title slide', 'Bright', 'Minimal', 'Bold', 'Classic', 'Chemistry'] as const;
   const out: TemplateCategory[] = [blankCategory({
     // the new presentation as it is, in the look new presentations start with
-    name: 'Blank Presentation', detail: o.master.titleFont === o.master.bodyFont ? o.master.titleFont : `${o.master.titleFont} and ${o.master.bodyFont}`,
+    name: 'Blank presentation', detail: o.master.titleFont === o.master.bodyFont ? o.master.titleFont : `${o.master.titleFont} and ${o.master.bodyFont}`,
     preview: (host) => paintLook(host, o.master),
   })];
   for (const g of groups) {

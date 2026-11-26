@@ -194,25 +194,25 @@ describe('the template window', () => {
     const cats = documentCategories(() => {});
     expect(cats.map((c) => c.name)).toEqual(['Blank', ...DOC_CATEGORIES.map((c) => c.name)]);
     const cards = await Promise.all(cats.map((c) => c.cards()));
-    expect(cards[0].map((c) => [c.id, c.name])).toEqual([[BLANK_CARD, 'Blank Document']]);
+    expect(cards[0].map((c) => [c.id, c.name])).toEqual([[BLANK_CARD, 'Blank document']]);
     expect(cards.slice(1).flat().length).toBe(DOC_TEMPLATES.length);
   });
 
   it('puts the blank spreadsheet and the blank presentation first too', async () => {
     const sheets = sheetCategories(() => {});
     expect(sheets.map((c) => c.id)).toEqual([BLANK_CATEGORY, ...SHEET_CATEGORIES.map((c) => c.id)]);
-    expect((await sheets[0].cards()).map((c) => c.name)).toEqual(['Blank Spreadsheet']);
+    expect((await sheets[0].cards()).map((c) => c.name)).toEqual(['Blank spreadsheet']);
     const deck = Deck.blank(new Doc());
     const slides = slideCategories({ master: deck.master, size: deck.size, mine: [], useTheme: () => {}, useStarter: () => {}, paint: () => {} });
     expect(slides[0].id).toBe(BLANK_CATEGORY);
-    expect((await slides[0].cards()).map((c) => c.name)).toEqual(['Blank Presentation']);
+    expect((await slides[0].cards()).map((c) => c.name)).toEqual(['Blank presentation']);
   });
 
   it('opens on the blank file, marked and focused so Enter keeps it; the arrows through the categories stay in the list', async () => {
     const picked: string[] = [];
     const w = showTemplateWindow({
       mode: 'document', title: 'New Document', initial: 'blank', initialCard: 'b1',
-      categories: [{ id: 'blank', name: 'Blank', cards: () => [card('b1', picked)] }, { id: 'a', name: 'A', cards: () => [card('one', picked)] }],
+      categories: [{ id: 'blank', name: 'Blank', cards: () => [card('b1', picked), card('b2', picked)] }, { id: 'a', name: 'A', cards: () => [card('one', picked)] }],
     });
     await new Promise((r) => setTimeout(r, 0));
     const root = document.querySelector('.template-window') as HTMLElement;
@@ -220,6 +220,9 @@ describe('the template window', () => {
     expect(blank.dataset.id).toBe('b1');
     expect(blank.classList.contains('tw-default')).toBe(true);
     expect(document.activeElement).toBe(blank);
+    // another card taking the keyboard takes the mark too: one card looks chosen
+    (root.querySelectorAll('.tw-card')[1] as HTMLButtonElement).focus();
+    expect(root.querySelectorAll('.tw-default').length).toBe(0);
     // down to the next category and back up: the focus stays on the category list
     const [tabBlank, tabA] = [...root.querySelectorAll<HTMLButtonElement>('.tw-cat')];
     tabBlank.focus();
