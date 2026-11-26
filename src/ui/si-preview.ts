@@ -10,6 +10,7 @@
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
 import { DocView, type TextMarks } from './doc-view';
+import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
@@ -388,7 +389,7 @@ export class SiPreview {
     return {
       selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
-      squiggles: [], picked, found: [], framed: null,
+      squiggles: [], picked, found: this.finder?.open ? this.finder.hits : [], framed: null,
       marks,
     };
   }
@@ -828,6 +829,7 @@ export class SiPreview {
       if (k === 'z' && !shift) return run(() => void this.flush().then(() => this.api.undo(false)));
       if (k === 'y' || (k === 'z' && shift)) return run(() => void this.flush().then(() => this.api.undo(true)));
       if (k === 'a') return run(() => ed.selectAll());
+      if (k === 'f' && !shift) return run(() => this.showFind());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
       if (k === 'b' || k === 'i' || k === 'u') return run(() => this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.'));
@@ -877,5 +879,89 @@ export class SiPreview {
     const sel = ed.collapsed ? '' : ed.text.slice(ed.start, ed.end);
     if (this.ta.value !== sel) this.ta.value = sel;
     this.ta.setSelectionRange(0, sel.length);
+  }
+
+  // ---------------------------------------------------------------- the ribbon's commands
+
+  /** Find (Ctrl+F): Document mode's Find box over the preview, finding only (a field is changed by typing into it). */
+  private finder: DocFind | null = null;
+
+  showFind(): void {
+    if (!this.file) return;
+    if (!this.finder) {
+      this.finder = new DocFind(this.host, {
+        file: () => this.file,
+        focus: () => this.ta.focus(),
+        flash: (m, ms) => this.api.flash(m, ms),
+        redraw: () => this.foundShown(),
+      });
+      // (replacing would write into many fields at once, past the typing guard: not here)
+      this.finder.el.classList.add('df-find-only');
+      for (const b of this.finder.el.querySelectorAll<HTMLElement>('.df-toggle')) b.hidden = true;
+    }
+    this.finder.show(false);
+  }
+
+  /** The place found and selected: in view, and its page chosen in the list. */
+  private foundShown(): void {
+    const ed = this.file?.ed;
+    if (ed && !ed.collapsed && this.finder?.open) {
+      const r = this.view.rangeRects(ed.start, ed.end)[0];
+      if (r) this.view.reveal(r, 60);
+      const b = blockAt(this.blocks, ed.start);
+      if (b) this.api.pick(b.node);
+    }
+    this.placeInput();
+    this.view.redraw();
+  }
+
+  /** Select All in the preview. */
+  selectAll(): void {
+    this.file?.ed.selectAll();
+    this.ta.focus();
+  }
+
+  /** Copy or cut the selection (the ribbon's Copy and Cut): as Ctrl+C and Ctrl+X do. */
+  copyOut(cut: boolean): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    this.ta.focus();
+    this.syncInput();
+    return document.execCommand(cut ? 'cut' : 'copy');
+  }
+
+  /** Paste plain text at the caret (the ribbon's Paste), as Ctrl+V does. */
+  pasteText(text: string): void {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    this.ta.focus();
+    ed.pastePlain(text);
+  }
+
+  /** Show/Hide ¶ in the preview. */
+  get showMarks(): boolean { return this.view.showMarks; }
+  set showMarks(on: boolean) { this.view.showMarks = on; this.view.redraw(); }
+
+  /** Multiple Pages: two pages in each row (or one). */
+  get multiplePages(): boolean { return this.view.perRow > 1; }
+  set multiplePages(on: boolean) {
+    const v = this.view;
+    const page = v.currentPage();
+    v.perRow = on ? 2 : 1;
+    v.sizeSpace();
+    if (on) v.fitPages(); else v.fitWidth();
+    v.scrollToPage(page);
+    v.redraw();
+  }
+
+  /** The number of pages shown. */
+  get pageCount(): number { return this.file?.layout().pages.length ?? 0; }
+
+  /** Go To a page (from 1). */
+  goToPage(n: number): void {
+    this.userScrolled();
+    this.view.scrollToPage(n - 1);
+    this.view.redraw();
   }
 }

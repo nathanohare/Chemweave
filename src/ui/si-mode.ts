@@ -215,12 +215,15 @@ const RIBBON = `
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
       <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
       <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
+      <button role="tab" data-si-tab="layout" aria-selected="false">Layout</button>
+      <button role="tab" data-si-tab="references" aria-selected="false">References</button>
+      <button role="tab" data-si-tab="review" aria-selected="false">Review</button>
+      <button role="tab" data-si-tab="view" aria-selected="false">View</button>
       <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
       <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
       <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure or a figure is selected in the Live Preview">Picture Format</button>
       <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
       <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
-      <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
       <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
       <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
       <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
@@ -228,6 +231,9 @@ const RIBBON = `
     </div>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="cover-page" data-ic="cover-page" title="Cover Page: the SI's title, authors, affiliations and date, on the project's page"><span class="rb-icon">▤</span>Cover Page</button>
+    </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
     </div><div class="rb-label">Import</div></div>
@@ -390,7 +396,17 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Copy and Save</div></div>
   </div>
-  <div class="rb-panel" data-si-panel="refs" hidden>
+  <div class="rb-panel" data-si-panel="references" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="toc" data-ic="insert-toc" title="Table of Contents: its title, the headings it lists and whether its lines link to them, on the project's page (the compiled SI makes it)"><span class="rb-icon">☰</span>Table of Contents</button>
+    </div><div class="rb-label">Table of Contents</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="insert-citation" data-ic="insert-citation" title="Insert Citation: cite references from My Library in the selected compound's References field (they join the project's reference list)"><span class="rb-icon">❝</span>Insert Citation</button>
+      <div class="rb-col">
+        <button data-si="manage-references" data-ic="manage-references" title="Manage References: the project's reference list, to add, edit or delete references">Manage References</button>
+        <button data-si="bibliography" data-ic="insert-bibliography" title="Bibliography: the compiled SI prints the cited references in its References section, in the journal style's format; this opens the list">Bibliography</button>
+      </div>
+    </div><div class="rb-label">Citations</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="ref-doi" data-ic="insert-citation" title="Add by DOI: filled in from Crossref (needs the internet); one already on the list is not added twice"><span class="rb-icon">＋</span>Add by DOI</button>
       <div class="rb-col">
@@ -405,6 +421,49 @@ const RIBBON = `
         <button data-si="ref-delete" data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="layout" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
+      <div class="rb-col">
+        <button data-si="header" data-ic="header-edit" title="Header: what prints at the top of each page (Project Settings ▸ Page)">Header</button>
+        <button data-si="footer" data-ic="footer-edit" title="Footer: what prints at the bottom of each page (Project Settings ▸ Page)">Footer</button>
+        <button data-si="page-number" data-ic="page-number-format" title="Page Number: where the numbers go, their prefix (S1, S2…) and roman numbers for the front pages (Project Settings ▸ Page)">Page Number</button>
+      </div>
+    </div><div class="rb-label">Page Setup</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="heading-numbers" data-ic="numbers-s" title="Heading Numbers: how the headings of the compiled SI are numbered (1, 1.1, S1, A.…), and what goes before and after the number (Project Settings ▸ Headings)">Heading Numbers</button>
+        <button data-si="caption-labels" data-ic="insert-caption" title="Caption Labels: the words and numbers of figure, table and scheme captions (Figure S1, Table S2) (Project Settings ▸ Labels)">Caption Labels</button>
+      </div>
+    </div><div class="rb-label">Numbering</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="structure-layout" data-ic="wrap-text" title="Structure Layout: where compounds' structures and figures go by default, and how text wraps around them (Project Settings ▸ Layout)">Structure Layout</button>
+      </div>
+    </div><div class="rb-label">Arrange</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="review" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Review (F7): go to the next misspelled word or chemistry formatting slip on this page (a formula without subscripts, a solvent written plainly), with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Review</button>
+      <div class="rb-col">
+        <button data-si="dictionary" title="Dictionary: the project's own words, and the ones left as written (Project Settings ▸ Dictionary)">Dictionary</button>
+      </div>
+    </div><div class="rb-label">Proofing</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
+      <button class="rb-big" data-si="manuscript-check" data-ic="si-check" title="Manuscript Check: compare the manuscript (Word or PDF) with the SI: compounds missing from either, and yields, ee and dr that differ"><span class="rb-icon">⇄</span>Manuscript Check</button>
+    </div><div class="rb-label">Checks</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="view" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
+      <div class="rb-col">
+        <button data-si="view-multiple" aria-pressed="false" title="Multiple Pages: the Live Preview's pages two side by side in each row (click again for one)">Multiple Pages</button>
+        <button data-si="show-marks" aria-pressed="false" title="Show/Hide ¶: paragraph marks, spaces and tabs in the Live Preview. They show on screen only, never in print">Show/Hide ¶</button>
+        <button data-si="nav-pane" data-ic="nav-pane" aria-pressed="true" title="Navigation Pane: the list of sections and compounds at the left (hide it for more room)">Navigation Pane</button>
+      </div>
+    </div><div class="rb-label">Show</div></div>
   </div>
   <div class="rb-panel" data-si-panel="ms" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -518,6 +577,13 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="paste" data-ic="paste" title="Paste (Ctrl+V): the copied text where you are typing, on the SI page or in the Live Preview"><span class="rb-icon">📋</span>Paste</button>
+      <div class="rb-col">
+        <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
+        <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
+      </div>
+    </div><div class="rb-label">Clipboard</div></div>
+    <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the selected Data section, after the selected compound (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections); an Attachment section a PDF or picture; an X-ray structure a crystal structure from its CIF"><span class="rb-icon">▤</span>New Section</button>
       <div class="rb-col">
@@ -535,6 +601,13 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Project</div></div>
     ${fontGroupHtml('si')}
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="find" data-ic="find" title="Find (Ctrl+F in the Live Preview): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
+        <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
+      </div>
+    </div><div class="rb-label">Editing</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the selected Data section: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
@@ -558,10 +631,6 @@ const RIBBON = `
         <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
-    <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
-      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
-    </div><div class="rb-label">Checks</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
       <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
@@ -684,11 +753,11 @@ export class SiMode {
         if (['bold', 'italic', 'underline', 'subscript', 'superscript'].includes(c)) b.setAttribute('aria-pressed', String(document.queryCommandState(c)));
       }
     });
-    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
+    for (const b of this.ribbon.querySelectorAll('[data-si="live-preview"]')) b.setAttribute('aria-pressed', String(this.liveOn));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"]')) e.preventDefault(); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
@@ -740,6 +809,9 @@ export class SiMode {
       const target = e.target as HTMLElement;
       const box = target.closest<HTMLElement>('.si-rich');
       if (box) this.typing = box;
+      // (where the ribbon's Clipboard and Editing commands act: the SI page's boxes, or the Live Preview)
+      if (this.preview && target === this.preview.input) this.typedIn = 'preview';
+      else if (this.page.contains(target)) this.typedIn = 'page';
       const card = target.closest<HTMLElement>('.si-table-card');
       const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
       if (t) this.tableChosen(t);
@@ -755,6 +827,11 @@ export class SiMode {
   }
 
   get project(): SiProject | null { return this.tab?.si ?? null; }
+
+  /** Where the person last typed or clicked to type: a box on the SI page, or the Live Preview. */
+  private typedIn: 'page' | 'preview' = 'page';
+  /** The Live Preview when it was the last place typed in and is still shown. */
+  private get previewTyped(): SiPreview | null { return this.typedIn === 'preview' && this.liveOn && this.preview ? this.preview : null; }
 
   /** The table whose cell was last picked (the Table Layout tab acts on it). */
   private activeTable: SiTableEditor | null = null;
@@ -1879,7 +1956,8 @@ export class SiMode {
     this.schemeShown(null);
     this.spectraShown(null);
     this.front = null;
-    this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
+    // (the reference list's Edit and Delete act on the reference picked on the References page)
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si="ref-edit"], [data-si="ref-delete"]')) b.disabled = this.pick.kind !== 'references';
     this.msShown(null);
     this.dashRedraw = null;
     const p = this.project!;
@@ -3209,7 +3287,7 @@ export class SiMode {
     this.pane.classList.toggle('si-live-off', !on);
     // (shown by hand: it stays open on this page, even one it has nothing to show for)
     this.liveAsked = on;
-    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
+    for (const b of this.ribbon.querySelectorAll('[data-si="live-preview"]')) b.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
   }
@@ -4914,7 +4992,9 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
+    'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
+    'heading-numbers', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -5254,7 +5334,92 @@ export class SiMode {
       case 'project-settings':
         this.projectSettings();
         return;
+      // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
+      case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
+      case 'find': {
+        const pv = this.liveOn ? await this.livePreview() : null;
+        if (!pv) { this.host.flash('Find looks in the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        pv.showFind();
+        return;
+      }
+      case 'go-to': await this.goTo(); return;
+      case 'cover-page': this.go({ kind: 'project' }); return;
+      case 'toc': this.go({ kind: 'project' }); this.page.querySelector<HTMLElement>('[data-si-toc]')?.scrollIntoView({ block: 'start' }); return;
+      case 'manage-references': case 'bibliography': this.go({ kind: 'references' }); return;
+      case 'insert-citation': await this.citeFromLibrary(c); return;
+      case 'page-setup': case 'header': case 'footer': case 'page-number': this.projectSettings('page'); return;
+      case 'heading-numbers': this.projectSettings('headings'); return;
+      case 'caption-labels': this.projectSettings('labels'); return;
+      case 'structure-layout': this.projectSettings('layout'); return;
+      case 'dictionary': this.projectSettings('dictionary'); return;
+      case 'manuscript-check': this.go({ kind: 'manuscript' }); return;
+      case 'show-marks': case 'view-multiple': {
+        const pv = this.liveOn ? await this.livePreview() : null;
+        if (!pv) { this.host.flash('This changes the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        if (cmd === 'show-marks') pv.showMarks = !pv.showMarks; else pv.multiplePages = !pv.multiplePages;
+        this.viewState();
+        return;
+      }
+      case 'nav-pane':
+        this.pane.classList.toggle('si-tree-off');
+        this.live.view?.resize();
+        this.viewState();
+        return;
     }
+  }
+
+  /** The View tab's buttons pressed or not (Show/Hide ¶, Multiple Pages, Navigation Pane). */
+  private viewState(): void {
+    const set = (cmd: string, on: boolean): void => { this.ribbon.querySelector(`[data-si="${cmd}"]`)?.setAttribute('aria-pressed', String(on)); };
+    set('show-marks', !!this.preview?.showMarks);
+    set('view-multiple', !!this.preview?.multiplePages);
+    set('nav-pane', !this.pane.classList.contains('si-tree-off'));
+  }
+
+  /** Paste, Cut, Copy and Select All: where the person was typing, on the SI page or in the Live Preview. */
+  private async clipboardCommand(cmd: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (pv) {
+      if (cmd === 'select-all') { pv.selectAll(); return; }
+      if (cmd !== 'paste') { if (!pv.copyOut(cmd === 'cut')) this.host.flash(`Select some text in the Live Preview first, then ${cmd === 'cut' ? 'Cut' : 'Copy'}.`); return; }
+      const t = await this.clipboardText();
+      if (t !== null) pv.pasteText(t);
+      return;
+    }
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box on the SI page, or in the Live Preview, first.'); return; }
+    if (cmd === 'select-all') { document.execCommand('selectAll'); return; }
+    if (cmd !== 'paste') { if (!document.execCommand(cmd)) this.host.flash(`Press Ctrl+${cmd === 'cut' ? 'X' : 'C'} to ${cmd}: this window may not use the clipboard from a button.`); return; }
+    const t = await this.clipboardText();
+    if (t !== null && this.restoreTyping()) document.execCommand('insertText', false, t);
+  }
+
+  /** The copied text, or null (said why) when the clipboard can't be read from a button. */
+  private async clipboardText(): Promise<string | null> {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      this.host.flash('Press Ctrl+V to paste: this window may not read the clipboard from a button.');
+      return null;
+    }
+  }
+
+  /** Home ▸ Go To: a page of the compiled SI (by its number) or a compound (by its ID). */
+  private async goTo(): Promise<void> {
+    const p = this.project!;
+    const got = await ask('Go To', [{ name: 'where', label: 'Page number or compound ID', value: '', placeholder: 'e.g. 12, or 3a' }], { ok: 'Go To' });
+    const w = got?.where.trim();
+    if (!w) return;
+    const c = p.compounds.find((x) => this.idOf(x).toLowerCase() === w.toLowerCase());
+    if (c) { this.go({ kind: 'compound', id: c.id }); return; }
+    const pv = this.liveOn ? await this.livePreview() : null;
+    const n = Number(w.replace(/^S/i, ''));
+    if (pv && Number.isInteger(n) && n >= 1) {
+      const last = pv.pageCount;
+      if (n > last) { this.host.flash(`The SI has ${last} page${last === 1 ? '' : 's'}.`); return; }
+      pv.goToPage(n);
+      return;
+    }
+    this.host.flash(`No compound has the ID “${w}”${pv ? ', and it is not a page number' : ''}.`);
   }
 
   /** Home ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */

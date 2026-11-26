@@ -20,6 +20,10 @@ const spectrumAxis = '<path d="M2.75 19.25h14.5"/>';
 
 /** The SI's own drawings. */
 export const SI_ICONS: Record<string, string> = {
+  // Review ▸ Dictionary: a book with a tick
+  'si:dictionary': '<path class="p" d="M5.25 3.75h11a1.5 1.5 0 0 1 1.5 1.5v15h-11a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M5.25 18.25a1.5 1.5 0 0 1 1.5-1.5h11"/>' + check(8.5, 9.5),
+  // View ▸ Show/Hide ¶: a pilcrow
+  'si:show-marks': '<path d="M11.25 4.75v14.5M15.25 4.75v14.5M10.25 4.75h8.5"/><path class="f a" d="M11.25 4.75h-2a4 4 0 0 0 0 8h2z"/>',
   // Home ▸ Project
   'si:rename': '<rect class="p" x="2.75" y="7.25" width="18.5" height="9.5" rx="2"/><path d="M6 12h5.5"/><path class="a" d="M15.5 5v14M13.75 5h3.5M13.75 19h3.5"/>',
   'si:trash': '<path d="M4.75 6.25h14.5"/><path d="M9.5 6.25V4.5h5v1.75"/><path class="p" d="M6.5 6.25l1 14h9l1-14"/><path class="a" d="M9.75 15.25a2.5 2.5 0 1 0 .6-3.1M10.25 10.5v1.9h1.9"/>',
@@ -104,4 +108,5 @@ export const SI_ICON_SAME: Record<string, string> = {
   'si:cite-library': 'insert-citation', 'si-ms:ms-add': 'insert-object', 'si-ms:ms-check': 'si-check',
   'si-ms:ms-open': 'si:open-compound', 'si-scheme:open-compound': 'si:open-compound',
   'si-dash:refresh': 'refresh-all', 'si-spectrum:up': 'si:move-up', 'si-spectrum:down': 'si:move-down',
+  'si:go-to': 'doc:doc-go-to', 'si:select-all': 'doc:doc-select', 'si:view-multiple': 'doc:view-multiple',
 };

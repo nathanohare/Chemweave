@@ -5033,6 +5033,11 @@ body.si-mode.floating-drawing #canvas-host { display: block; }
 body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 #si-pane { grid-area: host; position: relative; display: grid; grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) var(--si-live-w, 400px); min-width: 0; min-height: 0; background: var(--surround); }
 #si-pane.si-live-off { grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) 22px; }
+/* View ▸ Navigation Pane off: the list of sections and compounds hidden, the page and the preview wider */
+#si-pane.si-tree-off { grid-template-columns: 0 minmax(0, 1fr) var(--si-live-w, 400px); }
+#si-pane.si-tree-off.si-live-off { grid-template-columns: 0 minmax(0, 1fr) 22px; }
+#si-pane.si-tree-off > .si-tree { visibility: hidden; overflow: hidden; padding: 0; border: 0; }
+#si-pane.si-tree-off > .si-tree-grip { display: none; }
 /* the border between the tree and the page: drag it to change the tree's width */
 .si-tree-grip { position: absolute; top: 0; bottom: 0; left: calc(var(--si-tree-w, 260px) - 3px); width: 6px; cursor: col-resize; z-index: 3; }
 .si-tree-grip:hover, .si-tree-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
