@@ -6396,7 +6396,6 @@ function watchFit(el: Element | null): void { if (el) fitWatch?.observe(el); }
 // (the window narrower or wider, the menu bar's or a ribbon's tabs wider or narrower, the fonts loaded: fitted again)
 watchFit(tabsEl);
 watchFit(document.querySelector('header'));
-addEventListener('resize', () => fitSoon());
 void document.fonts?.ready.then(() => fitSoon());
 
 /** The file tabs sit in the menu bar beside the menus (to start with), or on a row of their own (View > Window and Colours). */
@@ -6457,16 +6456,28 @@ function fitTabs(): void {
  * and it settles at once.
  */
 function fitOneRow(): void {
-  const row = tabsEl.parentElement;
   const body = document.body;
-  const cls = row?.matches('.rb-tabs') && body.classList.contains('one-row') ? 'row-wrap' : row?.matches('header') ? 'header-wrap' : '';
-  body.classList.remove(...FIT_CLASSES);
+  const at = tabsEl.parentElement;
+  const oneRow = body.classList.contains('one-row');
+  // the row to fit: the one the file tabs are in (the ribbon's, or the menu bar), or with the file tabs
+  // on a row of their own, the row Quick Access, Search and the window buttons are in (the ribbon's
+  // row of tabs, or the menu bar)
+  const withTabs = !!at && ((oneRow && at.matches('.rb-tabs')) || at.matches('header'));
+  const row = withTabs ? at : oneRow ? document.querySelector<HTMLElement>('.ribbon:not([hidden]) > .rb-tabs') : document.querySelector<HTMLElement>('header');
+  const cls = row?.matches('header') ? 'header-wrap' : 'row-wrap';
+  watchFit(row);
+  // (measured with none of the classes on; a wide window, which has none, is not touched at all)
+  const had = FIT_CLASSES.filter((c) => body.classList.contains(c));
+  if (had.length) body.classList.remove(...had);
   const want: string[] = [];
-  if (cls && row?.offsetParent) {
+  if (row?.offsetParent) {
     // (the room for the tabs themselves: the ‹ ›, the open file's icon, a few letters of its name and its ×)
     const room = () => tabsEl.getBoundingClientRect().width - tabList.offsetWidth - tabAdd.offsetWidth;
-    const short = () => room() < 104 || row.scrollWidth > row.clientWidth + 1
-      || [...row.children].some((c) => c.getBoundingClientRect().right > innerWidth + 0.5);
+    // (the row's end: the window's, or short of the room the menu bar keeps for the window buttons,
+    // which sit over its end)
+    const end = Math.min(innerWidth, row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight));
+    const short = () => (withTabs && room() < 104) || row.scrollWidth > row.clientWidth + 1
+      || [...row.children].some((c) => { const cs = getComputedStyle(c); return cs.position !== 'absolute' && c.getBoundingClientRect().right + (parseFloat(cs.marginRight) || 0) > end + 0.5; });
     if (short()) {
       want.push('row-tight');
       body.classList.add('row-tight');
@@ -6474,7 +6485,10 @@ function fitOneRow(): void {
       body.classList.remove('row-tight');
     }
   }
-  body.classList.add(...want);
+  if (want.length) body.classList.add(...want);
+  // (the rows above the drawing changed height, which moves it without always resizing it: the
+  // floating toolboxes keep their places in it)
+  if (want.join() !== had.join()) document.dispatchEvent(new Event('chrome-moved'));
 }
 
 function showTabArrows(): void {
@@ -16425,14 +16439,18 @@ let ribbonChosen = false;
 /** View > Ribbon > Fold on Short Windows: the ribbon folds to its tabs while the window is under SHORT_WINDOW pixels tall. */
 let ribbonAutoFold = false;
 const SHORT_WINDOW = 760;
+/** Under this height the ribbon always folds to its tabs (as Office's does): with it whole, the menus,
+ * the file tabs and the status bar would not fit, and would cover one another. Click a tab to use it. */
+const TOO_SHORT = 420;
 let wasShort = false;
 /** Fold the ribbon as the window becomes short, and give it back as you had it when it is tall again. */
 function autoFoldRibbon(force = false): void {
-  const short = ribbonAutoFold && innerHeight < SHORT_WINDOW;
+  const short = innerHeight < TOO_SHORT || (ribbonAutoFold && innerHeight < SHORT_WINDOW);
   $('[data-cmd="ribbon-auto-fold"]')?.setAttribute('aria-checked', String(ribbonAutoFold));
   if (short === wasShort && !force) return;
   wasShort = short;
   setRibbonCollapsed(short || ribbonChosen);
+  document.dispatchEvent(new Event('chrome-moved'));
 }
 
 /** Tick the shown toolboxes and the lock in the View menu, and show the lock on its button. */

@@ -278,12 +278,20 @@ try {
   await page.waitForTimeout(300);
 
   step('the controls nobody can do without are never squeezed to nothing, covered or off the window: every tab, menu bar and File tab, web and desktop (scripts/essentials-check.mjs)');
-  const SWEEP = [[1366, 768], [1100, 700], [1024, 700], [800, 600], [390, 700]];
+  // (wide, narrow and short: a laptop split in two, a phone, a window dragged low)
+  const SWEEP = [[1366, 768], [1100, 700], [1024, 700], [800, 600], [900, 400], [390, 700], [390, 300]];
+  const TOUCH = [[1366, 768], [1024, 700], [600, 260], [390, 300]];
   for (const p of await sweepEssentials(page, SWEEP, 'web')) fail(p);
   // (with Touch Mode's bigger buttons, and at a larger interface size)
   await page.evaluate(() => window.__app.command('touch-mode-on'));
-  for (const p of await sweepEssentials(page, [[1366, 768], [1024, 700]], 'web, Touch Mode')) fail(p);
+  for (const p of await sweepEssentials(page, TOUCH, 'web, Touch Mode')) fail(p);
   await page.evaluate(() => window.__app.command('touch-mode-auto'));
+  // (with the file tabs on a row of their own: View > Window and Colors > File Tabs in the Menu Bar off)
+  const OWN_ROW = [[1366, 768], [1000, 700], [900, 700], [700, 700], [500, 600], [390, 700]];
+  const tabsOwnRow = async (pg, on) => { if (await pg.evaluate(() => document.body.classList.contains('tabs-in-menu')) === on) await pg.evaluate(() => window.__app.command('tabs-in-menu')); };
+  await tabsOwnRow(page, true);
+  for (const p of await sweepEssentials(page, OWN_ROW, 'web, file tabs on their own row')) fail(p);
+  await tabsOwnRow(page, false);
   {
     // the desktop app: its own title bar, with the window's buttons (the desktop calls do nothing here)
     const desk = await browser.newPage({ viewport: { width: 1366, height: 768 } });
@@ -302,6 +310,11 @@ try {
     }
     if (!(await desk.evaluate(() => !!document.querySelector('.win-controls > button')))) fail('the desktop check has no window buttons: it is not testing the desktop app\'s title bar');
     for (const p of await sweepEssentials(desk, SWEEP, 'desktop')) fail(p);
+    await desk.evaluate(() => window.__app.command('touch-mode-on'));
+    for (const p of await sweepEssentials(desk, TOUCH, 'desktop, Touch Mode')) fail(p);
+    await desk.evaluate(() => window.__app.command('touch-mode-auto'));
+    await tabsOwnRow(desk, true);
+    for (const p of await sweepEssentials(desk, OWN_ROW, 'desktop, file tabs on their own row')) fail(p);
     await desk.close();
   }
   await page.setViewportSize({ width: 1280, height: 720 });

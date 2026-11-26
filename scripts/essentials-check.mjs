@@ -20,15 +20,17 @@ export const REQUIRED = ['#tabs .tab-list', '#tabs .tab-add', '#tabs .tab.active
 export function essentialProblems(page, label) {
   return page.evaluate(async ({ ESSENTIAL, REQUIRED, label }) => {
     const out = [];
-    let flips = 0, loops = 0;
-    const mo = new MutationObserver(() => flips++);
+    // (a change of the body's classes that sticks: one taken off and put back in the same moment, to
+    // measure, is not a change)
+    let flips = 0, loops = 0, seen = document.body.className;
+    const mo = new MutationObserver(() => { if (document.body.className !== seen) { flips++; seen = document.body.className; } });
     mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
     const onErr = (e) => { if (/ResizeObserver loop/.test(e.message)) loops++; };
     addEventListener('error', onErr);
     await new Promise((ok) => setTimeout(ok, 600));
     mo.disconnect();
     removeEventListener('error', onErr);
-    if (flips > 2 || loops) out.push(`${label}: the layout keeps changing by itself (${flips} changes${loops ? `, ${loops} ResizeObserver loops` : ''} in 0.6 s)`);
+    if (flips || loops) out.push(`${label}: the layout keeps changing by itself (${flips} changes${loops ? `, ${loops} ResizeObserver loops` : ''} in 0.6 s)`);
     if (!document.body.classList.contains('focus-view')) {
       for (const sel of REQUIRED) {
         const el = document.querySelector(sel);
@@ -63,7 +65,8 @@ export function essentialProblems(page, label) {
 export function desktopStub() {
   window.isTauri = true;
   let n = 0;
-  window.__TAURI_INTERNALS__ = { invoke: async () => null, transformCallback: () => ++n, unregisterCallback: () => {}, convertFileSrc: (s) => s, metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } } };
+  // (null for each call, but a list for the files the app was started with)
+  window.__TAURI_INTERNALS__ = { invoke: async (cmd) => (cmd === 'launch_files' ? [] : null), transformCallback: () => ++n, unregisterCallback: () => {}, convertFileSrc: (s) => s, metadata: { currentWindow: { label: 'main' }, currentWebview: { windowLabel: 'main', label: 'main' } } };
   window.__TAURI_EVENT_PLUGIN_INTERNALS__ = { unregisterListener: () => {} };
 }
 

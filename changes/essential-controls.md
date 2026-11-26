@@ -2,3 +2,6 @@ Fixed: With the menus in the File tab, the open files' tabs, their ▾ list and 
 Fixed: The open file's tab stays in view when the row of tabs gets narrower, and the side panel no longer ends up off the window's right edge after switching between kinds of tab.
 Fixed: In a narrow window the ribbon's tabs go onto a second line instead of off the edge, and the status bar drops its zoom slider and Go to Selection so its buttons stay in reach.
 Changed: The Quick Access Toolbar starts with Save, Undo and Redo in the desktop app too, the same in every kind of tab. A list you have chosen stays as it is, and the other usual commands (New, Open, Print and more) are one click away on the bar's ▾ button.
+Changed: In a very short window (under 420 pixels tall) the ribbon folds to its tabs, as Office's does, so the menus, the file tabs and the status bar still fit; click a tab to use its buttons.
+Fixed: A floating toolbox no longer hangs over the status bar in a short window (it gets a scroll bar instead), and it keeps its place in the drawing when the ribbon folds or the file tabs move to a line of their own.
+Fixed: With the file tabs on a row of their own, Quick Access, Search and the desktop app's window buttons no longer run off a narrow window or cover one another.

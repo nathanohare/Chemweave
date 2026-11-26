@@ -81,7 +81,7 @@ These came first and every later rule builds on them.
 | S62 | A Format Favorites gallery sits on the Home tab in every mode, Canvas and Spreadsheet included, with one shared set. | Favorites made in one mode are used in the others. |
 | S63 | The Text Formatting toolbox is exactly the floating typing bar; the same bar is never shown twice. | One control, one place. |
 | S64 | Object snapping is a checkable command named "Snap to Objects" (never "Toggle …"). | Office names checkable commands by what they turn on. |
-| S65 | The Quick Access Toolbar has Save, Undo and Redo and is customizable like Office's. | Familiar. |
+| S65 | The Quick Access Toolbar has Save, Undo and Redo and is customizable like Office's. It starts the same in every kind of tab and in the web and desktop apps (Nate, 2026-11-26). | Familiar; one bar to learn. |
 | S66 | When a style default changes (drawing style, terminal methyl as Me, alkyl group form), ask whether to restyle existing structures or use it only for new ones. | Existing work must not change without asking. |
 | S67 | Additions to a structure take that structure's own bond length, widths and colors (a setting, on by default). | Mixed styles inside one structure look wrong. |
 | S68 | Ctrl+Z re-selects what the undone command changed. | People see what Undo did. |
@@ -128,6 +128,7 @@ These came first and every later rule builds on them.
 | S78 | Newman projections: one wedge and one hashed wedge per carbon; the viewing eye drawn with a pupil and the ring arc as a dashed gray line (both can be changed in Settings ▸ Newman Projections); no rotated label text; text 2 pt under caption size; textbook angles by default; the front-on eye icon only on the tool button. | Textbook convention. |
 | S79 | Tilt handles show only while a Perspective tool is active (replaces showing them beside the rotate handle all the time). | They get in the way otherwise. |
 | S80 | In a slide show, going back glides on canvas slides; normal slides go back instantly, as in PowerPoint. | PowerPoint's behavior for normal slides. |
+| S98 | The controls nobody can do without (the File tab and menus, the ribbon's tabs, Quick Access, the open files' tabs with their ▾ list and New Tab, Search, the window buttons, the status bar's buttons, a toolbox's title) may get smaller at any window size, down to their pictures or onto a line of their own, but are never squeezed to nothing, covered by something else or pushed off the window (Nate, 2026-11-26). Checked by `scripts/essentials-check.mjs` in the smoke test. | A window made small must still let you change files, close it or get back. |
 
 ## Motion
 

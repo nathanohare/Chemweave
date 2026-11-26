@@ -536,14 +536,24 @@ export class Toolboxes {
       top: document.getElementById('dock-top')!, bottom: document.getElementById('dock-bottom')!,
     };
     window.addEventListener('resize', () => this.keepOnScreen());
-    // (and when the drawing's area changes without the window doing so: another kind of tab, whose
-    // ribbon is taller, the menu bar or the file tabs' row turned on, so a toolbox kept at a corner
-    // never sits over the ribbon)
+    // (and when the drawing's area changes or moves without the window changing size: another kind of
+    // tab, whose ribbon is taller, the ribbon folded, the menu bar or the file tabs' row turned on or
+    // onto a line of their own, so a toolbox kept at a corner never sits over the ribbon or under the
+    // status bar. The rows above the drawing are watched too, since they move it without resizing it)
     if (typeof ResizeObserver !== 'undefined') {
-      queueMicrotask(() => {
-        const w = this.hooks.work();
-        if (w) new ResizeObserver(() => this.keepOnScreen()).observe(w);
-      });
+      this.rowWatch = new ResizeObserver(() => this.keepOnScreen());
+      queueMicrotask(() => this.watchRows());
+    }
+    document.addEventListener('chrome-moved', () => { this.watchRows(); requestAnimationFrame(() => this.keepOnScreen()); });
+  }
+
+  private rowWatch: ResizeObserver | null = null;
+  private watched = new WeakSet<Element>();
+  /** Watch the drawing's area and the rows above it (ribbons are made as their kind of tab first opens). */
+  private watchRows(): void {
+    if (!this.rowWatch) return;
+    for (const el of [this.hooks.work(), ...document.querySelectorAll('body > header, #tabs, .ribbon')]) {
+      if (el && !this.watched.has(el)) { this.watched.add(el); this.rowWatch.observe(el); }
     }
   }
 
@@ -871,16 +881,26 @@ export class Toolboxes {
 
   /** Floating toolboxes stay inside the window when it gets smaller. */
   private keepOnScreen(): void {
+    this.watchRows();
     const st = this.hooks.get();
+    // (the bottom of the drawing's area: a floating toolbox never hangs over the status bar below it,
+    // whose buttons must stay in reach; a short window gives it a scroll bar instead)
+    const bottom = this.hooks.work()?.getBoundingClientRect().bottom || innerHeight;
     for (const [id, f] of this.frames) {
-      if (!f.classList.contains('floating') || !f.isConnected) continue;
+      if (!f.classList.contains('floating') || !f.isConnected) { if (f.style.maxHeight) f.style.maxHeight = ''; continue; }
       // (a toolbox hidden for now, in another kind of tab, has no size to place by: it keeps its place)
       if (!f.offsetWidth) continue;
-      if (st.places[id]?.corner) { this.toCorner(f); continue; }
-      const r = f.getBoundingClientRect();
-      const x = Math.max(0, Math.min(r.left, innerWidth - Math.min(r.width, innerWidth))), y = Math.max(0, Math.min(r.top, innerHeight - 40));
-      if (x !== r.left) f.style.left = `${x}px`;
-      if (y !== r.top) f.style.top = `${y}px`;
+      // (at least its title shows above the status bar, to drag it by: a big one in Touch Mode)
+      const least = Math.max(40, (f.querySelector<HTMLElement>(':scope > .tb-head')?.offsetHeight ?? 0) + 8);
+      if (st.places[id]?.corner) this.toCorner(f);
+      else {
+        const r = f.getBoundingClientRect();
+        const x = Math.max(0, Math.min(r.left, innerWidth - Math.min(r.width, innerWidth))), y = Math.max(0, Math.min(r.top, bottom - least));
+        if (x !== r.left) f.style.left = `${x}px`;
+        if (y !== r.top) f.style.top = `${y}px`;
+      }
+      const room = `${Math.max(least, Math.floor(bottom - f.getBoundingClientRect().top))}px`;
+      if (f.style.maxHeight !== room) f.style.maxHeight = room;
     }
   }
 }
