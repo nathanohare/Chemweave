@@ -8,10 +8,15 @@
 // of the tree (`node`): when that field prints nothing any more it goes after the page's last
 // text before it, then at the page's start; when the page is gone it goes at the end of the SI.
 // Either way it is still there, flagged as text no field holds.
+//
+// A piece can hold equations (Insert ▸ Equation in the Live Preview): each is an object character
+// (U+FFFC) in its text, with the equation's LaTeX at the same place in its `math` list, so the
+// text stays plain and the equations stay where they were typed. Fields hold none: SI Assistant's
+// text format has no equations, and this file is Chemweave's own.
 
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
-import type { DocText } from '../document/document';
+import { OBJECT_CHAR, nextObjectId, objectRun, type DocText } from '../document/document';
 import type { SiFolder } from './folder';
 import { customSrc } from './preview-edit';
 import type { SourceBlock, SourceSpan } from './source-map';
@@ -26,8 +31,10 @@ export interface CustomText {
   after: string;
   /** What is between that text and it, as it was when typed (a space, a citation): kept. */
   gap: string;
-  /** Its text (plain; a paragraph's end as "\n"). */
+  /** Its text (plain; a paragraph's end as "\n"; an equation as U+FFFC). */
   text: string;
+  /** The LaTeX of the equation at each U+FFFC of `text`, in order ('' for none). */
+  math?: string[];
 }
 
 /** Where each piece went, and whether it is where it was put. */
@@ -51,17 +58,52 @@ export async function readCustomTextToChange(folder: SiFolder): Promise<CustomTe
 /** The items of the file's text (null: not the file's format). */
 export function parseCustomText(raw: string): CustomText[] | null {
   try {
-    const data = JSON.parse(raw) as { items?: unknown };
+    const data = JSON.parse(raw) as { items?: unknown; version?: unknown };
     if (!data || !Array.isArray(data.items)) return null;
+    // (written by a newer Chemweave: never written over)
+    if (typeof data.version === 'number' && data.version > CUSTOM_TEXT_VERSION) return null;
     return data.items.filter((x): x is CustomText => !!x && typeof x === 'object' && typeof (x as CustomText).id === 'string' && typeof (x as CustomText).text === 'string')
-      .map((x) => ({ id: x.id, node: String(x.node ?? ''), after: String(x.after ?? ''), gap: String(x.gap ?? ''), text: x.text }));
+      .map((x) => {
+        const item: CustomText = { id: x.id, node: String(x.node ?? ''), after: String(x.after ?? ''), gap: String(x.gap ?? ''), text: x.text };
+        if (Array.isArray(x.math) && x.math.length) item.math = x.math.map((m) => (typeof m === 'string' ? m : ''));
+        return item;
+      });
   } catch {
     return null;
   }
 }
 
+/** The newest version of the file this Chemweave reads (2: pieces can hold equations). */
+const CUSTOM_TEXT_VERSION = 2;
+
 export function customTextJson(items: readonly CustomText[]): string {
-  return JSON.stringify({ about: 'Text typed in Chemweave’s Live Preview where no field is. Chemweave puts it back in its place when the SI is compiled.', version: 1, items }, null, 2) + '\n';
+  // (version 2 only with an equation: a Chemweave reading version 1 would drop it)
+  const version = items.some((x) => x.math?.some(Boolean)) ? 2 : 1;
+  return JSON.stringify({ about: 'Text typed in Chemweave’s Live Preview where no field is. Chemweave puts it back in its place when the SI is compiled.', version, items }, null, 2) + '\n';
+}
+
+/**
+ * A piece's text and equations as they are in a document now: the text of its stretches
+ * [start, end) of `t`, and the LaTeX of each equation in it (each at an object character).
+ */
+export function customPiece(t: Pick<DocText, 'runs' | 'objects'>, ranges: readonly [number, number][]): { text: string; math?: string[] } {
+  let text = '';
+  const math: string[] = [];
+  for (const [a, b] of ranges) {
+    for (const r of rt.sliceRuns(t.runs, a, b)) {
+      text += r.text;
+      if (r.obj === undefined) continue;
+      const o = t.objects[r.obj];
+      for (let i = 0; i < r.text.length; i++) if (r.text[i] === OBJECT_CHAR) math.push(o?.kind === 'math' ? o.tex : '');
+    }
+  }
+  return math.some(Boolean) ? { text, math } : { text };
+}
+
+/** A piece's text as words to show (a warning's line): each equation as its LaTeX. */
+export function customShown(item: Pick<CustomText, 'text' | 'math'>): string {
+  let k = 0;
+  return [...item.text].map((ch) => (ch === OBJECT_CHAR ? (item.math?.[k++] ? `[${item.math[k - 1]}]` : '') : ch)).join('');
 }
 
 export const newCustomId = (): string => `k-${Date.now().toString(16).slice(-6)}${Math.random().toString(16).slice(2, 6)}`;
@@ -103,8 +145,14 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
       // (the end of the page's text, not past the paragraph's end that closes it)
       if (at > block.end) at = block.end;
     }
-    const len = item.text.length;
-    t = insertText(t, at, item.text);
+    // (an object character with no equation is left out)
+    let k = 0;
+    const eqs: string[] = [];
+    const shown = [...item.text].filter((ch) => { if (ch !== OBJECT_CHAR) return true; const m = item.math?.[k++] ?? ''; if (m) eqs.push(m); return !!m; }).join('');
+    if (!shown) continue;
+    const len = shown.length;
+    t = insertText(t, at, shown);
+    if (eqs.length) t = putEquations(t, at, shown, eqs);
     // the stretches after it move along; one it is inside grows
     srcs = srcs.map((s) => (s.start >= at ? { ...s, start: s.start + len, end: s.end + len } : s.end > at ? { ...s, end: s.end + len } : s));
     for (const b of blks) { if (b.start > at) b.start += len; if (b.end >= at) b.end += len; }
@@ -114,6 +162,22 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
   }
   srcs.sort((a, b) => a.start - b.start || a.end - b.end);
   return { doc: t, sources: srcs, blocks: blks, placed };
+}
+
+/** The object characters of `text`, put in at `at`, made the equations `eqs` (in order), in the look of the text there. */
+function putEquations(t: DocText, at: number, text: string, eqs: readonly string[]): DocText {
+  let runs = t.runs;
+  const objects = { ...t.objects };
+  let k = 0;
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] !== OBJECT_CHAR) continue;
+    const id = nextObjectId({ objects });
+    objects[id] = { kind: 'math', tex: eqs[k++] };
+    const look = { ...rt.styleOf(rt.sliceRuns(runs, at + i, at + i + 1)[0] ?? { text: '' }) } as Record<string, unknown>;
+    for (const key of ['link', 'obj', 'field', 'sub', 'sup']) delete look[key];
+    runs = rt.replaceRange(runs, at + i, at + i + 1, [objectRun(id, look as rt.RunStyle)]);
+  }
+  return { ...t, runs, objects };
 }
 
 /** `text` put into a document at `at`, in the look of the character before it; each "\n" a new paragraph like the one it is in. */

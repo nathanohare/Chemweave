@@ -1,0 +1,3 @@
+Added: SI Project: Structure from Name makes a compound's structure (Home ▸ Structure) or a new figure (Insert ▸ Figures) from a name, SMILES or CAS RN, read as Document mode reads it; it asks before replacing a structure, and is one step of Undo.
+Added: SI Project: Insert ▸ Equation puts an equation typed in LaTeX into the Live Preview's text, in Document mode's equation window; double-click it to change it. It shows in the preview and PDF and is a Word equation in the compiled Word file.
+Added: SI Project: Insert ▸ Link (Ctrl+K) links words selected in the Live Preview to a web page, DOI, email address, file, or a compound, figure, table or scheme of the SI. Ctrl+click follows it, right-click edits or removes it, and the compiled Word file gets a real link.

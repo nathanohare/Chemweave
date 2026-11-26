@@ -133,6 +133,35 @@ describe('finding the words again safely', () => {
     const { readPreviewFormatsToChange } = await import('../src/si/preview-format');
     const busy = { readText: () => Promise.reject(new Error('EBUSY')) } as unknown as Parameters<typeof readPreviewFormatsToChange>[0];
     await expect(readPreviewFormatsToChange(busy)).rejects.toThrow();
-    expect(parsePreviewFormats('{"version":3,"items":[]}')).toBeNull();
+    expect(parsePreviewFormats('{"version":4,"items":[]}')).toBeNull();
+  });
+});
+
+describe('links (Insert ▸ Link in the Live Preview)', () => {
+  it('puts a link back on the compiled document, as a real link with its blue and underline', () => {
+    const d = doc('See the data deposit for details');
+    const spans = [{ start: 0, end: 32, src: 'k:1' }];
+    const out = applyPreviewFormats(d, spans, [], [{ id: 'x', src: 'k:1', start: 8, end: 20, text: 'data deposit', look: { link: 'https://doi.org/10.1000/xyz123', color: '#0563c1', underline: true } }]);
+    const run = out.runs.find((r) => r.text === 'data deposit');
+    expect(run?.link).toBe('https://doi.org/10.1000/xyz123');
+    expect(run?.underline).toBe(true);
+    expect(out.runs.find((r) => r.text === 'See the ')?.link).toBeUndefined();
+  });
+
+  it('keeps links in the file as version 3, and reads them back', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'k:1', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', underline: true } }];
+    const json = previewFormatsJson(items);
+    expect(JSON.parse(json).version).toBe(3);
+    expect(parsePreviewFormats(json)?.[0].look).toEqual({ link: 'https://example.org/', underline: true });
+    // (a newer file is never read, so never written over)
+    expect(parsePreviewFormats(JSON.stringify({ version: 4, items: [] }))).toBeNull();
+    // (a link that isn't text is dropped)
+    expect(parsePreviewFormats(JSON.stringify({ version: 3, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { link: true } }] }))?.[0].look).toEqual({});
+  });
+
+  it('Remove Link takes off only the link, its blue and its underline', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } }];
+    const out = clearFormats(items, 'p', 'data here', 0, 4, ['link', 'color', 'underline']);
+    expect(out.map((f) => f.look)).toEqual([{ bold: true }]);
   });
 });

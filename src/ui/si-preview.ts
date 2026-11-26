@@ -10,19 +10,24 @@
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
 import { BRUSH, IBEAM } from '../editor/cursors';
-import { paraAt } from '../text/paragraphs';
+import { paraAt, paraRange } from '../text/paragraphs';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
 import { DocComments } from './doc-comments';
 import type { ThreadActions } from './comment-cards';
 import { DocFile } from '../document/doc-file';
-import type { DocText } from '../document/document';
+import { OBJECT_CHAR, nextObjectId, objectRun, styleOf, type DocText } from '../document/document';
+import { bookmarkPara } from '../document/bookmarks';
+import { askEquation } from './equation-dialog';
+import { askLink, followLink, linkTip, type LinkPlace } from './links-ui';
+import { LINK_COLOUR, linkAt } from '../links';
+import { showContextMenu, type MenuItem } from './context-menu';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
-import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
+import { customAnchor, customPiece, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
 import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
 
@@ -69,6 +74,8 @@ export interface SiPreviewHost {
   structureMenu(key: string, x: number, y: number): void;
   /** Double-click on a compound's structure: the drawing tools open on it. */
   editStructure(key: string): void;
+  /** The places in the SI a link can go to (Insert ▸ Link's "Place in this SI"): compounds, figures, tables, schemes. */
+  linkPlaces?(): LinkPlace[];
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
@@ -610,7 +617,9 @@ export class SiPreview {
     // (where: the editor's selection before the change settles a change that could be in more than one place)
     const ed = this.file?.ed;
     const { start, end, typed } = locateEdit(before, after, ed?.start ?? 0, ed?.end ?? 0);
-    const k = editKind(this.spans, start, end, typed, before);
+    let k = editKind(this.spans, start, end, typed, before);
+    // (an equation put in at a field's edge: text of the SI's own, as fields hold no equations)
+    if (this.equationHere !== null && start === end && start === this.equationHere && typed === OBJECT_CHAR && !(k.kind === 'field' && isCustomSrc(k.src))) k = { kind: 'custom', at: start };
     if (k.kind === 'locked') {
       const why = !k.src ? 'Chemweave writes this (a heading, a number, the layout): it can’t be changed here.'
         : typed.includes('\n') && editableSrc(k.src) ? `${this.api.labelOf(k.src)} holds one paragraph.` : `This is made from ${this.api.labelOf(k.src)}: change it there (click it to go to the field).`;
@@ -624,6 +633,8 @@ export class SiPreview {
   }
 
   private pendingEdit: { start: number; end: number; typed: string } | null = null;
+  /** Where an equation is being put in (Insert ▸ Equation): there it is text of the SI's own. */
+  private equationHere: number | null = null;
 
   /** A change let through: the stretches moved along, its field or custom text to write. */
   private changed(kind: string): void {
@@ -690,13 +701,14 @@ export class SiPreview {
     if (!this.file || (!this.dirty.size && !this.fresh.size)) return;
     // (the text and its stretches as they are now: keys typed while this writes move the live ones)
     const text = this.file.ed.text;
+    const doc = this.file.t;
     const spans = this.spans.map((x) => ({ ...x }));
     const gen = this.editGen;
     const owner = this.owner;
     const srcs = [...this.dirty];
     this.dirty.clear();
     this.busy = true;
-    try { await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
+    try { await this.writeEach(text, spans, srcs, owner, doc); } finally { this.busy = false; }
     this.writtenGen = Math.max(this.writtenGen, gen);
     this.showWaiting();
   }
@@ -712,12 +724,13 @@ export class SiPreview {
   /** A write failed since the last compile shown: the next shows the stored text, whenever it was started. */
   private failed = false;
 
-  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown): Promise<void> {
-    const customs: { id: string; text: string }[] = [];
+  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown, doc: DocText): Promise<void> {
+    const customs: { id: string; text: string; math?: string[] }[] = [];
     let failed = false;
     for (const src of srcs) {
       if (isCustomSrc(src)) {
-        customs.push({ id: customIdOf(src), text: spans.filter((s) => s.src === src).map((s) => text.slice(s.start, s.end)).join('') });
+        // (its equations with it: the LaTeX of each, from the document's objects)
+        customs.push({ id: customIdOf(src), ...customPiece(doc, spans.filter((s) => s.src === src).map((s): [number, number] => [s.start, s.end])) });
         continue;
       }
       const before = this.written.get(src) ?? { printed: printedOf(this.base.text, this.base.spans, src).printed, raw: (await this.api.read(src, owner)) ?? '' };
@@ -749,12 +762,13 @@ export class SiPreview {
         let out = [...items];
         for (const c of customs) {
           const old = out.find((x) => x.id === c.id);
-          if (old && c.text) out = out.map((x) => (x.id === c.id ? { ...x, text: c.text } : x));
+          const put = (x: Omit<CustomText, 'text' | 'math'>): CustomText => { const { math: _m, ...rest } = x as CustomText; return { ...rest, text: c.text, ...(c.math ? { math: c.math } : {}) }; };
+          if (old && c.text) out = out.map((x) => (x.id === c.id ? put(x) : x));
           else if (old) { this.gone.set(c.id, old); out = out.filter((x) => x.id !== c.id); }
           else {
             // (new, or taken out to nothing and typed again: where it was put)
             const at = fresh.get(c.id) ?? this.gone.get(c.id);
-            if (at && c.text) { out.push({ ...at, id: c.id, text: c.text }); this.gone.delete(c.id); }
+            if (at && c.text) { out.push(put({ ...at, id: c.id })); this.gone.delete(c.id); }
           }
         }
         return out;
@@ -827,6 +841,9 @@ export class SiPreview {
       const ref = this.structureUnder(e);
       if (ref) { e.preventDefault(); this.api.editStructure(ref.key); return; }
       const at = this.offsetAt(e);
+      // an equation: the equation window on it
+      const eq = at !== null ? this.equationUnder(at) : null;
+      if (eq !== null) { e.preventDefault(); void this.editEquation(eq); return; }
       if (at !== null) this.file?.ed.selectWord(at);
     });
     scroller.addEventListener('contextmenu', (e) => this.contextMenu(e));
@@ -934,10 +951,10 @@ export class SiPreview {
     return null;
   }
 
-  /** Right-click: on a structure, it is picked and its menu shows. */
+  /** Right-click: on a structure, it is picked and its menu shows; on a link or an equation, theirs. */
   private contextMenu(e: MouseEvent): void {
     const ref = this.structureUnder(e);
-    if (!ref) return;
+    if (!ref) { this.textMenu(e); return; }
     e.preventDefault();
     this.ta.focus({ preventScroll: true });
     this.pickStructure(ref);
@@ -958,6 +975,9 @@ export class SiPreview {
     if (this.spaceAt(e)) { e.preventDefault(); return; }
     const at = this.offsetAt(e);
     if (at === null) return;
+    // Ctrl+click (⌘-click) on a link follows it, as in Word
+    const link = (e.ctrlKey || e.metaKey) && !this.brush ? this.linkUnder(at) : null;
+    if (link) { e.preventDefault(); void followLink(link); return; }
     e.preventDefault();
     this.unpickStructure();
     this.ta.focus({ preventScroll: true });
@@ -979,6 +999,9 @@ export class SiPreview {
       return;
     }
     const s = this.spanUnder(e);
+    const at = this.offsetAt(e);
+    const link = at !== null ? this.linkUnder(at) : null;
+    this.view.scroller.title = link ? linkTip(link, true) : '';
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
     this.view.scroller.style.cursor = this.brush && (s || this.view.onPage(e.clientX, e.clientY)) ? BRUSH : this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
@@ -1062,6 +1085,7 @@ export class SiPreview {
       if (k === 'y' || (k === 'z' && shift)) return run(() => void this.flush().then(() => this.api.undo(true)));
       if (k === 'a') return run(() => ed.selectAll());
       if (k === 'f' && !shift) return run(() => this.showFind());
+      if (k === 'k' && !shift) return run(() => void this.editLink());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
       if (k === 'b' || k === 'i' || k === 'u') {
@@ -1234,6 +1258,8 @@ export class SiPreview {
     if (!this.editable) { this.api.flash(this.why); return; }
     const look: RunFormatLook = {};
     for (const k of LOOK_KEYS) {
+      // (a link isn't formatting: Format Painter never copies it, as in Word)
+      if (k === 'link') continue;
       const v = this.selectionValue(k);
       // (on or off for each look, so the words painted match; a font, size or color only when it has one)
       // ('' for none: painted words lose a font, size, color or highlight the copied ones don't have)
@@ -1406,8 +1432,10 @@ export class SiPreview {
    * subscript and superscript on a field kept as formatted text go into the field (SI Assistant
    * shows them too); the rest, and any formatting on words the program writes, go in the
    * formatting file. Either way it is kept across compiles. False when there was nothing to do.
+   * With `only` (and 'clear'), only those looks the formatting file put on are taken off (Remove
+   * Link: the link, its blue and its underline; the field's own underline stays).
    */
-  async format(look: FormatLook | 'clear'): Promise<boolean> {
+  async format(look: FormatLook | 'clear', only?: readonly (keyof FormatLook)[]): Promise<boolean> {
     if (!this.file) return false;
     if (!this.editable) { this.api.flash(this.why); return false; }
     if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
@@ -1456,7 +1484,7 @@ export class SiPreview {
     const fields: { src: string; text: string; from: string }[] = [];
     const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
     const sideFile = (src: string, printed: string, a: number, b: number): void => {
-      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
+      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b, only) : addFormat(items, src, printed, a, b, look)));
     };
     // (every printed text worked out before the fields are read: nothing below depends on what shows by then)
     const printedNow = new Map<string, string>();
@@ -1465,7 +1493,7 @@ export class SiPreview {
     const onKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
     for (const [src, [a, b]] of parts) {
       const printed = printedNow.get(src)!;
-      const inField = markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
+      const inField = !only && markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
       if (!inField) { sideFile(src, printed, a, b); continue; }
       const raw = await this.api.read(src, owner);
       if (raw === null) { sideFile(src, printed, a, b); continue; }
@@ -1492,6 +1520,183 @@ export class SiPreview {
     for (const x of fields) this.written.delete(x.src);
     if (fields.length) { this.editGen++; this.writtenGen = this.editGen; }
     // (the compile that follows the write shows it)
+    return true;
+  }
+
+  // ---------------------------------------------------------------- equations and links
+
+  /** The link on the character at `at` (or just before it), or null. */
+  private linkUnder(at: number): string | null {
+    const runs = this.file?.t.runs ?? [];
+    for (const o of [at, at - 1]) if (o >= 0) { const l = rt.sliceRuns(runs, o, o + 1)[0]?.link; if (l) return l; }
+    return null;
+  }
+
+  /** The equation (its object's id) at `at` or just before it, or null. */
+  private equationUnder(at: number): number | null {
+    const f = this.file;
+    if (!f) return null;
+    for (const o of [at, at - 1]) {
+      const id = o >= 0 ? rt.sliceRuns(f.t.runs, o, o + 1)[0]?.obj : undefined;
+      if (id !== undefined && f.t.objects[id]?.kind === 'math') return id;
+    }
+    return null;
+  }
+
+  /** The font of the text at the caret (an equation's letters match it). */
+  private fontHere(): string {
+    const f = this.file!;
+    return this.selectionValue('font') ?? styleOf(f.t, f.t.paras[paraAt(f.ed.text, f.ed.start)]).font;
+  }
+
+  /** Right-click on text: a link's commands, and Edit Equation on an equation (no menu otherwise). */
+  private textMenu(e: MouseEvent): void {
+    const at = this.offsetAt(e);
+    if (at === null || !this.file) return;
+    const link = this.linkUnder(at), eq = this.equationUnder(at);
+    if (!link && eq === null) return;
+    e.preventDefault();
+    this.ta.focus({ preventScroll: true });
+    const items: MenuItem[] = [];
+    if (link) {
+      const ed = this.file.ed;
+      const here = linkAt(this.file.t.runs, at);
+      if (here && (ed.collapsed || ed.start > here.start || ed.end < here.end)) ed.select(here.start, here.end);
+      items.push(
+        { label: 'Edit Link…', run: () => void this.editLink() },
+        { label: 'Open Link', run: () => void followLink(link), title: 'Or Ctrl+click the link' },
+        { label: 'Copy Link', run: () => void navigator.clipboard?.writeText(link).catch(() => {}) },
+        { label: 'Remove Link', run: () => void this.removeLink() },
+      );
+    }
+    if (eq !== null) items.push(...(items.length ? [null] : []), { label: 'Edit Equation…', run: () => void this.editEquation(eq), title: 'Change it in the equation window (or double-click it)' });
+    showContextMenu(e.clientX, e.clientY, items, { run: () => {} });
+  }
+
+  /** Why an equation can't go at `at` (it goes in text of the SI's own, never inside a field's words), or null. */
+  private equationBlocked(at: number): string | null {
+    const inside = this.spans.find((s) => s.start < at && at < s.end && !isCustomSrc(s.src));
+    if (!inside) return null;
+    return editableSrc(inside.src)
+      ? `An equation goes in text of the SI’s own, not inside ${this.api.labelOf(inside.src)} (SI Assistant’s fields hold no equations): click at the end of the field’s text, or in text you typed here, and insert it there.`
+      : 'An equation goes in text of the SI’s own: click at the end of a field’s text, or in text you typed here, and insert it there.';
+  }
+
+  /**
+   * Insert ▸ Equation: an equation typed as LaTeX (the equation window Document mode uses), in
+   * the line at the caret. It is text of the SI's own (custom-text.ts keeps its LaTeX), so it is
+   * in the preview, the compiled document and the Word file (as a Word equation).
+   */
+  async insertEquation(): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return false; }
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    const at = f.ed.end;
+    const why = this.equationBlocked(at);
+    if (why) { this.api.flash(why, 9000); return false; }
+    const got = await askEquation({ tex: '', font: this.fontHere(), ok: 'Insert' });
+    this.ta.focus({ preventScroll: true });
+    // (a compile shown meanwhile: the place is looked for again in what shows now)
+    if (!got || !this.file) return false;
+    const g = this.file;
+    const place = g === f ? at : g.ed.end;
+    if (g !== f && this.equationBlocked(place)) { this.api.flash(this.equationBlocked(place)!, 9000); return false; }
+    const id = nextObjectId(g.t);
+    const look = { ...rt.typingStyle(g.t.runs, place, place, {}) } as Record<string, unknown>;
+    for (const k of ['link', 'obj', 'field', 'sub', 'sup']) delete look[k];
+    this.equationHere = place;
+    try {
+      g.ed.update({ ...g.t, objects: { ...g.t.objects, [id]: { kind: 'math', tex: got.tex } }, runs: rt.replaceRange(g.t.runs, place, place, [objectRun(id, look as rt.RunStyle)]) } as DocText, 'Insert equation', place + 1, place + 1);
+    } finally { this.equationHere = null; }
+    return true;
+  }
+
+  /** Change an equation (double-click it, or Edit Equation): its LaTeX in the equation window; one step of Undo. */
+  async editEquation(id: number): Promise<void> {
+    const f = this.file;
+    const o = f?.t.objects[id];
+    if (!f || o?.kind !== 'math') return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    const at = this.objectOffset(id);
+    const span = at !== null ? spanAt(this.spans, at) : null;
+    if (!span || !isCustomSrc(span.src)) { this.api.flash('This equation can’t be changed here.'); return; }
+    const got = await askEquation({ tex: o.tex, font: this.fontHere(), ok: 'Apply' });
+    this.ta.focus({ preventScroll: true });
+    if (!got || got.tex === o.tex || this.file !== f || f.t.objects[id] !== o) return;
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { kind: 'math', tex: got.tex } } } as DocText, 'Change equation');
+    // (written as typing is: the piece with its equations)
+    this.dirty.add(span.src);
+    this.editGen++;
+    clearTimeout(this.writeTimer);
+    await this.writeNow();
+  }
+
+  /** The link the caret is in, selected (with nothing selected); false when there is none and nothing is selected. */
+  private selectLink(): boolean {
+    const ed = this.file?.ed;
+    if (!ed) return false;
+    if (!ed.collapsed) return true;
+    const here = ed.linkHere();
+    if (!here) return false;
+    ed.select(here.start, here.end);
+    return true;
+  }
+
+  /**
+   * Insert ▸ Link (Ctrl+K): the words selected (or the link the caret is in) linked to a web page,
+   * DOI, email address, file or a place in this SI, in the link window Document mode uses. Kept
+   * in the formatting file (preview-format.ts) as a look, so it is a real link in the Word file.
+   */
+  async editLink(): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    if (!this.selectLink()) { this.api.flash('Select the words to link first.'); return false; }
+    const here = f.ed.linkHere();
+    const got = await askLink({ text: null, link: here?.link, places: this.api.linkPlaces?.() ?? [], placeTitle: 'Place in this SI' });
+    this.ta.focus({ preventScroll: true });
+    if (!got || this.file !== f) return false;
+    if ('remove' in got) return this.removeLink();
+    return this.format({ link: got.link, color: LINK_COLOUR, underline: true });
+  }
+
+  /** Remove Link: the links on the words selected (or the link the caret is in) taken off, with their blue and underline. */
+  async removeLink(): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.selectLink() || !this.selectionAny('link')) { this.api.flash('Put the cursor in a link first.'); return false; }
+    const link = this.file.ed.linkHere()?.link ?? '';
+    const done = await this.format('clear', ['link', 'color', 'underline']);
+    // (a mention's or citation's link is the field's: it stays)
+    if (done && link.startsWith('#si_')) this.api.flash('A link Chemweave makes (a mention of a compound, figure or table) stays: change the mention on the SI page.', 7000);
+    return done;
+  }
+
+  /** Open Link: the link the caret is in followed (as Ctrl+click does). */
+  openLink(): boolean {
+    const f = this.file;
+    const l = f ? f.ed.linkHere() : null;
+    if (!l) { this.api.flash('Put the cursor in a link first.'); return false; }
+    void followLink(l.link);
+    return true;
+  }
+
+  /** Go to a bookmark (a link's place, "#si_…") in the text shown; false when it isn't shown. */
+  goToMark(name: string): boolean {
+    const f = this.file;
+    if (!f) return false;
+    const para = bookmarkPara(f.t, name);
+    if (para < 0) return false;
+    const at = paraRange(f.ed.text, para).start;
+    f.ed.setCaret(at);
+    const r = this.view.rangeRects(at, at + 1)[0];
+    if (r) this.view.revealTop(r, 24);
+    this.ta.focus({ preventScroll: true });
+    this.view.redraw();
     return true;
   }
 

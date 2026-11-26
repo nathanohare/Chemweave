@@ -14,7 +14,7 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Watermark } from '../document/document';
-import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
+import { compileSi, compoundBookmark, siMark, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
 import type { FlagChange, SiPreview } from './si-preview';
 import { addFlagComments } from '../si/flag-comments';
 import { mentionPicker, threadCard } from './comment-cards';
@@ -26,7 +26,7 @@ import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/pag
 import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
-import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
+import { CUSTOM_TEXT_FILE, customShown, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
 import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
 import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
@@ -58,6 +58,8 @@ import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Refere
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
+import { askStructureFromName, type ToStructure } from './structure-from-name';
+import type { LinkPlace } from './links-ui';
 import { allWarnings, compoundHrms, hrmsCalc, hrmsSpecies, hrmsTolerance, isDismissed, monoisotopic, outOfTolerance, parseNumber, ID_KEY, ION_LABEL_KEY, printedIonLabel, type SiWarning } from '../si/checks';
 import { FOUND_FROM_KEY, HRMS_DIR, MAX_FILE_BYTES as MAX_REPORT_BYTES, PRINT_KEY, chooseMatch, foundIsFromReport, updateFound, vendorRawKind, type Match, type ReportData } from '../si/ms-reports';
 import { readReportFile } from '../si/report-files';
@@ -134,6 +136,8 @@ export interface SiModeHost {
   openSymbols(): void;
   /** Put text on the clipboard as plain text and HTML. */
   copyRich(text: string, html: string): Promise<void>;
+  /** The app's name reader (Structure from Name or SMILES): a structure for a name, SMILES or CAS RN. */
+  toStructure?: ToStructure;
   /** A structure's systematic name, given only when the name reads back as the same structure. */
   nameStructure(molfile: string): Promise<{ ok: true; name: string } | { ok: false; message: string }>;
   /** The Drawing Style window, for an SI project's style (Project Settings ▸ Structures); null when cancelled. */
@@ -222,6 +226,7 @@ const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another c
 
 /** The ribbon: what each button does is its data-si command. */
 /** Why Home ▸ Paragraph is greyed while typing on the SI page. */
+const SI_PV_REASON = 'Links and equations go in the Live Preview’s text: click where they go there first (the SI page’s fields hold neither; SI Assistant reads them).';
 const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
 
 const RIBBON = `
@@ -262,6 +267,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="new-figure-paste" title="A figure from the copied picture or drawing (ChemDraw or Chemweave drawings stay vector pictures you can draw again)">Paste Picture</button>
         <button data-si="new-figure-compound" title="A figure of a compound's structure, its caption mentioning the compound">Compound…</button>
+        <button data-si="new-figure-name" title="Structure from Name: a figure of the structure for a name, SMILES or CAS RN (a drawing you can draw again), at the end of the Custom section's text">Structure from Name…</button>
       </div>
     </div><div class="rb-label">Figures</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -295,6 +301,10 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Cover Page</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-pv="link" data-ic="link" title="Link (Ctrl+K): the words selected in the Live Preview linked to a web page, DOI, email address or a compound, figure, table or scheme of the SI; a real link in the Word file. Ctrl+click to follow; right-click to edit or remove"><span class="rb-icon">🔗</span>Link</button>
+    </div><div class="rb-label">Links</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-pv="equation" data-ic="equation" title="Equation: an equation typed in LaTeX (x^2, \\frac{a}{b}, \\alpha) at the cursor in the Live Preview, in text of the SI's own; a Word equation in the Word file. Double-click it to change it"><span class="rb-icon">π</span>Equation</button>
       <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
     </div><div class="rb-label">Symbols</div></div>
   </div>
@@ -674,6 +684,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
+        <button data-si="structure-from-name" title="Structure from Name: the selected compound's structure from a name, SMILES or CAS RN (asks before replacing a structure it has); one step of Undo">Structure from Name…</button>
         <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Structure</div></div>
@@ -823,7 +834,7 @@ export class SiMode {
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
-    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint]')) el.disabled = true;
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint], [data-si-pv]')) el.disabled = true;
     siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
@@ -837,7 +848,7 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para], [data-si-pv]')) e.preventDefault(); });
     this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
@@ -846,6 +857,8 @@ export class SiMode {
       if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
       const para = t.closest<HTMLButtonElement>('button[data-si-para]');
       if (para) { void this.paragraph(para.dataset.siPara!); return; }
+      const pvc = t.closest<HTMLButtonElement>('button[data-si-pv]');
+      if (pvc) { void this.previewInsert(pvc.dataset.siPv!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
@@ -1646,7 +1659,7 @@ export class SiMode {
   /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
   private fontState(): void {
     const on = !!this.previewTyped;
-    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) el.disabled = !on;
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-pv]')) el.disabled = !on;
     const pg = this.ribbon.querySelector<HTMLElement>('.si-para-group');
     if (pg) { if (on) pg.removeAttribute('title'); else pg.title = SI_PARA_REASON; }
     const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
@@ -1674,6 +1687,56 @@ export class SiMode {
       case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, true); break;
     }
     pv.input.focus();
+  }
+
+  /** Insert ▸ Link and Insert ▸ Equation, in the Live Preview's text (greyed on the SI page, whose fields hold neither). */
+  private async previewInsert(cmd: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash(SI_PV_REASON, 6000); return; }
+    if (!(await pv.ready())) return;
+    if (cmd === 'link') await pv.editLink();
+    else if (cmd === 'equation') await pv.insertEquation();
+    pv.input.focus();
+  }
+
+  /** The places in the SI a link can go to: each compound (its ID and name) and each figure, table and scheme (its label), by the bookmark the compile puts on it. */
+  private linkPlaces(): LinkPlace[] {
+    const p = this.project;
+    if (!p) return [];
+    const out: LinkPlace[] = [];
+    const cs = p.compounds;
+    if (cs.length) {
+      out.push({ link: '', label: 'Compounds' });
+      for (const c of cs) { const name = compoundName(c); out.push({ link: `#${compoundBookmark(c.id)}`, label: `${this.idOf(c)}${name ? ` ${name.length > 60 ? name.slice(0, 59) + '…' : name}` : ''}`, depth: 1 }); }
+    }
+    const objs = [...this.objLabels].filter(([, l]) => l);
+    if (objs.length) {
+      out.push({ link: '', label: 'Figures, Tables and Schemes' });
+      for (const [id, label] of objs) out.push({ link: `#${siMark(id)}`, label, depth: 1 });
+    }
+    return out;
+  }
+
+  /** A link's place in this SI ("#si_…"): shown in the Live Preview when it is there, else its compound's page chosen; false when it is gone. */
+  goToPlace(link: string): boolean {
+    const p = this.project;
+    if (!p || !link.startsWith('#')) return false;
+    const name = link.slice(1);
+    if (this.preview?.goToMark(name)) return true;
+    const c = p.compounds.find((x) => compoundBookmark(x.id) === name);
+    if (c) { this.go({ kind: 'compound', id: c.id }); return true; }
+    return false;
+  }
+
+  /** A link's place in this SI, named for its tooltip (a compound's ID, a figure's label). */
+  placeName(link: string): string | null {
+    const p = this.project;
+    if (!p || !link.startsWith('#')) return null;
+    const name = link.slice(1);
+    const c = p.compounds.find((x) => compoundBookmark(x.id) === name);
+    if (c) return `Compound ${this.idOf(c)}`;
+    for (const [id, label] of this.objLabels) if (siMark(id) === name) return label;
+    return null;
   }
 
   /** Format Painter (Home ▸ Clipboard): a click paints once, a double-click keeps painting until Esc; pressed again, it stops. */
@@ -2883,7 +2946,7 @@ export class SiMode {
    * A new figure at the end of a Custom section's text, its picture from a file, the drawing
    * tools, the clipboard or a compound (nothing is made when none is given).
    */
-  private async newFigure(s: SiSection, how: 'picture' | 'draw' | 'paste' | 'compound'): Promise<void> {
+  private async newFigure(s: SiSection, how: 'picture' | 'draw' | 'paste' | 'compound' | 'name'): Promise<void> {
     const p = this.project!;
     await this.commitAll();
     const pics = new SiPictures(this.tableHost(s));
@@ -2892,7 +2955,11 @@ export class SiMode {
       if (how === 'picture') rel = await pics.fromFile('Picture for the figure');
       else if (how === 'paste') rel = await pics.fromClipboard();
       else if (how === 'draw') rel = await pics.draw('', 'Figure');
-      else {
+      else if (how === 'name') {
+        // (as Document mode's Structure from Name: a drawing, kept as a picture you can draw again)
+        const contents = await this.fromName('The structure becomes a figure at the end of the section’s text.');
+        if (contents) rel = await pics.fromDrawing(contents);
+      } else {
         const got = await pics.fromCompound();
         if (got) { rel = got.rel; caption = `Structure of **@{${got.id}}**`; }
       }
@@ -4236,6 +4303,7 @@ export class SiMode {
       structureChosen: (id) => this.structureChosen(id),
       structureMenu: (id, x, y) => this.structureMenu(id, x, y),
       editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
+      linkPlaces: () => this.linkPlaces(),
     });
     this.live.view = this.preview.view;
     this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
@@ -4911,7 +4979,7 @@ export class SiMode {
       line.type = 'button';
       line.title = gone ? 'Its page is gone: it prints at the end of the SI. Open the SI’s first page' : 'Open its page';
       line.innerHTML = svg('warn', 13);
-      const text = x.text.replace(/\s+/g, ' ').trim();
+      const text = customShown(x).replace(/\s+/g, ' ').trim();
       line.append(el('span', 'si-warn-text', `${where}${gone ? ' (now at the end of the SI)' : ''}: “${text.length > 80 ? text.slice(0, 79) + '…' : text}”`));
       line.addEventListener('click', () => this.go(c ? { kind: 'compound', id: c.id } : sec ? { kind: 'section', id: sec.id } : k ? { kind: 'scheme', id: k.id } : { kind: 'project' }));
       return line;
@@ -5859,11 +5927,12 @@ export class SiMode {
       case 'new-figure':
       case 'new-figure-draw':
       case 'new-figure-paste':
-      case 'new-figure-compound': {
+      case 'new-figure-compound':
+      case 'new-figure-name': {
         let sec = s;
         while (sec && sec.type !== 'text' && sec.parentId) sec = p.section(sec.parentId);
         if (sec?.type !== 'text') { this.host.flash('Select a Custom section (one with text) for the figure.'); return; }
-        await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound'));
+        await this.newFigure(sec, cmd === 'new-figure' ? 'picture' : (cmd.slice(11) as 'draw' | 'paste' | 'compound' | 'name'));
         return;
       }
       case 'new-gp': {
@@ -6074,6 +6143,10 @@ export class SiMode {
       case 'paste-structure':
         if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteStructure(c);
+        return;
+      case 'structure-from-name':
+        if (!c) { this.host.flash('Select a compound first.'); return; }
+        await this.structureFromName(c);
         return;
       case 'add-nmr-report': {
         if (!c) { this.host.flash('Select a compound first.'); return; }
@@ -6386,6 +6459,30 @@ export class SiMode {
       if (go !== 'go') return;
     }
     const mol = molblock;
+    await this.act(async () => { await p.setStructure(c, mol); this.forgetStructure(c); });
+  }
+
+  /** Structure from Name or SMILES (structure-from-name.ts, as Document mode asks it), in the SI's drawing style; null when cancelled or not read (said). */
+  private fromName(where: string): Promise<Contents | null> {
+    const to = this.host.toStructure;
+    if (!to) { this.host.flash('Structure from Name works in the app (its name reader isn’t here).'); return Promise.resolve(null); }
+    return askStructureFromName({ toStructure: to, style: this.host.siStyle(), flash: (m, ms) => this.host.flash(m, ms), ok: 'Insert', where });
+  }
+
+  /** Home ▸ Structure ▸ Structure from Name: the compound's structure from a name, SMILES or CAS RN (asked before one it has is replaced); one step of Undo. */
+  private async structureFromName(c: SiCompound): Promise<void> {
+    const p = this.project!;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    await this.commitAll();
+    const contents = await this.fromName(`It becomes ${this.idOf(c)}’s structure.`);
+    if (!contents || this.project !== p) return;
+    const m = this.host.molfileOf(contents);
+    if (!m.molblock) { this.host.flash(m.problem ?? 'The structure could not be read as one structure.', 6000); return; }
+    if (p.hasStructure(c)) {
+      const go = await askChoice('Structure from Name', `Replace ${this.idOf(c)}’s structure with this one? (Edit ▸ Undo puts it back.)`, [{ value: 'go', label: 'Replace', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+      if (go !== 'go' || this.project !== p) return;
+    }
+    const mol = m.molblock;
     await this.act(async () => { await p.setStructure(c, mol); this.forgetStructure(c); });
   }
 

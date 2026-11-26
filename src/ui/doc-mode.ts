@@ -52,6 +52,7 @@ import { combineDocuments, compareDocuments } from '../document/compare';
 import { ask } from './ask';
 import { askReviewName } from './review-name';
 import { askEquation } from './equation-dialog';
+import { askStructureFromName } from './structure-from-name';
 import { chooseReferences } from './references-dialog';
 import { citeSuper, formatOf, type Reference } from '../document/references';
 import { replaceInCells, runZotero, type ZoteroCommand, type ZoteroHost, type ZoteroPost } from '../document/zotero-live';
@@ -4689,16 +4690,14 @@ export class DocumentMode {
   private async fromName(): Promise<void> {
     const f = this.file!;
     const spot = this.cellSpot();
-    const got = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
-      ok: 'Insert', note: 'A systematic or common name (ethyl acetate, 4-bromoanisole), a SMILES string or a CAS RN (50-78-2). The structure goes in the text at the cursor.',
+    const contents = await askStructureFromName({
+      toStructure: (t, st) => this.host.toStructure(t, st), style: f.t.drawingStyle, flash: (m, ms) => this.host.flash(m, ms),
+      ok: 'Insert', where: 'The structure goes in the text at the cursor.',
+      closed: () => { this.focus(); return this.file === f; },
     });
-    this.focus();
-    if (!got?.text.trim() || this.file !== f) return;
-    const r = await this.host.toStructure(got.text, f.t.drawingStyle);
-    if ('error' in r) { this.host.flash(r.error, 8000); return; }
+    if (!contents || this.file !== f) return;
     this.backToCell(spot);
-    this.insertObject({ kind: 'drawing', contents: r.contents }, 'Insert structure');
-    if (r.notes.length) this.host.flash(r.notes.join(' '), 8000);
+    this.insertObject({ kind: 'drawing', contents }, 'Insert structure');
   }
 
   private async insertPicture(): Promise<void> {

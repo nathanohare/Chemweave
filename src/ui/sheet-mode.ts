@@ -76,6 +76,7 @@ import { paintCanRun } from './can-run';
 import { SheetCanRun, SHEET_REASONS, structureColumns, CAN_RUN_CHECKS } from '../sheet/can-run';
 import { typedSize, installFontGroups } from './font-group';
 import { stepSize } from '../text/format';
+import { askStructureFromName } from './structure-from-name';
 
 /** The header of each Hammett column (σm and σp show their m and p as italic subscripts). */
 const HAMMETT_HEADS: Record<HammettColumn, string> = { group: 'Group', sigma: 'σ', F: 'F', R: 'R', sm: 'σm', sp: 'σp' };
@@ -1707,15 +1708,12 @@ export class SheetMode {
       return;
     }
     const { r, c } = v.sel.active;
-    const ans = await ask('Structure from Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS RN', value: '' }], {
-      ok: 'Draw', note: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs (50-78-2) are looked up on PubChem.`,
+    const contents = await askStructureFromName({
+      toStructure: (t, st) => this.host.toStructure(t, st), style, flash: (m, ms) => this.host.flash(m, ms),
+      ok: 'Draw', where: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs are looked up on PubChem.`,
     });
-    const text = ans?.text.trim();
-    if (!text) return;
-    const res = await this.host.toStructure(text, style);
-    if ('error' in res) { this.host.flash(res.error, 9000); return; }
-    if (!this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, res.contents), { r1: r, c1: c, r2: r, c2: c })) return;
-    if (res.notes.length) this.host.flash('Note from the name reader: ' + res.notes.join(' '), 9000);
+    if (!contents) return;
+    this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, contents), { r1: r, c1: c, r2: r, c2: c });
   }
 
   /**

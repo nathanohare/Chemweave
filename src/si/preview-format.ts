@@ -11,6 +11,10 @@
 // page), the same words nearest to where they were are formatted; when they are gone, so is the
 // formatting (nothing else is formatted by mistake).
 //
+// A link (Insert ▸ Link in the Live Preview: a web page, a DOI, a place in the SI) is kept here
+// too, as a look (`link`, with the link's blue and underline): SI Assistant's text format has no
+// links of its own, only mentions and citations.
+//
 // Bold, italic, underline, subscript and superscript on a field kept as formatted text (a
 // procedure, a note, an NMR report) go into the field itself instead (preview-edit.ts), so the SI
 // page and SI Assistant show them too.
@@ -27,14 +31,16 @@ import type { SourceBlock, SourceSpan } from './source-map';
 export const PREVIEW_FORMAT_FILE = 'chemweave-preview-format.json';
 
 /** The looks a piece can set. `false` (or '') takes a look off that the text has from elsewhere. */
-export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight'>>;
+export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight' | 'link'>>;
 export type FormatLook = RunFormatLook & ParaLook;
 /** A paragraph's own look (Home ▸ Paragraph): on every paragraph the words are in. */
 export type ParaLook = Partial<Pick<ParaStyle, 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line' | 'pageBreak'>>;
 export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak'];
 const ALIGNS: readonly Justify[] = ['left', 'center', 'right', 'justify'];
 
-export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight'];
+export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight', 'link'];
+/** The newest version of the file this Chemweave reads (2: paragraph looks; 3: links). */
+const FORMAT_VERSION = 3;
 
 export interface PreviewFormat {
   id: string;
@@ -81,14 +87,15 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
     const j = JSON.parse(raw) as { items?: unknown; version?: unknown };
     if (!j || !Array.isArray(j.items)) return null;
     // (written by a newer Chemweave: read as far as it goes, but never written over)
-    if (typeof j.version === 'number' && j.version > 2) return null;
+    if (typeof j.version === 'number' && j.version > FORMAT_VERSION) return null;
     const out: PreviewFormat[] = [];
     for (const x of j.items as Record<string, unknown>[]) {
       if (!x || typeof x.src !== 'string' || typeof x.start !== 'number' || typeof x.end !== 'number' || typeof x.text !== 'string' || !x.look || typeof x.look !== 'object') continue;
       const look: FormatLook = {};
       for (const k of LOOK_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
-        if (typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') (look as Record<string, unknown>)[k] = v;
+        // (a link is where it goes, or '' to take one off)
+        if (k === 'link' ? typeof v === 'string' && v.length <= 4000 : typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') (look as Record<string, unknown>)[k] = v;
       }
       for (const k of PARA_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
@@ -106,8 +113,8 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
 }
 
 export function previewFormatsJson(items: readonly PreviewFormat[]): string {
-  // (version 2: paragraph looks, which a Chemweave reading only version 1 would drop and write over)
-  const version = items.some((f) => PARA_KEYS.some((k) => f.look[k] !== undefined)) ? 2 : 1;
+  // (version 2: paragraph looks, 3: links, which a Chemweave reading only an older version would drop and write over)
+  const version = items.some((f) => f.look.link !== undefined) ? 3 : items.some((f) => PARA_KEYS.some((k) => f.look[k] !== undefined)) ? 2 : 1;
   return JSON.stringify({ version, items }, null, 1) + '\n';
 }
 
