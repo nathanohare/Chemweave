@@ -2,8 +2,8 @@
 // heading formats, the page header and footer, and the drawing style.
 import { describe, expect, it } from 'vitest';
 import { headingFormat, headingNumber, presetOf, storeHeadingFormat, headingExample } from '../src/si/heading-format';
-import { headerFooter, pageOf, pageSettings, storePageSettings } from '../src/si/page-setup';
-import { defaultPage } from '../src/document/document';
+import { headerFooter, pageLookOn, pageOf, pageSettings, storeHyphenation, storePageSettings, storeWatermark } from '../src/si/page-setup';
+import { defaultPage, defaultWatermark, type DocText } from '../src/document/document';
 import { siDefaultStyle, siDrawingStyle, storeSiDrawingStyle } from '../src/si/drawing-style';
 import { ACS_1996 } from '../src/style';
 import type { Json } from '../src/si/project';
@@ -114,5 +114,52 @@ describe('paper and margins', () => {
 
   it('a margin out of range reads as 1 inch', () => {
     expect(pageSettings({ page: { margins: { top: 9, left: 0.1, right: 'x' } } }).margins).toEqual({ top: 1, bottom: 1, left: 1, right: 1 });
+  });
+});
+
+describe('watermark and hyphenation (Layout tab)', () => {
+  it('default to none and off, and nothing is stored for them', () => {
+    const s: Json = {};
+    const v = pageSettings(s);
+    expect(v.watermark).toBeNull();
+    expect(v.hyphenation).toBe(false);
+    storePageSettings(s, { ...v });
+    expect((s.page as Json).watermark).toBeUndefined();
+    expect((s.page as Json).hyphenation).toBeUndefined();
+  });
+
+  it('are stored, kept when Page Setup is saved again, and removed', () => {
+    const s: Json = { page: { number_prefix: 'S', paper: 'a4' } };
+    storeWatermark(s, { ...defaultWatermark('DRAFT'), layout: 'horizontal' });
+    storeHyphenation(s, true);
+    // (the other page settings stay)
+    expect((s.page as Json).paper).toBe('a4');
+    storePageSettings(s, { ...pageSettings(s), header: ['x', '', ''] });
+    const v = pageSettings(s);
+    expect(v.watermark).toEqual({ text: 'DRAFT', font: 'Calibri', color: '#c0c0c0', layout: 'horizontal', faded: true });
+    expect(v.hyphenation).toBe(true);
+    storeWatermark(s, null);
+    storeHyphenation(s, false);
+    expect((s.page as Json).watermark).toBeUndefined();
+    expect((s.page as Json).hyphenation).toBeUndefined();
+    expect((s.page as Json).header).toEqual({ left: 'x', center: '', right: '' });
+  });
+
+  it('read a hand-edited watermark safely: no words is none, a bad color or layout falls back', () => {
+    expect(pageSettings({ page: { watermark: { text: '  ' } } }).watermark).toBeNull();
+    expect(pageSettings({ page: { watermark: 'DRAFT' } }).watermark).toBeNull();
+    expect(pageSettings({ page: { watermark: { text: 'SAMPLE', color: 'red', layout: 'sideways', faded: false } } }).watermark)
+      .toEqual({ text: 'SAMPLE', font: 'Calibri', color: '#c0c0c0', layout: 'diagonal', faded: false });
+    expect(pageSettings({ page: { hyphenation: 'yes' } }).hyphenation).toBe(false);
+  });
+
+  it('go on the compiled document', () => {
+    const doc: Pick<DocText, 'watermark' | 'hyphen'> = {};
+    pageLookOn(doc, { page: { watermark: { text: 'CONFIDENTIAL' }, hyphenation: true } });
+    expect(doc.watermark?.text).toBe('CONFIDENTIAL');
+    expect(doc.hyphen?.auto).toBe(true);
+    pageLookOn(doc, {});
+    expect(doc.watermark).toBeUndefined();
+    expect(doc.hyphen).toBeUndefined();
   });
 });

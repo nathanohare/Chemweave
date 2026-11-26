@@ -38,7 +38,7 @@ import { POINTS } from '../editor/arrange';
 import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 import { inlineIds, inlineMol } from './scheme-edit';
-import { headerFooter, pageOf } from './page-setup';
+import { headerFooter, pageLookOn, pageOf } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
@@ -224,10 +224,15 @@ class Compiler {
   readonly b = new DocBuilder();
   /** Project Settings ▸ Styles ▸ Caption: its alignment and space after win over the captions' own (a figure's own alignment still wins). */
   private captionLook: StyleLooks[string] = {};
-  /** The width of the text (the page's less its margins): what pictures, tables and schemes fit in. */
-  private readonly textW: number = TEXT_W;
-  /** The height of the text (the page's less its margins): no picture is made taller than fits (its caption below it still needs room). */
-  private readonly textH: number = 9 * PT;
+  /** The width and height of the text on an upright page (the page's less its margins). */
+  private readonly uprightW: number = TEXT_W;
+  private readonly uprightH: number = 9 * PT;
+  /** The width of the text (the page's less its margins, on its side on a landscape page): what pictures, tables and schemes fit in. */
+  private get textW(): number { return this.landscape ? this.sidewaysW : this.uprightW; }
+  /** The height of the text: no picture is made taller than fits (its caption below it still needs room). */
+  private get textH(): number { return this.landscape ? this.sidewaysH : this.uprightH; }
+  private get sidewaysW(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.h - p.left - p.right); }
+  private get sidewaysH(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.w - p.top - p.bottom); }
   private tallest(h: number): number { return Math.max(PT, Math.min(h, this.textH - 0.6 * PT)); }
   readonly sources: SourceSpan[] = [];
   readonly blocks: SourceBlock[] = [];
@@ -251,11 +256,13 @@ class Compiler {
   constructor(readonly p: SiProject, readonly host: CompileHost, words: Set<string>, styleLooks: StyleLooks = {}) {
     // Project Settings ▸ Page: the paper and margins
     this.b.doc.page = pageOf(p.settings, this.b.doc.page);
+    // Layout ▸ Watermark and Hyphenation
+    pageLookOn(this.b.doc, p.settings);
     // Project Settings ▸ Styles, before the SI's own styles are made from Normal and the headings (and again after: si-styles.ts)
     applyStyleLooks(this.b.doc.styles, styleLooks);
     this.captionLook = styleLooks.Caption ?? {};
-    this.textW = Math.max(2 * PT, this.b.doc.page.w - this.b.doc.page.left - this.b.doc.page.right);
-    this.textH = Math.max(2 * PT, this.b.doc.page.h - this.b.doc.page.top - this.b.doc.page.bottom);
+    this.uprightW = Math.max(2 * PT, this.b.doc.page.w - this.b.doc.page.left - this.b.doc.page.right);
+    this.uprightH = Math.max(2 * PT, this.b.doc.page.h - this.b.doc.page.top - this.b.doc.page.bottom);
     this.styles = this.b.doc.styles;
     this.report = p.idReport();
     this.labels = new Labels(labelRules(p.settings));
@@ -312,6 +319,8 @@ class Compiler {
   private orient(o: 'portrait' | 'landscape'): void {
     if ((o === 'landscape') === this.landscape) return;
     this.landscape = o === 'landscape';
+    // (turned and turned back with no paragraph between: no break at all)
+    if (this.pendingSection) { this.pendingSection = null; return; }
     const p = this.b.doc.page;
     const page = this.landscape ? { ...p, w: p.h, h: p.w } : { ...p };
     // (its own header and footer, as the document's but on its first page too: only the cover goes without)
@@ -828,12 +837,28 @@ class Compiler {
       await this.spectraSection(s, level);
       return;
     }
+    // Layout ▸ Orientation (Chemweave's) turns the section's pages, and Breaks ▸ Next Page (SI
+    // Assistant's page_flow.new_page) starts it on a new page; the pages after it turn back
+    const was = this.landscape;
+    // (a sub-section without its own orientation follows its section's)
+    const landscape = ownOrientation(s) ? ownOrientation(s) === 'landscape' : was;
+    if (landscape !== was) this.orient(landscape ? 'landscape' : 'portrait');
+    else if (startsNewPage(s.data) && (!this.preview || this.whole)) this.b.pendingBreak = true;
+    await this.sectionBody(s, level, landscape);
+    if (this.landscape !== was) this.orient(was ? 'landscape' : 'portrait');
+  }
+
+  private async sectionBody(s: SiSection, level: number, landscape: boolean): Promise<void> {
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
       await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true, sectionSrc(s.id));
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
-    for (const child of s.children) await this.section(child, level + 1);
+    for (const child of s.children) {
+      // (this section's pages again after a sub-section that turned them: the Spectra section ends upright)
+      if (this.landscape !== landscape) this.orient(landscape ? 'landscape' : 'portrait');
+      await this.section(child, level + 1);
+    }
   }
 
   private async fileSection(s: SiSection, level: number): Promise<void> {
@@ -875,6 +900,8 @@ class Compiler {
   }
 
   private async compoundNow(c: SiCompound, level: number, inScheme: boolean): Promise<void> {
+    // Breaks ▸ Next Page (SI Assistant's page_flow.new_page); not for one compound's page in the Live Preview
+    if (startsNewPage(c.data) && (!this.preview || this.whole)) this.b.pendingBreak = true;
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
     if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
@@ -1326,7 +1353,8 @@ class Compiler {
       this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.lists.hrms), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
       return true;
     };
-    const room = { w: this.textW, h: this.tallest(7.4 * PT) };
+    // (the reports are on upright pages, even after landscape spectra pages)
+    const room = { w: this.uprightW, h: Math.max(PT, Math.min(7.4 * PT, this.uprightH - 0.6 * PT)) };
     for (const c of compounds) {
       const id = displayId(this.report, c.id);
       for (const r of reportItems(c)) {
@@ -1610,3 +1638,30 @@ export async function compileSi(p: SiProject, host: CompileHost, only?: SiPrevie
   return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed, structures: c.structures };
 }
 
+
+/** A section or compound starts on a new page (SI Assistant's "page_flow": {"new_page": true}). */
+export function startsNewPage(data: Json): boolean {
+  // (read as SI Assistant reads it: Python's bool())
+  const v = dict(data.page_flow).new_page;
+  return Array.isArray(v) ? v.length > 0 : v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v;
+}
+
+/** A section's own orientation (Chemweave's "orientation"), or null: it follows its section's (upright at the top). The Spectra section sets its own pages. */
+export function ownOrientation(s: SiSection): 'landscape' | 'portrait' | null {
+  if (s.type === 'spectra') return null;
+  return s.data.orientation === 'landscape' || s.data.orientation === 'portrait' ? s.data.orientation : null;
+}
+
+/** A section's pages are on their side: its own orientation, else its section's (`parentOf` finds that). */
+export function sectionLandscape(s: SiSection, parentOf: (s: SiSection) => SiSection | null): boolean {
+  if (s.type === 'spectra') return false;
+  for (let at: SiSection | null = s; at; at = parentOf(at)) { const o = ownOrientation(at); if (o) return o === 'landscape'; }
+  return false;
+}
+
+/** Start a section or compound on a new page, or not (SI Assistant's "page_flow", its other keys kept). */
+export function setNewPage(data: Json, on: boolean): void {
+  const flow: Json = { ...dict(data.page_flow) };
+  if (on) flow.new_page = true; else delete flow.new_page;
+  if (Object.keys(flow).length) data.page_flow = flow; else delete data.page_flow;
+}

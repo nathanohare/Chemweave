@@ -7,7 +7,7 @@ import { join, relative } from 'node:path';
 import { MemoryFolder } from '../src/si/folder';
 import { SiProject, type Json } from '../src/si/project';
 import { molFacts } from '../src/si/chem';
-import { compileSi, coverSpacing } from '../src/si/compile-doc';
+import { compileSi, coverSpacing, setNewPage, startsNewPage } from '../src/si/compile-doc';
 import { readScene, sceneToDoc } from '../src/io/chem-formats';
 import { ACS_1996 } from '../src/style';
 import { plainText } from '../src/richtext';
@@ -142,5 +142,89 @@ describe('compound titles', () => {
     const i = doc.runs.findIndex((r, k) => r.text === 'S' && doc.runs[k + 1]?.text.startsWith(')-1-Phenylethan'));
     expect(i).toBeGreaterThan(0);
     expect(doc.runs[i]).toMatchObject({ italic: true, bold: true });
+  });
+});
+
+describe('watermark and hyphenation (Layout tab)', () => {
+  it('go on the compiled SI, and are gone when not set', async () => {
+    const f = folder();
+    expect((await compile(f)).watermark).toBeUndefined();
+    put(f, 'project.json', { ...json(f, 'project.json'), page: { watermark: { text: 'DRAFT', layout: 'horizontal' }, hyphenation: true } });
+    const t = await compile(f);
+    expect(t.watermark).toEqual({ text: 'DRAFT', font: 'Calibri', color: '#c0c0c0', layout: 'horizontal', faded: true });
+    expect(t.hyphen?.auto).toBe(true);
+  });
+});
+
+describe('Orientation and Breaks (Layout tab)', () => {
+  const OPT = 'sections/s-c1aa3466_reaction-optimizatio/section.json';
+  const COMPOUND = 'sections/s-972b3c47_synthesis-and-charac/compounds/c-cf3f4417_1-4-methoxyphe/compound.json';
+  /** The paragraph whose text starts with `start`, and its index. */
+  const paraOf = (t: DocText, start: string): number => plainText(t.runs).split('\n').findIndex((l) => l.startsWith(start));
+
+  it('a landscape section turns its pages, and the next section turns back', async () => {
+    const f = folder();
+    put(f, OPT, { ...json(f, OPT), orientation: 'landscape' });
+    const t = await compile(f);
+    const opt = t.paras[paraOf(t, 'Reaction Optimization')];
+    expect(opt?.section?.page && opt.section.page.w > opt.section.page.h).toBe(true);
+    const next = t.paras[paraOf(t, 'Synthesis and Characterization')];
+    expect(next?.section?.page && next.section.page.w < next.section.page.h).toBe(true);
+  });
+
+  it('a compound or section with Next Page starts on a new page (SI Assistant’s page_flow.new_page)', async () => {
+    const f = folder();
+    const before = await compile(f);
+    put(f, COMPOUND, { ...json(f, COMPOUND), page_flow: { new_page: true, keep: 'default' } });
+    put(f, OPT, { ...json(f, OPT), page_flow: { new_page: true } });
+    const t = await compile(f);
+    expect(t.paras[paraOf(t, 'Reaction Optimization')]?.pageBreak).toBe(true);
+    expect(before.paras[paraOf(before, 'Reaction Optimization')]?.pageBreak).toBeFalsy();
+    const breaks = (x: DocText): number => x.paras.filter((p) => p.pageBreak).length;
+    // (the compound's title too: one more page break than the section's alone)
+    expect(breaks(t)).toBe(breaks(before) + 2);
+  });
+});
+
+describe('Orientation of sub-sections and around the Spectra section', () => {
+  /** A project with a Custom section "Wide" holding the sub-section "Inner" (and Inner's orientation `inner`), Wide landscape. */
+  async function nested(inner?: 'portrait' | 'landscape'): Promise<DocText> {
+    const f = folder();
+    const proj = json(f, 'project.json');
+    const tree = [...(proj.section_tree as Json[])];
+    tree.unshift({ id: 's-wide0001', children: [{ id: 's-inner001' }] });
+    put(f, 'project.json', { ...proj, section_tree: tree });
+    put(f, 'sections/s-wide0001_wide/section.json', { id: 's-wide0001', type: 'text', name: 'Wide', orientation: 'landscape' });
+    f.files.set('sections/s-wide0001_wide/content.txt', new TextEncoder().encode('Wide text.'));
+    put(f, 'sections/s-inner001_inner/section.json', { id: 's-inner001', type: 'text', name: 'Inner', ...(inner ? { orientation: inner } : {}) });
+    f.files.set('sections/s-inner001_inner/content.txt', new TextEncoder().encode('Inner text.'));
+    return compile(f);
+  }
+  const at = (t: DocText, start: string) => t.paras[plainText(t.runs).split('\n').findIndex((l) => l.startsWith(start))];
+
+  it('a sub-section without its own orientation follows its section (no break of its own)', async () => {
+    const t = await nested();
+    expect(at(t, 'Wide')?.section?.page.w).toBeGreaterThan(at(t, 'Wide')!.section!.page.h);
+    expect(at(t, 'Inner')?.section).toBeUndefined();
+  });
+
+  it('a portrait sub-section turns upright, and its section turns back after it', async () => {
+    const t = await nested('portrait');
+    const inner = at(t, 'Inner')?.section?.page;
+    expect(inner && inner.w < inner.h).toBe(true);
+  });
+});
+
+describe('startsNewPage reads page_flow as SI Assistant does (Python bool)', () => {
+  it('truthy values start a new page; empty and false ones do not', () => {
+    for (const v of [true, 1, 'yes', [1], { a: 1 }]) expect(startsNewPage({ page_flow: { new_page: v } }), String(v)).toBe(true);
+    for (const v of [false, 0, '', [], {}, null, undefined]) expect(startsNewPage({ page_flow: { new_page: v } }), String(v)).toBe(false);
+  });
+  it('setNewPage keeps page_flow’s other keys', () => {
+    const d: Json = { page_flow: { keep: 'together' } };
+    setNewPage(d, true);
+    expect(d.page_flow).toEqual({ keep: 'together', new_page: true });
+    setNewPage(d, false);
+    expect(d.page_flow).toEqual({ keep: 'together' });
   });
 });

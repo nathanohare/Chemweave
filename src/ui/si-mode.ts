@@ -13,10 +13,11 @@ import { MentionTip } from './si-mention-tip';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
-import { defaultStyles, type DocText } from '../document/document';
-import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
+import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Watermark } from '../document/document';
+import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
 import type { SiPreview } from './si-preview';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
+import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
@@ -427,7 +428,30 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="layout" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
+      <div class="rb-col">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Orientation" data-ic="page-orientation" data-pic="orient" title="Orientation: the pages of the selected section upright (portrait) or on their side (landscape); the pages after it turn back"><select data-si-page="orient">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select></div>
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Breaks: start the selected compound or section on a new page (Next Page), or straight after what comes before it (Continuous)"><select data-si-page="break">
+          <option value="nextPage">Section: Next Page</option>
+          <option value="continuous">Section: Continuous</option>
+        </select></div>
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Hyphenation" data-ic="hyphenation" title="Hyphenation: break words at the ends of lines where English allows, in the whole compiled SI (Live Preview, Word document and PDF)"><select data-si-page="hyphen">
+          <option value="none">None</option>
+          <option value="auto">Automatic</option>
+        </select></div>
+      </div>
     </div><div class="rb-label">Page Setup</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-fly rb-selgal" data-name="Watermark" data-ic="watermark" data-pic="watermark" data-gal="grid" title="Watermark: words across every page of the compiled SI, behind the text (saved as Word's watermark)"><select data-si-page="watermark">
+        <option value="" hidden>None</option>
+        <option value="0">CONFIDENTIAL</option><option value="1">DRAFT</option><option value="2">DO NOT COPY</option><option value="3">SAMPLE</option><option value="4">PRELIMINARY</option><option value="5">NOT FOR DISTRIBUTION</option><option value="6">ASAP</option><option value="7">URGENT</option>
+        <option value="other" hidden>Custom</option>
+        <option value="custom">Custom Watermark…</option>
+        <option value="remove">Remove Watermark</option>
+      </select></div>
+    </div><div class="rb-label">Page Background</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="styles" data-ic="style-set" title="Styles: the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions (Project Settings ▸ Styles)">Styles</button>
@@ -832,6 +856,8 @@ export class SiMode {
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
       if (fw) { const f = this.activeFigure; if (f) void this.setWrap(figureKey(f.id), fw.value as SiWrap | 'inline').then(() => this.figurePlaceState()); return; }
+      const pg = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-page]');
+      if (pg) { void this.pageLook(pg.dataset.siPage!, pg.value); return; }
       const mf = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-ms]');
       if (mf) { void this.msCommand(mf.dataset.siMs!, mf.value); return; }
       const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
@@ -900,6 +926,117 @@ export class SiMode {
   private showRibbonTab(name: string): void {
     for (const b of this.ribbon.querySelectorAll<HTMLElement>('[data-si-tab]')) b.setAttribute('aria-selected', String(b.dataset.siTab === name));
     for (const p of this.ribbon.querySelectorAll<HTMLElement>('[data-si-panel]')) p.hidden = p.dataset.siPanel !== name;
+    if (name === 'layout') this.pageLookState();
+  }
+
+  /** Layout ▸ Hyphenation and Watermark show the project's settings. */
+  private pageLookState(): void {
+    const p = this.project;
+    const v = p ? pageSettings(p.settings) : null;
+    const hy = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="hyphen"]');
+    if (hy) hy.value = v?.hyphenation ? 'auto' : 'none';
+    const wm = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="watermark"]');
+    if (wm) { const at = v?.watermark ? WATERMARKS.indexOf(v.watermark.text) : -1; wm.value = !v?.watermark ? '' : at >= 0 ? String(at) : 'other'; }
+    for (const s of [hy, wm]) if (s) s.disabled = !p;
+    const sec = this.currentSection();
+    const or = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="orient"]');
+    if (or) { or.value = sec && this.landscapeOf(sec) ? 'landscape' : 'portrait'; or.disabled = !sec || sec.type === 'spectra'; }
+    const brk = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="break"]');
+    const item = this.flowItem();
+    if (brk) { brk.value = item && startsNewPage(item.data) ? 'nextPage' : 'continuous'; brk.disabled = !item; }
+  }
+
+  /** What Breaks sets: the compound picked, else the section picked (not the Spectra section, whose pages are its own). */
+  private flowItem(): SiCompound | SiSection | null {
+    const c = this.currentCompound();
+    if (c) return c;
+    // (a scheme page's own start isn't set here: not its section's either)
+    if (this.pick.kind === 'scheme') return null;
+    const s = this.currentSection();
+    return s && s.type !== 'spectra' ? s : null;
+  }
+
+  /** A section's pages are on their side: its own orientation or its section's. */
+  private landscapeOf(s: SiSection): boolean {
+    const p = this.project;
+    return sectionLandscape(s, (x) => { try { return x.parentId && p ? p.section(x.parentId) : null; } catch { return null; } });
+  }
+
+  /** Layout ▸ Orientation (the section picked) or Breaks (the compound or section picked), in one step of Undo. */
+  private async sectionPageLook(what: 'orient' | 'break', v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (what === 'orient') {
+      const sec = this.currentSection();
+      const on = v === 'landscape';
+      if (!sec || sec.type === 'spectra') { this.host.flash(sec ? 'The Spectra section sets its own pages (each spectrum’s Orientation).' : 'Select a section first.'); this.pageLookState(); return; }
+      if (on === this.landscapeOf(sec)) { this.pageLookState(); return; }
+      const before = sec.data.orientation;
+      // (the same as its section's: it just follows it again; else its own)
+      const parent = ((): SiSection | null => { try { return sec.parentId ? p.section(sec.parentId) : null; } catch { return null; } })();
+      const follows = on === (parent ? this.landscapeOf(parent) : false);
+      await this.act(async () => {
+        if (follows) delete sec.data.orientation; else sec.data.orientation = on ? 'landscape' : 'portrait';
+        try { await p.saveSection(sec); } catch (e) { if (before === undefined) delete sec.data.orientation; else sec.data.orientation = before; throw e; }
+      }, false, undefined, undefined, on ? 'Landscape' : 'Portrait');
+    } else {
+      const item = this.flowItem();
+      const on = v === 'nextPage';
+      if (!item) { this.host.flash('Select a compound or section first.'); this.pageLookState(); return; }
+      if (on === startsNewPage(item.data)) { this.pageLookState(); return; }
+      const before = item.data.page_flow;
+      await this.act(async () => {
+        setNewPage(item.data, on);
+        try { await ('kind' in item ? p.saveCompound(item) : p.saveSection(item)); } catch (e) { if (before === undefined) delete item.data.page_flow; else item.data.page_flow = before; throw e; }
+      }, false, undefined, undefined, on ? 'Section Break' : 'Remove Section Break');
+    }
+    this.pageLookState();
+  }
+
+  /** Layout ▸ Hyphenation or Watermark: the project's page settings, in one step of Undo; the Live Preview shows it. */
+  private async pageLook(what: string, v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.pageLookState(); return; }
+    const was = pageSettings(p.settings);
+    let label = '';
+    let change: (() => void) | null = null;
+    if (what === 'hyphen') {
+      const on = v === 'auto';
+      if (on !== was.hyphenation) { label = 'Hyphenation'; change = () => storeHyphenation(p.settings, on); }
+    } else if (what === 'watermark') {
+      let w: Watermark | null | undefined;
+      if (v === 'remove') w = null;
+      else if (v === 'custom') {
+        const at = was.watermark ?? defaultWatermark();
+        this.pageLookState();
+        const got = await ask('Watermark', [
+          { name: 'text', label: 'Text', value: at.text, suggestions: WATERMARKS },
+          { name: 'font', label: 'Font', value: at.font, suggestions: ['Calibri', 'Arial', 'Times New Roman', 'Inter', 'IBM Plex Sans'] },
+          { name: 'color', label: 'Color', value: at.color, type: 'color' },
+          { name: 'layout', label: 'Layout', value: at.layout, options: [{ value: 'diagonal', label: 'Diagonal' }, { value: 'horizontal', label: 'Horizontal' }] },
+          { name: 'faded', label: 'Semitransparent', value: String(at.faded), type: 'checkbox' },
+        ], { ok: 'Apply', note: 'Words across every page of the compiled SI, behind the text. Saved in the Word document as Word’s own watermark.' });
+        if (!got || this.project !== p) return;
+        // (it may have turned read-only while the box was open)
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+        const text = got.text.trim();
+        w = text ? { text, font: got.font.trim() || 'Calibri', color: got.color || '#c0c0c0', layout: got.layout === 'horizontal' ? 'horizontal' : 'diagonal', faded: got.faded === 'true' } : null;
+      } else if (v !== '' && WATERMARKS[Number(v)] !== undefined) w = { ...(was.watermark ?? defaultWatermark()), text: WATERMARKS[Number(v)] };
+      // (a choice that changes nothing writes nothing)
+      if (w !== undefined && JSON.stringify(w) !== JSON.stringify(was.watermark)) {
+        const to = w;
+        label = to ? 'Watermark' : 'Remove Watermark';
+        change = () => storeWatermark(p.settings, to);
+      }
+    }
+    if (what === 'orient' || what === 'break') { await this.sectionPageLook(what, v); return; }
+    if (!change) { this.pageLookState(); return; }
+    const f = change;
+    const before = p.settings.page;
+    // (a save that fails puts the settings back, so the Live Preview doesn't show what wasn't saved)
+    await this.act(async () => { f(); try { await p.saveSettings(); } catch (e) { p.settings.page = before; if (before === undefined) delete p.settings.page; throw e; } }, false, undefined, undefined, label);
+    this.pageLookState();
   }
 
   /** A table's cell picked (or none): the Table Layout tab shows (or goes), with that table's state. */
@@ -4708,7 +4845,7 @@ export class SiMode {
    * after another, each written before the next starts, so two saves of one file can't cross.
    * `only`: the change is to this compound's values alone (the other compounds aren't checked again).
    */
-  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox): Promise<void> {
+  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox, label = 'Edit'): Promise<void> {
     const p = this.project;
     if (!p) return Promise.resolve();
     const k = this.kept(p);
@@ -4718,7 +4855,7 @@ export class SiMode {
       let failed = false;
       try {
         if (p.revision !== rev) throw new SiProjectError(READ_AGAIN);
-        await (j ? j.step('Edit', f) : f());
+        await (j ? j.step(label, f) : f());
       } catch (e) {
         failed = true;
         this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
