@@ -208,6 +208,7 @@ export class SiFrontPage {
     // ---- the table of contents
     const toc = el('div', 'si-card');
     const th = el('h3', 'si-sub', 'Table of contents');
+    th.dataset.siToc = '';
     addInfo(th, 'On the page after the cover, with page numbers (S1, S2…).');
     toc.append(th);
     const tg = el('div', 'si-front-grid');

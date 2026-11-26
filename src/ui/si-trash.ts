@@ -1,4 +1,4 @@
-// Home ▸ Trash in the SI Project tab: the project's Trash (its trash/ folder, shared with Chem SI
+// Project ▸ Trash in the SI Project tab: the project's Trash (its trash/ folder, shared with Chem SI
 // Assistant), newest first: what each item was, where it came from, when and by whom it was
 // deleted. Restore puts the selected item back; Delete removes it for good; Empty Trash deletes
 // everything (both ask first). Items Chemweave can't put back say so, and SI Assistant restores them.

@@ -1919,7 +1919,7 @@ body.ribbon-collapsed .ribbon > .rb-panel { display: none; }
 body.ribbon-collapsed .ribbon > .rb-tabs [role='tab'][aria-selected='true'] { background: transparent; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-panel:not([hidden]) { display: flex; position: absolute; top: 100%; left: 0; right: 0; z-index: 45; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='true'] { background: var(--panel); color: var(--accent); text-decoration: none; }
-.doc-ribbon .rb-col > button { align-self: flex-start; }
+.doc-ribbon .rb-col > button, .si-ribbon .rb-col > button { align-self: flex-start; }
 .ribbon input.rb-text { font: var(--fs-sm) var(--ui-font); padding: 2px 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); }
 .ribbon input.rb-font { width: 150px; }
 .ribbon input.rb-num { width: 48px; }
@@ -5069,6 +5069,11 @@ body.si-mode.floating-drawing #canvas-host { display: block; }
 body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 #si-pane { grid-area: host; position: relative; display: grid; grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) var(--si-live-w, 400px); min-width: 0; min-height: 0; background: var(--surround); }
 #si-pane.si-live-off { grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) 22px; }
+/* View ▸ Navigation Pane off: the list of sections and compounds hidden, the page and the preview wider */
+#si-pane.si-tree-off { grid-template-columns: 0 minmax(0, 1fr) var(--si-live-w, 400px); }
+#si-pane.si-tree-off.si-live-off { grid-template-columns: 0 minmax(0, 1fr) 22px; }
+#si-pane.si-tree-off > .si-tree { visibility: hidden; overflow: hidden; padding: 0; border: 0; }
+#si-pane.si-tree-off > .si-tree-grip { display: none; }
 /* the border between the tree and the page: drag it to change the tree's width */
 .si-tree-grip { position: absolute; top: 0; bottom: 0; left: calc(var(--si-tree-w, 260px) - 3px); width: 6px; cursor: col-resize; z-index: 3; }
 .si-tree-grip:hover, .si-tree-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
@@ -5137,9 +5142,9 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-st.warn { color: var(--warn); }
 .si-st.flag { color: var(--slow); }
 
-.si-page { overflow: auto; padding: 10px 12px 24px; }
+.si-page { overflow: auto; padding: 5px 6px 12px; }
 .si-sheet { margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; }
+.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); }
 .si-title { margin: 0 0 6px; font-size: var(--fs-lg, 15px); font-weight: 600; }
 .si-sub { margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; text-transform: none; }
 .si-note { margin: 0; font-size: var(--fs-sm); }

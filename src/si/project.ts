@@ -500,7 +500,7 @@ export class SiProject {
 
   /** A page or section in the Trash is not saved again (its folder would be made again, with only that file in it). */
   private checkThere(x: object, name: string): void {
-    if (this.gone.has(x)) throw new SiProjectError(`“${name}” is in the project’s Trash, so the change to it was not saved. Restore it from the Trash (Home ▸ Trash) to change it.`);
+    if (this.gone.has(x)) throw new SiProjectError(`“${name}” is in the project’s Trash, so the change to it was not saved. Restore it from the Trash (Project ▸ Trash) to change it.`);
   }
 
   /**

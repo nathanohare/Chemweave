@@ -11,6 +11,7 @@
 
 import { IBEAM } from '../editor/cursors';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
+import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
@@ -53,6 +54,8 @@ export interface SiPreviewHost {
   structureChosen(key: string | null): void;
   /** Right-click on a compound's structure or a figure (picked first): its menu at the pointer. */
   structureMenu(key: string, x: number, y: number): void;
+  /** Double-click on a compound's structure: the drawing tools open on it. */
+  editStructure(key: string): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
@@ -221,6 +224,7 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    this.findAgain();
     v.redraw();
   }
 
@@ -474,7 +478,7 @@ export class SiPreview {
     return {
       selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
-      squiggles: [], picked, found: [], framed: null,
+      squiggles: [], picked, found: this.finder?.open ? this.finder.hits : [], framed: null,
       marks,
     };
   }
@@ -539,6 +543,7 @@ export class SiPreview {
     }
     this.caretOn = true;
     this.placeInput();
+    if (this.finder?.open) { if (kind === 'text') this.findAgain(); else this.finder.showCount(); }
     this.view.redraw();
   }
 
@@ -709,7 +714,8 @@ export class SiPreview {
       // between pages: the white space hidden, or shown again (Word's double-click)
       const space = this.spaceAt(e);
       if (space) { e.preventDefault(); this.setHideSpace(space === 'hide', e.clientY); this.hoverSpace(e); return; }
-      if (this.structureUnder(e)) return;
+      const ref = this.structureUnder(e);
+      if (ref) { e.preventDefault(); this.api.editStructure(ref.key); return; }
       const at = this.offsetAt(e);
       if (at !== null) this.file?.ed.selectWord(at);
     });
@@ -923,7 +929,7 @@ export class SiPreview {
     if (this.pickedStructure && !e.altKey) {
       const k = e.key.toLowerCase();
       if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
-      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'Double-click a compound’s structure to change it; here you can also change where it goes (Picture Format).'));
       if (e.key === 'Enter' || (ctrl && (k === 'v' || k === 'x'))) return run(() => this.api.flash(PICKED_TYPING));
       if (moves[e.key]) return run(() => { const at = this.pickedAt(); this.unpickStructure(); if (at !== null) ed.setCaret(at); ed.move(moves[e.key], shift); });
       if (ctrl && k === 'a') this.unpickStructure();
@@ -943,6 +949,7 @@ export class SiPreview {
       if (k === 'z' && !shift) return run(() => void this.flush().then(() => this.api.undo(false)));
       if (k === 'y' || (k === 'z' && shift)) return run(() => void this.flush().then(() => this.api.undo(true)));
       if (k === 'a') return run(() => ed.selectAll());
+      if (k === 'f' && !shift) return run(() => this.showFind());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
       if (k === 'b' || k === 'i' || k === 'u') return run(() => this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.'));
@@ -992,5 +999,105 @@ export class SiPreview {
     const sel = ed.collapsed ? '' : ed.text.slice(ed.start, ed.end);
     if (this.ta.value !== sel) this.ta.value = sel;
     this.ta.setSelectionRange(0, sel.length);
+  }
+
+  // ---------------------------------------------------------------- the ribbon's commands
+
+  /** Find (Ctrl+F): Document mode's Find box over the preview, finding only (a field is changed by typing into it). */
+  private finder: DocFind | null = null;
+
+  showFind(): void {
+    if (!this.file) return;
+    if (!this.finder) {
+      this.finder = new DocFind(this.host, {
+        file: () => this.file,
+        focus: () => this.ta.focus(),
+        flash: (m, ms) => this.api.flash(m, ms),
+        redraw: () => { this.placeInput(); this.view.redraw(); },
+        found: () => this.foundShown(),
+        // (replacing would write into many fields at once, past the typing guard: not here)
+      }, { findOnly: true });
+    }
+    this.finder.show(false);
+  }
+
+  /** While the text changes under an open Find box: its places looked for again (nothing is moved into view). */
+  private findAgain(): void {
+    if (this.finder?.open) this.finder.refresh();
+  }
+
+  /** The place found and selected: in view, and its page chosen in the list. */
+  private foundShown(): void {
+    const ed = this.file?.ed;
+    if (ed && !ed.collapsed && this.finder?.open) {
+      const r = this.view.rangeRects(ed.start, ed.end)[0];
+      if (r) this.view.reveal(r, 60);
+      const b = blockAt(this.blocks, ed.start);
+      if (b && b.node !== this.focusNode) this.api.pick(b.node);
+    }
+    this.placeInput();
+    this.view.redraw();
+  }
+
+  /** Select All in the preview. */
+  selectAll(): void {
+    this.file?.ed.selectAll();
+    this.ta.focus();
+  }
+
+  /** Copy or cut the selection (the ribbon's Copy and Cut): as Ctrl+C and Ctrl+X do. */
+  copyOut(cut: boolean): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    this.ta.focus();
+    this.syncInput();
+    return document.execCommand(cut ? 'cut' : 'copy');
+  }
+
+  /** Paste plain text at the caret (the ribbon's Paste), as Ctrl+V does. */
+  pasteText(text: string): void {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    this.ta.focus();
+    ed.pastePlain(text);
+  }
+
+  /** Show/Hide ¶ in the preview. */
+  get showMarks(): boolean { return this.view.showMarks; }
+  set showMarks(on: boolean) { this.view.showMarks = on; this.view.redraw(); }
+
+  /** Multiple Pages: two pages in each row (or one). */
+  get multiplePages(): boolean { return this.view.perRow > 1; }
+  set multiplePages(on: boolean) {
+    const v = this.view;
+    const page = v.currentPage();
+    v.perRow = on ? 2 : 1;
+    v.sizeSpace();
+    if (on) v.fitPages(); else v.fitWidth();
+    v.scrollToPage(page);
+    v.redraw();
+  }
+
+  /** The number of pages shown. */
+  get pageCount(): number { return this.file?.layout().pages.length ?? 0; }
+
+  /** The page whose printed number is `label` ("12", "iv"; an "S" before it is left out), from 0; -1 for none. */
+  pageIndexOf(label: string): number {
+    const pages = this.file?.layout().pages ?? [];
+    const want = label.trim().replace(/^S(?=\d)/i, '').toLowerCase();
+    if (!want) return -1;
+    const i = pages.findIndex((p) => (p.num ?? (p.n !== undefined ? String(p.n) : '')).toLowerCase() === want);
+    if (i >= 0) return i;
+    // (pages without printed numbers: counted from the first)
+    const n = Number(want);
+    return pages.every((p) => p.n === undefined && !p.num) && Number.isInteger(n) && n >= 1 && n <= pages.length ? n - 1 : -1;
+  }
+
+  /** Go To the page at `index` (from 0). */
+  goToPage(index: number): void {
+    this.userScrolled();
+    this.view.scrollToPage(index);
+    this.view.redraw();
   }
 }

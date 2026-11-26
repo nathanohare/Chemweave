@@ -9987,7 +9987,7 @@ async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): P
   return got === 'save-as' ? saveSiFileAs(tab) : got;
 }
 
-/** Home ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
+/** Project ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
 async function reloadSiFile(p: SiProjectT): Promise<void> {
   const tab = siTabOf(p);
   const st = siFileStates.get(p);
