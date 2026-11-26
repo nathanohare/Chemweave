@@ -326,7 +326,11 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    // (the card looked at stays the same flag's: the comments are numbered again by each compile)
+    const looked = this.activeFlag;
     this.flagCards = s.flags ?? { anchors: new Map(), labels: new Map() };
+    this.comments.active = null;
+    if (looked) for (const [id, a] of this.flagCards.anchors) if (a === looked) this.comments.active = id;
     this.findAgain();
     v.redraw();
     this.comments.update();

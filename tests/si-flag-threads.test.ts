@@ -30,6 +30,8 @@ describe('mentions', () => {
     expect(mentionsIn('@Alex, see this', people)).toEqual(['Alex']);
     expect(mentionsIn('mail alex@example.com or @Alexander', people)).toEqual([]);
     expect(mentionRanges('Hi @Alex Example!', people)).toEqual([[3, 16]]);
+    // (an address with an accented letter before the @ is not a mention either)
+    expect(mentionsIn('josé@Alex', people)).toEqual([]);
   });
 });
 
@@ -114,6 +116,27 @@ describe('flag threads in a project', () => {
     expect(p.flagFileUnread).toBe(true);
     await expect(p.replyToFlag(compoundAnchor(p.compounds[0].id, 'yield'), 'x')).rejects.toThrow(/can’t be read/);
     expect(new TextDecoder().decode(f.files.get(FLAGS_FILE))).toBe('{half synced');
+  });
+
+  it('flagging a field again after its flag was resolved keeps the resolved one, with its replies, apart', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    const c = p.compounds[0];
+    const a = compoundAnchor(c.id, 'yield');
+    await p.setFlag(c, 'yield', true, 'FIRST');
+    await p.replyToFlag(a, 'checked');
+    await p.resolveFlag(a, true);
+    await p.setFlag(c, 'yield', true, 'SECOND');
+    const all = p.allFlags();
+    expect(all.map((x) => [x.flag.comment, x.resolved, x.thread.replies.map((r) => r.text)])).toEqual([['SECOND', false, []], ['FIRST', true, ['checked']]]);
+    expect(all[1].anchor).toMatch(/^n:/);
+    // (resolving the second leaves the first as it was)
+    await p.resolveFlag(a, true);
+    expect(p.allFlags().map((x) => [x.flag.comment, x.resolved]).sort()).toEqual([['FIRST', true], ['SECOND', true]]);
+    // (the Dashboard's and the tree's counts see a flag left in the Live Preview)
+    await p.addFlagNote({ compound: c.id, field: 'rf' }, 'one', true);
+    await p.addFlagNote({ compound: c.id, field: 'rf' }, 'two', true);
+    expect(p.openFlagsByPlace().get(`${c.id}/rf`)?.map((x) => x.flag.comment)).toEqual(['one', 'two']);
   });
 
   it('taking a flag off (the SI page\u2019s flag button) deletes its replies too', async () => {

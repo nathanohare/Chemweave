@@ -5,6 +5,7 @@
 
 import { cleanNoteRuns, initials, noteRuns, shortDate, type CommentNote, type CommentThread, type NoteRun } from '../document/comments';
 import { RichInput } from './rich-input';
+import { mentionRanges } from '../si/flag-threads';
 import type { RunLook } from '../sheet/rich-text';
 
 export interface ThreadActions {
@@ -135,7 +136,10 @@ export function mentionPicker(ta: HTMLTextAreaElement, people: readonly string[]
   const close = (): void => { list.hidden = true; items = []; from = -1; };
   const show = (): void => {
     const got = query();
-    items = got ? people.filter((n) => n.toLowerCase().startsWith(got.q.toLowerCase()) && n.toLowerCase() !== got.q.toLowerCase()).slice(0, 6) : [];
+    // (a name typed in full comes first, so Enter keeps it rather than a longer one)
+    const q = got?.q.toLowerCase() ?? '';
+    items = got ? people.filter((n) => n.toLowerCase().startsWith(q)).sort((a, b) => Number(b.toLowerCase() === q) - Number(a.toLowerCase() === q)).slice(0, 6) : [];
+    if (items.length === 1 && items[0].toLowerCase() === q) items = [];
     if (!got || !items.length) { close(); return; }
     from = got.from;
     at = Math.min(at, items.length - 1);
@@ -170,15 +174,10 @@ export function mentionPicker(ta: HTMLTextAreaElement, people: readonly string[]
 
 /** The text with its @mentions of `people` marked. */
 function withMentions(p: HTMLElement, text: string, people: readonly string[]): void {
-  const names = [...people].sort((a, b) => b.length - a.length);
   let last = 0;
-  for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (i < last || (i > 0 && /[\w.]/.test(text[i - 1]))) continue;
-    const rest = text.slice(i + 1).toLowerCase();
-    const who = names.find((n) => rest.startsWith(n.toLowerCase()) && !/[\p{L}\p{N}]/u.test(rest[n.length] ?? ''));
-    if (!who) continue;
-    p.append(text.slice(last, i), el('span', 'cmt-mention', text.slice(i, i + 1 + who.length)));
-    last = i + 1 + who.length;
+  for (const [a, b] of mentionRanges(text, people)) {
+    p.append(text.slice(last, a), el('span', 'cmt-mention', text.slice(a, b)));
+    last = b;
   }
   p.append(text.slice(last));
 }

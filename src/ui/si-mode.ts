@@ -17,7 +17,6 @@ import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Waterma
 import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
 import type { FlagChange, SiPreview } from './si-preview';
 import { addFlagComments } from '../si/flag-comments';
-import { compoundAnchor } from '../si/flag-threads';
 import { mentionPicker, threadCard } from './comment-cards';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
@@ -973,18 +972,24 @@ export class SiMode {
 
   /** Review ▸ Show Resolved: resolved flags and comments show as grayed cards too (remembered while Chemweave runs). */
   static showResolved = false;
+  /** A comment just added in the Live Preview, whose card opens when the preview shows it. */
+  private pendingFlag: string | null = null;
+  /** The field flag button whose popover is open, and what closes it (a second click closes it). */
+  private flagPop: { at: HTMLElement; close: () => void } | null = null;
 
   /** The cards of a field's flags and comments, under its flag button: reply, resolve or delete there. */
-  private flagPopover(at: HTMLElement, anchors: string[]): void {
+  private flagPopover(at: HTMLElement, anchors: string[], on: { compound: string; field: string }): void {
     const p = this.project;
     if (!p) return;
-    document.querySelector('.si-flag-pop')?.remove();
+    const was = this.flagPop;
+    was?.close();
+    if (was?.at === at) return;
     const pop = el('div', 'si-flag-pop');
     pop.setAttribute('role', 'dialog');
     pop.setAttribute('aria-label', 'Flags and comments');
     const people = p.people;
-    const close = (): void => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc, true); };
-    const outside = (e: MouseEvent): void => { if (!pop.contains(e.target as Node) && e.target !== at) close(); };
+    const close = (): void => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc, true); if (this.flagPop?.close === close) this.flagPop = null; };
+    const outside = (e: MouseEvent): void => { if (!pop.contains(e.target as Node) && !at.contains(e.target as Node)) close(); };
     const esc = (e: KeyboardEvent): void => { if (e.key === 'Escape' && !(e.target as HTMLElement).closest?.('.cmt-input')) { close(); at.focus(); } };
     for (const fl of p.allFlags().filter((x) => anchors.includes(x.anchor))) {
       const iso = (d: string): string => (d && !Number.isNaN(Date.parse(d)) ? new Date(d).toISOString() : '');
@@ -1002,12 +1007,36 @@ export class SiMode {
         },
       }));
     }
+    // (another flag or comment on the same field)
+    const more = el('button', 'si-flag-more', 'New Comment…');
+    more.type = 'button';
+    more.title = 'Another flag or comment on this field';
+    more.addEventListener('click', () => {
+      close();
+      void (async () => {
+        const asking = ask('New Comment', [
+          { name: 'text', label: 'Comment', value: '', type: 'textarea' },
+          { name: 'flag', label: 'Flag for checking', value: 'true', type: 'checkbox', help: 'A flag shows on the SI page’s field and is counted until it is resolved; a comment is a note only.' },
+        ], { ok: 'Add Comment' });
+        const box = [...document.querySelectorAll<HTMLTextAreaElement>('dialog.ask textarea')].pop();
+        if (box) mentionPicker(box, people);
+        const got = await asking;
+        if (!got || !got.text.trim() || this.project !== p) return;
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+        await this.act(() => p.addFlagNote(on, got.text.trim(), got.flag === 'true'), true, undefined, undefined, 'New Comment');
+        this.liveSoon(0);
+      })().catch((e: unknown) => this.host.flash(e instanceof Error ? e.message : String(e), 8000));
+    });
+    pop.append(more);
     document.body.append(pop);
     const r = at.getBoundingClientRect();
     pop.style.top = `${Math.min(window.innerHeight - pop.offsetHeight - 8, r.bottom + 4)}px`;
     pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
     document.addEventListener('mousedown', outside, true);
     document.addEventListener('keydown', esc, true);
+    this.flagPop = { at, close };
+    // (into the window, for the keyboard)
+    pop.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
   }
 
   /** Review ▸ Show Comments and Show Resolved show whether they're on. */
@@ -1028,7 +1057,12 @@ export class SiMode {
     if (!p) return;
     if (!pv || !this.liveOn) { this.host.flash('Turn on View ▸ Live Preview and click in its text: a comment goes on the words it\'s about.'); return; }
     if (!(await pv.ready())) return;
-    const on = pv.commentTarget();
+    let on = pv.commentTarget();
+    // (text of a compound's that has no field row on the SI page, such as its own typed text: on its name)
+    if (on && 'compound' in on && on.field !== 'name') {
+      const field = on.field;
+      try { if (!fieldsOf(p.compound(on.compound)).some((e) => fieldDef(e)?.key === field)) on = { compound: on.compound, field: 'name' }; } catch { /* (gone: refused below) */ }
+    }
     if (!on) { this.host.flash('Click in a section’s or a compound’s text first: the cover page and General Information take no comments.'); return; }
     const where = 'compound' in on ? `${(() => { try { return compoundName(p.compound(on.compound)) || displayId(p.idReport(), on.compound); } catch { return 'the compound'; } })()} ▸ ${fieldDef({ key: on.field })?.label ?? on.field}` : (() => { try { return p.section(on.section).name; } catch { return 'the section'; } })();
     const asking = ask('New Comment', [
@@ -1046,8 +1080,7 @@ export class SiMode {
     if (!anchor) return;
     this.liveSoon(0);
     // (its card shown once the preview has it)
-    const shown = (): void => { if (this.preview && this.preview.comments.placed().length) this.preview.showFlag(anchor); };
-    setTimeout(shown, 900);
+    this.pendingFlag = anchor;
   }
 
   /** A change from a flag's card (Live Preview): one step of Undo, named for it; the preview and the SI page show it. */
@@ -2144,7 +2177,8 @@ export class SiMode {
     row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, { title: 'How far along the project is, and every compound’s data at a glance' });
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
-      const flagged = Object.keys(flagsOf(c)).length > 0;
+      // (SI Assistant's flags and the ones left in the Live Preview)
+      const flagged = Object.keys(flagsOf(c)).length > 0 || [...p.openFlagsByPlace()].some(([k, v]) => k.startsWith(`${c.id}/`) && v.some((x) => x.isFlag));
       const active = this.activeWarnings(c);
       const tip = active.map((w) => w.message).join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : active.length ? `<span class="si-st warn" title="${tip}">${svg('warn')}</span>`
@@ -3194,7 +3228,7 @@ export class SiMode {
     flag.type = 'button';
     const f = flagsOf(c)[def.key];
     // (its flags and comments: SI Assistant's flag, and ones left in the Live Preview)
-    const notes = p.allFlags().filter((x) => !x.resolved && (x.anchor === compoundAnchor(c.id, def.key) || x.anchor.startsWith(`n:${c.id}/${def.key}/`)));
+    const notes = p.openFlagsByPlace().get(`${c.id}/${def.key}`) ?? [];
     const flagged = notes.some((x) => x.isFlag);
     flag.innerHTML = svg('flag');
     flag.classList.toggle('on', flagged);
@@ -3202,9 +3236,9 @@ export class SiMode {
     flag.title = notes.length ? `${notes.length === 1 ? (flagged ? `Flagged${f?.by ? ' by ' + f.by : ''}: ${partText(notes[0].flag.comment) || '(no comment)'}` : 'A comment') : `${notes.length} flags and comments`}. Click to see ${notes.length === 1 ? 'it' : 'them'}: reply, resolve or delete.` : 'Flag this field for checking';
     flag.setAttribute('aria-pressed', String(flagged));
     flag.addEventListener('click', async () => {
-      if (notes.length) { this.flagPopover(flag, notes.map((x) => x.anchor)); return; }
+      if (notes.length) { this.flagPopover(flag, notes.map((x) => x.anchor), { compound: c.id, field: def.key }); return; }
       const got = await ask('Flag for Checking', [{ name: 'comment', label: 'What to check', value: '', placeholder: 'e.g. Rf measured in the wrong eluent' }], { ok: 'Flag' });
-      if (got) await this.act(() => p.setFlag(c, def.key, true, got.comment.trim()));
+      if (got) await this.act(() => p.setFlag(c, def.key, true, got.comment.trim()), true, undefined, undefined, 'Flag Field');
     });
     row.append(lab, body, flag);
     if (def.kind === 'parts') this.partsEditor(body, c, def);
@@ -3959,6 +3993,8 @@ export class SiMode {
           why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
         });
         pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key && !stay);
+        // (a comment just added: its card opened, once this compile has it)
+        if (this.pendingFlag && [...flags.anchors.values()].includes(this.pendingFlag)) { pv.showFlag(this.pendingFlag); this.pendingFlag = null; }
         if (!spectra) this.wholeLast = pv.lastPageNumber();
         L.shown = key;
         this.showZoom(!!this.tab);
@@ -5397,10 +5433,13 @@ export class SiMode {
     if (!p) return;
     if (this.compiling) { this.host.flash('The SI is being compiled already.'); return; }
     // (the SI page's flags go in as Word comments only when asked for, each time: they are notes for the authors)
-    const flags = p.allFlags().filter((x) => !x.resolved && x.isFlag).length;
+    const open = p.allFlags().filter((x) => !x.resolved);
+    const flags = open.filter((x) => x.isFlag).length, notes = open.length - flags;
     let flagComments = false;
-    if (flags) {
-      const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI page has ${flags} flag${flags === 1 ? '' : 's'} for checking. Put ${flags === 1 ? 'it' : 'them'} in as comments on the text of ${flags === 1 ? 'its field' : 'their fields'} (who flagged ${flags === 1 ? 'it' : 'them'} and what to check)?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+    if (open.length) {
+      const what = [flags ? `${flags} flag${flags === 1 ? '' : 's'} for checking` : '', notes ? `${notes} comment${notes === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+      const one = open.length === 1;
+      const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI has ${what}. Put ${one ? 'it' : 'them'} in as Word comments on the text ${one ? 'it is' : 'they are'} about, with ${one ? 'its' : 'their'} replies?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');
       if (pick === 'cancel') return;
       flagComments = pick === 'with';
     }

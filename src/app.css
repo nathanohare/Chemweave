@@ -3161,6 +3161,8 @@ dialog.equation-dialog textarea { width: 100%; box-sizing: border-box; font: var
 /* a field's flags and comments, under its flag button on the SI page */
 .si-flag-pop { position: fixed; z-index: 60; width: 280px; max-height: 60vh; overflow-y: auto; display: flex; flex-direction: column; gap: 6px; }
 .si-flag.noted { color: var(--accent); opacity: 1; }
+.si-flag-pop .si-flag-more { align-self: flex-end; font: var(--fs-sm) var(--ui-font); padding: 3px 10px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); cursor: pointer; box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
+.si-flag-pop .si-flag-more:hover { background: var(--accent-soft); }
 
 /* comments on slides: the Comments pane and the markers pinned to the slide */
 .cmt-pane { display: flex; flex-direction: column; gap: 8px; max-height: 60vh; overflow-y: auto; padding: 2px; }

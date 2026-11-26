@@ -123,11 +123,13 @@ export function mentionsIn(text: string, people: readonly string[]): string[] {
 export function mentionRanges(text: string, people: readonly string[]): [number, number][] {
   const names = [...new Set(people.map((p) => p.trim()).filter(Boolean))].sort((a, b) => b.length - a.length);
   const out: [number, number][] = [];
+  let last = 0;
   for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
-    if (i > 0 && /[\w.]/.test(text[i - 1])) continue;
+    // (not an e-mail address, nor inside a mention already found)
+    if (i < last || (i > 0 && /[\p{L}\p{N}_.]/u.test(text[i - 1]))) continue;
     const rest = text.slice(i + 1).toLowerCase();
     const who = names.find((n) => rest.startsWith(n.toLowerCase()) && !/[\p{L}\p{N}]/u.test(rest[n.length] ?? ''));
-    if (who) out.push([i, i + 1 + who.length]);
+    if (who) { out.push([i, i + 1 + who.length]); last = i + 1 + who.length; }
   }
   return out;
 }

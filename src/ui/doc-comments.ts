@@ -52,7 +52,7 @@ export class DocComments {
   /** The comment whose text is open for typing (a new one). */
   private editing: number | null = null;
   private layer: HTMLDivElement;
-  private built: { t: DocText; active: number | null; editing: number | null; shown: boolean; narrow: boolean } | null = null;
+  private built: { sig: string; active: number | null; editing: number | null; shown: boolean; narrow: boolean } | null = null;
   private cards = new Map<number, HTMLElement>();
   /** The other cards in the column (set by the original pictures beside figures). */
   extras: () => ColumnCard[] = () => [];
@@ -115,7 +115,10 @@ export class DocComments {
     this.layer.hidden = !list.length;
     if (!f || !list.length) { this.layer.replaceChildren(); this.cards.clear(); this.built = null; if (extra.length) this.place([], extra); return; }
     const b = this.built;
-    if (!b || b.t !== f.t || b.active !== this.active || b.editing !== this.editing || b.shown !== this.shown || b.narrow !== narrow) {
+    // (rebuilt only when the comments themselves changed, not for each change of the text: a reply
+    // being typed in a card stays while the page is laid out again)
+    const sig = JSON.stringify(list.map((p) => [p.id, p.c, this.h.card?.(p.id)?.label ?? '']));
+    if (!b || b.sig !== sig || b.active !== this.active || b.editing !== this.editing || b.shown !== this.shown || b.narrow !== narrow) {
       this.layer.replaceChildren();
       this.cards.clear();
       for (const p of list) {
@@ -139,7 +142,7 @@ export class DocComments {
         this.cards.set(p.id, card);
         this.layer.append(card);
       }
-      this.built = { t: f.t, active: this.active, editing: this.editing, shown: this.shown, narrow };
+      this.built = { sig, active: this.active, editing: this.editing, shown: this.shown, narrow };
     }
     this.place(list, extra);
   }
