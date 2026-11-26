@@ -338,6 +338,21 @@ describe('a text box in a group whose child coordinates differ from its place', 
     }
   });
 
+  it('running down or up in a flipped group keeps its direction and frame, the frame mirrored (coordinators #70)', async () => {
+    for (const vert of ['vert', 'vert270']) {
+      const box = textBox(`<a:p>${run('Down')}</a:p>`, `<a:bodyPr vert="${vert}" wrap="square" rtlCol="0"/>`, [3048000, 2921000, 2000000, 500000]);
+      const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', '<a:xfrm flipH="1"><a:off x="1000000" y="1000000"/>');
+      const xml = await save(deck(flipped));
+      const sp = [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes('Down'))!;
+      const [x, y, cx, cy] = frameOf(xml, 'Down');
+      const [gx, gy] = groupShift(xml);
+      expect([x + gx, y + gy, cx, cy], vert).toEqual([2000000, 1000000, 2000000, 500000]);
+      // (not turned: reading as it did)
+      expect(sp, vert).not.toMatch(/<a:xfrm[^>]*rot=/);
+      expect(sp, vert).toContain(`vert="${vert}"`);
+    }
+  });
+
   it('in a flipped group in another flipped the same way is back where it started', async () => {
     const g = (inner: string) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
       + '<p:grpSpPr><a:xfrm flipH="1"><a:off x="1000000" y="1000000"/><a:ext cx="3000000" cy="2000000"/><a:chOff x="1000000" y="1000000"/><a:chExt cx="3000000" cy="2000000"/></a:xfrm></p:grpSpPr>'
