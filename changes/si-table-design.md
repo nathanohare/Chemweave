@@ -2,3 +2,4 @@ Added: SI Project: a Table Design tab for SI tables, with Shading and No Shading
 Added: SI Project: Table Layout has Select Table, View Gridlines, Top, Middle and Bottom alignment in cells, Cell Margins, a column Width box, AutoFit Contents, AutoFit Window and Distribute Columns. Each is one step of Undo.
 Fixed: SI Project: column widths typed for a table in Chem SI Assistant are now used in the compiled SI, and stay with their columns when columns are added or deleted.
 Changed: SI Project: Split Cells gives the new cells the merged cell's alignment, text size, shading and the borders of the edges they are on.
+Fixed: Document: a Border Painter drag along several cell edges is one step of Undo, not one step for each edge.

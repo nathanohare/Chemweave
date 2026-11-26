@@ -16,6 +16,7 @@ import { SEPARATOR_NAMES, guessSeparator, splitTable, tableToText, textToTable, 
 import { ask } from './ask';
 import { popupMenu } from './sheet-view';
 import { parseLength, showLength } from './doc-panel';
+import { popupHost } from './popup-host';
 
 export interface DocTablesHost {
   file(): DocFile | null;
@@ -347,6 +348,16 @@ export interface PenControls {
   swatch?: HTMLElement | null;
 }
 
+/** A Borders group's pen controls found in `root`, each by its selector (`sel`: the selector of each part). */
+export function penControlsIn(root: ParentNode, sel: (part: 'style' | 'width' | 'color' | 'swatch') => string): PenControls {
+  return {
+    style: root.querySelector<HTMLSelectElement>(sel('style'))!,
+    width: root.querySelector<HTMLSelectElement>(sel('width'))!,
+    color: root.querySelector<HTMLInputElement>(sel('color'))!,
+    swatch: root.querySelector<HTMLElement>(sel('swatch')),
+  };
+}
+
 /** Fill the pen's line kinds and weights in, and have choosing one set the pen (`done`: after each choice). */
 export function wirePen(c: PenControls, ui: DocTablesUI, done: () => void): void {
   for (const [v, label] of BORDER_STYLES) c.style.append(new Option(label, v));
@@ -369,7 +380,7 @@ export function showPen(c: PenControls, pen: BorderLine): void {
 function placePopup(m: HTMLElement, x: number, y: number): void {
   // where the keys went before (the caret's hidden field, in a table cell): Escape goes back there
   const back = document.activeElement;
-  document.body.append(m);
+  popupHost(back).append(m);
   const r = m.getBoundingClientRect();
   m.style.left = `${Math.max(4, Math.min(x, innerWidth - r.width - 4))}px`;
   m.style.top = `${Math.max(4, Math.min(y, innerHeight - r.height - 4))}px`;

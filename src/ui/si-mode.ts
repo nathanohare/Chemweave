@@ -24,7 +24,7 @@ import { popupHost } from './popup-host';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageOf, pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
-import { DocTablesUI, showPen, wirePen, type PenControls } from './doc-tables-ui';
+import { DocTablesUI, penControlsIn, showPen, wirePen, type PenControls } from './doc-tables-ui';
 import { PT_PER_CM, textWidthOf } from '../si/table-format';
 import { parseLength } from './doc-panel';
 import { siPreviewPrefs } from './mode-prefs';
@@ -1742,8 +1742,7 @@ export class SiMode {
 
   /** Table Design ▸ Borders: the pen's controls. */
   private penControls(): PenControls {
-    const q = (k: string) => this.ribbon.querySelector<HTMLElement>(`[data-si-pen="${k}"]`)!;
-    return { style: q('style') as HTMLSelectElement, width: q('width') as HTMLSelectElement, color: q('color') as HTMLInputElement, swatch: q('swatch') };
+    return penControlsIn(this.ribbon, (k) => `[data-si-pen="${k}"]`);
   }
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */

@@ -82,9 +82,9 @@ import type { TableData } from '../model';
 import {
   canMerge, coveringCell, deleteColumn, deleteRow, emptyTable, evenColumns, fillColumns, nearestSide, shadeCells, valignCells, insertColumn, tableFromCells, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, setColumnAlign, setColumnWidth, setPart, splitCell, spanOf,
 } from '../table';
-import { cellMargins, paintEdge, type CellBlock } from '../document/table-styles';
+import { PaintDrag, cellMargins, type CellBlock } from '../document/table-styles';
 import { blockOf, canMergeBlock, mergeBlock } from '../document/table-convert';
-import { DocTablesUI, LOOK_OPTIONS, showPen, wirePen, type PenControls } from './doc-tables-ui';
+import { DocTablesUI, LOOK_OPTIONS, penControlsIn, showPen, wirePen, type PenControls } from './doc-tables-ui';
 import { DocNav } from './doc-nav';
 import { DocInsertUI } from './doc-insert-ui';
 import { DocParagraphUI } from './doc-paragraph-ui';
@@ -306,7 +306,7 @@ export class DocumentMode {
     | { kind: 'resize'; id: number; w0: number; h0?: number; scale0: number; x0: number; left?: boolean; top?: boolean; float?: Float; /** Set once the drag has made its undo step (the moves after it join that step). */ recorded?: boolean }
     | { kind: 'move'; id: number; from: { x: number; y: number }; float: Float; moved: boolean; others: [number, Float][] }
     | { kind: 'inline'; id: number; from: { x: number; y: number }; to: number | null }
-    | { kind: 'paint'; done: Set<string> }
+    | { kind: 'paint'; drag: PaintDrag }
     | { kind: 'figure'; geo?: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | { kind: 'shape'; id: number; w0: number; h0: number; from: { x: number; y: number } }
     | { kind: 'offer' }
@@ -771,8 +771,8 @@ export class DocumentMode {
     if (!back) this.setTable(tg.id, insertRow(tg.t, tg.t.rows.length), 'Insert row', { r: tg.t.rows.length, c: 0 });
   }
 
-  /** Change a table in the text (one undo step), and go back into a cell of it (the same one, or `go`). */
-  setTable(id: number, table: TableData, kind: string, go?: { r: number; c: number } | null): void {
+  /** Change a table in the text (one undo step; `kind` null: part of the step before, as along a Border Painter drag), and go back into a cell of it (the same one, or `go`). */
+  setTable(id: number, table: TableData, kind: string | null, go?: { r: number; c: number } | null): void {
     const f = this.file!;
     const o = f.t.objects[id];
     if (o?.kind !== 'table') return;
@@ -3109,8 +3109,8 @@ export class DocumentMode {
     this.cellAnchor = cell;
     // Border Painter: a click on a cell's edge gives it the pen's line
     if (this.tables.painting && cell) {
-      const d = { kind: 'paint' as const, done: new Set<string>() };
-      this.paintAt(p, d.done);
+      const d = { kind: 'paint' as const, drag: new PaintDrag(this.tables.pen) };
+      this.paintAt(p, d.drag);
       this.dragging = d;
       s.setPointerCapture(e.pointerId);
       return;
@@ -3270,7 +3270,7 @@ export class DocumentMode {
       this.view.scroller.style.cursor = 'move';
       return;
     }
-    if (d.kind === 'paint') { this.paintAt(p, d.done); return; }
+    if (d.kind === 'paint') { this.paintAt(p, d.drag); return; }
     if (d.kind === 'box') {
       if (this.clicks.n !== 1 || !f.box) return;
       // dragged out of the cell into others of its table: those cells are chosen together
@@ -3296,8 +3296,8 @@ export class DocumentMode {
     f.ed.setCaret(offsetAt(f.layout().text, p.x, p.y), true);
   }
 
-  /** Border Painter: the edge of the cell under a point nearest it gets the pen's line (each edge once a drag). */
-  private paintAt(p: { x: number; y: number }, done: Set<string>): void {
+  /** Border Painter: the edge of the cell under a point nearest it gets the pen's line (each edge once a drag; the drag one step of Undo). */
+  private paintAt(p: { x: number; y: number }, drag: PaintDrag): void {
     const f = this.file;
     const cell = this.cellAt(p);
     if (!f || !cell) return;
@@ -3312,10 +3312,8 @@ export class DocumentMode {
     let y2 = at.y;
     for (let r = cell.r; r < cell.r + rowSpanOf(t, cell.r, cell.c); r++) y2 += tb.hs[r] ?? 0;
     const side = nearestSide(p.x, p.y, x1, y1, x2, y2);
-    const key = `${cell.id}:${cell.r}:${cell.c}:${side}`;
-    if (done.has(key)) return;
-    done.add(key);
-    this.setTable(cell.id, paintEdge(t, cell.r, cell.c, side, this.tables.pen), 'Border Painter');
+    const next = drag.paint(t, cell.r, cell.c, side, cell.id);
+    if (next) this.setTable(cell.id, next, drag.count === 1 ? 'Border Painter' : null);
   }
 
   /** An in-line figure dragged to another place in the text: move it there (one undo step) and keep it picked. */
@@ -6190,8 +6188,7 @@ export class DocumentMode {
 
   /** The Table tab's Borders group: the pen the borders are drawn with. */
   private penControls(): PenControls {
-    const r = this.ribbon;
-    return { style: r.querySelector<HTMLSelectElement>('#doc-pen-style')!, width: r.querySelector<HTMLSelectElement>('#doc-pen-width')!, color: r.querySelector<HTMLInputElement>('#doc-pen-colour')!, swatch: r.querySelector<HTMLElement>('#doc-pen-swatch') };
+    return penControlsIn(this.ribbon, (k) => `#doc-pen-${k === 'color' ? 'colour' : k}`);
   }
 
   private statusZoom: StatusZoom | null = null;

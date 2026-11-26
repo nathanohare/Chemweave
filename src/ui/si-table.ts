@@ -13,7 +13,7 @@ import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
 import { scrollToItem } from './motion';
 import type { BorderLine, TableData } from '../model';
-import { cellMargins, resolveTable, paintEdge, type CellBlock, type Edge, type ResolvedTable } from '../document/table-styles';
+import { PaintDrag, cellMargins, resolveTable, strokeOf, type CellBlock, type Edge, type ResolvedTable } from '../document/table-styles';
 import { nearestSide, shadeCells, valignCells } from '../table';
 import { autoFitContents, autoFitWindow, columnWidthsCm, distributeColumns, setColumnWidthCm, siTableData, storeTableData } from '../si/table-format';
 
@@ -333,11 +333,14 @@ export class SiTableEditor {
   showLines(td: TableData | null = this.tableData()): void {
     if (!td) return;
     const res = td === this.cache?.td ? this.resolved()! : resolveTable(td);
+    // (each line as it is drawn on the page: its width, dashes and double lines from strokeOf)
     const css = (e: Edge | null | undefined): string => {
       if (!e) return '1px dashed var(--line)';
-      const px = Math.max(1, Math.round(e.w * PX * 2) / 2);
+      const s = strokeOf(e);
+      const px = Math.max(1, Math.round(s.w * PX * 2) / 2);
       const color = e.color === '#000000' ? 'var(--text)' : e.color;
-      return `${e.style === 'double' ? Math.max(3, px * 3) : px}px ${e.style === 'single' ? 'solid' : e.style} ${color}`;
+      const kind = s.double ? 'double' : !s.dash.length ? 'solid' : s.dash[0] <= s.w ? 'dotted' : 'dashed';
+      return `${s.double ? Math.max(3, px * 3) : px}px ${kind} ${color}`;
     };
     for (const td0 of this.grid.querySelectorAll<HTMLElement>('td')) {
       const r = Number(td0.dataset.r), c = Number(td0.dataset.c);
@@ -377,30 +380,28 @@ export class SiTableEditor {
   /** A focus put back by the editor itself (it doesn't pick the cell again). */
   private refocusing = false;
   /** A Border Painter drag: the table with the edges painted so far (kept as one step of Undo when the button is let go). */
-  private drag: { td: TableData; done: Set<string> } | null = null;
+  private drag: { td: TableData; paint: PaintDrag } | null = null;
 
   private startPainting(): void {
-    const td = this.tableData();
-    if (!td) return;
-    this.drag = { td, done: new Set() };
+    const td = this.tableData(), pen = this.host.painter();
+    if (!td || !pen) return;
+    if (this.host.project.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    this.drag = { td, paint: new PaintDrag(pen) };
     document.addEventListener('mouseup', () => {
       const d = this.drag;
       this.drag = null;
-      if (d?.done.size) void this.setData(() => d.td, 'Border Painter');
+      if (d?.paint.count) void this.setData(() => d.td, 'Border Painter');
     }, { once: true });
   }
 
   private paintAt(td: HTMLElement, r: number, c: number, e: MouseEvent): void {
-    const pen = this.host.painter();
     const d = this.drag;
-    if (!pen || !d) return;
+    if (!d) return;
     const b = td.getBoundingClientRect();
-    const side = nearestSide(e.clientX, e.clientY, b.left, b.top, b.right, b.bottom);
-    const key = `${r}:${c}:${side}`;
-    if (d.done.has(key)) return;
-    d.done.add(key);
-    d.td = paintEdge(d.td, r, c, side, pen);
-    this.showLines(d.td);
+    const next = d.paint.paint(d.td, r, c, nearestSide(e.clientX, e.clientY, b.left, b.top, b.right, b.bottom));
+    if (!next) return;
+    d.td = next;
+    this.showLines(next);
   }
 
   /** The width of the text this table is set in, in points. */
@@ -461,6 +462,8 @@ export class SiTableEditor {
    */
   private async change(f: () => void, repaint = true, label = ''): Promise<void> {
     if (!this.t) return;
+    // (nothing changes in a project open read-only: not the table shown either)
+    if (this.host.project.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
     for (const b of this.boxes) b.commit();
     const apply = () => { f(); squareUp(this.t!); this.cache = null; };
     if (label) {

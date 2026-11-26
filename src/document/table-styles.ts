@@ -513,6 +513,24 @@ export function paintEdge(t: TableData, r: number, c: number, side: BorderSide, 
   return applyBorders(t, block, side, pen);
 }
 
+/**
+ * A Border Painter drag: each edge given the pen's line once, and whether an edge painted is the
+ * drag's first (its own step of Undo) or one after it (part of that step), so one drag is one step.
+ */
+export class PaintDrag {
+  private done = new Set<string>();
+  constructor(private pen: BorderLine) {}
+  /** Edges painted so far. */
+  get count(): number { return this.done.size; }
+  /** The table with one more edge painted (`scope`: which table, when a drag can cross several), or null when that edge was painted already. */
+  paint(t: TableData, r: number, c: number, side: BorderSide, scope: string | number = ''): TableData | null {
+    const key = `${scope}:${r}:${c}:${side}`;
+    if (this.done.has(key)) return null;
+    this.done.add(key);
+    return paintEdge(t, r, c, side, this.pen);
+  }
+}
+
 /** Take a block's own borders off, back to the style's lines. */
 export function clearBorders(t: TableData, block: CellBlock): TableData {
   return {

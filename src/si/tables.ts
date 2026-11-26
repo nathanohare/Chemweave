@@ -29,7 +29,9 @@ function formatOn(cell: Json, sides: Side[]): Json | null {
 /** A cell's span: where it starts, and how many rows and columns it covers. */
 export interface Span { r: number; c: number; rows: number; cols: number }
 
-const dict = (v: unknown): Json => (v && typeof v === 'object' && !Array.isArray(v) ? (v as Json) : {});
+/** Is a value read from a file an object (not a list)? */
+export const isJsonObject = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
+const dict = (v: unknown): Json => (isJsonObject(v) ? v : {});
 const num = (v: unknown, d: number): number => { const n = Math.round(Number(v)); return Number.isFinite(n) && n >= 1 ? n : d; };
 
 /** A new table: `rows` × `cols` empty cells, the first row its header, every column centred. */

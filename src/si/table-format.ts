@@ -19,7 +19,7 @@
 
 import type { BorderLine, CellBorders, CellMargins, Justify, TableCell, TableData } from '../model';
 import type { Json } from './project';
-import { FORMAT_KEY, cellAt, colCount, rowsOf, spans } from './tables';
+import { FORMAT_KEY, cellAt, colCount, isJsonObject, rowsOf, spans } from './tables';
 import { evenColumns, fillColumns } from '../table';
 
 export { FORMAT_KEY };
@@ -44,29 +44,28 @@ export const PT_PER_CM = 72 / 2.54;
 const MIN_CM = 0.1;
 const SIDES = ['top', 'bottom', 'left', 'right'] as const;
 const STYLES: BorderLine['style'][] = ['none', 'single', 'double', 'dotted', 'dashed'];
-const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 const COLOR = /^#[0-9a-f]{6}$/i;
 const len = (v: unknown): number | null => { const n = Number(v); return typeof v === 'number' && Number.isFinite(n) && n >= 0 && n <= 72 ? n : null; };
 
 function line(v: unknown): BorderLine | null {
-  if (!isObj(v) || !STYLES.includes(v.style as BorderLine['style'])) return null;
+  if (!isJsonObject(v) || !STYLES.includes(v.style as BorderLine['style'])) return null;
   const w = Number(v.w);
   return { style: v.style as BorderLine['style'], w: Number.isFinite(w) ? Math.max(0, Math.min(12, w)) : 0.5, color: typeof v.color === 'string' && COLOR.test(v.color) ? v.color.toLowerCase() : '#000000' };
 }
 
 function margins(v: unknown): Partial<CellMargins> {
   const out: Partial<CellMargins> = {};
-  if (!isObj(v)) return out;
+  if (!isJsonObject(v)) return out;
   for (const s of SIDES) { const n = len(v[s]); if (n !== null) out[s] = n; }
   return out;
 }
 
 /** A cell's own look as stored (a hand-edited value that can't be read is left out). */
 export function cellFormat(cell: unknown): SiCellFormat {
-  const f = isObj(cell) ? cell[FORMAT_KEY] : undefined;
-  if (!isObj(f)) return {};
+  const f = isJsonObject(cell) ? cell[FORMAT_KEY] : undefined;
+  if (!isJsonObject(f)) return {};
   const out: SiCellFormat = {};
-  if (isObj(f.borders)) {
+  if (isJsonObject(f.borders)) {
     const b: CellBorders = {};
     for (const s of SIDES) { const x = line(f.borders[s]); if (x) b[s] = x; }
     if (Object.keys(b).length) out.borders = b;
@@ -81,7 +80,7 @@ export function cellFormat(cell: unknown): SiCellFormat {
 /** The table's own look as stored. */
 export function tableFormat(t: Json): SiTableFormat {
   const f = t[FORMAT_KEY];
-  if (!isObj(f)) return {};
+  if (!isJsonObject(f)) return {};
   const out: SiTableFormat = {};
   const pad = margins(f.pad);
   if (SIDES.every((s) => pad[s] !== undefined)) out.pad = pad as CellMargins;
@@ -104,9 +103,11 @@ function storeWidths(t: Json, cm: (number | null)[]): void {
 
 /**
  * The columns' widths in points and how Word sizes the table, `textW` being the text's width:
- * as wide as the text (AutoFit to Window); every column typed (those widths, shrunk to the text
- * with SI Assistant's "fit_width"); or Word fitting the columns to their text (AutoFit to
- * Contents), a typed column starting at its width.
+ * as wide as the text (AutoFit to Window); every column typed (those widths, fixed); or Word
+ * fitting the columns to their text (AutoFit to Contents), a typed column starting at its width
+ * and each other one at a share of what is left of the text. Unless AutoFit to Window, a table
+ * whose columns come to more than the text's width is shrunk to it, every column alike, when it
+ * has "fit_width" (typed or not).
  */
 export function siColumns(t: Json, n: number, textW: number): Pick<TableData, 'cols' | 'width' | 'autofit'> {
   const cm = columnWidthsCm(t, n);
@@ -151,7 +152,7 @@ export function setColumnWidthCm(t: Json, c: number, cm: number | null, textW: n
 }
 
 function unfit(t: Json): void {
-  const f = isObj(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
+  const f = isJsonObject(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
   delete f.fit;
   putFormat(t, f);
 }
@@ -164,7 +165,7 @@ export function autoFitContents(t: Json): void {
 
 /** AutoFit to Window: the table as wide as the text, its columns keeping their shares. */
 export function autoFitWindow(t: Json): void {
-  const f = isObj(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
+  const f = isJsonObject(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
   f.fit = 'window';
   putFormat(t, f);
 }
@@ -217,7 +218,7 @@ export function storeTableData(t: Json, td: TableData): void {
     const x = td.rows[s.r]?.[s.c];
     if (!cell || !x) continue;
     // (into what the cell has: a key of a later version is kept)
-    const f: Json = isObj(cell[FORMAT_KEY]) ? { ...(cell[FORMAT_KEY] as Json) } : {};
+    const f: Json = isJsonObject(cell[FORMAT_KEY]) ? { ...(cell[FORMAT_KEY] as Json) } : {};
     const put = (k: keyof SiCellFormat, v: unknown, has: boolean) => { if (has) f[k] = v; else delete f[k]; };
     put('borders', x.borders, !!x.borders && Object.keys(x.borders).length > 0);
     put('fill', x.fill, !!x.fill);
@@ -225,7 +226,7 @@ export function storeTableData(t: Json, td: TableData): void {
     put('pad', x.pad, !!x.pad && Object.keys(x.pad).length > 0);
     putFormat(cell, f);
   }
-  const f = isObj(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
+  const f = isJsonObject(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};
   if (td.pad) f.pad = { ...td.pad }; else delete f.pad;
   putFormat(t, f);
 }

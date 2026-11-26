@@ -105,6 +105,18 @@ describe('SI table commands and Undo', () => {
     for (const c of [0, 1, 2]) expect(cellFormat((await read(o))[2][c]).borders).toBeUndefined();
   });
 
+  it('changes nothing in a project open read-only, not even the table shown', async () => {
+    const o = await open();
+    o.p.readOnly = true;
+    const { e, flashes } = await editor(o);
+    await e.shade('#ffee00');
+    await e.setColumnWidth(3);
+    expect(flashes.filter((m) => m.includes('read-only')).length).toBe(2);
+    expect(e.tableData()!.rows[0][0].fill).toBeUndefined();
+    expect(e.tableData()!.autofit).toBe(true);
+    expect(o.j.history(false)).toBe(null);
+  });
+
   it('says so and leaves the table as it was when the project refuses the change', async () => {
     const o = await open();
     const { e, flashes } = await editor(o, { refuse: true });

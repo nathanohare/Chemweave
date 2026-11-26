@@ -10,7 +10,7 @@ import { SiProject } from '../src/si/project';
 import { compileSi } from '../src/si/compile-doc';
 import { newTable, insertColumn, deleteColumn, merge, split } from '../src/si/tables';
 import { FORMAT_KEY, autoFitContents, autoFitWindow, cellFormat, columnWidthsCm, distributeColumns, setColumnWidthCm, siColumns, siTableData, storeTableData, tableFormat } from '../src/si/table-format';
-import { applyBorders, resolveTable } from '../src/document/table-styles';
+import { PaintDrag, applyBorders, resolveTable } from '../src/document/table-styles';
 import { evenColumns, fillColumns, shadeCells, valignCells } from '../src/table';
 import type { BorderLine, TableData } from '../src/model';
 
@@ -188,6 +188,20 @@ describe('SI table format', () => {
     const u = newTable('t-2', 1, 4);
     distributeColumns(u, TEXT_W);
     expect(columnWidthsCm(u, 4)).toEqual([4.12, 4.12, 4.12, 4.12]);
+  });
+
+  it('paints each edge once along a Border Painter drag, telling the first edge from the rest', () => {
+    const d = new PaintDrag(PEN);
+    let td: TableData | null = siTableData(newTable('t-1', 2, 2), TEXT_W);
+    td = d.paint(td, 0, 0, 'bottom');
+    expect(d.count).toBe(1);
+    expect(d.paint(td!, 0, 0, 'bottom')).toBeNull();
+    td = d.paint(td!, 0, 1, 'bottom');
+    expect(d.count).toBe(2);
+    // (another table's same edge is another edge)
+    expect(d.paint(td!, 0, 1, 'bottom', 7)).not.toBeNull();
+    expect(td!.rows[0][0].borders?.bottom).toEqual(PEN);
+    expect(td!.rows[1][1].borders?.top).toEqual(PEN);
   });
 
   it('shares Document mode’s column helpers', () => {
