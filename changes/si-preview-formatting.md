@@ -1,0 +1,3 @@
+Added: SI Project: format words in the Live Preview with Home ▸ Font (Bold, Italic, Underline, Strikethrough, Subscript, Superscript, font, size, color, Clear All Formatting) or Ctrl+B, Ctrl+I and Ctrl+U. Bold, italics, underline, subscripts and superscripts go into the field itself; the rest, and formatting on words the program writes, is kept in the project folder and comes back every time the SI is compiled.
+Added: SI Project: Project Settings ▸ Styles (also Layout ▸ Styles) sets the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions, with Use for New SI Projects.
+Added: SI Project: Project Settings ▸ Page sets the paper size (Letter or A4) and the margins of the compiled SI.

@@ -8,8 +8,9 @@ import { SettingsWindow, type SettingsPage } from './settings-window';
 import { ask, type Field } from './ask';
 import type { Json, SiProject } from '../si/project';
 import type { DocStyle } from '../style';
+import type { NamedStyle } from '../document/document';
 import { COUNT_NAMES, ENDS, HEADING_PRESETS, headingExample, headingFormat, presetOf, storedFormat, storeHeadingFormat, type CountStyle, type HeadingFormat } from '../si/heading-format';
-import { dateText, NUMBER_STYLES, pageSettings, storePageSettings } from '../si/page-setup';
+import { dateText, MARGIN_MAX, MARGIN_MIN, NUMBER_STYLES, PAPER_SIZES, pageSettings, storePageSettings } from '../si/page-setup';
 import { siDrawingStyle, storeSiDrawingStyle } from '../si/drawing-style';
 import { projectLayout, setProjectLayout } from '../si/scheme-edit';
 import { readSchemeLayout, schemeLayoutFields } from './si-scheme';
@@ -17,6 +18,7 @@ import { askChoice } from './ask';
 import { addInfo } from './info-tip';
 import { DEFAULT_TOLERANCES, SOLVENT_NAMES, defaultImpurityTable, impurityRowFrom, impurityTolerances, projectImpurityTable, storeImpurityTable, storeImpurityTolerances, type ImpurityRow } from '../si/nmr';
 import { DICTIONARY_FILE } from '../si/dictionary';
+import { cleanLook, newProjectStyleLooks, readStyleLooks, readStyleLooksToChange, setNewProjectStyleLooks, SI_STYLE_LIST, SI_STYLES_FILE, styleDefault, styleLooksJson, type StyleLook, type StyleLooks } from '../si/si-styles';
 import { SALT_LABEL_KEY, saltLabelStyle } from '../si/checks';
 import { FIGURE_WRAPS, MAX_GAP, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, ownPlacementCount, projectPlacement, storeProjectPlacement, type SiPosition, type SiWrap } from '../si/placement';
 
@@ -39,7 +41,8 @@ export function siSettingsWindow(p: SiProject, host: SiSettingsHost, page?: stri
   const pages: SettingsPage[] = [
     { id: 'output', title: 'Output', words: 'journal style acs wiley rsc hrms tolerance ppm salt ion counter-ion adduct 31p 11b phosphorus boron nmr reports', open: () => output(p, host) },
     { id: 'headings', title: 'Headings', words: 'heading numbers outline decimal 1.1 roman letters numbering', open: () => headings(p, host) },
-    { id: 'page', title: 'Page', words: 'header footer page numbers prefix roman cover title authors date', open: () => pageSetup(p, host) },
+    { id: 'page', title: 'Page', words: 'header footer page numbers prefix roman cover title authors date paper size margins letter a4', open: () => pageSetup(p, host) },
+    { id: 'styles', title: 'Styles', words: 'styles normal heading caption compound title font size bold italic color alignment spacing before after line spacing modify style default new projects', open: () => styles(p, host) },
     { id: 'labels', title: 'Labels', words: 'figure table scheme label word prefix numbering fig.', open: () => labels(p, host) },
     { id: 'layout', title: 'Layout', words: 'structure structures position wrap text square top bottom behind front left center right in line beside below title space gap place float figure figures caption', open: () => layout(p, host) },
     { id: 'structures', title: 'Structures', words: 'drawing style bond length line width font labels acs 1996 arrows', open: () => structures(p, host) },
@@ -118,6 +121,9 @@ async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
     { name: 'size', label: 'Size', value: String(v.number_size), type: 'number', unit: 'pt (0: as the text)', min: 0, max: 72 },
     { name: 'bold', label: 'Bold', value: String(v.number_bold), type: 'checkbox' },
     { name: 'cover', label: 'Header, footer and number on the cover page', value: String(v.number_on_cover), type: 'checkbox', help: 'Off: the cover page has none (its number still counts). With no cover page printed, the first page has them.' },
+    { name: 'h4', label: 'Paper and margins', value: '', type: 'heading', help: 'The compiled SI’s paper and margins (Word document and PDF). Spectra pages use them too.' },
+    { name: 'paper', label: 'Paper size', value: v.paper, options: Object.entries(PAPER_SIZES).map(([value, label]) => ({ value, label })) },
+    ...(['top', 'bottom', 'left', 'right'] as const).map((k): Field => ({ name: `m_${k}`, label: `${k[0].toUpperCase()}${k.slice(1)} margin`, value: String(v.margins[k]), type: 'number', unit: 'in', min: MARGIN_MIN, max: MARGIN_MAX })),
   ];
   const fill = (text: string, prefix: string, style: string): string => {
     const num = (n: number): string => prefix + (style === 'i' ? ['i', 'ii'][n - 1] ?? String(n) : style === 'I' ? ['I', 'II'][n - 1] ?? String(n) : String(n));
@@ -150,6 +156,8 @@ async function pageSetup(p: SiProject, host: SiSettingsHost): Promise<void> {
     header: [got.header0, got.header1, got.header2], footer: [got.footer0, got.footer1, got.footer2],
     number_prefix: got.prefix.trim(), number_style: got.style === 'i' || got.style === 'I' ? got.style : '1',
     number_size: Number.isFinite(size) && size > 0 ? size : 0, number_bold: got.bold === 'true', number_on_cover: got.cover === 'true',
+    paper: got.paper === 'a4' ? 'a4' : 'letter',
+    margins: Object.fromEntries((['top', 'bottom', 'left', 'right'] as const).map((k) => { const n = Number(got[`m_${k}`]); return [k, Number.isFinite(n) && n >= MARGIN_MIN && n <= MARGIN_MAX ? n : v.margins[k]]; })) as typeof v.margins,
   }));
 }
 
@@ -377,4 +385,103 @@ async function dictionary(p: SiProject, host: SiSettingsHost): Promise<void> {
   if (next === text.replace(/\r\n?/g, '\n').replace(/\n+$/, '')) return;
   await host.save(async () => { await p.folder.writeText(DICTIONARY_FILE, next ? next + '\n' : ''); });
   host.dictionaryChanged();
+}
+
+/** Project Settings ▸ Styles: the compiled SI's paragraph styles (Word's Modify Style), kept in chemweave-styles.json. */
+async function styles(p: SiProject, host: SiSettingsHost): Promise<void> {
+  const now = await readStyleLooks(p.folder);
+  const body = document.createElement('div');
+  body.className = 'si-styles';
+  const table = document.createElement('table');
+  table.className = 'si-styles-table';
+  const head = table.createTHead().insertRow();
+  for (const h of ['Style', 'Font', 'Size', 'B', 'I', 'Color', 'Alignment', 'Before', 'After', 'Line Spacing', '']) {
+    const th = head.appendChild(document.createElement('th'));
+    th.textContent = h;
+    if (h === 'Style') addInfo(th, 'How the compiled SI’s paragraphs look (Word document, PDF and the Live Preview). Words formatted in the Live Preview keep their own look.');
+    if (h === 'B') th.title = 'Bold';
+    if (h === 'I') th.title = 'Italic';
+    if (h === 'Before') addInfo(th, 'Space above the paragraph, in points.');
+    if (h === 'After') addInfo(th, 'Space below the paragraph, in points.');
+    if (h === 'Line Spacing') addInfo(th, 'A multiple of single spacing (1.15, 1.5, 2).');
+  }
+  const tbody = table.createTBody();
+  body.append(table);
+  type Row = { id: string; read: () => StyleLook; fill: (look: StyleLook) => void };
+  const rows: Row[] = [];
+  const input = (type: string, label: string, cls = ''): HTMLInputElement => {
+    const x = document.createElement('input');
+    x.type = type;
+    x.className = cls;
+    x.setAttribute('aria-label', label);
+    return x;
+  };
+  const normalNow = (): StyleLook => rows.find((r) => r.id === 'Normal')?.read() ?? now.Normal ?? {};
+  for (const { id, name } of SI_STYLE_LIST) {
+    // (Compound Title and Contents Heading start from Normal as it is set)
+    const defOf = (): NamedStyle => styleDefault(id, id === 'Normal' ? {} : normalNow());
+    const tr = tbody.insertRow();
+    tr.insertCell().textContent = name;
+    const font = input('text', `${name} font`, 'si-st-font'); font.setAttribute('list', 'ci-fonts'); font.spellcheck = false;
+    const size = input('number', `${name} size`, 'si-st-num'); size.min = '1'; size.max = '400'; size.step = 'any';
+    const bold = input('checkbox', `${name} bold`);
+    const italic = input('checkbox', `${name} italic`);
+    const color = input('color', `${name} color`);
+    const align = document.createElement('select');
+    align.setAttribute('aria-label', `${name} alignment`);
+    for (const [v, l] of [['left', 'Left'], ['center', 'Center'], ['right', 'Right'], ['justify', 'Justify']]) align.append(new Option(l, v));
+    const before = input('number', `${name} space before`, 'si-st-num'); before.min = '0'; before.max = '200'; before.step = 'any';
+    const after = input('number', `${name} space after`, 'si-st-num'); after.min = '0'; after.max = '200'; after.step = 'any';
+    const line = input('number', `${name} line spacing`, 'si-st-num'); line.min = '0.5'; line.max = '5'; line.step = '0.05';
+    const reset = document.createElement('button');
+    reset.type = 'button';
+    reset.textContent = 'Reset';
+    reset.title = `${name} as Chemweave makes it`;
+    for (const el of [font, size, bold, italic, color, align, before, after, line, reset]) tr.insertCell().append(el);
+    const fill = (look: StyleLook): void => {
+      const def = defOf();
+      const v = { ...def, ...look };
+      font.value = v.font; size.value = String(v.size); bold.checked = !!v.bold; italic.checked = !!v.italic;
+      color.value = v.color && /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : '#000000';
+      align.value = v.align; before.value = String(v.spaceBefore); after.value = String(v.spaceAfter); line.value = String(v.line);
+    };
+    // only what differs from the default is kept (the rest keeps following Chemweave's)
+    const read = (): StyleLook => {
+      const def = defOf();
+      const got = cleanLook({ font: font.value, size: Number(size.value), bold: bold.checked, italic: italic.checked, color: color.value, align: align.value, spaceBefore: Number(before.value), spaceAfter: Number(after.value), line: Number(line.value) });
+      const defColor = def.color && /^#[0-9a-f]{6}$/i.test(def.color) ? def.color.toLowerCase() : '#000000';
+      const out: StyleLook = {};
+      for (const [k, v] of Object.entries(got) as [keyof StyleLook, StyleLook[keyof StyleLook]][]) {
+        const was = k === 'color' ? defColor : def[k];
+        if (v !== was) (out as Record<string, unknown>)[k] = v;
+      }
+      return out;
+    };
+    reset.addEventListener('click', () => fill({}));
+    fill(now[id] ?? {});
+    rows.push({ id, read, fill });
+  }
+  const collect = (): StyleLooks => Object.fromEntries(rows.map((r) => [r.id, r.read()]).filter(([, l]) => Object.keys(l as StyleLook).length));
+  const got = await ask('Styles', [], {
+    ok: 'Save',
+    body,
+    actions: {
+      label: 'New SI projects',
+      help: 'Use for New SI Projects: projects made from now on, on this computer, start with these styles. Use Defaults: put every style back as Chemweave makes it (saved when you press Save).',
+      buttons: [
+        { text: 'Use for New SI Projects', run: (say) => say(setNewProjectStyleLooks(collect()) ? 'New SI projects will start with these styles.' : 'Could not keep them on this computer.') },
+        { text: 'Use Saved', run: (say) => { const keep = newProjectStyleLooks(); for (const r of rows) r.fill(keep[r.id] ?? {}); say(Object.keys(keep).length ? 'The styles kept for new projects are filled in.' : 'No styles are kept for new projects yet: Chemweave’s are filled in.'); } },
+        { text: 'Use Defaults', run: (say) => { for (const r of rows) r.fill({}); say('Every style is back as Chemweave makes it.'); } },
+      ],
+    },
+  });
+  if (!got || p.readOnly) return;
+  const looks = collect();
+  await host.save(async () => {
+    // (styles this page doesn't list, set by hand in the file, are kept)
+    const was = await readStyleLooksToChange(p.folder);
+    const next: StyleLooks = { ...was };
+    for (const { id } of SI_STYLE_LIST) { if (looks[id]) next[id] = looks[id]; else delete next[id]; }
+    await p.folder.writeText(SI_STYLES_FILE, styleLooksJson(next));
+  });
 }

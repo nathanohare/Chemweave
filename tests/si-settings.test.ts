@@ -2,7 +2,8 @@
 // heading formats, the page header and footer, and the drawing style.
 import { describe, expect, it } from 'vitest';
 import { headingFormat, headingNumber, presetOf, storeHeadingFormat, headingExample } from '../src/si/heading-format';
-import { headerFooter, pageSettings, storePageSettings } from '../src/si/page-setup';
+import { headerFooter, pageOf, pageSettings, storePageSettings } from '../src/si/page-setup';
+import { defaultPage } from '../src/document/document';
 import { siDefaultStyle, siDrawingStyle, storeSiDrawingStyle } from '../src/si/drawing-style';
 import { ACS_1996 } from '../src/style';
 import type { Json } from '../src/si/project';
@@ -85,5 +86,33 @@ describe('the drawing style', () => {
     // a hand-edited value of the wrong kind is left at the default
     (s.drawing_style as Json).bondLength = 'big';
     expect(siDrawingStyle(s).bondLength).toBeCloseTo(18, 1);
+  });
+});
+
+describe('paper and margins', () => {
+  it('default to Letter with 1 inch margins, and nothing is stored for them', () => {
+    const s: Json = {};
+    const v = pageSettings(s);
+    expect(v.paper).toBe('letter');
+    expect(v.margins).toEqual({ top: 1, bottom: 1, left: 1, right: 1 });
+    storePageSettings(s, { ...v });
+    expect((s.page as Json).paper).toBeUndefined();
+    expect((s.page as Json).margins).toBeUndefined();
+  });
+
+  it('A4 and other margins are kept and make the page (A4 is 210 × 297 mm: 595.3 × 841.9 pt)', () => {
+    const s: Json = {};
+    storePageSettings(s, { ...pageSettings(s), paper: 'a4', margins: { top: 1, bottom: 1, left: 0.75, right: 0.75 } });
+    // storing the header again keeps them
+    storePageSettings(s, { ...pageSettings(s), header: ['x', '', ''] });
+    const page = pageOf(s, defaultPage());
+    expect(page.w).toBeCloseTo(595.3, 1);
+    expect(page.h).toBeCloseTo(841.9, 1);
+    expect(page.left).toBe(54);
+    expect(page.top).toBe(72);
+  });
+
+  it('a margin out of range reads as 1 inch', () => {
+    expect(pageSettings({ page: { margins: { top: 9, left: 0.1, right: 'x' } } }).margins).toEqual({ top: 1, bottom: 1, left: 1, right: 1 });
   });
 });

@@ -40,7 +40,8 @@ export async function readCustomText(folder: SiFolder): Promise<CustomText[]> {
 
 /** The custom text to change and save: as readCustomText, but a file that can't be read is an error (saving over it would lose its text). */
 export async function readCustomTextToChange(folder: SiFolder): Promise<CustomText[]> {
-  const raw = await folder.readText(CUSTOM_TEXT_FILE).catch(() => null);
+  // (a file that is there but can't be read now throws: it is never written over as if it weren't there)
+  const raw = await folder.readText(CUSTOM_TEXT_FILE);
   if (!raw || !raw.trim()) return [];
   const got = parseCustomText(raw);
   if (!got) throw new Error(`${CUSTOM_TEXT_FILE} in the project folder can’t be read (half synced, or changed by hand), so it wasn’t saved over. Fix or remove it, then type again`);

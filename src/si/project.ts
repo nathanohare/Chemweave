@@ -23,6 +23,7 @@ import { parseMarkup } from './markup';
 import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFilled, partText, type FieldDef, type FieldEntry } from './fields';
 import { checkIds, type IdReport } from './compound-ids';
 import { NEW_PROJECT_PER_PAGE, defaultsJson, sectionDefaults, type SpectrumLayout } from './spectra';
+import { newProjectStyleLooks, SI_STYLES_FILE, styleLooksJson } from './si-styles';
 
 /** The Spectra section's name (SI Assistant's spectra.DEFAULT_NAME). */
 const SPECTRA_NAME = 'Spectra';
@@ -232,6 +233,9 @@ export class SiProject {
     copyFloats(settings, out);
     await folder.writeText(PROJECT_FILE, dumpPyJson(out));
     await folder.writeText(REFERENCES_FILE, dumpPyJson([]));
+    // Project Settings ▸ Styles ▸ Use for New SI Projects
+    const looks = newProjectStyleLooks();
+    if (Object.keys(looks).length) await folder.writeText(SI_STYLES_FILE, styleLooksJson(looks));
     return SiProject.open(folder, opts);
   }
 
