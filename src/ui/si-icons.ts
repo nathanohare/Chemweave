@@ -100,6 +100,7 @@ export const SI_ICONS: Record<string, string> = {
  * TEXT_ICONS key. The same SI command on two tabs shares its own drawing.
  */
 export const SI_ICON_SAME: Record<string, string> = {
+  'si:replace': 'doc:replace',
   'si:new-figure-paste': 'paste', 'si-tbl:paste-picture': 'paste', 'si-fig:paste-picture': 'paste', 'si-scheme:paste': 'paste',
   'si-tbl:compound': 'si:new-figure-compound', 'si-fig:compound': 'si:new-figure-compound',
   'si-tbl:row-above': 'doc:table-row-above', 'si-tbl:row-below': 'doc:table-row-below', 'si-tbl:col-left': 'doc:table-col-left', 'si-tbl:col-right': 'doc:table-col-right',

@@ -79,6 +79,34 @@ describe('the formatting file', () => {
     expect(run?.color).toBe('#c00000');
     expect(rt.plainText(out.runs)).toBe('Yield: 91 mg');
   });
+
+  it('puts a paragraph look on every paragraph its words are in, and only those', () => {
+    const d = { runs: [{ text: 'Intro\nStep one\nStep two' }], paras: [{}, {}, {}] } as unknown as DocText;
+    const spans = [{ start: 6, end: 23, src: 'p' }];
+    const out = applyPreviewFormats(d, spans, [], [{ id: 'x', src: 'p', start: 0, end: 17, text: 'Step one\nStep two', look: { align: 'center', indent: 36 } }]);
+    expect(out.paras[0]).toEqual({});
+    expect(out.paras[1]).toEqual({ align: 'center', indent: 36 });
+    expect(out.paras[2]).toEqual({ align: 'center', indent: 36 });
+    expect(rt.plainText(out.runs)).toBe('Intro\nStep one\nStep two');
+  });
+
+  it('takes a paragraph look off with no indent', () => {
+    const d = { runs: [{ text: 'Step one' }], paras: [{ indent: 36 }] } as unknown as DocText;
+    const out = applyPreviewFormats(d, [{ start: 0, end: 8, src: 'p' }], [], [{ id: 'x', src: 'p', start: 0, end: 8, text: 'Step one', look: { indent: 0 } }]);
+    expect(out.paras[0].indent).toBeUndefined();
+  });
+
+  it('reads paragraph looks back, and drops the values it cannot use', () => {
+    const items = parsePreviewFormats(JSON.stringify({ version: 2, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { align: 'center', line: 1.5, indent: 'far', pageBreak: true } }, { src: 'p', start: 0, end: 3, text: 'abc', look: { align: 'sideways' } }] }));
+    expect(items![0].look).toEqual({ align: 'center', line: 1.5, pageBreak: true });
+    expect(items![1].look).toEqual({});
+  });
+
+  it('writes version 2 once a paragraph look is kept, so a Chemweave that reads only version 1 never writes it over', () => {
+    const piece = { id: 'x', src: 'p', start: 0, end: 3, text: 'abc', look: { bold: true } };
+    expect(JSON.parse(previewFormatsJson([piece])).version).toBe(1);
+    expect(JSON.parse(previewFormatsJson([piece, { ...piece, look: { align: 'center' as const } }])).version).toBe(2);
+  });
 });
 
 describe('finding the words again safely', () => {
@@ -105,6 +133,6 @@ describe('finding the words again safely', () => {
     const { readPreviewFormatsToChange } = await import('../src/si/preview-format');
     const busy = { readText: () => Promise.reject(new Error('EBUSY')) } as unknown as Parameters<typeof readPreviewFormatsToChange>[0];
     await expect(readPreviewFormatsToChange(busy)).rejects.toThrow();
-    expect(parsePreviewFormats('{"version":2,"items":[]}')).toBeNull();
+    expect(parsePreviewFormats('{"version":3,"items":[]}')).toBeNull();
   });
 });

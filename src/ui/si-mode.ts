@@ -73,6 +73,7 @@ import { showContextMenu, type MenuItem } from './context-menu';
 import { buildSelectGalleries } from './select-gallery';
 import { FIGURE_WRAPS, figureKey, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, clearOwnPlacements, kindOfKey, ownPlacement, placementOf, projectPlacement, storeOwnPlacement, storeProjectPlacement, structureKey, type OwnPlacement, type SiWrap } from '../si/placement';
 import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { RIBBON_ICONS } from './ribbon-icons';
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
@@ -213,6 +214,9 @@ const SYNC_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another compound or section opens its page here, a moment after you stop. It never changes page while a field of the page is selected or being typed in.';
 
 /** The ribbon: what each button does is its data-si command. */
+/** Why Home ▸ Paragraph is greyed while typing on the SI page. */
+const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
+
 const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
@@ -237,6 +241,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="cover-page" data-ic="cover-page" title="Cover Page: the SI's title, authors, affiliations and date, on the project's page"><span class="rb-icon">▤</span>Cover Page</button>
+      <button class="rb-big" data-si-para="page-break" data-ic="page-break" title="Page Break: the paragraph the cursor is in, in the Live Preview, starts a new page (click again to take it off); kept every time the SI is compiled"><span class="rb-icon">⤓</span>Page Break</button>
     </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
@@ -575,6 +580,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
         <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
+        <button data-si-paint data-ic="format-painter" aria-pressed="false" title="Format Painter: copy the formatting of the words selected in the Live Preview to the words you click or drag over next. Double-click to keep painting until Esc">Format Painter</button>
       </div>
     </div><div class="rb-label">Clipboard</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -589,9 +595,29 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Organize</div></div>
     ${fontGroupHtml('si')}
+    <div class="rb-group si-para-group"><div class="rb-row">
+      <div class="rb-col">
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="left" title="Align Left (the paragraphs selected in the Live Preview)" aria-label="Align Left">${RIBBON_ICONS['doc-align-left']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="center" title="Center (the paragraphs selected in the Live Preview)" aria-label="Center">${RIBBON_ICONS['doc-align-center']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="right" title="Align Right (the paragraphs selected in the Live Preview)" aria-label="Align Right">${RIBBON_ICONS['doc-align-right']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify: both edges straight (the paragraphs selected in the Live Preview)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
+        </div>
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="indent" title="Increase Indent" aria-label="Increase Indent">${RIBBON_ICONS['doc-indent']}</button>
+          <select data-si-para="line" title="Line Spacing (the paragraphs selected in the Live Preview)" aria-label="Line Spacing">
+            <option value="" hidden>Line Spacing</option><option value="1">Single</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">Double</option>
+          </select>
+        </div>
+      </div>
+    </div><div class="rb-label">Paragraph</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="replace" title="Replace (Ctrl+H): found words changed in the fields they come from, one place or all of them (one step of Undo); words Chemweave writes, or a general procedure's, are left">Replace…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
         <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
       </div>
@@ -748,6 +774,7 @@ export class SiMode {
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint]')) el.disabled = true;
     siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
@@ -761,11 +788,15 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para]')) e.preventDefault(); });
+    this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
+      if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
+      const para = t.closest<HTMLButtonElement>('button[data-si-para]');
+      if (para) { void this.paragraph(para.dataset.siPara!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
@@ -795,6 +826,8 @@ export class SiMode {
     this.ribbon.addEventListener('change', (e) => {
       const fi = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-si-fmt]');
       if (fi) { this.format(fi.dataset.siFmt!, fi.value); return; }
+      const ls = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-para]');
+      if (ls) { const v = ls.value; ls.value = ''; void this.paragraph(ls.dataset.siPara!, v); return; }
       const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
@@ -1173,6 +1206,7 @@ export class SiMode {
 
   /** A Font group command on the Live Preview's selection (si-preview.ts format). */
   private async formatPreview(pv: SiPreview, cmd: string, value?: string): Promise<void> {
+    if (!(await pv.ready())) return;
     const toggle = (k: 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup'): FormatLook => ({ [k]: !pv.selectionHas(k) });
     let look: FormatLook | 'clear' | null = null;
     switch (cmd) {
@@ -1184,8 +1218,10 @@ export class SiMode {
       case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
       case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
       case 'color': look = value ? { color: value } : null; break;
+      case 'small-caps': look = { smallCaps: !pv.selectionHas('smallCaps') }; break;
+      case 'highlight': look = { highlight: pv.selectionHas('highlight') ? '' : '#ffff00' }; break;
       default:
-        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
+        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Small Caps, Highlight, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
         return;
     }
     if (look) await pv.format(look);
@@ -1195,6 +1231,11 @@ export class SiMode {
   /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
   private fontState(): void {
     const on = !!this.previewTyped;
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) el.disabled = !on;
+    const pg = this.ribbon.querySelector<HTMLElement>('.si-para-group');
+    if (pg) { if (on) pg.removeAttribute('title'); else pg.title = SI_PARA_REASON; }
+    const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
+    if (brush) { brush.disabled = !on; if (!on) this.preview?.stopPainting(); }
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
     if (on) {
       for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
@@ -1202,6 +1243,30 @@ export class SiMode {
         (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
       }
     } else siFontBoxes(this.ribbon, defaultStyles().Normal);
+  }
+
+  /** Home ▸ Paragraph on the Live Preview's paragraphs (greyed on the SI page, whose text takes the journal style's paragraphs). */
+  private async paragraph(cmd: string, value?: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash(SI_PARA_REASON, 6000); return; }
+    // (what it toggles or steps from is read from the text shown: the last change shown first)
+    if (!(await pv.ready())) return;
+    const INDENT = 36;
+    switch (cmd) {
+      case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
+      case 'indent': case 'outdent': await pv.paraFormat({ indent: Math.max(0, (pv.paraValue('indent') ?? 0) + (cmd === 'indent' ? INDENT : -INDENT)) }); break;
+      case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n }); break; }
+      case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, true); break;
+    }
+    pv.input.focus();
+  }
+
+  /** Format Painter (Home ▸ Clipboard): a click paints once, a double-click keeps painting until Esc; pressed again, it stops. */
+  private formatPainter(keep: boolean): void {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash('Format Painter works in the Live Preview: select the words whose formatting you want to copy there first.', 6000); return; }
+    if (pv.painting && !keep) { pv.stopPainting(); return; }
+    pv.startPainting(keep);
   }
 
   /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
@@ -3719,7 +3784,7 @@ export class SiMode {
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
       },
-      writeFormat: async (fields, change, owner) => {
+      writeFormat: async (fields, change, owner, what = 'Format') => {
         const p = asProject(owner);
         let done = false;
         const save = async (): Promise<void> => {
@@ -3728,13 +3793,13 @@ export class SiMode {
           const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
           for (const { a, x } of access) {
             if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
-            if ((await a.read()) !== x.from) throw new Error('The text changed while it was being formatted. Select it and try again.');
+            if ((await a.read()) !== x.from) throw new Error(what === 'Replace' ? 'The text changed meanwhile. Find the words again and replace them.' : 'The text changed while it was being formatted. Select it and try again.');
           }
           for (const { a, x } of access) await a!.write(x.text);
           if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
           done = true;
         };
-        if (p !== this.project) await this.change(p, 'Format in Live Preview', save);
+        if (p !== this.project) await this.change(p, what === 'Replace' ? 'Replace in Live Preview' : 'Format in Live Preview', save);
         else await this.act(save, fields.length > 0);
         // (the reason was said)
         if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
@@ -3746,6 +3811,7 @@ export class SiMode {
       editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
     });
     this.live.view = this.preview.view;
+    this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
     this.preview.onScrollSettled = () => this.followPreview();
     // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
     const resized = this.preview.view.onResize;
@@ -4744,9 +4810,9 @@ export class SiMode {
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
     // (Find and Go To from anywhere in the pane; the Live Preview takes its own Ctrl+F first)
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'g')) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && ['f', 'g', 'h'].includes(e.key.toLowerCase())) {
       e.preventDefault();
-      void this.run(e.key.toLowerCase() === 'f' ? 'find' : 'go-to');
+      void this.run(({ f: 'find', g: 'go-to', h: 'replace' } as Record<string, string>)[e.key.toLowerCase()]);
       return;
     }
     // (in a text box or a list, Alt and the arrows are the box's own keys)
@@ -5251,7 +5317,7 @@ export class SiMode {
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
-    'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
+    'paste', 'cut', 'copy', 'find', 'replace', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
     'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
@@ -5596,10 +5662,10 @@ export class SiMode {
         return;
       // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
       case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
-      case 'find': {
+      case 'find': case 'replace': {
         const pv = await this.previewShown();
-        if (!pv) { this.host.flash(this.noPreviewWhy('Find looks in the Live Preview')); return; }
-        pv.showFind();
+        if (!pv) { this.host.flash(this.noPreviewWhy(cmd === 'find' ? 'Find looks in the Live Preview' : 'Replace works in the Live Preview')); return; }
+        pv.showFind(cmd === 'replace');
         return;
       }
       case 'go-to': await this.goTo(); return;
