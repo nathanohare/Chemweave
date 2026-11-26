@@ -170,7 +170,7 @@ export function modifierHints(s: HintState, m: Mods): ModHint[] {
         case 'select':
           if (!drawing) {
             if (s.selected) add('Shift', 'add to the selection');
-            if (s.selected || s.over) add('Ctrl', 'drag a copy');
+            add('Ctrl', 'drag a copy');
           }
           break;
       }
