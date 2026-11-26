@@ -5,7 +5,7 @@
 // every modal window keeps the title bar usable and opens on the screen, before any window opens
 import './ui/modal-guard';
 // the Animations setting on the page before anything shows (Off on the web until settings load)
-import { chosenMotion, enter as motionEnter, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
+import { chosenMotion, enter as motionEnter, holdTransitions, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
 import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
@@ -426,7 +426,11 @@ const editor = new Editor(doc, renderer, host);
  * Colour the window for a mode; in Canvas mode the selection, hover and drawing marks and the box
  * round text being typed take the mode's teal too, so the accent is the same everywhere (UI rule 5).
  */
+let lastLook = '';
 function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: ModeColours): void {
+  // (a new look changes at once, with no control fading its color: S99)
+  const look = mode + JSON.stringify(c);
+  if (look !== lastLook) { if (lastLook) holdTransitions(); lastLook = look; }
   applyModeColoursOnly(mode, c);
   const tint = mode === 'drawing' ? modeColour('drawing', c) : null;
   setMarkTint(tint);
@@ -4837,8 +4841,9 @@ function finishTab(): void {
 
 /** Set the window up for a tab that has just come to the front. */
 function enterTab(tab: Tab, opened: boolean): void {
-  // another kind of file (mode) fades in; another file of the same kind shows at once, for comparing (Motion Choices)
-  if (enteredMode !== null && enteredMode !== tab.mode) motionEnter($('#work'), 'fade', 'large');
+  // another file, of the same kind or another, shows at once: fading a new mode's page in over the
+  // old one's would pulse the window (S99), so its colors and ribbon change at once too
+  if (enteredMode !== null && enteredMode !== tab.mode) holdTransitions();
   enteredMode = tab.mode;
   // a new or opened drawing starts on Select; going back to a tab keeps the tool last used
   if (opened && tab.mode === 'drawing') modeTool.drawing = START_TOOL.drawing;
@@ -17620,6 +17625,7 @@ function placeTextBar(where: Settings['textBar']): void {
 /** View > Window and Colours > Theme: the window light or dark whatever the computer is set to, or as it is set. */
 let appTheme: Settings['appTheme'] = 'darkgray';
 function setAppTheme(t: Settings['appTheme']): void {
+  if (t !== appTheme) holdTransitions();
   appTheme = t;
   const root = document.documentElement;
   // Dark Gray is the light theme with its own colours over it

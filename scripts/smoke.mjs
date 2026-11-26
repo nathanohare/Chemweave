@@ -9,6 +9,7 @@ import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
 import { a11yProblems, compareA11y } from './a11y-check.mjs';
 import { desktopStub, essentialProblems, sweepEssentials } from './essentials-check.mjs';
+import { motionProblems } from './motion-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -328,6 +329,8 @@ try {
       await desk.keyboard.press('Escape');
     }
     if (!(await desk.evaluate(() => !!document.querySelector('.win-controls > button')))) fail('the desktop check has no window buttons: it is not testing the desktop app\'s title bar');
+    // animations on (the desktop app starts on Fast): no pulses, no flashing parts (S99)
+    for (const p of await motionProblems(desk, 'desktop, animations Fast')) fail(p);
     for (const p of await sweepEssentials(desk, SWEEP, 'desktop')) fail(p);
     await desk.evaluate(() => window.__app.command('touch-mode-on'));
     for (const p of await sweepEssentials(desk, TOUCH, 'desktop, Touch Mode')) fail(p);

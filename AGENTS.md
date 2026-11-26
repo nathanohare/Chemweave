@@ -9,7 +9,7 @@ these before changing anything, and follow them as a person contributing would:
 - [docs/developers.md](docs/developers.md): how to build and test, the **Rules for changes**, the
   **Checks for the standing rules** (R1 to R16: what each checks and how to run it) and the
   **Places that must stay in step**.
-- [docs/ui-style.md](docs/ui-style.md): the UI style guide (S1 to S98) for anything people see:
+- [docs/ui-style.md](docs/ui-style.md): the UI style guide (S1 to S99) for anything people see:
   Office names for commands, American spelling, Title Case, real subscripts in formulas.
 - [.github/pull_request_template.md](.github/pull_request_template.md): what every pull request
   says.

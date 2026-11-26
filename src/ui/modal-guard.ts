@@ -125,11 +125,10 @@ function fit(d: HTMLDialogElement): void {
   if (roomH > 0 && !(capH <= roomH)) limit(d, 'maxHeight', roomH);
   if (roomW > 0 && !(capW <= roomW)) limit(d, 'maxWidth', roomW);
   // a window placed lower by its own margin (Rotate in 3D, Arrange) still ends inside the room
-  // (its own size, not the box measured while it grows in from 97% about its center: S95)
-  const box = d.getBoundingClientRect(), bh = d.offsetHeight || box.height, bw = d.offsetWidth || box.width;
-  const overH = box.top + (box.height + bh) / 2 - (h - r.bottom - EDGE), overW = box.left + (box.width + bw) / 2 - (w - r.right - EDGE);
-  if (bh > 0 && overH > 0.5) limit(d, 'maxHeight', bh - overH);
-  if (bw > 0 && overW > 0.5) limit(d, 'maxWidth', bw - overW);
+  const box = d.getBoundingClientRect();
+  const overH = box.bottom - (h - r.bottom - EDGE), overW = box.right - (w - r.right - EDGE);
+  if (box.height > 0 && overH > 0.5) limit(d, 'maxHeight', box.height - overH);
+  if (box.width > 0 && overW > 0.5) limit(d, 'maxWidth', box.width - overW);
 }
 
 /** Give a window the title strip, or put it back when the window has redrawn its contents. */
