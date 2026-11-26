@@ -64,14 +64,20 @@ export function installers(version) {
   };
 }
 
-/** What the portable zip holds: the app, and the folder that makes it keep its settings beside it. */
-export async function portableZip(exe) {
+/**
+ * What the portable zip holds: the app, the folder that makes it keep its settings beside it, and
+ * `ort` (name → bytes), native ONNX Runtime for the structure reader (scripts/fetch-onnxruntime.mjs),
+ * in ort/ where the app looks for it.
+ */
+export async function portableZip(exe, ort = {}) {
   // loaded here, not at the top: the publish job runs this script without installing packages
   const { zipSync, strToU8 } = await import('fflate');
-  return zipSync({
+  const files = {
     'Chemweave/Chemweave.exe': [exe, { level: 6 }],
     'Chemweave/Chemweave Data/About this folder.txt': strToU8(PORTABLE_NOTE.replace(/\n/g, '\r\n')),
-  });
+  };
+  for (const [name, bytes] of Object.entries(ort)) files[`Chemweave/ort/${name}`] = [bytes, { level: 6 }];
+  return zipSync(files);
 }
 
 const PORTABLE_NOTE = `This folder makes Chemweave a portable copy. While it sits next to
@@ -144,7 +150,9 @@ if (!run) {
   }
   if (p.portable) {
     const exe = readFileSync(p.portable.exe);
-    writeFileSync(join(out, p.portable.zip), await portableZip(exe));
+    const ortDir = join(p.portable.exe, '..', 'ort');
+    const ort = existsSync(ortDir) ? Object.fromEntries(readdirSync(ortDir).map((n) => [n, readFileSync(join(ortDir, n))])) : {};
+    writeFileSync(join(out, p.portable.zip), await portableZip(exe, ort));
     copyFileSync(p.portable.exe, join(out, p.portable.update));
     if (existsSync(p.portable.exe + '.sig')) copyFileSync(p.portable.exe + '.sig', join(out, p.portable.update + '.sig'));
     console.log(`${p.portable.exe} → ${p.portable.zip}, ${p.portable.update}`);

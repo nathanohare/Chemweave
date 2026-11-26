@@ -17888,6 +17888,10 @@ async function desktopSelfTest(): Promise<void> {
     const nr = await names.read('(2R)-butan-2-ol');
     report.nameToStructure = { ok: nr.ok, smiles: nr.smiles, message: nr.message, ms: Math.round(performance.now() - n0) };
     ok = ok && nr.ok && nr.smiles === 'C[C@H](CC)O';
+    // The structure reader, when its model pack is on this computer (never on the build machines):
+    // the sample structure drawn as a picture, read with the native encoder and with the
+    // WebAssembly one, so a laptop run of the self-test gives both times in this web view.
+    report.structureReader = await selfTestReader();
     // Redraw speed on a large drawing, in this web view.
     const s0 = performance.now();
     stressTest(2000);
@@ -17901,4 +17905,42 @@ async function desktopSelfTest(): Promise<void> {
     ok = false;
   }
   await invoke('selftest_report', { report: JSON.stringify(report, null, 2), ok });
+}
+
+/** The self-test's structure-reader timings (see desktopSelfTest); its problems are reported, not failed. */
+async function selfTestReader(): Promise<Record<string, unknown>> {
+  try {
+    const { LocalReader, packReady } = await import('./recognise/reader');
+    if (!(await packReady())) return { pack: false };
+    const p = recordPicture(doc, 0);
+    if (!p) return { pack: true, error: 'no picture of the sample' };
+    const canvas = pictureCanvas(doc, p, 300).canvas;
+    const img = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = { width: img.width, height: img.height, data: img.data };
+    const out: Record<string, unknown> = { pack: true, picture: [img.width, img.height] };
+    for (const native of [true, false]) {
+      const reader = new LocalReader({ native });
+      const t0 = performance.now();
+      const runs: { ms: number; encodeMs?: number; smiles: string }[] = [];
+      for (let i = 0; i < 4; i++) {
+        const r = await reader.read(pixels);
+        if (r.kind === 'graph') runs.push({ ms: r.ms, encodeMs: r.encodeMs, smiles: r.graph.smiles });
+      }
+      const warm = runs.slice(1);
+      out[native ? 'native' : 'wasm'] = {
+        engine: reader.engine,
+        problem: reader.nativeProblem || undefined,
+        // the first picture's wait, model loading included
+        firstReadWithLoadMs: Math.round(runs[0] ? performance.now() - t0 - warm.reduce((s, r) => s + r.ms, 0) : 0),
+        readMedianMs: stat(warm.map((r) => r.ms)).med,
+        encodeMedianMs: stat(warm.map((r) => r.encodeMs ?? 0)).med,
+        smiles: runs[0]?.smiles,
+      };
+    }
+    const n = out.native as { smiles?: string }, w = out.wasm as { smiles?: string };
+    out.sameReading = !!n.smiles && n.smiles === w.smiles;
+    return out;
+  } catch (e) {
+    return { error: String(e) };
+  }
 }

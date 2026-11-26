@@ -38,6 +38,10 @@ zip = { version = "9.1", default-features = false, features = ["deflate-flate2-z
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2.14.1"
 tauri-plugin-single-instance = "2"
+# the structure reader's picture encoder in native ONNX Runtime (src/recognise_native.rs), loaded
+# when first needed from the copy the desktop build puts beside the app (ort/), never linked in:
+# without that copy the page keeps its WebAssembly encoder
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
 
 # View > Developer Tools > Inspector: the web inspector in the Windows and Linux apps (it uses
 # private APIs on a Mac, which the App Store refuses)

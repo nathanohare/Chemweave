@@ -29,7 +29,7 @@ fn safe_name(s: &str) -> bool {
     !s.is_empty() && s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_' || c == '.') && !s.starts_with('.')
 }
 
-fn pack_folder(app: &tauri::AppHandle, pack: &str) -> Result<PathBuf, String> {
+pub(crate) fn pack_folder(app: &tauri::AppHandle, pack: &str) -> Result<PathBuf, String> {
     use tauri::Manager;
     if !safe_name(pack) {
         return Err("Not a model pack.".into());
