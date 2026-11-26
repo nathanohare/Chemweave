@@ -166,12 +166,18 @@ export class Scrollbars {
     this.page(this.h, 'h');
     this.page(this.v, 'v');
     this.use = new InUse((on) => { this.h.classList.toggle('sb-full', on); this.v.classList.toggle('sb-full', on); });
+    // (the drawing's box, measured when the pointer comes in and when it changes size, not on every move)
+    let box: DOMRect | null = null;
+    new ResizeObserver(() => { box = null; }).observe(host);
     host.addEventListener('pointermove', (e) => {
       this.inside = true;
       if (e.pointerType === 'touch') return;
-      if (this.dragging || nearBar(host.getBoundingClientRect(), e.clientX, e.clientY, !this.v.hidden, !this.h.hidden)) this.use.poke();
+      if (this.dragging) { this.use.poke(); return; }
+      if (e.buttons) return;
+      box ??= host.getBoundingClientRect();
+      if (nearBar(box, e.clientX, e.clientY, !this.v.hidden, !this.h.hidden)) this.use.poke();
     }, { passive: true });
-    host.addEventListener('pointerenter', () => { this.inside = true; }, { passive: true });
+    host.addEventListener('pointerenter', () => { this.inside = true; box = null; }, { passive: true });
     host.addEventListener('pointerleave', () => { this.inside = false; if (!this.dragging) this.use.off(); }, { passive: true });
   }
 

@@ -603,18 +603,21 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 /* the page's own scroll bars (documents, spreadsheets, SI pages, panels, lists): the same room
    always (nothing moves when a bar grows), a thin thumb drawn inside it until the pane is in use
    and under the pointer (data-sb, ui/scrollbar-fade.ts). Chromium and WebKit (every Tauri webview)
-   draw these; other browsers keep their own thin bars. Elements with a look of their own keep it. */
-.sb-fade ::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
-.sb-fade ::-webkit-scrollbar-track, .sb-fade ::-webkit-scrollbar-corner { background: transparent; }
-.sb-fade ::-webkit-scrollbar-button { display: none; }
-.sb-fade ::-webkit-scrollbar-thumb {
+   draw these; other browsers keep their own thin bars. Not where the system's own bars already
+   overlay the page and fade (macOS): sb-fade is then left off. These bars change at once (a scroll
+   bar's parts can't be animated). Elements with a look of their own (the Toolbox, sheet tabs) keep it. */
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-track, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-corner { background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-button { display: none; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb {
+  background: rgba(29, 35, 48, 0.42) content-box;
   background: color-mix(in srgb, var(--text, #1d2330) 42%, transparent) content-box;
   border: solid transparent; border-width: 2px 2px 2px 7px; border-radius: 9px; min-height: 24px; min-width: 24px;
 }
-.sb-fade ::-webkit-scrollbar-thumb:horizontal { border-width: 7px 2px 2px 2px; }
-.sb-fade [data-sb]:hover::-webkit-scrollbar { background: color-mix(in srgb, var(--text, #1d2330) 8%, transparent); }
-.sb-fade [data-sb]:hover::-webkit-scrollbar-thumb, .sb-fade ::-webkit-scrollbar-thumb:hover, .sb-fade ::-webkit-scrollbar-thumb:active { border-width: 2px; }
-.sb-fade ::-webkit-scrollbar-thumb:hover, .sb-fade ::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--text, #1d2330) 65%, transparent); }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:horizontal { border-width: 7px 2px 2px 2px; }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar { background: color-mix(in srgb, var(--text, #1d2330) 8%, transparent); }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar-thumb, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { border-width: 2px; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--text, #1d2330) 65%, transparent); }
 @supports not selector(::-webkit-scrollbar) {
   .sb-fade * { scrollbar-width: thin; }
 }

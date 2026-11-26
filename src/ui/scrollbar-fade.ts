@@ -52,17 +52,21 @@ function mark(el: Element): void {
   u.poke();
 }
 
-/** How the element lets its content scroll, read once (an element's overflow seldom changes). */
-const scrolls = new WeakMap<Element, { x: boolean; y: boolean }>();
+/** The element lets its content scroll along x and y (read when needed: a pane's overflow can change with its class). */
 function scrollWays(el: Element): { x: boolean; y: boolean } {
-  let w = scrolls.get(el);
-  if (!w) {
-    const cs = getComputedStyle(el);
-    const can = (o: string) => o === 'auto' || o === 'scroll' || o === 'overlay';
-    w = { x: can(cs.overflowX), y: can(cs.overflowY) };
-    scrolls.set(el, w);
-  }
-  return w;
+  const cs = getComputedStyle(el);
+  const can = (o: string) => o === 'auto' || o === 'scroll' || o === 'overlay';
+  return { x: can(cs.overflowX), y: can(cs.overflowY) };
+}
+
+/** The system draws scroll bars over the page, taking no room (macOS): they already fade by themselves. */
+export function overlayScrollbars(doc: Document = document): boolean {
+  const probe = doc.createElement('div');
+  probe.style.cssText = 'position:absolute;top:-200px;left:-200px;width:100px;height:100px;overflow:scroll;visibility:hidden';
+  doc.body.append(probe);
+  const none = probe.offsetWidth - probe.clientWidth === 0;
+  probe.remove();
+  return none;
 }
 
 let installed = false;
@@ -71,6 +75,8 @@ let installed = false;
 export function installScrollbarFade(doc: Document = document): void {
   if (installed) return;
   installed = true;
+  // (measured before the page's own look applies, which would give every bar room)
+  if (overlayScrollbars(doc)) return;
   doc.documentElement.classList.add('sb-fade');
   // a pane scrolling (the wheel, the keyboard, a drag of its thumb, a jump to an item)
   doc.addEventListener('scroll', (e) => {
@@ -86,14 +92,17 @@ export function installScrollbarFade(doc: Document = document): void {
     const p = at;
     if (!p) return;
     for (let el = p.t instanceof Element ? p.t : null, depth = 0; el && depth < 40; el = el.parentElement, depth++) {
+      // (sizes first, which cost nothing once laid out; the style only for a pane with more to show)
+      const tall = el.scrollHeight > el.clientHeight + 1, wide = el.scrollWidth > el.clientWidth + 1;
+      if (!tall && !wide) continue;
       const w = scrollWays(el);
-      if (!w.x && !w.y) continue;
-      const v = w.y && el.scrollHeight > el.clientHeight + 1, h = w.x && el.scrollWidth > el.clientWidth + 1;
+      const v = w.y && tall, h = w.x && wide;
       if ((v || h) && nearBar(el.getBoundingClientRect(), p.x, p.y, v, h)) mark(el);
     }
   };
   doc.addEventListener('pointermove', (e) => {
-    if (e.pointerType === 'touch') return;
+    // (not while a button is held: drawing, dragging or selecting; a thumb being dragged stays full by itself)
+    if (e.pointerType === 'touch' || e.buttons) return;
     at = { x: e.clientX, y: e.clientY, t: e.target };
     if (!queued) { queued = true; requestAnimationFrame(check); }
   }, { capture: true, passive: true });
