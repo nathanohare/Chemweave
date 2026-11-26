@@ -221,6 +221,20 @@ export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
 }
 
 /**
+ * Where a text box's kept frame (keptFrame) was on the slide when read, in points, and where its
+ * text was then (`tx`, `ty`: the frame moves with the text, frameNow); null without one.
+ */
+export function keptBox(pbox: string | undefined): { x: number; y: number; w: number; h: number; tx: number; ty: number; wrap: number | null; boxH: number | null } | null {
+  if (!pbox) return null;
+  let k: FrameKept;
+  try { k = JSON.parse(pbox) as FrameKept; } catch { return null; }
+  const m = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(k.xf ?? '');
+  if (!m) return null;
+  const [x, y, w, h] = m.slice(1).map((v) => Number(v) / 12700);
+  return { x, y, w, h, tx: k.x, ty: k.y, wrap: k.wrap, boxH: k.boxH };
+}
+
+/**
  * A PowerPoint text box's frame, to write back while the box isn't resized here (null without one).
  * A box in a group is kept in slide coordinates (`t`: the groups' scale and offset, in points),
  * as the box is written outside any group of PowerPoint's (coordinators #68).
