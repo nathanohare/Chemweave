@@ -258,6 +258,7 @@ const RIBBON = `
     </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
+      <button class="rb-big" data-si="ai-import" title="Import with AI: copy the guide for AI assistants, with a starting message, to paste into your AI's chat, and add a note for AI assistants (AGENTS.md) to this project. Close the project before your AI works on it"><span class="rb-icon">✦</span>Import with AI</button>
     </div><div class="rb-label">Import</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-table" data-ic="table" title="Add a table at the end of the Custom section's text (3 × 3, the first row its header); type its caption in the text"><span class="rb-icon">▦</span>Table</button>
@@ -5714,6 +5715,28 @@ export class SiMode {
   /** An SI is being imported (read, reviewed or written): a second import waits for it. */
   private importing = false;
 
+  /** Insert ▸ Import with AI: the guide for an AI assistant copied, and the note for AI assistants (AGENTS.md) written in the project (si/ai-guide.ts). */
+  private async aiImport(p: SiProject): Promise<void> {
+    const { guideToCopy, loadAiGuide, writeAiNotes } = await import('../si/ai-guide');
+    const md = await loadAiGuide();
+    let copied = true;
+    await navigator.clipboard.writeText(guideToCopy(md)).catch(() => { copied = false; });
+    let note = '';
+    if (!p.readOnly) {
+      try {
+        const did = await writeAiNotes(p, md);
+        note = did === 'kept' ? ' The project’s own AGENTS.md was left as it is.'
+          : did === 'updated' ? ' The project’s note for AI assistants (AGENTS.md) was brought up to date (Edit ▸ Undo puts the old one back).'
+          : ' The project has a note for AI assistants (AGENTS.md).';
+      } catch (e) {
+        note = ` The note for AI assistants (AGENTS.md) could not be added: ${e instanceof Error ? e.message : String(e)}.`;
+      }
+    }
+    this.host.flash(copied
+      ? `Copied the guide for AI assistants: paste it into your AI’s chat, then fill in where your files are.${note} Close the project before your AI works on it.`
+      : `Could not use the clipboard: Help ▸ Save Guide for AI Assistants… saves the guide as a file instead.${note}`, 9000);
+  }
+
   private async importSi(): Promise<void> {
     if (this.importing) { this.host.flash('An SI is being imported already. Wait for it to finish, then import the next one.'); return; }
     this.importing = true;
@@ -6194,6 +6217,7 @@ export class SiMode {
         await this.compile(cmd === 'compile-pdf');
         return;
       case 'import-si': await this.importSi(); return;
+      case 'ai-import': await this.aiImport(p); return;
       case 'reload':
         // a project file: opened again from the file (its unsaved changes dropped, once the person agrees)
         if (p.file !== null && this.host.reloadFile) { this.forgetStructure(); await this.host.reloadFile(p); return; }
