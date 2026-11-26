@@ -1977,7 +1977,7 @@ export class SiMode {
   private status(): void {
     const p = this.project;
     if (!p) return;
-    const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
+    const flags = p.allFlags().filter((x) => !x.resolved && x.isFlag).length;
     const warns = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     const s = this.currentSection();
     let lead = p.title;
@@ -5277,7 +5277,7 @@ export class SiMode {
     if (!p) return;
     if (this.compiling) { this.host.flash('The SI is being compiled already.'); return; }
     // (the SI page's flags go in as Word comments only when asked for, each time: they are notes for the authors)
-    const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
+    const flags = p.allFlags().filter((x) => !x.resolved && x.isFlag).length;
     let flagComments = false;
     if (flags) {
       const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI page has ${flags} flag${flags === 1 ? '' : 's'} for checking. Put ${flags === 1 ? 'it' : 'them'} in as comments on the text of ${flags === 1 ? 'its field' : 'their fields'} (who flagged ${flags === 1 ? 'it' : 'them'} and what to check)?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');

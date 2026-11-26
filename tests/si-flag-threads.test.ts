@@ -35,11 +35,11 @@ describe('mentions', () => {
 
 describe('the flag file', () => {
   it('reads safely: missing is empty, broken or newer is null (never written over)', () => {
-    expect(parseFlagFile(null)).toEqual({ threads: {}, sections: {} });
+    expect(parseFlagFile(null)).toEqual({ threads: {}, notes: {} });
     expect(parseFlagFile('{oops')).toBeNull();
     expect(parseFlagFile(JSON.stringify({ version: 9, threads: {} }))).toBeNull();
-    const got = parseFlagFile(JSON.stringify({ version: 1, threads: { 'c:x/yield': { replies: [{ text: 'ok', by: 'A', at: '1' }, { text: '' }, 5] }, bad: {} }, sections: { s1: { f1: { comment: 'look', by: 'B' }, f2: 'x' } } }));
-    expect(got).toEqual({ threads: { 'c:x/yield': { replies: [{ text: 'ok', by: 'A', at: '1' }] } }, sections: { s1: { f1: { comment: 'look', by: 'B', at: '' } } } });
+    const got = parseFlagFile(JSON.stringify({ version: 1, threads: { 'c:x/yield': { replies: [{ text: 'ok', by: 'A', at: '1' }, { text: '' }, 5] }, bad: {} }, notes: { 's:s1/f1': { comment: 'look', by: 'B' }, 'n:x/yield/f2': { comment: 'note', flag: false }, 'c:x/rf': { comment: 'SI Assistant\u2019s, not here' }, 's:s1/f3': 'x' } }));
+    expect(got).toEqual({ threads: { 'c:x/yield': { replies: [{ text: 'ok', by: 'A', at: '1' }] } }, notes: { 's:s1/f1': { comment: 'look', by: 'B', at: '' }, 'n:x/yield/f2': { comment: 'note', by: '', at: '', flag: false } } });
   });
 });
 
@@ -76,7 +76,7 @@ describe('flag threads in a project', () => {
     const f = folder();
     const p = await SiProject.open(f);
     const s = p.top[0];
-    const a = await p.addSectionFlag(s.id, 'Table S1 needs a footnote');
+    const a = await p.addFlagNote({ section: s.id }, 'Table S1 needs a footnote', true);
     expect(p.openFlag(a)?.comment).toBe('Table S1 needs a footnote');
     await p.editFlagNote(a, null, 'Table S1 needs footnote c');
     await p.resolveFlag(a, true);
@@ -86,6 +86,25 @@ describe('flag threads in a project', () => {
     expect(p.openFlag(a)?.comment).toBe('Table S1 needs footnote c');
     await p.deleteFlag(a);
     expect(p.allFlags()).toEqual([]);
+  });
+
+  it('comments left in the Live Preview: a flag on an unflagged field is SI Assistant\u2019s; a second one, or a comment only, is Chemweave\u2019s', async () => {
+    const f = folder();
+    const p = await SiProject.open(f);
+    const c = p.compounds[0];
+    const a1 = await p.addFlagNote({ compound: c.id, field: 'yield' }, 'is this isolated?', true);
+    expect(a1).toBe(compoundAnchor(c.id, 'yield'));
+    expect(((read(f, compoundFile(p, c.id)).flags as Json).yield as Json).comment).toBe('is this isolated?');
+    const a2 = await p.addFlagNote({ compound: c.id, field: 'yield' }, 'and the scale?', true);
+    expect(a2).toMatch(/^n:/);
+    const a3 = await p.addFlagNote({ compound: c.id, field: 'rf' }, 'nice', false);
+    const all = p.allFlags();
+    expect(all.map((x) => [x.anchor, x.isFlag])).toEqual([[a1, true], [a2, true], [a3, false]]);
+    // (SI Assistant's file holds only its own flag)
+    expect(Object.keys(read(f, compoundFile(p, c.id)).flags as Json)).toEqual(['yield']);
+    await p.resolveFlag(a3, true);
+    await p.resolveFlag(a3, false);
+    expect(p.openFlag(a3)).toMatchObject({ comment: 'nice', flag: false });
   });
 
   it('a flag file that can\u2019t be read is never written over', async () => {

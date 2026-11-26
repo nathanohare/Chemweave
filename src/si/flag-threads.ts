@@ -3,13 +3,15 @@
 // in the project folder so SI Assistant's files stay as SI Assistant writes them:
 //
 //   chemweave-flags.json: {"version": 1,
-//     "threads": {"c:<compound id>/<field>" | "s:<section id>/<flag id>":
-//                   {"replies": [{"text", "by", "at"}], "resolved": {"by", "at", "flag": {comment, by, at}}}},
-//     "sections": {"<section id>": {"<flag id>": {"comment", "by", "at"}}}}
+//     "threads": {<anchor>: {"replies": [{"text", "by", "at"}], "resolved": {"by", "at", "flag": {comment, by, at, flag?}}}},
+//     "notes": {<anchor>: {"comment", "by", "at", "flag": false (a comment only; absent: a flag)}}}
 //
-// A resolved compound flag is taken out of compound.json (so SI Assistant's warnings clear too) and
-// kept here with who resolved it; reopening puts it back. A section flag lives here only, as SI
-// Assistant has none. Deleting a flag deletes its thread too.
+// Anchors: "c:<compound id>/<field>" is SI Assistant's own flag on a field (in compound.json);
+// "s:<section id>/<id>" a flag or comment on a section's heading, and "n:<compound id>/<field>/<id>"
+// one more on a compound's field (a comment left in the Live Preview), kept here only, as SI
+// Assistant has neither. A resolved SI Assistant flag is taken out of compound.json (so SI
+// Assistant's warnings clear too) and kept here with who resolved it; reopening puts it back.
+// Deleting a flag deletes its thread too.
 
 export const FLAGS_FILE = 'chemweave-flags.json';
 const VERSION = 1;
@@ -18,8 +20,8 @@ type Json = Record<string, unknown>;
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
 const str = (v: unknown): string => (typeof v === 'string' ? v : '');
 
-/** A flag as SI Assistant keeps it: what to check, who flagged it and when. */
-export interface FlagRecord { comment: string; by: string; at: string }
+/** A flag as SI Assistant keeps it: what to check, who flagged it and when (`flag` false: a comment only, Chemweave's). */
+export interface FlagRecord { comment: string; by: string; at: string; flag?: false }
 export interface FlagNote { text: string; by: string; at: string }
 export interface FlagThread {
   replies: FlagNote[];
@@ -28,23 +30,30 @@ export interface FlagThread {
 }
 export interface FlagFile {
   threads: Record<string, FlagThread>;
-  sections: Record<string, Record<string, FlagRecord>>;
+  /** Flags and comments kept here only (anchors "s:" and "n:"). */
+  notes: Record<string, FlagRecord>;
 }
 
 /** Where a flag is: a compound's field, or a flag on a section's heading. */
 export const compoundAnchor = (compound: string, field: string): string => `c:${compound}/${field}`;
-export const sectionAnchor = (section: string, flag: string): string => `s:${section}/${flag}`;
-export function parseAnchor(a: string): { kind: 'compound'; id: string; field: string } | { kind: 'section'; id: string; flag: string } | null {
-  const m = /^([cs]):([^/]+)\/(.+)$/.exec(a);
-  if (!m) return null;
-  return m[1] === 'c' ? { kind: 'compound', id: m[2], field: m[3] } : { kind: 'section', id: m[2], flag: m[3] };
+export const sectionAnchor = (section: string, id: string): string => `s:${section}/${id}`;
+export const noteAnchor = (compound: string, field: string, id: string): string => `n:${compound}/${field}/${id}`;
+export type Anchor = { kind: 'compound'; id: string; field: string } | { kind: 'section'; id: string; note: string } | { kind: 'note'; id: string; field: string; note: string };
+export function parseAnchor(a: string): Anchor | null {
+  let m = /^c:([^/]+)\/([^/]+)$/.exec(a);
+  if (m) return { kind: 'compound', id: m[1], field: m[2] };
+  m = /^s:([^/]+)\/([^/]+)$/.exec(a);
+  if (m) return { kind: 'section', id: m[1], note: m[2] };
+  m = /^n:([^/]+)\/([^/]+)\/([^/]+)$/.exec(a);
+  if (m) return { kind: 'note', id: m[1], field: m[2], note: m[3] };
+  return null;
 }
 
-export const emptyFlagFile = (): FlagFile => ({ threads: {}, sections: {} });
+export const emptyFlagFile = (): FlagFile => ({ threads: {}, notes: {} });
 
 export function flagRecord(v: unknown): FlagRecord | null {
   if (!isObj(v)) return null;
-  return { comment: str(v.comment), by: str(v.by), at: str(v.at) };
+  return { comment: str(v.comment), by: str(v.by), at: str(v.at), ...(v.flag === false ? { flag: false as const } : {}) };
 }
 
 function note(v: unknown): FlagNote | null {
@@ -72,22 +81,20 @@ export function parseFlagFile(raw: string | null | undefined): FlagFile | null {
       if (thread.replies.length || thread.resolved) out.threads[a] = thread;
     }
   }
-  if (isObj(j.sections)) {
-    for (const [s, flags] of Object.entries(j.sections)) {
-      if (!isObj(flags)) continue;
-      const kept: Record<string, FlagRecord> = {};
-      for (const [id, f] of Object.entries(flags)) { const r = flagRecord(f); if (r) kept[id] = r; }
-      if (Object.keys(kept).length) out.sections[s] = kept;
+  if (isObj(j.notes)) {
+    for (const [a, v] of Object.entries(j.notes)) {
+      const at = parseAnchor(a);
+      const r = flagRecord(v);
+      if (at && at.kind !== 'compound' && r) out.notes[a] = r;
     }
   }
   return out;
 }
 
 export function flagFileJson(f: FlagFile): string {
-  // (empty threads and sections aren't kept)
+  // (empty threads aren't kept)
   const threads = Object.fromEntries(Object.entries(f.threads).filter(([, t]) => t.replies.length || t.resolved));
-  const sections = Object.fromEntries(Object.entries(f.sections).filter(([, s]) => Object.keys(s).length));
-  return JSON.stringify({ version: VERSION, threads, sections }, null, 2) + '\n';
+  return JSON.stringify({ version: VERSION, threads, notes: f.notes }, null, 2) + '\n';
 }
 
 let counter = 0;

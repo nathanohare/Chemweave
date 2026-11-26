@@ -24,7 +24,7 @@ import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFil
 import { checkIds, type IdReport } from './compound-ids';
 import { NEW_PROJECT_PER_PAGE, defaultsJson, sectionDefaults, type SpectrumLayout } from './spectra';
 import { newProjectStyleLooks, SI_STYLES_FILE, styleLooksJson } from './si-styles';
-import { compoundAnchor, emptyFlagFile, FLAGS_FILE, flagFileJson, flagRecord, newFlagId, parseAnchor, parseFlagFile, sectionAnchor, threadOf, type FlagFile, type FlagRecord, type FlagThread } from './flag-threads';
+import { compoundAnchor, emptyFlagFile, FLAGS_FILE, flagFileJson, flagRecord, newFlagId, noteAnchor, parseAnchor, parseFlagFile, sectionAnchor, threadOf, type FlagFile, type FlagRecord, type FlagThread } from './flag-threads';
 
 /** The Spectra section's name (SI Assistant's spectra.DEFAULT_NAME). */
 const SPECTRA_NAME = 'Spectra';
@@ -1360,9 +1360,12 @@ export class SiProject {
     return [...out];
   }
 
-  /** Every flag, open or resolved: on compounds' fields (in the tree's order) and on sections' headings. */
-  allFlags(): { anchor: string; flag: FlagRecord; resolved: boolean; thread: FlagThread }[] {
-    const out: { anchor: string; flag: FlagRecord; resolved: boolean; thread: FlagThread }[] = [];
+  /**
+   * Every flag and comment, open or resolved, in the tree's order: on sections' headings, then on
+   * their compounds' fields. `isFlag` false: a comment only.
+   */
+  allFlags(): { anchor: string; flag: FlagRecord; resolved: boolean; isFlag: boolean; thread: FlagThread }[] {
+    const out: { anchor: string; flag: FlagRecord; resolved: boolean; isFlag: boolean; thread: FlagThread }[] = [];
     const seen = new Set<string>();
     const add = (anchor: string, open: FlagRecord | null): void => {
       if (seen.has(anchor)) return;
@@ -1370,15 +1373,15 @@ export class SiProject {
       const flag = open ?? thread.resolved?.flag;
       if (!flag) return;
       seen.add(anchor);
-      out.push({ anchor, flag, resolved: !open, thread });
+      out.push({ anchor, flag, resolved: !open, isFlag: flag.flag !== false, thread });
     };
+    const kept = [...new Set([...Object.keys(this.flagFile.notes), ...Object.keys(this.flagFile.threads)])];
     const walk = (list: SiSection[]): void => {
       for (const s of list) {
-        for (const [id, f] of Object.entries(this.flagFile.sections[s.id] ?? {})) add(sectionAnchor(s.id, id), f);
-        for (const a of Object.keys(this.flagFile.threads)) if (a.startsWith(`s:${s.id}/`)) add(a, null);
+        for (const a of kept) if (a.startsWith(`s:${s.id}/`)) add(a, this.flagFile.notes[a] ?? null);
         for (const c of s.type === 'data' ? compoundsOf(s) : []) {
           for (const [key, f] of Object.entries(isObj(c.data.flags) ? c.data.flags : {})) { const r = flagRecord(f); if (r) add(compoundAnchor(c.id, key), r); }
-          for (const a of Object.keys(this.flagFile.threads)) if (a.startsWith(`c:${c.id}/`)) add(a, null);
+          for (const a of kept) if (a.startsWith(`c:${c.id}/`) || a.startsWith(`n:${c.id}/`)) add(a, this.flagFile.notes[a] ?? null);
         }
         walk(s.children);
       }
@@ -1387,22 +1390,36 @@ export class SiProject {
     return out;
   }
 
-  /** The flag at `anchor` while open (null: resolved, or none). */
+  /** The flag or comment at `anchor` while open (null: resolved, or none). */
   openFlag(anchor: string): FlagRecord | null {
     const at = parseAnchor(anchor);
     if (!at) return null;
-    if (at.kind === 'section') return this.flagFile.sections[at.id]?.[at.flag] ?? null;
+    if (at.kind !== 'compound') return this.flagFile.notes[anchor] ?? null;
     const c = this.compoundById(at.id);
-    return c && isObj(c.data.flags) ? flagRecord(c.data.flags[at.field]) : null;
+    const r = c && isObj(c.data.flags) ? flagRecord(c.data.flags[at.field]) : null;
+    return r ? { comment: r.comment, by: r.by, at: r.at } : null;
   }
 
-  /** A flag on a section's heading (Chemweave's: SI Assistant has none); its anchor. */
-  async addSectionFlag(sectionId: string, comment: string): Promise<string> {
+  /**
+   * A comment left in the Live Preview, on a compound's field (`field`) or a section's heading:
+   * a flag (`flag`) or a comment only. A flag on a compound's field with none yet is SI
+   * Assistant's own flag; anything else is kept in Chemweave's file. Its anchor.
+   */
+  async addFlagNote(on: { compound: string; field: string } | { section: string }, comment: string, flag: boolean): Promise<string> {
     this.checkWritable();
-    this.section(sectionId);
-    const id = newFlagId();
-    await this.changeFlagFile((f) => { (f.sections[sectionId] ??= {})[id] = { comment, by: this.lock?.user || '', at: localIso(new Date()) }; });
-    return sectionAnchor(sectionId, id);
+    const rec: FlagRecord = { comment, by: this.lock?.user || '', at: localIso(new Date()), ...(flag ? {} : { flag: false as const }) };
+    if ('compound' in on) {
+      const c = this.compound(on.compound);
+      const flags = flagsOf(c);
+      if (flag && !(on.field in flags) && !this.flagFile.threads[compoundAnchor(c.id, on.field)]) { await this.setFlag(c, on.field, true, comment); return compoundAnchor(c.id, on.field); }
+      const anchor = noteAnchor(c.id, on.field, newFlagId());
+      await this.changeFlagFile((f) => { f.notes[anchor] = rec; });
+      return anchor;
+    }
+    this.section(on.section);
+    const anchor = sectionAnchor(on.section, newFlagId());
+    await this.changeFlagFile((f) => { f.notes[anchor] = rec; });
+    return anchor;
   }
 
   /** Reply to a flag (it may mention people with @Name). */
@@ -1418,11 +1435,12 @@ export class SiProject {
     if (reply !== null) { await this.changeFlagFile((f) => { const r = f.threads[anchor]?.replies[reply]; if (r) r.text = text; }); return; }
     const at = parseAnchor(anchor);
     if (!at) return;
-    if (at.kind === 'section') { await this.changeFlagFile((f) => { const r = f.sections[at.id]?.[at.flag] ?? f.threads[anchor]?.resolved?.flag; if (r) r.comment = text; }); return; }
-    const c = this.compoundById(at.id);
-    const open = c && isObj(c.data.flags) && isObj(c.data.flags[at.field]) ? (c.data.flags[at.field] as Json) : null;
-    if (c && open) { open.comment = text; await this.saveCompound(c); }
-    else await this.changeFlagFile((f) => { const r = f.threads[anchor]?.resolved?.flag; if (r) r.comment = text; });
+    if (at.kind === 'compound') {
+      const c = this.compoundById(at.id);
+      const open = c && isObj(c.data.flags) && isObj(c.data.flags[at.field]) ? (c.data.flags[at.field] as Json) : null;
+      if (c && open) { open.comment = text; await this.saveCompound(c); return; }
+    }
+    await this.changeFlagFile((f) => { const r = f.notes[anchor] ?? f.threads[anchor]?.resolved?.flag; if (r) r.comment = text; });
   }
 
   async removeFlagReply(anchor: string, reply: number): Promise<void> {
@@ -1431,42 +1449,42 @@ export class SiProject {
   }
 
   /**
-   * Resolve a flag (done) or reopen it. A compound's flag leaves compound.json while resolved, so
-   * SI Assistant's warnings clear too; the record stays in chemweave-flags.json.
+   * Resolve a flag (done) or reopen it. SI Assistant's flag leaves compound.json while resolved,
+   * so SI Assistant's warnings clear too; the record stays in chemweave-flags.json.
    */
   async resolveFlag(anchor: string, done: boolean): Promise<void> {
     this.checkWritable();
     const at = parseAnchor(anchor);
     if (!at) return;
     this.flagFileToChange();
-    const thread = this.flagFile.threads[anchor];
+    const stamp = (): { by: string; at: string } => ({ by: this.lock?.user || '', at: localIso(new Date()) });
     if (done) {
       const open = this.openFlag(anchor);
       if (!open) return;
       if (at.kind === 'compound') {
         const c = this.compoundById(at.id)!;
         // (the flag file first: a failed write leaves the flag open, never lost)
-        await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { by: this.lock?.user || '', at: localIso(new Date()), flag: open }; });
+        await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { ...stamp(), flag: open }; });
         delete flagsOf(c)[at.field];
         await this.saveCompound(c);
-      } else await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { by: this.lock?.user || '', at: localIso(new Date()), flag: open }; delete f.sections[at.id]?.[at.flag]; });
+      } else await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { ...stamp(), flag: open }; delete f.notes[anchor]; });
       return;
     }
-    const was = thread?.resolved;
+    const was = this.flagFile.threads[anchor]?.resolved;
     if (!was) return;
     if (at.kind === 'compound') {
       const c = this.compoundById(at.id);
       if (!c) throw new SiProjectError('Its compound is gone, so the flag can’t be reopened.');
-      flagsOf(c)[at.field] = { ...was.flag };
+      flagsOf(c)[at.field] = { comment: was.flag.comment, by: was.flag.by, at: was.flag.at };
       await this.saveCompound(c);
       await this.changeFlagFile((f) => { delete threadOf(f, anchor).resolved; });
     } else {
-      this.section(at.id);
-      await this.changeFlagFile((f) => { (f.sections[at.id] ??= {})[at.flag] = { ...was.flag }; delete threadOf(f, anchor).resolved; });
+      if (at.kind === 'section') this.section(at.id); else this.compound(at.id);
+      await this.changeFlagFile((f) => { f.notes[anchor] = { ...was.flag }; delete threadOf(f, anchor).resolved; });
     }
   }
 
-  /** Delete a flag, open or resolved, with its replies. */
+  /** Delete a flag or comment, open or resolved, with its replies. */
   async deleteFlag(anchor: string): Promise<void> {
     this.checkWritable();
     const at = parseAnchor(anchor);
@@ -1477,7 +1495,7 @@ export class SiProject {
       if (this.flagFile.threads[anchor]) await this.changeFlagFile((f) => { delete f.threads[anchor]; });
       return;
     }
-    await this.changeFlagFile((f) => { delete f.threads[anchor]; delete f.sections[at.id]?.[at.flag]; });
+    await this.changeFlagFile((f) => { delete f.threads[anchor]; delete f.notes[anchor]; });
   }
 
   private flagFileToChange(): FlagFile {
