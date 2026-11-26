@@ -1,1 +1,1 @@
-Fixed: Word documents: a table of figures, contents or index field in the middle of a paragraph stays where it was, showing what Word last showed, instead of being moved into a paragraph of its own.
+Fixed: Word documents: a table of figures, contents or index field in the middle of a paragraph, showing plain text, stays where it was with that text, instead of being moved into a paragraph of its own.

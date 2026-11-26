@@ -175,4 +175,28 @@ describe('a list field in the middle of a paragraph', () => {
     const { doc } = await readDocx(wordFile(`<w:p>${fld(TOF, 'Figure 1. a caption')}</w:p><w:p>${fld(INDEX, 'benzene, 1')}</w:p>`));
     expect(Object.values(doc.objects).map((o) => o.kind).sort()).toEqual(['index', 'tof']);
   });
+
+  const kinds = async (body: string) => Object.values((await readDocx(wordFile(body))).doc.objects).map((o) => o.kind);
+
+  it('keeps one with text only after it, and a short (w:fldSimple) one, in place (review)', async () => {
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${text(' and more')}</w:p>`)).toEqual(['field']);
+    expect(await kinds(`<w:p>${text('Index: ')}<w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple></w:p>`)).toEqual(['field']);
+    expect(await kinds(`<w:p><w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple>${text(' after')}</w:p>`)).toEqual(['field']);
+  });
+
+  it('makes one with no result, or an empty one, after text a list of ours, to be worked out here (review)', async () => {
+    const bare = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+    expect(await kinds(`<w:p>${text('Contents ')}${bare}</w:p>`)).toEqual(['toc']);
+    expect(await kinds(`<w:p>${text('Contents ')}${fld(' TOC \\o "1-3" ', ' ')}</w:p>`)).toEqual(['toc']);
+  });
+
+  it('counts only text on its own line, not before a page break or an object (review)', async () => {
+    expect(await kinds(`<w:p>${text('Title')}<w:r><w:br w:type="page"/></w:r>${fld(TOF, 'Figure 1. a caption')}</w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(' PAGE ', '1')}${fld(INDEX, 'benzene, 1')}</w:p>`)).toEqual(['field', 'index']);
+  });
+
+  it('leaves a contents list Word wrote, a title in its first paragraph, a list of ours', async () => {
+    const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
+    expect(await kinds(`<w:p>${text('Contents ')}${begin}${text('Introduction 1')}</w:p><w:p>${text('Results 2')}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`)).toEqual(['toc']);
+  });
 });

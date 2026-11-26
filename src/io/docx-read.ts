@@ -2268,9 +2268,30 @@ class DocxReader {
     return false;
   }
 
-  /** Whether a field has text before it in its paragraph (read so far) or after its end there. */
+  /**
+   * Whether a field shows some text of its own (its result, after the separator, up to its end in
+   * the same paragraph): a field with no result, or an empty one, has none (review).
+   */
+  private hasResultText(f: Field, simple?: Element): boolean {
+    if (simple) return !!simple.textContent?.trim();
+    const sep = f.sep, own = sep?.parentElement;
+    if (!sep || !own) return false;
+    for (let el: Element | null = own; el; el = el.nextElementSibling) {
+      const ks = kids(el);
+      for (let i = el === own ? ks.indexOf(sep) + 1 : 0; i < ks.length; i++) {
+        if (ks[i].localName === 'fldChar' && this.a(ks[i], 'fldCharType') === 'end') return false;
+        if (ks[i].localName === 't' && ks[i].textContent?.trim()) return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Whether a field has text before it on its line (read so far: not before a line or page break,
+   * and not an object such as another field) or after its end in its paragraph.
+   */
   private amidText(f: Field, ctx: Ctx, simple?: Element): boolean {
-    if (ctx.pieces.some((pc) => pc.runs.some((r) => r.text.trim()))) return true;
+    if (ctx.pieces[ctx.pieces.length - 1]?.runs.some((r) => r.obj === undefined && r.text.trim())) return true;
     const hasText = (el: Element) => Array.from(el.getElementsByTagNameNS('*', 't')).some((t) => t.textContent?.trim());
     if (simple) {
       for (let el = simple.nextElementSibling; el; el = el.nextElementSibling) if (hasText(el)) return true;
@@ -2345,7 +2366,7 @@ class DocxReader {
     // a list field (contents, figures, an index, authorities) in the middle of a paragraph's text, its
     // result in that paragraph: kept in its place as Word had it, showing that result, not made a list
     // of paragraphs of its own (office sampler F-W-016)
-    if (/^(TOC|INDEX|TOA)\b/i.test(ins) && !ctx.cell && !f.inner && this.plainResult(f, simple) && this.amidText(f, ctx, simple)) {
+    if (/^(TOC|INDEX|TOA)\b/i.test(ins) && !ctx.cell && !f.inner && this.plainResult(f, simple) && this.hasResultText(f, simple) && this.amidText(f, ctx, simple)) {
       const id = this.emitObject(ctx, { kind: 'field', code: 'word', instr: f.instr, text: '' }, f.shown ?? f.props);
       if (id !== null) { f.kept = id; f.swallow = true; }
       return;
