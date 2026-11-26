@@ -3,7 +3,7 @@
 // changes, and put back on each compile.
 
 import { describe, expect, it } from 'vitest';
-import { addFormat, applyPreviewFormats, blockSrc, clearFormats, docRanges, locateFormat, markupFormat, parsePreviewFormats, previewFormatsJson, type PreviewFormat } from '../src/si/preview-format';
+import { addFormat, applyPreviewFormats, blockSrc, clearFormats, linkPieceOn, removeLinks, docRanges, locateFormat, markupFormat, parsePreviewFormats, previewFormatsJson, type PreviewFormat } from '../src/si/preview-format';
 import * as rt from '../src/richtext';
 import type { DocText } from '../src/document/document';
 
@@ -159,9 +159,27 @@ describe('links (Insert ▸ Link in the Live Preview)', () => {
     expect(parsePreviewFormats(JSON.stringify({ version: 3, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { link: true } }] }))?.[0].look).toEqual({});
   });
 
-  it('Remove Link takes off only the link, its blue and its underline', () => {
+  it('Remove Link takes off only the link pieces, with their blue and underline', () => {
+    const items: PreviewFormat[] = [
+      // the person's own red underline over all the words, then a link on one of them
+      { id: 'own', src: 'p', start: 0, end: 9, text: 'data here', look: { color: '#c00000', underline: true } },
+      { id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } },
+    ];
+    const out = removeLinks(items, 'p', 'data here', 0, 4);
+    expect(out.map((f) => f.look)).toEqual([{ color: '#c00000', underline: true }, { bold: true }]);
+    expect(linkPieceOn(items, 'p', 'data here', 0, 4)).toBe(true);
+    expect(linkPieceOn(items, 'p', 'data here', 5, 9)).toBe(false);
+  });
+
+  it('Clear All Formatting keeps a link, with the blue and underline it came with', () => {
     const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } }];
-    const out = clearFormats(items, 'p', 'data here', 0, 4, ['link', 'color', 'underline']);
-    expect(out.map((f) => f.look)).toEqual([{ bold: true }]);
+    expect(clearFormats(items, 'p', 'data here', 0, 9).map((f) => f.look)).toEqual([{ link: 'https://example.org/', color: '#0563c1', underline: true }]);
+  });
+
+  it('keeps keys a newer Chemweave added to a piece or its look', () => {
+    const got = parsePreviewFormats(JSON.stringify({ version: 3, items: [{ id: 'x', src: 'p', start: 0, end: 3, text: 'abc', future: 1, look: { bold: true, glow: 'blue' } }] }))!;
+    expect(got[0]).toMatchObject({ future: 1, look: { bold: true, glow: 'blue' } });
+    // (and when the piece is found again and kept)
+    expect(clearFormats(got, 'p', 'abc def', 4, 7)[0]).toMatchObject({ future: 1 });
   });
 });

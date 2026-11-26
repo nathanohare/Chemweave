@@ -3,7 +3,7 @@
 // (so the Word file gets a Word equation), and read back from the preview's document.
 
 import { describe, expect, it } from 'vitest';
-import { customPiece, customShown, customTextJson, parseCustomText, placeCustomText, type CustomText } from '../src/si/custom-text';
+import { customPiece, customShown, customTextJson, parseCustomText, placeCustomText, readCustomTextForCompile, type CustomText } from '../src/si/custom-text';
 import { OBJECT_CHAR, type DocText } from '../src/document/document';
 import * as rt from '../src/richtext';
 
@@ -47,5 +47,26 @@ describe('equations in custom text', () => {
 
   it('show as their LaTeX in a list of the text', () => {
     expect(customShown(item)).toBe(` where [${GIBBS}] holds.`);
+  });
+
+  it('keep an entry for every object character, so a bare one (pasted as a letter) never moves an equation', () => {
+    // the preview's text after an object character was pasted before the equation: " x￼ then ￼ end"
+    const d = { runs: [{ text: ` x${OBJECT_CHAR} then ` }, { text: OBJECT_CHAR, obj: 1 }, { text: ' end' }], paras: [{}], objects: { 1: { kind: 'math', tex: 'E = mc^{2}' } } } as unknown as DocText;
+    const got = customPiece(d, [[0, 14]]);
+    expect(got.math).toEqual(['', 'E = mc^{2}']);
+    // compiled: the bare one left out, the equation where it was
+    const put = placeCustomText(doc('A.'), [{ start: 0, end: 2, src: 'f' }], [{ start: 0, end: 2, node: 'section:s1' }], [{ ...item, after: 'f', ...got }]);
+    expect(rt.plainText(put.doc.runs)).toBe(`A. x then ${OBJECT_CHAR} end`);
+    const run = put.doc.runs.find((r) => r.obj !== undefined);
+    expect(run && put.doc.objects[run.obj!]).toEqual({ kind: 'math', tex: 'E = mc^{2}' });
+  });
+
+  it('keep keys a newer Chemweave added, and say when the file is newer than this one reads', async () => {
+    const raw = JSON.stringify({ version: 2, items: [{ ...item, future: { a: 1 } }] });
+    expect(parseCustomText(raw)?.[0]).toMatchObject({ future: { a: 1 } });
+    expect(JSON.parse(customTextJson(parseCustomText(raw)!)).items[0].future).toEqual({ a: 1 });
+    const folder = (text: string) => ({ readText: async () => text }) as never;
+    expect(await readCustomTextForCompile(folder(JSON.stringify({ version: 3, items: [item] })))).toEqual({ items: [], newer: true });
+    expect((await readCustomTextForCompile(folder(raw))).newer).toBe(false);
   });
 });

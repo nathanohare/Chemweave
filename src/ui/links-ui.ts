@@ -82,6 +82,22 @@ export async function followLink(link: string): Promise<void> {
   } else window.open(link, '_blank', 'noopener');
 }
 
+/** One line of a link's right-click menu. */
+export interface LinkMenuLine { label: string; run: () => void; title?: string }
+
+/**
+ * A link's right-click menu, the same in every mode (as Word, PowerPoint and Excel have it):
+ * Edit Link…, Open Link, Copy Link and Remove Link. `edit` and `remove` are the mode's own.
+ */
+export function linkMenuLines(link: string, edit: () => void, remove: () => void): LinkMenuLine[] {
+  return [
+    { label: 'Edit Link…', run: edit },
+    { label: 'Open Link', run: () => void followLink(link), title: 'Or Ctrl+click the link' },
+    { label: 'Copy Link', run: () => void navigator.clipboard?.writeText(link).catch(() => {}) },
+    { label: 'Remove Link', run: remove },
+  ];
+}
+
 // ------------------------------------------------------------------ the window
 
 export interface LinkAsk {

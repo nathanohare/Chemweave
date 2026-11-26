@@ -16,7 +16,7 @@
 
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
-import { OBJECT_CHAR, nextObjectId, objectRun, type DocText } from '../document/document';
+import { OBJECT_CHAR, equationRun, nextObjectId, type DocText } from '../document/document';
 import type { SiFolder } from './folder';
 import { customSrc } from './preview-edit';
 import type { SourceBlock, SourceSpan } from './source-map';
@@ -41,8 +41,16 @@ export interface CustomText {
 export interface PlacedCustom { id: string; start: number; end: number; anchored: boolean }
 
 export async function readCustomText(folder: SiFolder): Promise<CustomText[]> {
+  return (await readCustomTextForCompile(folder)).items;
+}
+
+/** The custom text for a compile, and whether the file was written by a newer Chemweave (so isn't used: said in the compile's notes). */
+export async function readCustomTextForCompile(folder: SiFolder): Promise<{ items: CustomText[]; newer: boolean }> {
   const raw = await folder.readText(CUSTOM_TEXT_FILE).catch(() => null);
-  return (raw && parseCustomText(raw)) || [];
+  if (!raw) return { items: [], newer: false };
+  let newer = false;
+  try { const v = (JSON.parse(raw) as { version?: unknown })?.version; newer = typeof v === 'number' && v > CUSTOM_TEXT_VERSION; } catch { /* (not the file's format) */ }
+  return { items: parseCustomText(raw) ?? [], newer };
 }
 
 /** The custom text to change and save: as readCustomText, but a file that can't be read is an error (saving over it would lose its text). */
@@ -64,7 +72,9 @@ export function parseCustomText(raw: string): CustomText[] | null {
     if (typeof data.version === 'number' && data.version > CUSTOM_TEXT_VERSION) return null;
     return data.items.filter((x): x is CustomText => !!x && typeof x === 'object' && typeof (x as CustomText).id === 'string' && typeof (x as CustomText).text === 'string')
       .map((x) => {
-        const item: CustomText = { id: x.id, node: String(x.node ?? ''), after: String(x.after ?? ''), gap: String(x.gap ?? ''), text: x.text };
+        // (keys a newer Chemweave added are kept as they are, so writing the file back keeps them)
+        const { math: _m, ...rest } = x;
+        const item: CustomText = { ...rest, id: x.id, node: String(x.node ?? ''), after: String(x.after ?? ''), gap: String(x.gap ?? ''), text: x.text };
         if (Array.isArray(x.math) && x.math.length) item.math = x.math.map((m) => (typeof m === 'string' ? m : ''));
         return item;
       });
@@ -77,7 +87,9 @@ export function parseCustomText(raw: string): CustomText[] | null {
 const CUSTOM_TEXT_VERSION = 2;
 
 export function customTextJson(items: readonly CustomText[]): string {
-  // (version 2 only with an equation: a Chemweave reading version 1 would drop it)
+  // (version 2 only with an equation: a Chemweave that checks the version and reads only version 1
+  // leaves the file alone instead of dropping it; Chemweave from before the version was checked
+  // can still write over it)
   const version = items.some((x) => x.math?.some(Boolean)) ? 2 : 1;
   return JSON.stringify({ about: 'Text typed in Chemweave’s Live Preview where no field is. Chemweave puts it back in its place when the SI is compiled.', version, items }, null, 2) + '\n';
 }
@@ -92,8 +104,8 @@ export function customPiece(t: Pick<DocText, 'runs' | 'objects'>, ranges: readon
   for (const [a, b] of ranges) {
     for (const r of rt.sliceRuns(t.runs, a, b)) {
       text += r.text;
-      if (r.obj === undefined) continue;
-      const o = t.objects[r.obj];
+      // (an entry for every object character, '' for one that is no equation, such as one pasted as a letter: left out on compiling)
+      const o = r.obj !== undefined ? t.objects[r.obj] : undefined;
       for (let i = 0; i < r.text.length; i++) if (r.text[i] === OBJECT_CHAR) math.push(o?.kind === 'math' ? o.tex : '');
     }
   }
@@ -173,9 +185,8 @@ function putEquations(t: DocText, at: number, text: string, eqs: readonly string
     if (text[i] !== OBJECT_CHAR) continue;
     const id = nextObjectId({ objects });
     objects[id] = { kind: 'math', tex: eqs[k++] };
-    const look = { ...rt.styleOf(rt.sliceRuns(runs, at + i, at + i + 1)[0] ?? { text: '' }) } as Record<string, unknown>;
-    for (const key of ['link', 'obj', 'field', 'sub', 'sup']) delete look[key];
-    runs = rt.replaceRange(runs, at + i, at + i + 1, [objectRun(id, look as rt.RunStyle)]);
+    // (the look of the text put in, which has no link, field or object of its own: styleAt)
+    runs = rt.replaceRange(runs, at + i, at + i + 1, [equationRun(id, rt.styleOf(rt.sliceRuns(runs, at + i, at + i + 1)[0] ?? { text: '' }))]);
   }
   return { ...t, runs, objects };
 }

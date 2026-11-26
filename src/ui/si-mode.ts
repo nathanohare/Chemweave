@@ -27,7 +27,7 @@ import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customShown, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
-import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
+import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormats, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
 import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -226,8 +226,9 @@ const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another c
 
 /** The ribbon: what each button does is its data-si command. */
 /** Why Home ▸ Paragraph is greyed while typing on the SI page. */
-const SI_PV_REASON = 'Links and equations go in the Live Preview’s text: click where they go there first (the SI page’s fields hold neither; SI Assistant reads them).';
 const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
+/** Why Insert ▸ Link and Equation are greyed: they work in the Live Preview's text. */
+const SI_PV_REASON = 'Links and equations go in the Live Preview’s text: click where they go there first (the SI page’s fields hold neither).';
 
 const RIBBON = `
   <div class="rb-tabs">
@@ -835,6 +836,7 @@ export class SiMode {
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
     for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint], [data-si-pv]')) el.disabled = true;
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-pv]')) { b.dataset.tip = b.title; b.title = `${b.title}\n\n${SI_PV_REASON}`; }
     siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
@@ -1660,6 +1662,11 @@ export class SiMode {
   private fontState(): void {
     const on = !!this.previewTyped;
     for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-pv]')) el.disabled = !on;
+    // (Link and Equation, greyed, say why in their tooltip)
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-pv]')) {
+      b.dataset.tip ??= b.title;
+      b.title = on ? b.dataset.tip : `${b.dataset.tip}\n\n${SI_PV_REASON}`;
+    }
     const pg = this.ribbon.querySelector<HTMLElement>('.si-para-group');
     if (pg) { if (on) pg.removeAttribute('title'); else pg.title = SI_PARA_REASON; }
     const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
@@ -4304,6 +4311,7 @@ export class SiMode {
       structureMenu: (id, x, y) => this.structureMenu(id, x, y),
       editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
       linkPlaces: () => this.linkPlaces(),
+      readFormats: (owner) => readPreviewFormats(asProject(owner).folder),
     });
     this.live.view = this.preview.view;
     this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));

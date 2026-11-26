@@ -43,9 +43,9 @@ import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
 import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
-import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
+import { CUSTOM_TEXT_FILE, placeCustomText, readCustomTextForCompile, type PlacedCustom } from './custom-text';
 import { addFlagComments } from './flag-comments';
-import { applyPreviewFormats, readPreviewFormats } from './preview-format';
+import { applyPreviewFormats, PREVIEW_FORMAT_FILE, readPreviewFormatsForCompile } from './preview-format';
 import { applyStyleLooks, readStyleLooks, SI_COMPOUND_LOOK, SI_TOC_HEADING_LOOK, type StyleLooks } from './si-styles';
 import { figureFrame, figureKey, floatOf as placedFloat, placementOf, structureKey, type Placement } from './placement';
 
@@ -1629,10 +1629,15 @@ export async function compileSi(p: SiProject, host: CompileHost, only?: SiPrevie
   applyStyleLooks(doc.styles, styleLooks);
   // the text typed in the Live Preview where no field is, back in its places (custom-text.ts)
   const whole = !only || only.kind === 'whole';
-  const items = only?.kind === 'spectra' ? [] : (await readCustomText(p.folder)).filter((x) => whole || c.blocks.some((b) => b.node === x.node));
+  const own = only?.kind === 'spectra' ? { items: [], newer: false } : await readCustomTextForCompile(p.folder);
+  // (a file a newer Chemweave wrote isn't used, and is never written over: said, so the text isn't thought lost)
+  if (own.newer) c.notes.push(`The custom text typed in the Live Preview (${CUSTOM_TEXT_FILE}) was saved by a newer Chemweave and isn’t shown. Update Chemweave to see it.`);
+  const items = own.items.filter((x) => whole || c.blocks.some((b) => b.node === x.node));
   const put = items.length ? placeCustomText(doc, c.sources, c.blocks, items) : { doc, sources: c.sources, blocks: c.blocks, placed: [] };
   // the formatting done in the Live Preview that the fields can't hold, put back (preview-format.ts)
-  const looks = only?.kind === 'spectra' ? [] : await readPreviewFormats(p.folder);
+  const fmt = only?.kind === 'spectra' ? { items: [], newer: false } : await readPreviewFormatsForCompile(p.folder);
+  if (fmt.newer) c.notes.push(`Your formatting and links from the Live Preview (${PREVIEW_FORMAT_FILE}) were saved by a newer Chemweave and aren’t shown. Update Chemweave to see them.`);
+  const looks = fmt.items;
   const formatted = looks.length ? applyPreviewFormats(put.doc, put.sources, put.blocks, looks) : put.doc;
   const done = options.flagComments ? addFlagComments(formatted, put.sources, put.blocks, p) : formatted;
   return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed, structures: c.structures };

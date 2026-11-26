@@ -46,7 +46,7 @@ import { SheetPivots } from './sheet-pivot-ui';
 import { SheetQueries } from './sheet-query-ui';
 import { SheetCompounds } from './sheet-compound-ui';
 import { CATEGORIES, type Category } from '../sheet/fn-help';
-import { askLink, followLink, type LinkPlace } from './links-ui';
+import { askLink, followLink, linkMenuLines, type LinkPlace } from './links-ui';
 import { LINK_COLOUR, cellLink, cellOfLink, describeLink } from '../links';
 import { describeValidation, KIND_NAMES } from '../sheet/validation';
 import type { ChartKind } from '../sheet/chart';
@@ -2418,7 +2418,7 @@ export class SheetMode {
       // links, as Excel's right-click menu has them
       const link = v.linkOf(v.sel.active.r, v.sel.active.c);
       items.push(null);
-      if (link) items.push(act('Edit Link…', () => void this.run('insert-link'), 'insert-link'), act('Open Link', () => void followLink(link)), act('Copy Link', () => void navigator.clipboard?.writeText(link).catch(() => {})), act('Remove Link', () => this.run('remove-link')));
+      if (link) items.push(...linkMenuLines(link, () => void this.run('insert-link'), () => this.run('remove-link')).map((l, i): MenuItem => ({ label: l.label, run: l.run, ...(i === 0 ? { cmd: 'insert-link' } : {}), ...(l.title ? { title: l.title } : {}) })));
       else items.push(act('Link…', () => void this.run('insert-link'), 'insert-link'));
     }
     items.push(null,

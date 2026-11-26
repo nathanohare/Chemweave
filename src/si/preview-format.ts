@@ -67,8 +67,19 @@ let counter = 0;
 export const newFormatId = (): string => `pf-${Date.now().toString(36)}${(counter++).toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 
 export async function readPreviewFormats(folder: SiFolder): Promise<PreviewFormat[]> {
+  return (await readPreviewFormatsForCompile(folder)).items;
+}
+
+/** The file's pieces for a compile, and whether it was written by a newer Chemweave (so isn't used: said in the compile's notes). */
+export async function readPreviewFormatsForCompile(folder: SiFolder): Promise<{ items: PreviewFormat[]; newer: boolean }> {
   const raw = await folder.readText(PREVIEW_FORMAT_FILE).catch(() => null);
-  return (raw && parsePreviewFormats(raw)) || [];
+  if (!raw) return { items: [], newer: false };
+  return { items: parsePreviewFormats(raw) ?? [], newer: newerFile(raw, FORMAT_VERSION) };
+}
+
+/** Whether a side file's text says it is a version newer than `known`. */
+export function newerFile(raw: string, known: number): boolean {
+  try { const v = (JSON.parse(raw) as { version?: unknown })?.version; return typeof v === 'number' && v > known; } catch { return false; }
 }
 
 /** The file's pieces, to change and write back; throws when the file is there but can't be read (it is never written over). */
@@ -91,7 +102,9 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
     const out: PreviewFormat[] = [];
     for (const x of j.items as Record<string, unknown>[]) {
       if (!x || typeof x.src !== 'string' || typeof x.start !== 'number' || typeof x.end !== 'number' || typeof x.text !== 'string' || !x.look || typeof x.look !== 'object') continue;
+      // (looks and keys a newer Chemweave added are kept as they are, so writing the file back keeps them)
       const look: FormatLook = {};
+      for (const [k, v] of Object.entries(x.look as Record<string, unknown>)) if (!(LOOK_KEYS as readonly string[]).includes(k) && !(PARA_KEYS as readonly string[]).includes(k)) (look as Record<string, unknown>)[k] = v;
       for (const k of LOOK_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
         // (a link is where it goes, or '' to take one off)
@@ -101,7 +114,8 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
         const v = (x.look as Record<string, unknown>)[k];
         if (k === 'align' ? ALIGNS.includes(v as Justify) : k === 'pageBreak' ? typeof v === 'boolean' : typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000) (look as Record<string, unknown>)[k] = v;
       }
-      const piece: PreviewFormat = { id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
+      const { id: _i, src: _s, start: _a, end: _b, text: _t, before: _bf, after: _af, look: _l, ...other } = x;
+      const piece: PreviewFormat = { ...other, id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
       if (typeof x.before === 'string') piece.before = x.before;
       if (typeof x.after === 'string') piece.after = x.after;
       out.push(piece);
@@ -270,7 +284,7 @@ export function addFormat(items: readonly PreviewFormat[], src: string, printed:
     if (covered && restEmpty) continue;
     if (covered) { out.push(pieceAt(src, printed, fa, fb, rest, f.id)); continue; }
     // (overlapping only in part: kept as it is; the new piece comes after it and wins)
-    out.push(pieceAt(src, printed, fa, fb, f.look, f.id));
+    out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) });
   }
   out.push(pieceAt(src, printed, a, b, { ...look }));
   return out;
@@ -287,16 +301,55 @@ export function clearFormats(items: readonly PreviewFormat[], src: string, print
     const at = locateFormat(printed, f);
     if (!at) continue;
     const [fa, fb] = at;
-    if (fb <= a || fa >= b) { out.push(pieceAt(src, printed, fa, fb, f.look, f.id)); continue; }
-    if (keys) {
+    if (fb <= a || fa >= b) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
+    // (Clear All Formatting leaves a link, with the blue and underline it came with, as Word does)
+    if (!keys && f.look.link) {
+      const lo = Math.max(fa, a), hi = Math.min(fb, b);
+      out.push(pieceAt(src, printed, lo, hi, linkLook(f.look)));
+    } else if (keys) {
       const rest: FormatLook = { ...f.look };
       for (const k of keys) delete rest[k];
-      if (Object.keys(rest).length === Object.keys(f.look).length) { out.push(pieceAt(src, printed, fa, fb, f.look, f.id)); continue; }
+      if (Object.keys(rest).length === Object.keys(f.look).length) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
       // (inside [a, b) only the other looks stay)
       const lo = Math.max(fa, a), hi = Math.min(fb, b);
       if (Object.keys(rest).length) out.push(pieceAt(src, printed, lo, hi, rest));
     }
     // the parts of it outside [a, b) stay
+    if (fa < a) out.push(pieceAt(src, printed, fa, a, f.look));
+    if (fb > b) out.push(pieceAt(src, printed, b, fb, f.look));
+  }
+  return out;
+}
+
+/** The link of a look, with the blue and underline that came with it. */
+function linkLook(look: FormatLook): FormatLook {
+  const out: FormatLook = { link: look.link };
+  if (look.color !== undefined) out.color = look.color;
+  if (look.underline !== undefined) out.underline = look.underline;
+  return out;
+}
+
+/** Whether a piece with a link is on the printed text [a, b) of `src`. */
+export function linkPieceOn(items: readonly PreviewFormat[], src: string, printed: string, a: number, b: number): boolean {
+  return items.some((f) => { if (f.src !== src || !f.look.link) return false; const at = locateFormat(printed, f); return !!at && at[0] < b && at[1] > a; });
+}
+
+/**
+ * The pieces after Remove Link on the printed text [a, b) of `src`: the pieces that carry a link
+ * lose it there, with their color and underline (the link's blue); other pieces (the person's
+ * own color or underline) are left as they are.
+ */
+export function removeLinks(items: readonly PreviewFormat[], src: string, printed: string, a: number, b: number): PreviewFormat[] {
+  const out: PreviewFormat[] = [];
+  for (const f of items) {
+    if (f.src !== src || !f.look.link) { out.push(f); continue; }
+    const at = locateFormat(printed, f);
+    if (!at) continue;
+    const [fa, fb] = at;
+    if (fb <= a || fa >= b) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
+    const { link: _l, color: _c, underline: _u, ...rest } = f.look;
+    const lo = Math.max(fa, a), hi = Math.min(fb, b);
+    if (Object.keys(rest).length) out.push(pieceAt(src, printed, lo, hi, rest));
     if (fa < a) out.push(pieceAt(src, printed, fa, a, f.look));
     if (fb > b) out.push(pieceAt(src, printed, b, fb, f.look));
   }

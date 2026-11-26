@@ -1067,6 +1067,11 @@ export function objectRun(id: number, style: rt.RunStyle): TextRun {
   return { ...style, obj: id, text: OBJECT_CHAR };
 }
 
+/** An equation's run (Insert ▸ Equation): an object in the look of the text around it, never raised or lowered. */
+export function equationRun(id: number, style: rt.RunStyle): TextRun {
+  return objectRun(id, rt.cleanStyle({ ...style, sub: undefined, sup: undefined }));
+}
+
 /** The objects inside an object (structures in a table's cells, citations in a footnote), in order. */
 export function innerObjects(o: DocObject | undefined): number[] {
   if (o?.kind === 'table') return o.table.rows.flatMap((row) => row.flatMap((c) => objectsInText(c.runs)));
