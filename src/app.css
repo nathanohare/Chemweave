@@ -17,6 +17,8 @@
   --bg: #eef0f3;
   --panel: #ffffff;
   --text: #1d2330;
+  /* the scroll bar's thumb and track where there is no color-mix() (see the sb-fade rules) */
+  --sb-thumb: rgba(29, 35, 48, 0.42); --sb-thumb-on: rgba(29, 35, 48, 0.65); --sb-track: rgba(29, 35, 48, 0.08);
   /* muted words read at 4.5:1 or more on every light surface they sit on, the chrome (#e9ebef) included
      (#677084 until 2026-11: 4.2:1 on the chrome) */
   --muted: #5f687b;
@@ -123,6 +125,7 @@ input[type='checkbox'][hidden] { display: none; }
     --bg: #1b1e24;
     --panel: #252a32;
     --text: #e6e9ef;
+    --sb-thumb: rgba(230, 233, 239, 0.42); --sb-thumb-on: rgba(230, 233, 239, 0.65); --sb-track: rgba(230, 233, 239, 0.08);
     --muted: #9aa3b5;
     --line: #3a414d;
     --accent: var(--mode-accent-dark, #4ea9bc);
@@ -142,6 +145,7 @@ input[type='checkbox'][hidden] { display: none; }
   --bg: #1b1e24;
   --panel: #252a32;
   --text: #e6e9ef;
+  --sb-thumb: rgba(230, 233, 239, 0.42); --sb-thumb-on: rgba(230, 233, 239, 0.65); --sb-track: rgba(230, 233, 239, 0.08);
   --muted: #9aa3b5;
   --line: #3a414d;
   --accent: var(--mode-accent-dark, #4ea9bc);
@@ -618,7 +622,6 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-track, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-corner { background: transparent; }
 .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-button { display: none; }
 .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb {
-  background: rgba(29, 35, 48, 0.42) content-box;
   background: color-mix(in srgb, var(--text, #1d2330) 42%, transparent) content-box;
   border: solid transparent; border-width: 2px 2px 2px 7px; border-radius: 9px; min-height: 24px; min-width: 24px;
 }
@@ -626,6 +629,18 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 .sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar { background: color-mix(in srgb, var(--text, #1d2330) 8%, transparent); }
 .sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar-thumb, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { border-width: 2px; }
 .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--text, #1d2330) 65%, transparent); }
+/* (WebKit without color-mix(), macOS 12: plain colors by theme. This comes after the stand-ins the
+   build writes for color-mix(), a see-through gray that the Dark Gray surround swallows.) */
+@supports not (color: color-mix(in srgb, red 50%, blue)) {
+  /* panes whose ground isn't the theme's: the Dark Gray docks are dark (the cards in them light),
+     and the grid and dashboards stay light in the Dark theme */
+  :root[data-gray]:not([data-shadows='off']) .dock { --sb-thumb: rgba(230, 233, 239, 0.42); --sb-thumb-on: rgba(230, 233, 239, 0.65); --sb-track: rgba(230, 233, 239, 0.08); }
+  :root[data-gray]:not([data-shadows='off']) .dock > * { --sb-thumb: rgba(29, 35, 48, 0.42); --sb-thumb-on: rgba(29, 35, 48, 0.65); --sb-track: rgba(29, 35, 48, 0.08); }
+  .sh-scroll, .dash { --sb-thumb: rgba(29, 35, 48, 0.42); --sb-thumb-on: rgba(29, 35, 48, 0.65); --sb-track: rgba(29, 35, 48, 0.08); }
+  .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb { background: var(--sb-thumb) content-box; }
+  .sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar { background: var(--sb-track); }
+  .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { background-color: var(--sb-thumb-on); }
+}
 @supports not selector(::-webkit-scrollbar) {
   .sb-fade * { scrollbar-width: thin; }
 }
@@ -4414,7 +4429,7 @@ body:not(.mode-window) .rb-tabs { background: var(--chrome); border-bottom: 0; }
 :root[data-gray] { --chrome: #2e3137; --rb-surface: #d3d6db; --pane: #dfe1e5; --bg: #b4b8bf; --surround: #7d838d; --line: #bfc3ca; --rb-shadow: 0 1px 3px rgb(0 0 0 / 0.25); }
 /* the dark band takes each mode's dark-theme accent (as full Dark does: Canvas teal #4ea9bc), so the
    chosen ribbon tab's word, the file tabs' underline and the BETA badge read on it (4.5:1 and more) */
-:root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
+:root[data-gray] header, :root[data-gray] footer, :root[data-gray] .rb-tabs { --bg: #23262b; --text: #eceef2; --sb-thumb: rgba(230, 233, 239, 0.42); --sb-thumb-on: rgba(230, 233, 239, 0.65); --sb-track: rgba(230, 233, 239, 0.08); --muted: #b9bec8; --line: #474b53; --accent-soft: #41464f; --panel: #3a3e45; --accent: var(--mode-accent-dark, #4ea9bc); --on-accent: var(--mode-on-accent-dark, #14171c); color: var(--text); }
 /* --muted is a deeper gray on these gray panels: the light theme's #5f687b is only 3.8:1 on #d3d6db;
    #4f5768 keeps the same hue at 5.0:1 (4.6:1 on the hover fill) for group names, captions and ▾ */
 :root[data-gray] .ribbon > .rb-panel, :root[data-gray] .doc-ribbon > .rb-panel { --panel: #d3d6db; --accent-soft: #c1c7d1; --line: #b3b8c0; --muted: #4f5768; }
