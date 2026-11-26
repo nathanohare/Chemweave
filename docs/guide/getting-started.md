@@ -168,7 +168,7 @@ The **×** at the top of the panel closes it all the way to give the drawing mor
 - **Menu Bar** shows the menus along the top; clear it to have them in the ribbon's **File** tab instead (the web version starts that way).
 - **File Tabs in Menu Bar**, **Mode Colors…** and **Reading Mode Colors…** are described under [Tabs](#tabs) and [Reading Mode](drawing.md#reading-mode).
 
-Two more switches are in the **View** menu itself. **Detailed Tooltips** shows what a tool does and what Alt, Shift and Ctrl change when you rest the mouse on it; turn it off for a one-line tip. **Scroll Bars** shows or hides the bars along the bottom and right of the drawing.
+Two more switches are in the **View** menu itself. **Detailed Tooltips** shows what a tool does and what Alt, Shift and Ctrl change when you rest the mouse on it; turn it off for a one-line tip. **Scroll Bars** shows or hides the bars along the bottom and right of the drawing. Every scroll bar is a thin line until you use it: it grows while you scroll or move the pointer near it, and goes thin again a couple of seconds later or when the pointer leaves that part of the window.
 
 ### A small window
 

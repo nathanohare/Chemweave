@@ -1,0 +1,1 @@
+Changed: Scroll bars everywhere (the canvas, documents, spreadsheets, SI pages, panels and lists) are a thin line until you use them: they grow while you scroll or move the pointer near them, and go thin again a couple of seconds later or as soon as the pointer leaves that pane. With Animations on, the canvas bars grow smoothly.

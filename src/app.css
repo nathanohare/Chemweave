@@ -588,15 +588,43 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 .tab { transition: transform var(--m-std) var(--ease-out); }
 .tab.tab-dragging { transition: none; position: relative; z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); cursor: grabbing; }
 
-/* scroll bars over the drawing's bottom and right edges */
-.scrollbar { position: absolute; z-index: 4; background: rgba(120, 130, 150, 0.08); }
+/* scroll bars over the drawing's bottom and right edges: a thin line until in use (S98, ui/scrollbar-fade.ts) */
+.scrollbar { position: absolute; z-index: 4; background: transparent; border-color: transparent; transition: background-color var(--m-std) var(--ease-out), border-color var(--m-std) var(--ease-out); }
 .scrollbar[hidden] { display: none; }
-.scrollbar-h { left: 0; right: 12px; bottom: 0; height: 12px; border-top: 1px solid rgba(120, 130, 150, 0.18); }
-.scrollbar-v { top: 0; bottom: 12px; right: 0; width: 12px; border-left: 1px solid rgba(120, 130, 150, 0.18); }
-.scroll-thumb { position: absolute; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); }
+.scrollbar-h { left: 0; right: 12px; bottom: 0; height: 12px; border-top: 1px solid transparent; }
+.scrollbar-v { top: 0; bottom: 12px; right: 0; width: 12px; border-left: 1px solid transparent; }
+.scrollbar.sb-full { background: rgba(120, 130, 150, 0.08); border-color: rgba(120, 130, 150, 0.18); }
+.scroll-thumb { position: absolute; }
+/* (the thin look is drawn by ::before, so the whole thumb stays there to grab while it is thin) */
+.scroll-thumb::before { content: ''; position: absolute; inset: 0; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); transition: clip-path var(--m-std) var(--ease-out), background-color var(--m-std) var(--ease-out); }
 .scrollbar-h .scroll-thumb { top: 2px; bottom: 2px; left: 0; }
 .scrollbar-v .scroll-thumb { left: 2px; right: 2px; top: 0; }
-.scroll-thumb:hover, .scroll-thumb.dragging { background: rgba(70, 80, 100, 0.6); }
+.scrollbar-h .scroll-thumb::before { clip-path: inset(5px 0 0 0 round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar-v .scroll-thumb::before { clip-path: inset(0 0 0 5px round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar.sb-full .scroll-thumb::before { clip-path: inset(0 round var(--r-control)); background: rgba(90, 100, 120, 0.38); }
+.scrollbar .scroll-thumb:hover::before, .scrollbar .scroll-thumb.dragging::before { background: rgba(70, 80, 100, 0.6); }
+
+/* the page's own scroll bars (documents, spreadsheets, SI pages, panels, lists): the same room
+   always (nothing moves when a bar grows), a thin thumb drawn inside it until the pane is in use
+   and under the pointer (data-sb, ui/scrollbar-fade.ts). Chromium and WebKit (every Tauri webview)
+   draw these; other browsers keep their own thin bars. Not where the system's own bars already
+   overlay the page and fade (macOS): sb-fade is then left off. These bars change at once (a scroll
+   bar's parts can't be animated). Elements with a look of their own (the Toolbox, sheet tabs) keep it. */
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-track, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-corner { background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-button { display: none; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb {
+  background: rgba(29, 35, 48, 0.42) content-box;
+  background: color-mix(in srgb, var(--text, #1d2330) 42%, transparent) content-box;
+  border: solid transparent; border-width: 2px 2px 2px 7px; border-radius: 9px; min-height: 24px; min-width: 24px;
+}
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:horizontal { border-width: 7px 2px 2px 2px; }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar { background: color-mix(in srgb, var(--text, #1d2330) 8%, transparent); }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar-thumb, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { border-width: 2px; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--text, #1d2330) 65%, transparent); }
+@supports not selector(::-webkit-scrollbar) {
+  .sb-fade * { scrollbar-width: thin; }
+}
 /* Settings > Navigation: the Document Map and the arrows at the edge (ui/orientation.ts) */
 .navigator { position: absolute; left: 0; top: 0; z-index: 5; border: 1px solid var(--line); border-radius: var(--r-tab); overflow: hidden; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14); cursor: crosshair; opacity: 0.94; touch-action: none; }
 .navigator:hover { opacity: 1; }
@@ -5043,8 +5071,22 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-tree-grip:hover, .si-tree-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
 /* the live preview: the page picked as it prints, on the right; folded to a strip */
 .si-live { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surround); }
-.si-live-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
-.si-live-grip:hover { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
+/* the divider between the SI page and the preview: a bar in the grey round the pages, with a grip; drag it to change the preview's width */
+.si-live:not(.off) { border-left: 0; padding-left: 6px; }
+.si-live-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; background: var(--surround); }
+.si-live-grip::after { content: ''; position: absolute; left: 2px; top: 50%; width: 2px; height: 24px; margin-top: -12px; background: radial-gradient(circle, color-mix(in srgb, var(--text) 45%, var(--surround)) 0.9px, transparent 1.2px) 0 0 / 2px 4px; }
+.si-live-grip:hover { background: linear-gradient(to right, var(--surround) 2px, var(--accent) 2px, var(--accent) 4px, var(--surround) 4px); }
+.si-live-grip:hover::after { display: none; }
+/* on the divider: hide the SI page so the preview takes its width (the list stays), and show it again */
+.si-page-fold { position: absolute; left: 0; top: 36px; z-index: 4; width: 16px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.si-page-fold:hover { color: var(--text); border-color: var(--accent); }
+/* (a target at least 24 px across) */
+.si-page-fold::before { content: ''; position: absolute; inset: -2px -4px; }
+.si-page-fold svg { width: 10px; height: 10px; }
+#si-pane.si-page-off:not(.si-live-off) { grid-template-columns: var(--si-tree-w, 260px) 0 minmax(0, 1fr); }
+#si-pane.si-page-off:not(.si-live-off) > .si-page { visibility: hidden; padding: 0; overflow: hidden; }
+#si-pane.si-page-off:not(.si-live-off) .si-live-grip { cursor: default; background: var(--surround); }
+#si-pane.si-page-off:not(.si-live-off) .si-live-grip::after { display: none; }
 .si-live-head { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--fs-sm); white-space: nowrap; }
 .si-live-title { font-weight: 600; }
 .si-live-state { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -5062,6 +5104,12 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-empty { padding: 16px 12px; font-size: var(--fs-sm); }
 .si-live-empty[hidden] { display: none; }
 .si-live-strip { display: none; }
+/* Synchronous Scrolling on the SI page: the soft barrier's hint at its bottom (or top), filling as the scrolling pushes on */
+.si-barrier { position: absolute; z-index: 3; box-sizing: border-box; height: 24px; display: flex; align-items: center; padding: 0 10px; overflow: hidden; background: var(--panel); border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text); pointer-events: none; white-space: nowrap; }
+.si-barrier.up { border-top: 0; border-bottom: 1px solid var(--line); }
+.si-barrier[hidden] { display: none; }
+.si-barrier-text { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.si-barrier-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: color-mix(in srgb, var(--tab-si, #b4234f) 16%, transparent); border-right: 2px solid var(--tab-si, #b4234f); }
 .si-live.off > * { display: none; }
 .si-live.off > .si-live-strip { display: block; flex: 1; border: 0; padding: 8px 0; background: var(--panel); color: var(--muted); font-size: var(--fs-sm); writing-mode: vertical-rl; cursor: pointer; }
 .si-live.off > .si-live-strip:hover { color: var(--text); background: var(--accent-soft); }

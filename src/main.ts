@@ -121,6 +121,7 @@ import { SlideTextRibbon } from './ui/slide-text-ribbon';
 import { CaptionEditor, setCaptionTint } from './ui/caption-editor';
 import { LayersPanel } from './ui/layers-panel';
 import { Scrollbars, type ScrollContent } from './ui/scrollbars';
+import { installScrollbarFade } from './ui/scrollbar-fade';
 import type { Presenter, ShowOptions } from './ui/present';
 import { editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
@@ -10333,6 +10334,7 @@ setTimeout(() => {
 docBoxPrefs.changed = () => storeSettings();
 docRulerPrefs.changed = () => storeSettings();
 docPagePrefs.changed = () => storeSettings();
+siPreviewPrefs.save = () => storeSettings();
 formulaBarPrefs.changed = () => storeSettings();
 // documents measure fonts they have no published widths for on the screen
 setScreenMeasure(measureText);
@@ -13388,6 +13390,8 @@ async function personalPreferences(): Promise<void> {
     { name: 'siCustom', label: 'Mark text no field holds with', value: siPreviewPrefs.custom, short: true, options: [
       { value: 'underline', label: 'An amber dotted underline and a flag' }, { value: 'fill', label: 'An amber fill and a bar' }],
       help: 'Text typed in the preview where no field is: it is kept and prints where it was typed, and is listed on the Warnings page.' },
+    { name: 'siWhiteSpace', label: 'Show white space between pages', type: 'checkbox', value: String(siPreviewPrefs.whiteSpace),
+      help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line, so more of the SI fits in the preview. Double-clicking between pages in the preview does the same.' },
     { name: 'iconsHeading', label: 'Interface', type: 'heading', value: '' },
     { name: 'animations', label: 'Animations', value: motionLevel(), short: true, options: [
       { value: 'off', label: 'Off' }, { value: 'fast', label: 'Fast' }, { value: 'normal', label: 'Normal' }],
@@ -13415,6 +13419,7 @@ async function personalPreferences(): Promise<void> {
   siPreviewPrefs.dim = r.siDim === 'true';
   siPreviewPrefs.link = r.siLink === 'bracket' ? 'bracket' : 'tint';
   siPreviewPrefs.custom = r.siCustom === 'fill' ? 'fill' : 'underline';
+  siPreviewPrefs.whiteSpace = r.siWhiteSpace === 'true';
   siPreviewPrefs.changed?.();
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
@@ -13616,7 +13621,7 @@ function currentSettings(): Settings {
     docRuler: docRulerPrefs.shown,
     docCropMarks: docPagePrefs.cropMarks,
     docWhiteSpace: docPagePrefs.whiteSpace,
-    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom },
+    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom, whiteSpace: siPreviewPrefs.whiteSpace },
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },
@@ -17103,6 +17108,7 @@ const scrollArea = (): ScrollContent | null => {
   return p ? scrollBox(p, pageExtent(p, bb), bb) : bb;
 };
 const scrollbars = new Scrollbars(host, renderer, scrollArea, () => editor.requestScene());
+installScrollbarFade();
 // the wheel stops where the bars end, at the edge of the drawing, rather than going on for ever
 editor.scrollArea = scrollArea;
 

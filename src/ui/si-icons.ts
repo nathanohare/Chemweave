@@ -22,6 +22,8 @@ const spectrumAxis = '<path d="M2.75 19.25h14.5"/>';
 export const SI_ICONS: Record<string, string> = {
   // Review ▸ Dictionary: a book with a tick
   'si:dictionary': '<path class="p" d="M5.25 3.75h11a1.5 1.5 0 0 1 1.5 1.5v15h-11a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M5.25 18.25a1.5 1.5 0 0 1 1.5-1.5h11"/>' + check(8.5, 9.5),
+  // View ▸ Hide SI Page: two panes, the left one folded away toward the arrow
+  'si:page-collapse': '<rect class="p" x="2.75" y="4.75" width="18.5" height="14.5" rx="1.5"/><path d="M9.25 4.75v14.5"/><path class="a" d="M7 9.5L4.75 12L7 14.5"/>',
   // View ▸ Show/Hide ¶: a pilcrow
   'si:show-marks': '<path d="M11.25 4.75v14.5M15.25 4.75v14.5M10.25 4.75h8.5"/><path class="f a" d="M11.25 4.75h-2a4 4 0 0 0 0 8h2z"/>',
   // Home ▸ Project

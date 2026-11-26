@@ -16,6 +16,7 @@ import type { DocStyle } from '../style';
 import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
 import type { SiPreview } from './si-preview';
+import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
@@ -463,6 +464,9 @@ const RIBBON = `
         <button data-si="show-marks" aria-pressed="false" title="Show/Hide ¶: paragraph marks, spaces and tabs in the Live Preview. They show on screen only, never in print">Show/Hide ¶</button>
         <button data-si="nav-pane" data-ic="nav-pane" aria-pressed="true" title="Navigation Pane: the list of sections and compounds at the left (hide it for more room)">Navigation Pane</button>
       </div>
+      <div class="rb-col">
+        <button data-si="page-collapse" aria-pressed="false" title="Hide SI Page: the Live Preview fills the width, for working in it (click again, or the arrow on the divider, to show the page)">Hide SI Page</button>
+      </div>
     </div><div class="rb-label">Show</div></div>
   </div>
   <div class="rb-panel" data-si-panel="ms" hidden>
@@ -723,6 +727,10 @@ export class SiMode {
     this.tree.setAttribute('aria-label', 'Sections and compounds');
     this.page = el('div', 'si-page');
     this.live = this.livePane();
+    this.wirePageScroll();
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('si.pageCollapsed') === 'on'; } catch { /* (shown) */ }
+    this.setPageCollapsed(collapsed, false);
     this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
     // a compound's ID in the text shows its structure when the mouse rests on it
@@ -1825,6 +1833,9 @@ export class SiMode {
     const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, { cls: total > 0 ? 'si-has-warn' : '', title: 'Every automatic warning in the project, by compound' });
 
+    // (the SI's own pages in order, for scrolling from one to the next on the SI page)
+    this.pageOrder = specs.filter((x) => ['project', 'section', 'scheme', 'compound', 'spectra'].includes(x.sel.kind))
+      .map((x) => ({ sel: x.sel, key: JSON.stringify(x.sel), label: x.sel.kind === 'project' ? 'the cover page' : `${x.sel.kind === 'spectra' ? 'spectra of ' : ''}${x.cid !== undefined ? `${x.cid} ${x.text}` : x.text}` }));
     // sections and scheme pages with rows under them fold (▸) and unfold (▾); the row picked is never hidden
     const shut = this.collapsedOf(p);
     const keyOf = (x: RowSpec): string => JSON.stringify(x.sel);
@@ -3113,18 +3124,24 @@ export class SiMode {
     strip.addEventListener('click', () => this.setLive(true));
     const grip = el('div', 'si-live-grip');
     grip.title = 'Drag to change the preview’s width';
+    grip.setAttribute('role', 'separator');
+    grip.setAttribute('aria-orientation', 'vertical');
+    grip.setAttribute('aria-label', 'Width of the Live Preview');
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      // (the SI page hidden: the preview has all the width, nothing to drag)
+      if (this.pageCollapsed) return;
       grip.setPointerCapture(e.pointerId);
       const right = this.pane.getBoundingClientRect().right;
       const move = (ev: PointerEvent): void => { const w = Math.round(Math.max(240, Math.min(900, right - ev.clientX))); this.pane.style.setProperty('--si-live-w', `${w}px`); };
       const up = (): void => {
-        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
         try { localStorage.setItem('si.livePreviewWidth', this.pane.style.getPropertyValue('--si-live-w')); } catch { /* (not kept) */ }
         this.live.view?.resize();
       };
       grip.addEventListener('pointermove', move);
       grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
     });
     try { const w = localStorage.getItem('si.livePreviewWidth'); if (w) this.pane.style.setProperty('--si-live-w', w); } catch { /* (default) */ }
     const head = el('div', 'si-live-head');
@@ -3151,7 +3168,11 @@ export class SiMode {
     addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text Chemweave writes is locked: click it to go to its field. Text typed where no field is stays as custom text, marked because no field holds it. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these are marked.');
     const host = el('div', 'si-live-host');
     const empty = el('div', 'si-live-empty muted');
-    wrap.append(strip, grip, head, host, empty);
+    // on the divider: hide the SI page (the preview takes its width), or show it again
+    const fold = el('button', 'si-page-fold');
+    fold.type = 'button';
+    fold.addEventListener('click', () => this.setPageCollapsed(!this.pageCollapsed));
+    wrap.append(strip, grip, fold, head, host, empty);
     wrap.classList.toggle('off', !this.liveOn);
     this.pane.classList.toggle('si-live-off', !this.liveOn);
     return { el: wrap, host, state, empty, view: null, shown: '' };
@@ -3159,6 +3180,28 @@ export class SiMode {
 
   /** Synchronous Scrolling: scrolling the Live Preview to another page of the list chooses that page (remembered on this computer). */
   private syncScroll = false;
+
+  /** The SI page hidden so the Live Preview takes its width (the list stays; remembered on this computer). Shown again while the preview is folded. */
+  pageCollapsed = false;
+
+  /** Hide the SI page (the preview takes its width) or show it again: the arrow on the divider. */
+  setPageCollapsed(on: boolean, persist = true): void {
+    this.pageCollapsed = on;
+    if (persist) try { localStorage.setItem('si.pageCollapsed', on ? 'on' : 'off'); } catch { /* (not kept) */ }
+    this.pane.classList.toggle('si-page-off', on);
+    if (this.ribbon) this.viewState();
+    // (nothing to drag with the page hidden)
+    const grip = this.live.el.querySelector<HTMLElement>('.si-live-grip');
+    if (grip) grip.title = on ? '' : 'Drag to change the preview’s width';
+    const b = this.live.el.querySelector<HTMLButtonElement>('.si-page-fold');
+    if (b) {
+      const tip = on ? 'Show the SI page' : 'Hide the SI page so the Live Preview fills the width';
+      b.title = tip;
+      b.setAttribute('aria-label', on ? 'Show the SI page' : 'Hide the SI page');
+      b.innerHTML = `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="${on ? 'M3.5 1.5L7 5L3.5 8.5' : 'M6.5 1.5L3 5L6.5 8.5'}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    }
+    this.live.view?.resize();
+  }
 
   private setSyncScroll(on: boolean): void {
     this.syncScroll = on;
@@ -3187,6 +3230,138 @@ export class SiMode {
     if (!node || !this.nodeExists(node)) return;
     pv.followed(node);
     this.pickFromPreview(node);
+  }
+
+  // ---------------------------------------------------------------- Synchronous Scrolling on the SI page
+
+  /** The SI's own pages in the list's order (the cover, sections, scheme pages, compounds, spectra pages), with what the barrier's hint calls them. */
+  private pageOrder: { sel: Pick; key: string; label: string }[] = [];
+  private barrier = freshBarrier();
+  private barrierHint: HTMLElement | null = null;
+  private barrierHide = 0;
+  /** When the person last scrolled the SI page (wheel, touch, keys, its scrollbar held), told from it scrolling by itself. */
+  private pageUserAt = -Infinity;
+  private pagePressed = false;
+  private pageAlignQueued = false;
+  private touchY: number | null = null;
+
+  /**
+   * Synchronous Scrolling on the SI page: scrolling it keeps the preview on the same field, and
+   * scrolling on past its end (or above its start) meets a soft barrier; pushing through opens the
+   * next (or previous) page, each page staying its own.
+   */
+  private wirePageScroll(): void {
+    const pg = this.page;
+    const user = (): void => { this.pageUserAt = performance.now(); };
+    pg.addEventListener('wheel', (e) => {
+      // (Ctrl+wheel zooms; a wheel a box inside the page took for itself)
+      if (e.ctrlKey || e.metaKey || e.defaultPrevented) return;
+      user();
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      this.pageEdgeScroll(wheelPixels(e.deltaY, e.deltaMode, pg.clientHeight), e.target);
+    }, { passive: true });
+    pg.addEventListener('touchstart', (e) => { user(); this.touchY = e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+    pg.addEventListener('touchmove', (e) => {
+      user();
+      if (this.touchY === null || e.touches.length !== 1) return;
+      const y = e.touches[0].clientY;
+      // (the finger moving up scrolls down)
+      this.pageEdgeScroll(this.touchY - y, e.target);
+      this.touchY = y;
+    }, { passive: true });
+    pg.addEventListener('touchend', () => { this.touchY = null; }, { passive: true });
+    pg.addEventListener('keydown', (e) => { if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key)) user(); });
+    pg.addEventListener('pointerdown', (e) => { if (e.button === 0) { this.pagePressed = true; user(); } });
+    const up = (): void => { this.pagePressed = false; };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    pg.addEventListener('scroll', () => {
+      const now = performance.now();
+      if (!this.pagePressed && now - this.pageUserAt > 300) return;
+      this.pageUserAt = now;
+      if (this.pageAlignQueued) return;
+      this.pageAlignQueued = true;
+      requestAnimationFrame(() => { this.pageAlignQueued = false; this.alignPreviewToPage(); });
+    }, { passive: true });
+  }
+
+  /** Whether an element inside the SI page (a text box, a list) between `t` and the page can still scroll `dy`'s way itself. */
+  private innerScrolls(t: EventTarget | null, dy: number): boolean {
+    for (let e = t instanceof Element ? t : null; e && e !== this.page; e = e.parentElement) {
+      if (!(e instanceof HTMLElement) || e.scrollHeight <= e.clientHeight + 1) continue;
+      const oy = getComputedStyle(e).overflowY;
+      if (oy !== 'auto' && oy !== 'scroll') continue;
+      if (dy > 0 ? e.scrollTop + e.clientHeight < e.scrollHeight - 1 : e.scrollTop > 0) return true;
+    }
+    return false;
+  }
+
+  /** A scroll of the SI page (`dy` pixels, + down): at its edge, the soft barrier to the next page. */
+  private pageEdgeScroll(dy: number, target: EventTarget | null): void {
+    const pg = this.page;
+    // (only with the preview shown: its header holds the Synchronous Scrolling button that turns this off)
+    const dir: 1 | -1 = dy > 0 ? 1 : -1;
+    const atEdge = dir > 0 ? pg.scrollTop + pg.clientHeight >= pg.scrollHeight - 1 : pg.scrollTop <= 0;
+    const on = atEdge && this.syncScroll && this.liveOn && !this.live.el.classList.contains('off') && !!this.project && !this.innerScrolls(target, dy);
+    const next = on ? neighbourPage(this.pageOrder, (x) => x.key, JSON.stringify(this.pick), dir) : null;
+    const step = pushBarrier(this.barrier, dy, performance.now(), on && atEdge, !!next);
+    if (!step || !next || step.shut) { this.showBarrier(null); return; }
+    if (!step.through) { this.showBarrier({ dir, label: next.label, progress: step.progress }); return; }
+    this.showBarrier(null);
+    this.go(next.sel);
+    // (the new page from its top going down, from its end going up; its row in the list in view)
+    pg.scrollTop = dir > 0 ? 0 : pg.scrollHeight;
+    this.tree.querySelector<HTMLElement>('.si-row.on')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** The barrier's hint at the SI page's bottom (or top): where pushing on goes, and how far through (null: hidden). */
+  private showBarrier(h: { dir: 1 | -1; label: string; progress: number } | null): void {
+    clearTimeout(this.barrierHide);
+    if (!h) { if (this.barrierHint) this.barrierHint.hidden = true; return; }
+    let b = this.barrierHint;
+    if (!b) {
+      b = this.barrierHint = el('div', 'si-barrier');
+      b.setAttribute('role', 'status');
+      b.append(el('span', 'si-barrier-text'), el('span', 'si-barrier-fill'));
+      this.pane.append(b);
+    }
+    const pg = this.page;
+    b.hidden = false;
+    b.classList.toggle('up', h.dir < 0);
+    b.style.left = `${pg.offsetLeft}px`;
+    b.style.width = `${pg.clientWidth}px`;
+    b.style.top = h.dir > 0 ? `${pg.offsetTop + pg.clientHeight - b.offsetHeight}px` : `${pg.offsetTop}px`;
+    b.querySelector('.si-barrier-text')!.textContent = `${h.dir > 0 ? '↓ Keep scrolling for the next page' : '↑ Keep scrolling for the page before'}: ${h.label}`;
+    (b.querySelector('.si-barrier-fill') as HTMLElement).style.width = `${Math.round(Math.min(1, h.progress) * 100)}%`;
+    // (scrolling stopped short: the barrier closes again)
+    this.barrierHide = window.setTimeout(() => { this.barrier = freshBarrier(); if (this.barrierHint) this.barrierHint.hidden = true; }, 900);
+  }
+
+  /**
+   * The SI page scrolled by the person: with Synchronous Scrolling on, the preview is scrolled so
+   * the field at the page's reading line is at the same height in it (the page's top: the page's
+   * own top in the preview).
+   */
+  private alignPreviewToPage(): void {
+    const pv = this.preview;
+    if (!this.syncScroll || !pv || !this.liveOn || this.liveTarget()?.kind !== 'whole') return;
+    if (pv.focusedNode !== this.liveNode()) return;
+    const pg = this.page;
+    if (pg.scrollTop <= 0) { pv.revealFocus(); return; }
+    // (a fixed reading line a third of the way down: the preview never jumps as the page starts to
+    // move; the preview keeps the page's own text in view, so a short page doesn't drag the page before into it)
+    const k = 0.3;
+    const line = pg.getBoundingClientRect().top + pg.clientHeight * k;
+    const fields = [...pg.querySelectorAll<HTMLElement>('.si-field[data-key], [data-src]')];
+    if (!fields.length) return;
+    let start = fields.findIndex((f) => f.getBoundingClientRect().bottom >= line);
+    // (past the last field, as at the page's end: the last one)
+    if (start < 0) start = fields.length - 1;
+    // (the first few fields from there with text in the preview: an empty field prints nothing)
+    for (const f of fields.slice(start, start + 8)) {
+      const src = this.sourceOfElement(f);
+      if (src && pv.alignSource(src, k)) return;
+    }
   }
 
   /** Whether a page of the whole SI is still in the project (the preview can be a compile behind). */
@@ -3424,7 +3599,7 @@ export class SiMode {
         const pv = await this.livePreview();
         const ro = p.readOnly;
         pv.show({
-          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen,
+          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen, keepSpace: spectra,
           why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
         });
         pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key && !stay);
@@ -3515,8 +3690,11 @@ export class SiMode {
     });
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();
+    // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
+    const resized = this.preview.view.onResize;
+    this.preview.view.onResize = () => { resized(); this.zoomBar?.show(); };
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
-    siPreviewPrefs.changed = () => this.preview?.view.redraw();
+    siPreviewPrefs.changed = () => this.preview?.applyPrefs();
     this.wirePageLinks();
     this.viewState();
     return this.preview;
@@ -3541,6 +3719,8 @@ export class SiMode {
   private goToSource(src: string): void {
     const s = parseSrc(src);
     if (!s) return;
+    // (the field is on the SI page: shown again if it was hidden)
+    if (this.pageCollapsed) this.setPageCollapsed(false);
     if (s.owner === 'c') this.go({ kind: 'compound', id: s.id });
     else if (s.owner === 's' || s.owner === 'g') this.go({ kind: 'section', id: s.id.split('/')[0] });
     else if (s.field === 'settings') { void this.run('project-settings'); return; }
@@ -5015,12 +5195,14 @@ export class SiMode {
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
     'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
-    'heading-numbers', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane']);
+    'heading-numbers', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
+    // (a new page to fill in: the SI page shown again if it was hidden)
+    if (this.pageCollapsed && ['new-compound', 'new-scheme', 'new-section'].includes(cmd)) this.setPageCollapsed(false);
     try {
       const j = !SiMode.NO_STEP.has(cmd) ? journalOf(p.folder) : null;
       if (!j) { await this.command(cmd); return; }
@@ -5385,6 +5567,10 @@ export class SiMode {
         this.viewState();
         return;
       }
+      case 'page-collapse':
+        if (!this.liveOn) { this.host.flash('The SI page is hidden for the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        this.setPageCollapsed(!this.pageCollapsed);
+        return;
       case 'nav-pane':
         this.pane.classList.toggle('si-tree-off');
         try { localStorage.setItem('si.navPane', this.pane.classList.contains('si-tree-off') ? 'off' : 'on'); } catch { /* (not kept) */ }
@@ -5400,6 +5586,7 @@ export class SiMode {
     set('show-marks', !!this.preview?.showMarks);
     set('view-multiple', !!this.preview?.multiplePages);
     set('nav-pane', !this.pane.classList.contains('si-tree-off'));
+    set('page-collapse', this.pageCollapsed);
     // (these change the Live Preview: not while it is off)
     for (const cmd of ['show-marks', 'view-multiple']) {
       const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-si="${cmd}"]`);

@@ -150,6 +150,14 @@ export class DocView {
   private wheelSum = 0;
   /** Outline: where each paragraph's level mark was drawn (to fold a heading by clicking it). */
   private marks: { para: number; x: number; y: number }[] = [];
+  /** The grey kept left and right of the pages, in pixels (the SI Live Preview has none: its pages fill the pane at Page Width). */
+  padX = PAD_X;
+  /** Room Page Width leaves for a scrollbar, in pixels (0: none kept; the width is fitted again if a scrollbar comes or goes). */
+  fitSlack = 16;
+  /** Page Width is kept as the view is made wider or narrower, until a zoom is chosen by hand. */
+  stickyFit = false;
+  /** Page Width is being kept (stickyFit). */
+  private fitting = false;
   /** Hide white space (Word's double-click between pages): each page's top and bottom margins, with its header and footer, left out, the pages' text one under another with a line between. */
   hideSpace = false;
   /** Crop marks at the corners of each page's text (Word's Show crop marks). */
@@ -287,6 +295,8 @@ export class DocView {
     this.canvas.style.width = `${this.w}px`;
     this.canvas.style.height = `${this.h}px`;
     this.onResize();
+    // (Page Width chosen last, where it is kept: the pages fill the new width)
+    if (this.fitting && this.layout) { this.fitWidth(); return; }
     this.sizeSpace();
     this.paint();
   }
@@ -296,7 +306,7 @@ export class DocView {
     const lay = this.layout;
     if (!lay) return;
     const e = this.extent(lay);
-    const w = e.w * this.zoom + 2 * PAD_X + this.gutter;
+    const w = e.w * this.zoom + 2 * this.padX + this.gutter;
     const h = e.h * this.zoom + 2 * PAD_Y;
     const sw = `${Math.ceil(w)}px`, sh = `${Math.ceil(h)}px`;
     if (this.space.style.width !== sw) this.space.style.width = sw;
@@ -307,7 +317,7 @@ export class DocView {
   private get ox(): number {
     const lay = this.layout;
     const pw = (lay ? this.extent(lay).w : 612) * this.zoom;
-    return Math.max(PAD_X, (this.scroller.clientWidth - this.gutter - pw) / 2);
+    return Math.max(this.padX, (this.scroller.clientWidth - this.gutter - pw) / 2);
   }
 
   /** Top edge of the pages in the scrolled area (pages side by side sit in the middle when the window is taller). */
@@ -363,13 +373,13 @@ export class DocView {
     const lay = this.layout;
     if (!lay) return false;
     // pages side by side scroll across anyway: what matters is the two in view and their comments
-    if (this.sideways) { const n = Math.min(2, lay.pages.length); return n * lay.pageW * this.zoom + this.gutters(n) * this.gutter + 2 * PAD_X > this.scroller.clientWidth; }
-    return this.extent(lay).w * this.zoom + 2 * PAD_X + this.gutter > this.scroller.clientWidth;
+    if (this.sideways) { const n = Math.min(2, lay.pages.length); return n * lay.pageW * this.zoom + this.gutters(n) * this.gutter + 2 * this.padX > this.scroller.clientWidth; }
+    return this.extent(lay).w * this.zoom + 2 * this.padX + this.gutter > this.scroller.clientWidth;
   }
 
   /** Web Layout and Outline: the width of the window, in points, for the text to wrap to. */
   sheetWidth(): number {
-    return Math.max(1, this.scroller.clientWidth - this.gutter - 2 * PAD_X - 4) / this.zoom;
+    return Math.max(1, this.scroller.clientWidth - this.gutter - 2 * this.padX - 4) / this.zoom;
   }
 
   /** The pages' width in points. */
@@ -385,6 +395,8 @@ export class DocView {
 
   /** Zoom, keeping the point under `at` (pixels in the view) where it is. */
   setZoom(z: number, at?: { x: number; y: number }): void {
+    // (a zoom chosen by hand: the width no longer followed)
+    this.fitting = false;
     z = Math.max(0.1, Math.min(6, z));
     const a = at ?? { x: this.scroller.clientWidth / 2, y: this.scroller.clientHeight / 2 };
     const before = { x: (a.x + this.scroller.scrollLeft - this.ox) / this.zoom, y: (a.y + this.scroller.scrollTop - this.oy) / this.zoom };
@@ -404,7 +416,16 @@ export class DocView {
     const n = !this.across ? 1 : Math.min(this.sideways ? 2 : this.perRow, lay.pages.length);
     const w = this.across ? n * lay.pageW + (n - 1) * PAGE_GAP : this.extent(lay).w;
     // a column of comments beside each page across
-    this.setZoom((this.scroller.clientWidth - 2 * PAD_X - 16 - this.gutters(n) * this.gutter) / w);
+    const fit = (): number => (this.scroller.clientWidth - 2 * this.padX - this.fitSlack - this.gutters(n) * this.gutter) / w;
+    this.setZoom(fit());
+    // (no room kept for a scrollbar: one that came or went with the new zoom changed the width, so fit again)
+    if (!this.fitSlack && Math.abs(fit() - this.zoom) > 1e-4) this.setZoom(fit());
+    this.fitting = this.stickyFit;
+  }
+
+  /** Page Width kept (stickyFit) and the scrolled area changed (white space hidden, a new compile): fitted again, as a scrollbar may have come or gone. */
+  refit(): void {
+    if (this.fitting) this.fitWidth();
   }
 
   /** Zoom so whole pages show: one (One Page), or a row of them (Multiple Pages, Side to Side: two). */
@@ -413,7 +434,7 @@ export class DocView {
     if (!lay) return;
     const n = this.sideways ? Math.min(2, lay.pages.length) : Math.min(this.perRow, lay.pages.length);
     const w = n * lay.pageW + (n - 1) * PAGE_GAP;
-    const kx = (this.scroller.clientWidth - 2 * PAD_X - this.gutters(n) * this.gutter - (this.sideways ? 0 : 16)) / w;
+    const kx = (this.scroller.clientWidth - 2 * this.padX - this.gutters(n) * this.gutter - (this.sideways ? 0 : 16)) / w;
     const ky = (this.scroller.clientHeight - 2 * PAD_Y - (this.sideways ? 16 : 0)) / lay.pageH;
     this.setZoom(Math.min(kx, ky));
   }
@@ -450,7 +471,7 @@ export class DocView {
     const p = lay.pages[Math.max(0, Math.min(lay.pages.length - 1, i))];
     const pos = this.place(p, lay);
     this.scroller.scrollTop = pos.y * this.zoom;
-    if (this.sideways || this.perRow > 1) this.scroller.scrollLeft = pos.x * this.zoom + (this.sideways ? this.ox - PAD_X : 0);
+    if (this.sideways || this.perRow > 1) this.scroller.scrollLeft = pos.x * this.zoom + (this.sideways ? this.ox - this.padX : 0);
   }
 
   /** The page in the middle of the view (for "Page 3 of 12"); pages side by side: the first one wholly in view. */
