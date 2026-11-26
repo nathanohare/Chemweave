@@ -5021,6 +5021,13 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-grip::after { content: ''; position: absolute; left: 2px; top: 50%; width: 2px; height: 24px; margin-top: -12px; background: radial-gradient(circle, color-mix(in srgb, var(--text) 45%, var(--surround)) 0.9px, transparent 1.2px) 0 0 / 2px 4px; }
 .si-live-grip:hover { background: linear-gradient(to right, var(--surround) 2px, var(--accent) 2px, var(--accent) 4px, var(--surround) 4px); }
 .si-live-grip:hover::after { display: none; }
+/* on the divider: hide the SI page so the preview takes its width (the list stays), and show it again */
+.si-page-fold { position: absolute; left: -5px; top: 36px; z-index: 3; width: 16px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.si-page-fold:hover { color: var(--text); border-color: var(--accent); }
+.si-page-fold svg { width: 10px; height: 10px; }
+#si-pane.si-page-off:not(.si-live-off) { grid-template-columns: var(--si-tree-w, 260px) 0 minmax(0, 1fr); }
+#si-pane.si-page-off:not(.si-live-off) > .si-page { visibility: hidden; padding: 0; overflow: hidden; }
+#si-pane.si-page-off:not(.si-live-off) .si-live-grip { cursor: default; }
 .si-live-head { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--fs-sm); white-space: nowrap; }
 .si-live-title { font-weight: 600; }
 .si-live-state { overflow: hidden; text-overflow: ellipsis; min-width: 0; }

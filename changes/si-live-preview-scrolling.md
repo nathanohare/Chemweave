@@ -1,3 +1,4 @@
 Added: SI Project: double-click between two pages of the Live Preview to hide the white space between them (each page's top and bottom margins), as in Word; double-click again to show it. Also in Preferences ▸ SI Live Preview.
 Added: SI Project: with Synchronous Scrolling on, scrolling the SI page keeps the Live Preview on the same field, and scrolling on past the end of a page opens the next one (above its start, the one before) after a soft barrier, so you never slip onto another compound by accident.
 Changed: SI Project: Page Width makes the Live Preview's pages fill the whole pane, with no grey at the sides, and keeps them so as the pane is resized. A bar with a grip now sets the preview apart from the SI page; drag it to change the preview's width.
+Added: SI Project: an arrow on the bar beside the Live Preview hides the SI page so the preview takes its width (the list of pages stays); click it again to bring the page back.

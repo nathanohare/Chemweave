@@ -654,6 +654,9 @@ export class SiMode {
     this.page = el('div', 'si-page');
     this.live = this.livePane();
     this.wirePageScroll();
+    let collapsed = false;
+    try { collapsed = localStorage.getItem('si.pageCollapsed') === 'on'; } catch { /* (shown) */ }
+    this.setPageCollapsed(collapsed);
     this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
     // a compound's ID in the text shows its structure when the mouse rests on it
@@ -3032,6 +3035,8 @@ export class SiMode {
     grip.setAttribute('aria-label', 'Width of the Live Preview');
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
+      // (the SI page hidden: the preview has all the width, nothing to drag)
+      if (this.pageCollapsed) return;
       grip.setPointerCapture(e.pointerId);
       const right = this.pane.getBoundingClientRect().right;
       const move = (ev: PointerEvent): void => { const w = Math.round(Math.max(240, Math.min(900, right - ev.clientX))); this.pane.style.setProperty('--si-live-w', `${w}px`); };
@@ -3069,7 +3074,11 @@ export class SiMode {
     addInfo(head, 'The whole SI as it prints, with the selected page in view and the rest washed out, updated about a second after each change. Type in it as in Word: a change goes into the field the text came from (one step of Undo), and hovering text lights up its field. Text Chemweave writes is locked: click it to go to its field. Text typed where no field is stays as custom text, marked because no field holds it. The Spectra section shows on its own pages, numbered on from the SI. Preferences ▸ SI Live Preview sets how these are marked.');
     const host = el('div', 'si-live-host');
     const empty = el('div', 'si-live-empty muted');
-    wrap.append(strip, grip, head, host, empty);
+    // on the divider: hide the SI page (the preview takes its width), or show it again
+    const fold = el('button', 'si-page-fold');
+    fold.type = 'button';
+    fold.addEventListener('click', () => this.setPageCollapsed(!this.pageCollapsed));
+    wrap.append(strip, grip, fold, head, host, empty);
     wrap.classList.toggle('off', !this.liveOn);
     this.pane.classList.toggle('si-live-off', !this.liveOn);
     return { el: wrap, host, state, empty, view: null, shown: '' };
@@ -3077,6 +3086,25 @@ export class SiMode {
 
   /** Synchronous Scrolling: scrolling the Live Preview to another page of the list chooses that page (remembered on this computer). */
   private syncScroll = false;
+
+  /** The SI page hidden so the Live Preview takes its width (the list stays; remembered on this computer). Shown again while the preview is folded. */
+  pageCollapsed = false;
+
+  /** Hide the SI page (the preview takes its width) or show it again: the arrow on the divider. */
+  setPageCollapsed(on: boolean): void {
+    this.pageCollapsed = on;
+    try { localStorage.setItem('si.pageCollapsed', on ? 'on' : 'off'); } catch { /* (not kept) */ }
+    this.pane.classList.toggle('si-page-off', on);
+    const b = this.live.el.querySelector<HTMLButtonElement>('.si-page-fold');
+    if (b) {
+      const tip = on ? 'Show the SI page' : 'Hide the SI page: the Live Preview takes its width';
+      b.title = tip;
+      b.setAttribute('aria-label', on ? 'Show the SI page' : 'Hide the SI page');
+      b.setAttribute('aria-pressed', String(on));
+      b.innerHTML = `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="${on ? 'M3.5 1.5L7 5L3.5 8.5' : 'M6.5 1.5L3 5L6.5 8.5'}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    }
+    this.live.view?.resize();
+  }
 
   private setSyncScroll(on: boolean): void {
     this.syncScroll = on;
