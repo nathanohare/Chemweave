@@ -8915,7 +8915,8 @@ export class Editor {
       snapping: this.smartGuides || !!this.moveSnap || this.guidesSnap(),
       asksChain: !!this.askChainLength,
       bondEnd: d?.mode === 'move' && !!d.pivot,
-      selected: d?.mode === 'marquee' ? !!d.hadSel : this.hasSelection(),
+      // (a marquee's Shift is read as the button goes down: it adds only to what was selected then)
+      selected: d?.mode === 'marquee' ? !!d.hadSel && d.shift : this.hasSelection(),
     };
   }
 
