@@ -5,6 +5,7 @@
 // PowerPoint come in as tables.
 
 import { describe, it, expect } from 'vitest';
+import { cellPrAfter } from './xml-text';
 import { unzipSync, zipSync, strToU8, strFromU8 } from 'fflate';
 import { Doc, type TableData, type TextRun } from '../src/model';
 import { defaultMaster } from '../src/deck/deck';
@@ -310,10 +311,9 @@ describe('a PowerPoint table\'s cell borders', () => {
     const { table } = tableOf(withSlide(bytes, xml));
     expect(table.lineW).toBe(1);
     expect(table.edges?.[1][1]).toEqual({ left: 2, top: 2, bottom: 2, right: 2 });
-    const cellPr = (x: string, text: string) => new RegExp(`<a:t>${text}</a:t>[\\s\\S]*?<a:tcPr[^>]*>([\\s\\S]*?)</a:tcPr>`).exec(x)![1];
     const saved = slideXml(await save(table));
-    expect(cellPr(saved, 'heavy')).toMatch(/<a:lnB w="25400"/);
-    expect(cellPr(saved, 'a')).toMatch(/<a:lnB w="12700"/);
+    expect(cellPrAfter(saved, 'heavy')).toMatch(/<a:lnB w="25400"/);
+    expect(cellPrAfter(saved, 'a')).toMatch(/<a:lnB w="12700"/);
     // a row added here: the table's lines at its width, as before
     const added = { ...table, rows: [...table.rows, table.rows[2].map(() => R('x'))] };
     expect(slideXml(await save(added))).not.toContain('w="25400"');

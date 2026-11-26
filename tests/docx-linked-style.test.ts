@@ -5,6 +5,7 @@
 // another id (a heading in another language's file); a style made from one is not linked.
 
 import { describe, it, expect } from 'vitest';
+import { styleXml } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { deleteStyle, newParaStyle, type DocText } from '../src/document/document';
@@ -32,7 +33,7 @@ function docx(): Uint8Array {
   });
 }
 
-const styleOf = (x: string, id: string) => new RegExp(`<w:style [^>]*w:styleId="${id}">.*?</w:style>`).exec(x)?.[0] ?? '';
+const styleOf = styleXml;
 const linkOf = (style: string) => /<w:link w:val="([^"]*)"\/>/.exec(style)?.[1];
 
 describe('a linked style pair', () => {

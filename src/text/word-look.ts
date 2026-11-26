@@ -24,11 +24,27 @@ const OFF = /^(0|false|off|none|nil)$/;
 
 /** An element's on/off value in Word's XML (no w:val: on). */
 function onIn(xml: string, name: string): boolean {
-  const m = new RegExp(`<w:${name}(?:\\s+w:val="([^"]*)")?\\s*/?>`).exec(xml);
-  return !!m && !OFF.test(m[1] ?? '');
+  const tag = tagIn(xml, name);
+  return tag !== undefined && !OFF.test(attr(tag, 'w:val') ?? '');
 }
 
-const attr = (xml: string, name: string) => new RegExp(`\\b${name}="([^"]*)"`).exec(xml)?.[1];
+/** The first <w:name> start tag (not a longer name such as w:outlineLvl for w:outline). */
+function tagIn(xml: string, name: string): string | undefined {
+  const open = `<w:${name}`;
+  for (let i = xml.indexOf(open); i >= 0; i = xml.indexOf(open, i + 1)) {
+    if (/[\s/>]/.test(xml.charAt(i + open.length))) return xml.slice(i, xml.indexOf('>', i) + 1);
+  }
+  return undefined;
+}
+
+/** An attribute's value in a piece of XML (the name not preceded by a word character). */
+function attr(xml: string, name: string): string | undefined {
+  const key = `${name}="`;
+  for (let i = xml.indexOf(key); i >= 0; i = xml.indexOf(key, i + 1)) {
+    if (i === 0 || !/\w/.test(xml.charAt(i - 1))) return xml.slice(i + key.length, xml.indexOf('"', i + key.length));
+  }
+  return undefined;
+}
 
 /** The Word effects a run shows, read from what it keeps of the file; undefined when it has none. */
 export function wordLook(r: Pick<TextRun, 'wrx' | 'wfx'>): WordLook | undefined {

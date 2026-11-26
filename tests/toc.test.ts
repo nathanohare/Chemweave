@@ -4,7 +4,7 @@
 // heading moves to another page), dots up to each page number, saved to Word as Word's own TOC
 // field, and opened here again live.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, onTestFinished } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
@@ -182,6 +182,10 @@ describe('a Word file saved again here is the same (office sampler F-W-018)', ()
   });
 
   it('writes a legacy form field\'s bookmark once, round the field, after the file is opened again', async () => {
+    // (the saved time in docProps/core.xml is to the second: two saves either side of one differ)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_700_000_000_000);
+    onTestFinished(() => { vi.useRealTimers(); });
     const d = sample();
     d.objects = { ...d.objects, 2: { kind: 'form', type: 'text', name: 'Text1' } };
     d.runs = [...d.runs, { ...d.runs[d.runs.length - 1], text: '\nName: ' }, objectRun(2, runStyleOf(d.styles.Normal))];

@@ -5,6 +5,7 @@
 // another id; a style based on one that is gone, or on itself through others, is based on Normal.
 
 import { describe, it, expect } from 'vitest';
+import { styleXml } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { deleteStyle, newParaStyle, type DocText } from '../src/document/document';
@@ -33,7 +34,7 @@ function docx(body: string): Uint8Array {
 }
 
 const para = (style: string, text: string) => `<w:p><w:pPr><w:pStyle w:val="${style}"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
-const styleOf = (x: string, id: string) => new RegExp(`<w:style [^>]*w:styleId="${id}">.*?</w:style>`).exec(x)?.[0] ?? '';
+const styleOf = styleXml;
 const basedOf = (x: string, id: string) => /<w:basedOn w:val="([^"]*)"\/>/.exec(styleOf(x, id))?.[1];
 
 describe("a paragraph style's chain", () => {

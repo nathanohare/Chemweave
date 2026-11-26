@@ -5,6 +5,7 @@
 // rather than as plain blue underlined text.
 
 import { describe, it, expect } from 'vitest';
+import { styleXml } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import type { DocText } from '../src/document/document';
@@ -45,7 +46,7 @@ describe("Word's link styles", () => {
     expect(doc).toMatch(/<w:hyperlink [^>]*><w:r><w:rPr><w:rStyle w:val="Hyperlink"\/>/);
     expect(doc).toContain('<w:rStyle w:val="FollowedHyperlink"/>');
     const styles = strFromU8(files['word/styles.xml']);
-    const style = (id: string) => new RegExp(`<w:style w:type="character" w:styleId="${id}">.*?</w:style>`).exec(styles)?.[0] ?? '';
+    const style = (id: string) => styleXml(styles, id, 'character');
     // one of each, Word's own (not custom, not in the Quick Styles gallery), with its look
     expect(styles.match(/w:styleId="Hyperlink"/g)).toHaveLength(1);
     expect(style('Hyperlink')).toContain('<w:name w:val="Hyperlink"/>');

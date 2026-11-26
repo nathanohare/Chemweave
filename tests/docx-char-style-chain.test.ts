@@ -5,6 +5,7 @@
 // nothing comes from that one that the text didn't have.
 
 import { describe, it, expect } from 'vitest';
+import { styleXml } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { applyCharStyle, modifyCharStyle, type DocText } from '../src/document/document';
@@ -33,7 +34,7 @@ function docx(): Uint8Array {
   });
 }
 
-const styleOf = (x: string, id: string) => new RegExp(`<w:style [^>]*w:styleId="${id}">.*?</w:style>`).exec(x)?.[0] ?? '';
+const styleOf = styleXml;
 const derivedRun = (t: DocText) => { const r = t.runs.find((x) => x.text.includes('derived'))!; return { ...r, text: 'derived' }; };
 
 describe("a character style's chain", () => {

@@ -5,6 +5,7 @@
 // as it was read; a line restyled here is written as its new kind.
 
 import { describe, it, expect } from 'vitest';
+import { valOf } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { borderXml, readBorder } from '../src/io/docx-table-styles';
@@ -24,7 +25,7 @@ function docx(body: string): Uint8Array {
 }
 
 const side = (name: string, val: string) => `<w:${name} w:val="${val}" w:sz="12" w:space="1" w:color="FF0000"/>`;
-const kindOf = (x: string, name: string) => new RegExp(`<w:${name} w:val="([^"]+)"`).exec(x)?.[1];
+const kindOf = valOf;
 
 describe("Word's border kinds", () => {
   it('are kept on a paragraph and a table cell, the same on a second save', async () => {

@@ -5,6 +5,7 @@
 // Word doesn't number it from the style.
 
 import { describe, it, expect } from 'vitest';
+import { styleXml } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import { newParaStyle, type DocText } from '../src/document/document';
@@ -34,7 +35,7 @@ function docx(body: string): Uint8Array {
 }
 
 const para = (text: string) => `<w:p><w:pPr><w:pStyle w:val="Numbered"/></w:pPr><w:r><w:t>${text}</w:t></w:r></w:p>`;
-const styleOf = (x: string, id: string) => new RegExp(`<w:style [^>]*w:styleId="${id}">.*?</w:style>`).exec(x)?.[0] ?? '';
+const styleOf = styleXml;
 
 describe("a paragraph style's numbering", () => {
   it('stays in the style; its paragraphs stay numbered; the same on a second save', async () => {
@@ -79,7 +80,7 @@ describe("a paragraph style's numbering", () => {
     const styleId = /<w:numId w:val="(\d+)"/.exec(styleOf(sx, 'Numbered'))?.[1];
     const paraId = /<w:pStyle w:val="Numbered"\/><w:numPr><w:ilvl w:val="0"\/><w:numId w:val="(\d+)"/.exec(strFromU8(files['word/document.xml']))?.[1];
     expect(styleId).toBe(paraId);
-    expect(styleOf(sx, 'Second')).toMatch(new RegExp(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${styleId}"/></w:numPr>`));
+    expect(styleOf(sx, 'Second')).toContain(`<w:numPr><w:ilvl w:val="1"/><w:numId w:val="${styleId}"/></w:numPr>`);
   });
 
   it("isn't taken by a style made from one of its paragraphs (New Style)", async () => {

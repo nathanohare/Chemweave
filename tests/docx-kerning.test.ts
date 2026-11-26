@@ -4,6 +4,7 @@
 // file is saved here, while the text is still kerned, or not, as that size says.
 
 import { describe, it, expect } from 'vitest';
+import { kernOf } from './xml-text';
 import { zipSync, unzipSync, strToU8, strFromU8 } from 'fflate';
 import { readDocx, writeDocx, type DocxDeps } from '../src/io/docx';
 import type { DocText } from '../src/document/document';
@@ -24,7 +25,6 @@ function docx(): Uint8Array {
   });
 }
 
-const kernOf = (doc: string, text: string) => new RegExp(`<w:r><w:rPr>(?:(?!</w:rPr>).)*?<w:kern w:val="(\\d+)"/>(?:(?!</w:r>).)*<w:t[^>]*>${text}</w:t>`).exec(doc)?.[1];
 
 describe("Word's kerning size", () => {
   it('is kept on the text, kerned or not', async () => {

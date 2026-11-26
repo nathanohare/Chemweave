@@ -1486,7 +1486,7 @@ class DocxReader {
     if (kept?.was !== undefined && shown && shown !== kept.was) out.name = shown;
     else if (kept?.name) out.name = kept.name;
     // (in a file saved here, a name that isn't one this program gives: given or changed in Word)
-    else if ((!kept || kept.was === undefined) && shown && (ownName(pr, box) || !this.model || !GIVEN_NAME.test(shown))) out.name = shown;
+    else if ((!kept || kept.was === undefined) && shown && (ownName(pr, box) || !this.model || !givenName(shown))) out.name = shown;
     return out;
   }
 
@@ -4181,7 +4181,9 @@ function gradOf(el: Element | null): { xml: string; fill?: string } | null {
 }
 
 /** The names this program gives drawings in Word (wp:docPr name): its structures', charts', pictures', shapes', text boxes' and groups'. */
-const GIVEN_NAME = new RegExp(`^(?:${DRAWING_NAME}|${CHART_NAME}|Picture|Shape|Text Box|TextBox|Group) \\d+$`);
+const GIVEN_KINDS = [DRAWING_NAME, CHART_NAME, 'Picture', 'Shape', 'Text Box', 'TextBox', 'Group'];
+/** A name Word or Chemweave gives a drawing by itself: one of GIVEN_KINDS, a space and a number. */
+const givenName = (s: string) => { const sp = s.lastIndexOf(' '); return sp > 0 && /^\d+$/.test(s.slice(sp + 1)) && GIVEN_KINDS.includes(s.slice(0, sp)); };
 
 /**
  * A run's piece of text as a character: its text, a tab, a line break, and the hyphens Word writes
