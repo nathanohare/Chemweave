@@ -6,7 +6,7 @@
 // one-line box holding a value of several lines, and the looks of many formatting pieces at once.
 
 import { describe, expect, it } from 'vitest';
-import { applyPrintedChange, applyToRaw, printedHunks, shiftSpans } from '../src/si/preview-edit';
+import { applyPrintedChange, applyToRaw, editKind, printedHunks, shiftSpans } from '../src/si/preview-edit';
 import { parseMarkup } from '../src/si/markup';
 import { placeCustomText } from '../src/si/custom-text';
 import type { DocText } from '../src/document/document';
@@ -43,6 +43,10 @@ describe('joining two paragraphs of a field', () => {
     expect(shiftSpans(spans, 2, 7, -5, SRC)).toEqual([{ start: 0, end: 2, src: SRC }, { start: 2, end: 4, src: SRC }]);
   });
 
+  it('a selection over the paragraph mark between them is an edit of the field', () => {
+    expect(editKind(spans, 2, 7, '', 'One.\nTwo.')).toEqual({ kind: 'field', src: SRC });
+  });
+
   it('the stored text loses only the paragraph mark', () => {
     // what the write works out from the stretches after the join: "One." + "Two." (no mark between)
     expect(applyPrintedChange('One.\nTwo.', 'One.\nTwo.', 'One.Two.', true)).toBe('One.Two.');
@@ -58,11 +62,6 @@ describe('two edits far apart in one field, saved together', () => {
     expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'xCH2Cl2 was addedy', true)).toBe('xCH_{2}Cl_{2} was addedy');
   });
 
-  it('a selection typed over doesn’t reach changes outside it', () => {
-    // "foo" retyped as "foo" (no change), then "X" typed at the end: the formatting between stays
-    expect(applyPrintedChange('foo H_{2}O and **bold** end', 'foo H2O and bold end', 'foo H2O and bold endX', true, [{ start: 0, end: 3 }])).toBe('foo H_{2}O and **bold** endX');
-  });
-
   it('two changes a few letters apart keep the formatting between them', () => {
     expect(applyPrintedChange('H_{2}O is wet', 'H2O is wet', 'D2S is wet', true)).toBe('D_{2}S is wet');
   });
@@ -71,11 +70,17 @@ describe('two edits far apart in one field, saved together', () => {
     expect(applyToRaw('foo @{c1} end', 'foo 1a end', 4, 10, '1a endX', true)).toBeNull();
   });
 
-  it('a selection typed over takes the look of its first letter', () => {
-    // "CH2Cl2" selected from its plain "C" and "CHCl3" typed: plain, as the "C" was
-    expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'CHCl3 was added', true, [{ start: 0, end: 5 }])).toBe('CHCl3 was added');
-    // only the "2 h" in bold selected and "3 h" typed: bold, as the "2" was
-    expect(applyPrintedChange('stirred for **2 h**', 'stirred for 2 h', 'stirred for 3 h', true, [{ start: 12, end: 15 }])).toBe('stirred for **3 h**');
+  it('a formula typed over keeps the looks of the letters that stay', () => {
+    // "CH2Cl2" retyped as "CHCl3": the 3 takes the place (and subscript) of the second 2
+    expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'CHCl3 was added', true)).toBe('CHCl_{3} was added');
+    expect(applyPrintedChange('CH_{2}Cl_{2}', 'CH2Cl2', 'CH3Cl3', true)).toBe('CH_{3}Cl_{3}');
+    expect(applyPrintedChange('C_{6}H_{5}', 'C6H5', 'C8H7', true)).toBe('C_{8}H_{7}');
+  });
+
+  it('many changes in one save each keep their looks', () => {
+    const raw = [1, 2, 3, 4, 5, 6, 7].map((n) => `a_{${n}}`).join(' bbbb ');
+    const printed = [1, 2, 3, 4, 5, 6, 7].map((n) => `a${n}`).join(' bbbb ');
+    expect(applyPrintedChange(raw, printed, printed.replace(/\d/g, '9'), true)).toBe(raw.replace(/\d/g, '9'));
   });
 
   it('one edit is as before', () => {
@@ -116,6 +121,10 @@ describe('"#" typed at the start of a paragraph', () => {
   it('typing before an escaped character goes before its backslash', () => {
     expect(applyToRaw('\\*x', '*x', 0, 0, 'z', true)).toBe('z\\*x');
     expect(applyToRaw('\\# x', '# x', 0, 0, '\n', true)).toBe('\n\\# x');
+  });
+
+  it('a heading that becomes first when the empty line above it goes stays a heading', () => {
+    expect(applyPrintedChange('\n# def', '\ndef', 'def', true)).toBe('# def');
   });
 
   it('a heading after a paragraph taken out whole stays a heading', () => {

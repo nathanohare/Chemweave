@@ -58,7 +58,7 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
     }
     const src = srcs[0];
     // (part of it in a field and part outside every field: across)
-    const inside = over.every((s) => s.start <= start && end <= s.end) || (start >= Math.min(...over.map((s) => s.start)) && end <= Math.max(...over.map((s) => s.end)) && !gapIn(spans, start, end));
+    const inside = over.every((s) => s.start <= start && end <= s.end) || (start >= Math.min(...over.map((s) => s.start)) && end <= Math.max(...over.map((s) => s.end)) && !gapIn(spans, start, end, manyParagraphs(src) && editableSrc(src) ? { text, src } : undefined));
     if (!inside) return writable(src) ? { kind: 'across' } : { kind: 'locked', src };
     if (!writable(src)) return { kind: 'locked', src };
     return lineOk(src) ? { kind: 'field', src } : { kind: 'locked', src };
@@ -77,9 +77,13 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
   return { kind: 'custom', at };
 }
 
-/** Is any character of [start, end) outside every span? */
-function gapIn(spans: readonly SourceSpan[], start: number, end: number): boolean {
-  for (let i = start; i < end; i++) if (!spans.some((s) => s.start <= i && i < s.end)) return true;
+/** Is any character of [start, end) outside every span? (`joins`: the paragraph mark between two of that field's stretches doesn't count) */
+function gapIn(spans: readonly SourceSpan[], start: number, end: number, joins?: { text: string; src: string }): boolean {
+  for (let i = start; i < end; i++) {
+    if (spans.some((s) => s.start <= i && i < s.end)) continue;
+    if (joins && joins.text[i] === '\n' && spans.some((s) => s.src === joins.src && s.end === i) && spans.some((s) => s.src === joins.src && s.start === i + 1)) continue;
+    return true;
+  }
   return false;
 }
 
@@ -356,10 +360,10 @@ export function printedHunks(before: string, now: string): { pa: number; pb: num
 }
 
 /** More changes than this in one write are taken as one rewrite of the field. */
-const MAX_HUNKS = 6;
+const MAX_HUNKS = 40;
 
 /** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
-export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean, typedOver: readonly { start: number; end: number }[] = []): string | null {
+export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean): string | null {
   let out = raw, printed = before;
   let hunks = printedHunks(before, now);
   // (many changes, as a field retyped, aren't separate edits but one rewrite: one change, as before)
@@ -369,24 +373,6 @@ export function applyPrintedChange(raw: string, before: string, now: string, mar
     let suf = 0;
     while (suf < before.length - pre && suf < now.length - pre && before[before.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
     hunks = [{ pa: pre, pb: before.length - suf, typed: now.slice(pre, now.length - suf) }];
-  }
-  // (a selection typed over is one change, from where it began: what was typed takes the look of the
-  // first letter selected, as "CHCl3" typed over a plain "C" of "CH2Cl2"; changes elsewhere stay apart)
-  if (typedOver.length) {
-    let shift = 0;
-    const placed = hunks.map((h) => { const at = h.pa + shift; shift += h.typed.length - (h.pb - h.pa); return { ...h, at, to: at + h.typed.length }; });
-    const within = (x: { at: number; to: number }): { start: number; end: number } | undefined => typedOver.find((r) => r.start <= x.at && x.to <= r.end);
-    const merged: typeof placed = [];
-    for (const h of placed) {
-      const last = merged[merged.length - 1];
-      const r = within(h);
-      if (last && r && within(last) === r) merged[merged.length - 1] = { pa: last.pa, pb: h.pb, typed: last.typed + before.slice(last.pb, h.pa) + h.typed, at: last.at, to: h.to };
-      else merged.push(h);
-    }
-    hunks = merged.map((h, i) => {
-      const r = within(h);
-      return r && r.start < h.at && (i === 0 || merged[i - 1].to <= r.start) ? { pa: h.pa - (h.at - r.start), pb: h.pb, typed: now.slice(r.start, h.at) + h.typed } : { pa: h.pa, pb: h.pb, typed: h.typed };
-    });
   }
   // (from the last change back: the places of the ones before it don't move)
   for (const h of hunks.reverse()) {
