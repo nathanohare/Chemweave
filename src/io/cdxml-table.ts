@@ -80,6 +80,13 @@ export function tableBorders(t: TableData, lw: number): Borders[][] {
   return out;
 }
 
+/** The width most of a table's cell borders have (to 0.05 pt), or undefined when it has none. */
+export function commonBorderWidth(b: Borders[][]): number | undefined {
+  const count = new Map<number, number>();
+  for (const row of b) for (const x of row) for (const w of [x.left, x.top, x.bottom, x.right]) if (w > 0) { const k = Math.round(w * 20) / 20; count.set(k, (count.get(k) ?? 0) + 1); }
+  return [...count].sort((p, q) => q[1] - p[1] || q[0] - p[0])[0]?.[0];
+}
+
 /**
  * The lines of a table from its cells' borders: none, every cell boxed, or the ACS style with
  * the heading rows ending at the first rule inside the table.

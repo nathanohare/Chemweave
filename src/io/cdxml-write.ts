@@ -2173,7 +2173,7 @@ class CdxmlWriter {
     }
     let zNext = z ?? 0;
     const table = this.el('table', { id: hasParts ? this.id() : outerId, BoundingBox: box({ x1: s.x1, y1: s.y1 + lay.ys[0], x2: s.x1 + lay.width, y2: s.y1 + lay.ys[lay.ys.length - 1] }), Z: z });
-    const borders = tableBorders(t, lw);
+    const borders = tableBorders(t, t.lineW ?? lw);
     const color = this.colorAttr(s.color) ?? '0';
     t.rows.forEach((row, r) => {
       for (let c = 0; c < t.cols.length; c++) {

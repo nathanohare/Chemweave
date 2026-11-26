@@ -1831,7 +1831,7 @@ class Writer {
 
     const n = t.rows.length, m = t.cols.length;
     const lw = doc.style.lineWidth;
-    const b = tableBorders(t, lw);
+    const b = tableBorders(t, t.lineW ?? lw);
     const color = s.color ?? '#000000';
     // PowerPoint puts the first baseline its font's ascent below the cell's top margin
     const marT = Math.max(0, lay.padY - (PPT_ASCENT - ASCENT) * size), marB = Math.max(0, lay.padY - 0.05 * size);

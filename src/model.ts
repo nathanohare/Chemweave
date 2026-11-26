@@ -1538,6 +1538,8 @@ export interface TableData {
   head: number;
   /** ACS style (rules above and below the headings and under the last row), every cell boxed, or no lines. */
   lines: 'acs' | 'grid' | 'none';
+  /** The width of those lines in points, when not the drawing's line width (a PowerPoint table's 2 pt borders). */
+  lineW?: number;
   /** How each column lines up (the first is left, the others centred, when not given). */
   align?: Justify[];
   /** Text size in points for runs that don't give one (the drawing's caption size when not given). */

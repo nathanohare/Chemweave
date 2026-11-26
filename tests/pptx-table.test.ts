@@ -276,3 +276,31 @@ describe('tables in PowerPoint files', () => {
     expect(shape.color?.toLowerCase()).toBe(accent.toLowerCase());
   });
 });
+
+// (office sampler F-P-013: P-TBL-12)
+describe('a PowerPoint table\'s cell borders', () => {
+  it('keeps their width: 2 pt borders are saved as 2 pt', async () => {
+    const bytes = await save(sample());
+    const ln = (side: string) => `<a:${side} w="25400"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:${side}>`;
+    const cell = (t: string) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>${t}</a:t></a:r></a:p></a:txBody><a:tcPr>${ln('lnL')}${ln('lnR')}${ln('lnT')}${ln('lnB')}</a:tcPr></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 8"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>` +
+      `<p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="2438400" cy="741680"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">` +
+      `<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="1219200"/><a:gridCol w="1219200"/></a:tblGrid>` +
+      `<a:tr h="370840">${cell('a')}${cell('b')}</a:tr><a:tr h="370840">${cell('c')}${cell('d')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const xml = slideXml(bytes).replace(/<p:graphicFrame>.*<\/p:graphicFrame>/s, frame).replace(/<p:sp>.*?<\/p:sp>/gs, '');
+    const { table } = tableOf(withSlide(bytes, xml));
+    expect(table.lines).toBe('grid');
+    expect(table.lineW).toBe(2);
+    const again = await save(table);
+    const widths = [...slideXml(again).matchAll(/<a:ln[LRTB] w="(\d+)"[^>]*>(?!<a:noFill)/g)].map((m) => m[1]);
+    expect(widths.length).toBeGreaterThan(0);
+    expect(new Set(widths)).toEqual(new Set(['25400']));
+    expect(tableOf(again).table.lineW).toBe(2);
+  });
+
+  it('leaves a table without its own width at the drawing\'s line width', async () => {
+    const { table } = tableOf(await save(sample()));
+    const xml = slideXml(await save({ ...table, lineW: undefined }));
+    expect(xml).not.toContain('w="25400"');
+  });
+});

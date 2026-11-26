@@ -20,7 +20,7 @@ import { COMMENT_REL, readCommentAuthors, readLegacyComments, readModernComments
 import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, Contents, Placeholder, Justify, stripBase, type TableCell, type TableData, type PictureFx, type BackgroundRemoval, type PictureLook, type Frame, type ShapeMath, type Media, type OleMark } from '../model';
 import { layoutTable, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, slideCellLook, unstyledRuns } from '../deck/table-styles';
-import { linesFromBorders, type Borders } from './cdxml-table';
+import { linesFromBorders, commonBorderWidth, type Borders } from './cdxml-table';
 import { turnAbout, normDegrees, DEG, type Vec, type Rect } from '../geom';
 import { POINTS, rotation, snapshot, transform, mirrorX, mirrorY } from '../editor/arrange';
 import { BULLETS, autoNumLabel, listInfo } from '../text/paragraphs';
@@ -2280,7 +2280,12 @@ class Reader {
         read = baked.table;
         if (!lines) color = baked.line;
       }
-      if (lines) read = { ...read, ...linesFromBorders(borders) };
+      if (lines) {
+        read = { ...read, ...linesFromBorders(borders) };
+        // (the cells' line width, kept: PowerPoint's 2 pt borders stay 2 pt)
+        const w = commonBorderWidth(borders);
+        if (w !== undefined && read.lines !== 'none') read.lineW = w;
+      }
     }
     // what was saved here, when the table still has its rows and columns (and its text, for its formatting)
     const tags = this.tagsOf(s.path, kid(el, 'nvGraphicFramePr', 'nvPr'));
