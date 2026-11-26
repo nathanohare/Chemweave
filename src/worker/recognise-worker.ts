@@ -11,12 +11,13 @@ import '../old-webkit';
 import * as ort from 'onnxruntime-web/wasm';
 import { imageTensor, readStructure, type ReadGraph, type Runner, type T, type Vocab } from '../recognise/molscribe';
 import { cropWhite, resize, type Pixels } from '../recognise/picture';
+import { checkKeysValues, pageEncoder, workerDispatch, type Encoded } from '../recognise/page-encode';
 
 export type RecogniseRequest =
   | { type: 'init'; /** null: the page encodes pictures natively. */ encoder: ArrayBuffer | null; step: ArrayBuffer; edges: ArrayBuffer; wasm: ArrayBuffer; vocab: Vocab; /** The runtime's loader, beside the app (public/). */ loader: string }
   | { type: 'read'; id: number; pixels: Pixels }
   /** The page's answer to 'encode': the encoder's keys and values, or why it failed. */
-  | { type: 'encoded'; req: number; ck?: Float32Array; cv?: Float32Array; error?: string };
+  | Encoded;
 
 export type RecogniseResponse =
   | { type: 'ready'; ms: number }
@@ -27,26 +28,11 @@ export type RecogniseResponse =
 
 const post = (m: RecogniseResponse, transfer: Transferable[] = []) => (self as unknown as DedicatedWorkerGlobalScope).postMessage(m, transfer);
 
-/** The native encoder failed: the page reads the picture again with the WebAssembly encoder. */
-export class NativeEncodeError extends Error {}
-
 let runner: Runner | null = null;
 let vocab: Vocab | null = null;
 let encodeMs = 0;
-// one picture at a time: the reader is busy for seconds, and the runtime isn't re-entrant
-let queue: Promise<void> = Promise.resolve();
-// pictures sent to the page to encode, waiting for its answer
-let nextReq = 1;
-const waiting = new Map<number, { ok: (r: { ck: Float32Array; cv: Float32Array }) => void; fail: (e: Error) => void }>();
-
-/** The encoder's keys and values from the page (native ONNX Runtime). */
-function encodeOnPage(img: Float32Array): Promise<{ ck: Float32Array; cv: Float32Array }> {
-  return new Promise((ok, fail) => {
-    const req = nextReq++;
-    waiting.set(req, { ok, fail });
-    post({ type: 'encode', req, image: img }, [img.buffer]);
-  });
-}
+// pictures sent to the page to encode natively, waiting for its answer
+const onPage = pageEncoder((m, transfer) => post(m, transfer));
 
 async function init(m: Extract<RecogniseRequest, { type: 'init' }>): Promise<void> {
   const t0 = performance.now();
@@ -58,7 +44,7 @@ async function init(m: Extract<RecogniseRequest, { type: 'init' }>): Promise<voi
   const [S, G] = [await ort.InferenceSession.create(new Uint8Array(m.step), opts), await ort.InferenceSession.create(new Uint8Array(m.edges), opts)];
   const v = m.vocab;
   const i64 = (n: number, dims: number[]) => new ort.Tensor('int64', BigInt64Array.from([BigInt(n)]), dims);
-  const kv = (data: Float32Array) => new ort.Tensor('float32', data, [v.layers, 1, v.heads, data.length / (v.layers * v.heads * v.dk), v.dk]) as unknown as T;
+  const kv = (data: Float32Array, tokens: number) => new ort.Tensor('float32', data, [v.layers, 1, v.heads, tokens, v.dk]) as unknown as T;
   runner = {
     async encode(img) {
       const e0 = performance.now();
@@ -67,9 +53,9 @@ async function init(m: Extract<RecogniseRequest, { type: 'init' }>): Promise<voi
           const r = await E.run({ image: new ort.Tensor('float32', img, [1, 3, v.size, v.size]) });
           return { ck: r.ck as unknown as T, cv: r.cv as unknown as T };
         }
-        const { ck, cv } = await encodeOnPage(img);
-        if (ck.length !== cv.length || !ck.length || ck.length % (v.layers * v.heads * v.dk)) throw new NativeEncodeError('The native encoder gave an answer of the wrong size.');
-        return { ck: kv(ck), cv: kv(cv) };
+        const { ck, cv } = await onPage.encode(img);
+        const tokens = checkKeysValues(ck, cv, v);
+        return { ck: kv(ck, tokens), cv: kv(cv, tokens) };
       } finally {
         encodeMs = performance.now() - e0;
       }
@@ -99,18 +85,5 @@ async function read(m: Extract<RecogniseRequest, { type: 'read' }>): Promise<voi
   post({ type: 'read', id: m.id, graph, w: cropped.width, h: cropped.height, ms: Math.round(performance.now() - t0), encodeMs: Math.round(encodeMs) });
 }
 
-self.onmessage = (e: MessageEvent<RecogniseRequest>) => {
-  const m = e.data;
-  // the page's answers go straight to the picture waiting for them (it holds the queue)
-  if (m.type === 'encoded') {
-    const w = waiting.get(m.req);
-    waiting.delete(m.req);
-    if (!w) return;
-    if (m.ck && m.cv) w.ok({ ck: m.ck, cv: m.cv });
-    else w.fail(new NativeEncodeError(m.error || 'The native encoder failed.'));
-    return;
-  }
-  queue = queue.then(() => (m.type === 'init' ? init(m) : read(m))).catch((err) => {
-    post({ type: 'error', id: m.type === 'read' ? m.id : undefined, message: err instanceof Error ? err.message : String(err), native: err instanceof NativeEncodeError || undefined });
-  });
-};
+const dispatch = workerDispatch<Exclude<RecogniseRequest, Encoded>>((m) => (m.type === 'init' ? init(m) : read(m)), onPage.answer, post);
+self.onmessage = (e: MessageEvent<RecogniseRequest>) => dispatch(e.data);

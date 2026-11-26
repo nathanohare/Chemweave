@@ -151,6 +151,8 @@ if (!run) {
   if (p.portable) {
     const exe = readFileSync(p.portable.exe);
     const ortDir = join(p.portable.exe, '..', 'ort');
+    // a build that fetched ONNX Runtime (desktop.yml sets ORT_CONFIG) must carry it in the zip
+    if (process.env.ORT_CONFIG && !existsSync(ortDir)) throw new Error(`No ${ortDir}: ONNX Runtime was not bundled`);
     const ort = existsSync(ortDir) ? Object.fromEntries(readdirSync(ortDir).map((n) => [n, readFileSync(join(ortDir, n))])) : {};
     writeFileSync(join(out, p.portable.zip), await portableZip(exe, ort));
     copyFileSync(p.portable.exe, join(out, p.portable.update));

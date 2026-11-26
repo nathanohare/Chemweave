@@ -120,6 +120,8 @@ export class LocalReader {
   /** Give up on the native encoder for this session: the worker starts again with the WebAssembly one. */
   private useWasm(why: string): void {
     this.tryNative = false;
+    // the native encoder's memory isn't needed any more
+    void invoke('recognise_native_release').catch(() => {});
     this.nativeProblem = why;
     this.engine = null;
     this.worker?.terminate();
@@ -129,6 +131,14 @@ export class LocalReader {
     const waiting = [...this.pending.values()];
     this.pending.clear();
     for (const p of waiting) p.fail(new NativeFailure(why));
+  }
+
+  /** Stop the reader's worker (the self-test's readers, which aren't kept). */
+  dispose(): void {
+    this.worker?.terminate();
+    this.worker = null;
+    this.loading = null;
+    this.engine = null;
   }
 
   async read(pixels: Pixels): Promise<ReadResult> {

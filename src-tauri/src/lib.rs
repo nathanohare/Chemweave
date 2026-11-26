@@ -564,6 +564,8 @@ pub fn run() {
             recognise::pack_read,
             recognise_native::recognise_native_ready,
             recognise_native::recognise_encode,
+            recognise_native::recognise_native_runtime,
+            recognise_native::recognise_native_release,
             print::printers,
             print::print_page,
             xtb::xtb_version,

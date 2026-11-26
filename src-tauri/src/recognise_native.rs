@@ -39,6 +39,21 @@ pub async fn recognise_encode(app: tauri::AppHandle, request: tauri::ipc::Reques
     Ok(tauri::ipc::Response::new(out))
 }
 
+/// Loads ONNX Runtime alone (no model pack needed): the self-test's proof that the copy beside
+/// the app loads. An error says why not; "This copy of the app has no ..." when there is none.
+#[tauri::command]
+pub async fn recognise_native_runtime(app: tauri::AppHandle) -> Result<(), String> {
+    tauri::async_runtime::spawn_blocking(move || desktop::runtime_only(&app))
+        .await
+        .map_err(|e| format!("The native reader stopped: {e}"))?
+}
+
+/// Lets go of the native encoder (after the page fell back to WebAssembly), freeing its memory.
+#[tauri::command]
+pub fn recognise_native_release() {
+    desktop::release();
+}
+
 /// Little-endian 32-bit floats from bytes; an error when they aren't a whole picture.
 fn floats(bytes: &[u8]) -> Result<Vec<f32>, String> {
     if bytes.is_empty() || bytes.len() % 4 != 0 {
@@ -71,6 +86,7 @@ fn to_bytes(keys: &[f32], values: &[f32]) -> Vec<u8> {
 mod desktop {
     use ort::session::{builder::GraphOptimizationLevel, Session};
     use ort::value::Tensor;
+    use std::path::Path;
     use std::sync::Mutex;
     use tauri::Manager;
 
@@ -96,15 +112,49 @@ mod desktop {
 
     fn load(app: &tauri::AppHandle) -> Result<ort::environment::Environment, String> {
         let dir = app.path().resource_dir().map_err(|e| format!("No resource folder: {e}"))?;
-        let lib = dir.join("ort").join(LIB);
+        load_from(&dir.join("ort"))
+    }
+
+    /// ONNX Runtime from the folder `ort` (the library, and on Windows the C++ runtime it needs beside it).
+    pub(super) fn load_from(ort: &Path) -> Result<ort::environment::Environment, String> {
+        let lib = ort.join(LIB);
         if !lib.is_file() {
             return Err(format!("This copy of the app has no {} (in {}).", LIB, lib.display()));
         }
-        ort::init_from(&lib)
+        with_dll_folder(ort, || ort::init_from(&lib))
             .map_err(|e| format!("ONNX Runtime ({}) could not be loaded: {e}", lib.display()))?
             .with_name("chemweave-reader")
             .build()
             .map_err(|e| format!("ONNX Runtime could not start: {e}"))
+    }
+
+    /// On Windows, the library's own dependencies (the Visual C++ runtime, shipped in ort/ beside
+    /// it, as a computer may not have it installed) are looked for in its folder while it loads.
+    #[cfg(windows)]
+    fn with_dll_folder<T>(dir: &Path, f: impl FnOnce() -> T) -> T {
+        use std::os::windows::ffi::OsStrExt;
+        use windows_sys::Win32::System::LibraryLoader::SetDllDirectoryW;
+        let wide: Vec<u16> = dir.as_os_str().encode_wide().chain(Some(0)).collect();
+        // SAFETY: a NUL-terminated wide string that lives across the call; null restores the default search
+        unsafe { SetDllDirectoryW(wide.as_ptr()) };
+        let r = f();
+        unsafe { SetDllDirectoryW(std::ptr::null()) };
+        r
+    }
+
+    #[cfg(not(windows))]
+    fn with_dll_folder<T>(_: &Path, f: impl FnOnce() -> T) -> T {
+        f()
+    }
+
+    pub fn runtime_only(app: &tauri::AppHandle) -> Result<(), String> {
+        runtime(app).map(|_| ())
+    }
+
+    pub fn release() {
+        if let Ok(mut slot) = ENCODER.lock() {
+            *slot = None;
+        }
     }
 
     /// The pack's encoder, loaded when the pack changes (or the first time).
@@ -119,7 +169,7 @@ mod desktop {
             }
             let session = Session::builder(&env)
                 .map_err(|e| e.to_string())?
-                .with_optimization_level(GraphOptimizationLevel::Level3)
+                .with_optimization_level(GraphOptimizationLevel::All)
                 .map_err(|e| e.to_string())?
                 .commit_from_file(&path)
                 .map_err(|e| format!("The encoder could not be loaded: {e}"))?;
@@ -153,6 +203,10 @@ mod desktop {
     pub fn encode(_: &tauri::AppHandle, _: &str, _: Vec<f32>) -> Result<Vec<u8>, String> {
         Err(WHY.into())
     }
+    pub fn runtime_only(_: &tauri::AppHandle) -> Result<(), String> {
+        Err(WHY.into())
+    }
+    pub fn release() {}
 }
 
 #[cfg(test)]
@@ -174,6 +228,14 @@ mod tests {
         assert!(picture_side(384 * 384).is_err());
         assert!(floats(&[0, 0, 0]).is_err());
         assert!(floats(&[]).is_err());
+    }
+
+    #[cfg(not(any(target_os = "android", target_os = "ios")))]
+    #[test]
+    fn a_missing_library_is_said_plainly() {
+        let dir = std::env::temp_dir().join("chemweave-no-ort-here");
+        let e = desktop::load_from(&dir).err().expect("there is no library there");
+        assert!(e.starts_with("This copy of the app has no"), "{e}");
     }
 
     #[test]

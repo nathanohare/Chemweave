@@ -17892,6 +17892,13 @@ async function desktopSelfTest(): Promise<void> {
     // the sample structure drawn as a picture, read with the native encoder and with the
     // WebAssembly one, so a laptop run of the self-test gives both times in this web view.
     report.structureReader = await selfTestReader();
+    // the native ONNX Runtime bundled with the app loads (no model pack needed): a copy that is
+    // there but won't load fails the self-test; a build without one (a local build) doesn't
+    const rt = await invoke('recognise_native_runtime').then(() => ({ ok: true, problem: '' }), (e) => ({ ok: false, problem: String(e) }));
+    report.nativeRuntime = rt;
+    if (!rt.ok && !rt.problem.startsWith('This copy of the app has no')) ok = false;
+    // with the pack here, the native and WebAssembly encoders must read the sample alike
+    if ((report.structureReader as { sameReading?: boolean }).sameReading === false) ok = false;
     // Redraw speed on a large drawing, in this web view.
     const s0 = performance.now();
     stressTest(2000);
@@ -17920,22 +17927,28 @@ async function selfTestReader(): Promise<Record<string, unknown>> {
     const out: Record<string, unknown> = { pack: true, picture: [img.width, img.height] };
     for (const native of [true, false]) {
       const reader = new LocalReader({ native });
-      const t0 = performance.now();
-      const runs: { ms: number; encodeMs?: number; smiles: string }[] = [];
-      for (let i = 0; i < 4; i++) {
-        const r = await reader.read(pixels);
-        if (r.kind === 'graph') runs.push({ ms: r.ms, encodeMs: r.encodeMs, smiles: r.graph.smiles });
+      try {
+        const runs: { ms: number; encodeMs?: number; smiles: string }[] = [];
+        let firstMs = 0;
+        for (let i = 0; i < 4; i++) {
+          const t0 = performance.now();
+          const r = await reader.read(pixels);
+          // the first picture's whole wait, model loading included
+          if (i === 0) firstMs = performance.now() - t0;
+          if (r.kind === 'graph') runs.push({ ms: r.ms, encodeMs: r.encodeMs, smiles: r.graph.smiles });
+        }
+        const warm = runs.slice(1);
+        out[native ? 'native' : 'wasm'] = {
+          engine: reader.engine,
+          problem: reader.nativeProblem || undefined,
+          firstReadWithLoadMs: Math.round(firstMs),
+          readMedianMs: stat(warm.map((r) => r.ms)).med,
+          encodeMedianMs: stat(warm.map((r) => r.encodeMs ?? 0)).med,
+          smiles: runs[0]?.smiles,
+        };
+      } finally {
+        reader.dispose();
       }
-      const warm = runs.slice(1);
-      out[native ? 'native' : 'wasm'] = {
-        engine: reader.engine,
-        problem: reader.nativeProblem || undefined,
-        // the first picture's wait, model loading included
-        firstReadWithLoadMs: Math.round(runs[0] ? performance.now() - t0 - warm.reduce((s, r) => s + r.ms, 0) : 0),
-        readMedianMs: stat(warm.map((r) => r.ms)).med,
-        encodeMedianMs: stat(warm.map((r) => r.encodeMs ?? 0)).med,
-        smiles: runs[0]?.smiles,
-      };
     }
     const n = out.native as { smiles?: string }, w = out.wasm as { smiles?: string };
     out.sameReading = !!n.smiles && n.smiles === w.smiles;
