@@ -5134,9 +5134,9 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-st.warn { color: var(--warn); }
 .si-st.flag { color: var(--slow); }
 
-.si-page { overflow: auto; padding: 10px 12px 24px; }
+.si-page { overflow: auto; padding: 5px 6px 12px; }
 .si-sheet { margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; }
+.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); }
 .si-title { margin: 0 0 6px; font-size: var(--fs-lg, 15px); font-weight: 600; }
 .si-sub { margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; text-transform: none; }
 .si-note { margin: 0; font-size: var(--fs-sm); }
