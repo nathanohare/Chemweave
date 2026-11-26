@@ -91,7 +91,7 @@ dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
 /* the File tab's page slides in from the left, over the work */
 #backstage:not([hidden]) { animation: m-from-left var(--m-large) var(--ease-out); }
 #backstage .menu { animation: none; }
-/* a whole new look (another mode's colors, another theme) changes at once: no control fades (motion.ts holdTransitions, S99) */
+/* a whole new look (another mode, its colors, another theme) shows at once: no control fades its color, and the ribbon's arrival is finished at once (motion.ts holdTransitions, S99) */
 :root[data-m-still] *, :root[data-m-still] *::before, :root[data-m-still] *::after { transition: none !important; }
 /* buttons change color with a quick fade */
 button { transition: background-color var(--m-short), border-color var(--m-short), color var(--m-short); }

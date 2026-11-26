@@ -57,40 +57,58 @@ function report(colorsStill) {
   return out;
 }
 
+/** How many fading animations run inside the parts `sel` names (to check one that should, or should not). */
+function fading(sel) {
+  let n = 0;
+  for (const el of document.querySelectorAll(sel)) for (const a of el.getAnimations({ subtree: true })) {
+    if (a.playState === 'finished' || a.constructor.name === 'CSSTransition') continue;
+    if ((a.effect?.getKeyframes?.() ?? []).some((k) => 'opacity' in k)) n++;
+  }
+  return n;
+}
+
 export async function motionProblems(page, label) {
   const problems = [];
   const level = await page.evaluate(() => document.documentElement.dataset.motion);
   if (level === 'off') return [`${label}: the motion check needs animations on, and they are Off`];
   const cmd = (c) => page.evaluate((c) => window.__app.command(c), c);
   const tabs = () => page.$$('.ribbon:not([hidden]) .rb-tablist [role="tab"]:visible');
-  const run = async (what, act, colorsStill = false) => {
+  // fades: where a fade must run (so a fade that broke fails too); still: where nothing may fade
+  const run = async (what, act, { colorsStill = false, fades = null, still = null, prepare = null } = {}) => {
     await page.waitForTimeout(SETTLE);
     await page.keyboard.press('Escape');
     await page.waitForTimeout(SETTLE);
+    if (prepare) { await prepare(); await page.waitForTimeout(SETTLE); }
     await page.evaluate(before);
     try { await act(); } catch (e) { problems.push(`${label}, ${what}: could not do it (${String(e.message).split('\n')[0]})`); return; }
     await page.waitForTimeout(20);
     for (const p of await page.evaluate(report, colorsStill)) problems.push(`${label}, ${what}: ${p}`);
+    if (fades && !(await page.evaluate(fading, fades))) problems.push(`${label}, ${what}: nothing in ${fades} fades in, and it should`);
+    if (still) {
+      const n = await page.evaluate(fading, still);
+      if (n) problems.push(`${label}, ${what}: ${n} part(s) of ${still} fade in; another file shows at once`);
+    }
   };
-  await run('another ribbon tab', async () => (await tabs())[1].click());
-  await run('back to the first ribbon tab', async () => (await tabs())[0].click());
+  const panel = '.ribbon:not([hidden]) .rb-panel:not([hidden])';
+  await run('another ribbon tab', async () => (await tabs())[1].click(), { fades: panel });
+  await run('back to the first ribbon tab', async () => (await tabs())[0].click(), { fades: panel });
   await run('Settings', () => cmd('preferences'));
-  await run('a Settings page', async () => {
-    await cmd('preferences');
-    await page.waitForTimeout(SETTLE);
-    await page.evaluate(before);
-    await page.evaluate(() => [...document.querySelectorAll('dialog[open] .sw-nav button, dialog[open] nav button')][2]?.click());
-  });
-  for (const k of ['new-document', 'new-slides', 'new-sheet', 'new', 'prev-tab', 'next-tab']) await run(`File ▸ ${k}`, () => cmd(k), true);
-  await run('the File tab page', async () => (await page.$('.ribbon:not([hidden]) .rb-file:visible'))?.click());
+  await run('a Settings page', () => page.evaluate(() => [...document.querySelectorAll('dialog[open] .sw-nav button, dialog[open] nav button')][2].click()),
+    { prepare: () => cmd('preferences'), fades: 'dialog[open] .sw-pane' });
+  for (const k of ['new-document', 'new-slides', 'new-sheet', 'new', 'prev-tab', 'next-tab']) {
+    await run(`File ▸ ${k}`, () => cmd(k), { colorsStill: true, still: '#work, .ribbon' });
+  }
   await run('a menu, then its submenu straight away', async () => {
     const top = await page.$('header > .menu-wrap > button:visible');
-    if (!top) return;
+    if (!top) throw new Error('no menu bar');
     await top.click();
     const sub = await page.$('.menu:not([hidden]) > .submenu > .has-sub:visible');
     if (sub) { await sub.hover(); await sub.press('ArrowRight').catch(() => {}); }
   });
-  await run('a right-click menu', () => page.mouse.click(700, 450, { button: 'right' }));
+  await run('a right-click menu', async () => {
+    const box = await page.locator('#overlay').boundingBox();
+    await page.mouse.click(box.x + box.width / 2, box.y + box.height / 2, { button: 'right' });
+  }, { fades: '.context-menu, .menu.popup-menu' });
   await run('fold the Side Panel', () => cmd('fold-side'));
   await run('unfold the Side Panel', () => cmd('fold-side'));
   await page.keyboard.press('Escape');

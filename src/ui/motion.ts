@@ -102,54 +102,25 @@ export function enter(el: Element | null | undefined, how: Entrance = 'fade', t:
   } catch { return null; }
 }
 
+const clear = (c: string): boolean => /^(transparent|rgba\(0, 0, 0, 0\))$/.test(c);
 /**
- * The parts of `root` on screen now, to `depth` levels: give it to fadeInNew after a switch, so only
- * what the switch brought fades in.
+ * The element paints the same background as what is behind it: fading it would only make that
+ * background pulse, so it shows at once and what is on it fades (S99).
  */
-export function shownUnder(root: Element | null, depth = 4): WeakSet<Element> {
-  const seen = new WeakSet<Element>();
-  if (!root || !moving()) return seen;
-  const walk = (el: Element, d: number): void => {
-    for (const c of el.children) if (isShown(c)) { seen.add(c); if (d > 1) walk(c, d - 1); }
-  };
-  walk(root, depth);
-  return seen;
-}
-
-/**
- * After a switch (another mode): fade in what it brought and nothing else (S95, S99). A part that was
- * on screen before stays still, and a part brought in with a background of its own shows that
- * background at once and fades only what is on it, so no background ever pulses.
- */
-export function fadeInNew(root: Element | null, before: WeakSet<Element>, depth = 4): void {
-  if (!root || !moving()) return;
-  const walk = (el: Element, d: number): void => {
-    for (const c of el.children) {
-      if (!isShown(c)) continue;
-      if (before.has(c) || ownBackground(c)) { if (d > 1) walk(c, d - 1); continue; }
-      enter(c, 'fade', 'large');
-    }
-  };
-  walk(root, depth);
-}
-
-const isShown = (el: Element): boolean => {
-  const r = el.getBoundingClientRect();
-  return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
-};
-/**
- * The element paints a background of its own. In the page (not floating over it) that background
- * shows at once and only what is on it fades: fading the background would let what was behind show
- * through for a moment, and the window would pulse (S99).
- */
-function ownBackground(el: Element): boolean {
-  const cs = getComputedStyle(el);
-  return cs.backgroundImage !== 'none' || !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor);
+function sameAsBehind(el: Element): boolean {
+  const own = getComputedStyle(el).backgroundColor;
+  if (clear(own)) return false;
+  for (let up = el.parentElement; up; up = up.parentElement) {
+    const b = getComputedStyle(up).backgroundColor;
+    if (!clear(b)) return b === own;
+  }
+  return false;
 }
 
 /**
  * Fade in what was just put into a container that stays (a Settings page, a template category's
- * cards, a slide added to the list): its new contents, not the container, and never a background.
+ * cards, a slide added to the list): its new contents, not the container, and never a background
+ * that is the same as the one behind it.
  */
 export function fadeContent(box: Element | null, depth = 3): void {
   if (!box || !moving()) return;
@@ -157,7 +128,7 @@ export function fadeContent(box: Element | null, depth = 3): void {
   const walk = (el: Element, d: number): void => {
     for (const c of el.children) {
       if (n >= 24) return;
-      if (ownBackground(c)) { if (d > 1) walk(c, d - 1); continue; }
+      if (sameAsBehind(c)) { if (d > 1) walk(c, d - 1); continue; }
       n++;
       enter(c, 'fade');
     }
@@ -166,13 +137,18 @@ export function fadeContent(box: Element | null, depth = 3): void {
 }
 
 /**
- * Colors set for a whole new look (another mode's colors, another theme) change at once: for two
- * frames no control fades its color, so the window never pulses (S99).
+ * A whole new look (another mode, its colors, another theme) shows at once: for two frames no control
+ * fades its color and no ribbon fades in, so the window never pulses (S99). Call it only when the look
+ * really changes: it restyles the whole window twice.
  */
 export function holdTransitions(root: HTMLElement | null = typeof document !== 'undefined' ? document.documentElement : null): void {
   if (!root || !moving()) return;
   root.dataset.mStill = '';
-  requestAnimationFrame(() => requestAnimationFrame(() => { delete root.dataset.mStill; }));
+  requestAnimationFrame(() => {
+    // (before the frame is drawn: the new ribbon's groups are there at once, not fading in)
+    for (const r of document.querySelectorAll('.ribbon')) for (const a of r.getAnimations({ subtree: true })) { try { a.finish(); } catch { /* a repeating one */ } }
+    requestAnimationFrame(() => { delete root.dataset.mStill; });
+  });
 }
 
 // Something arriving by a move (a menu dropping, the File page or the Side Panel sliding in) is, for
@@ -197,7 +173,7 @@ if (typeof document !== 'undefined') {
     const t = e.target as Node | null;
     for (const el of [...moves]) {
       if (!el.isConnected) { moves.delete(el); continue; }
-      if (t && el.contains(t)) { for (const a of el.getAnimations()) a.finish(); moves.delete(el); }
+      if (t && el.contains(t)) { for (const a of el.getAnimations()) { try { a.finish(); } catch { /* a repeating one */ } } moves.delete(el); }
     }
   };
   for (const type of ['pointerover', 'pointerdown', 'focusin', 'keydown']) document.addEventListener(type, reach, true);
