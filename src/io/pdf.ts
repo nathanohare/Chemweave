@@ -510,15 +510,23 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         const seenText = visualText(symbolFontText(it.text, it.family), it.widths, !!it.rtl);
         const text = seenText.text;
         const extra = await fallbackFonts(text, own);
-        const show = (f: string, dx: number, s: string) => {
+        // (letters scaled to the widths the text was laid out with: Tz, kept until changed within the item)
+        let tz = 100;
+        const show = (f: string, dx: number, s: string, scale = 1) => {
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
+          const z = Math.round(scale * 1000) / 10;
+          const tzOp = z !== tz ? `${num(z)} Tz ` : '';
+          tz = z;
           // (outlined letters: drawn by their outline, PDF's text rendering mode 1)
-          ops.push(`BT ${it.stroke ? `${paint.v} RG ${num(it.stroke)} w 1 j 1 Tr ` : ''}/${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
+          ops.push(`BT ${it.stroke ? `${paint.v} RG ${num(it.stroke)} w 1 j 1 Tr ` : ''}${tzOp}/${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
         for (const piece of keptPieces(text, seenText.widths, own, extra)) {
-          if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
+          if (piece.font) {
+            const sc = piece.font.scaleFor(piece.text, piece.widths, it.size);
+            show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size, sc), sc);
+          }
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }
         ops.push('Q');
