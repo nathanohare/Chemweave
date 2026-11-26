@@ -6,6 +6,7 @@ Checks that enforce part of this file:
 
 - `tests/ui-text-lint.test.ts` fails on banned words, British spellings and flat formulas in user-visible text (S26, S27, S29, S64, S70, S82). Run it alone with `npx vitest run tests/ui-text-lint.test.ts`.
 - `scripts/screenshot-matrix.mjs` shoots changed screens at three window sizes in Light and Dark Gray (S1 to S3, S45, S48), for the pull request and for Nate.
+- `tests/motion.test.ts` fails on an animation that uses its own timing or animates a layout property (S91, S92, S94).
 - The pull request template (`.github/pull_request_template.md`) asks for the mockup pick (S41), the Office model followed (S13 to S25) and what a new control replaces (S25).
 
 ## The five standing UI rules
@@ -127,6 +128,20 @@ These came first and every later rule builds on them.
 | S78 | Newman projections: one wedge and one hashed wedge per carbon; the viewing eye drawn with a pupil and the ring arc as a dashed gray line (both can be changed in Settings ▸ Newman Projections); no rotated label text; text 2 pt under caption size; textbook angles by default; the front-on eye icon only on the tool button. | Textbook convention. |
 | S79 | Tilt handles show only while a Perspective tool is active (replaces showing them beside the rotate handle all the time). | They get in the way otherwise. |
 | S80 | In a slide show, going back glides on canvas slides; normal slides go back instantly, as in PowerPoint. | PowerPoint's behavior for normal slides. |
+
+## Motion
+
+Timings live in one place: the `--m-*` variables in `src/app.css` and `src/ui/motion.ts`, which the Animations setting (Settings ▸ Preferences ▸ Interface) switches between Off, Fast and Normal.
+
+| # | Rule | Why |
+|---|---|---|
+| S91 | Every animation takes its length from the shared timings: Short 80 ms (right-click menus, button colors), Toggle 96 ms (check boxes and switches), Standard 120 ms (dialogs, menus, panels, tabs), Large 180 ms (mode changes, the Side Panel, the File page) and Highlight 600 ms. Normal is 1.5 times Fast; Off is zero. Things arrive with ease-out and leave with ease-in, faster than they came. | One feel everywhere, and one setting changes it all. |
+| S92 | Only opacity, transform (translate, scale, rotate), colors and clip-path are animated; never a size, a position, a margin or the drawing itself. | These cost no layout, so an animation never slows the program. |
+| S93 | With no choice made, the desktop app starts on Fast and the web app on Off; either starts on Off when the system asks for reduced motion. Off turns every animation off but keeps highlights (shown for the same time, without fading). | Speed comes first; the web app stays light; people who asked their system for less motion get none. |
+| S94 | Nothing waits for an animation: what appears is usable at once, a second click starts over, and no command is delayed to let something finish moving. Only a repeating animation (a busy stripe, the jiggle while customizing) keeps its own period. `tests/motion.test.ts` checks S91, S92 and S94. | Animations smooth the program; they must never make it feel slower. |
+| S95 | How things arrive (Nate's picks, 2026-11-26): dialogs fade and grow from 97% and close with a quick fade; menus fade and drop 4 px; right-click menus and tooltips fade; the Side Panel slides in from the right; toolboxes, a ribbon tab's contents, a page inside a window, a folding section's contents, added list items and a new mode (also when picking a template) fade in; the selected ribbon tab's shape slides to the tab clicked; the File page slides in from the left; status messages fade and rise 6 px; check marks draw in and switch knobs slide; busy shows a bar with a moving stripe; when dragging to reorder, the other items slide out of the way. | Each element's movement says where it came from, and the same kind of element always moves the same way. |
+| S96 | A folding section's arrow turns rather than swapping glyphs; a highlight on something that just changed flashes, then fades over 600 ms. | It shows the change without a second shape to read. |
+| S97 | Drawing, panning, zooming and scrolling the canvas, switching between open files and moving through a list with the keyboard stay instant. Jumping to an item (a link in Help, a field the program points to, a box it reveals) glides there when animations are on (`scrollToItem` in `src/ui/motion.ts`). | The canvas is already smooth; a jump that glides shows where you went. |
 
 ## When a rule changes
 

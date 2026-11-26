@@ -73,6 +73,7 @@ import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
+import { scrollToItem } from './motion';
 
 /** Said when a change was made on a page of before the project was read again (Undo, Reload): its objects are no longer the project's. */
 const READ_AGAIN = 'The project was being read again when this change was made, so the change was not saved. Make it again.';
@@ -3970,7 +3971,7 @@ export class SiMode {
     requestAnimationFrame(() => {
       const row = this.page.querySelector<HTMLElement>(`.si-field[data-key="${CSS.escape(key)}"]`);
       if (!row) return;
-      row.scrollIntoView({ block: 'center' });
+      scrollToItem(row, 'center');
       row.querySelector<HTMLElement>('input, select, textarea, [contenteditable="true"], button')?.focus({ preventScroll: true });
       row.classList.add('si-flash');
       setTimeout(() => row.classList.remove('si-flash'), 1200);

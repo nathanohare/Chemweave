@@ -5,6 +5,7 @@
 
 import { Marked } from 'marked';
 import { REPO_URL } from '../feedback';
+import { scrollToItem } from './motion';
 export { guideSpot } from './guide-spot';
 
 // the pages load the first time the guide opens; pictures are files beside the program. Only the
@@ -183,7 +184,7 @@ export class GuideWindow {
       img.loading = 'lazy';
     }
     const target = anchor ? this.article.querySelector<HTMLElement>(`#${CSS.escape(anchor)}`) : null;
-    if (target) { target.scrollIntoView({ block: 'start' }); target.classList.add('gw-here'); }
+    if (target) { scrollToItem(target, 'start'); target.classList.add('gw-here'); }
     else this.article.scrollTop = 0;
     this.article.focus({ preventScroll: true });
   }

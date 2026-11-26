@@ -8,6 +8,7 @@ import { Doc } from '../model';
 import { paintObjects, type ObjectLook } from '../format-painter';
 import { recordPicture, pictureSvg } from '../render/picture';
 import { fitRibbons } from './ribbon-fit';
+import { scrollBehavior } from './motion';
 
 export type { FormatFavorite } from '../favorites';
 export { FAVORITES_MAX, parseFavorites, withFavorite } from '../favorites';
@@ -112,8 +113,8 @@ export function ribbonFavorites(host: HTMLElement, o: RibbonFavoritesOptions): {
     side.append(b);
     return b;
   };
-  mk('▲', 'Earlier favorites', () => strip.scrollBy({ top: -strip.clientHeight, behavior: 'smooth' }));
-  mk('▼', 'More favorites', () => strip.scrollBy({ top: strip.clientHeight, behavior: 'smooth' }));
+  mk('▲', 'Earlier favorites', () => strip.scrollBy({ top: -strip.clientHeight, behavior: scrollBehavior() }));
+  mk('▼', 'More favorites', () => strip.scrollBy({ top: strip.clientHeight, behavior: scrollBehavior() }));
   const add = mk('+', 'Save Format as Favorite: keep the formatting of what is selected under a name', () => o.save());
   add.className = 'rbs-all';
   host.replaceChildren(strip, side);

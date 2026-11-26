@@ -11,6 +11,7 @@ import { blockAround, cellAt, colCount, deleteColumn, deleteRow, footnotesOf, in
 import { SiRichBox } from './si-rich';
 import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
+import { scrollToItem } from './motion';
 
 export interface SiTableHost extends SiPictureHost {
   label(ref: string): string;
@@ -104,7 +105,7 @@ export class SiTableEditor {
   private autoLabel = '';
 
   focus(): void {
-    this.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    scrollToItem(this.el);
     this.boxes[0]?.el.focus();
   }
 
