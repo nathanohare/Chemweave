@@ -220,11 +220,22 @@ export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
   return JSON.stringify([parts.filter((x) => x[0] !== ''), paras]);
 }
 
-/** A PowerPoint text box's frame, to write back while the box isn't resized here (null without one). */
-export function keptFrame(sp: Element, c: Omit<Caption, 'id'>): string | null {
+/**
+ * A PowerPoint text box's frame, to write back while the box isn't resized here (null without one).
+ * A box in a group is kept in slide coordinates (`t`: the groups' scale and offset, in points),
+ * as the box is written outside any group of PowerPoint's (coordinators #68).
+ */
+export function keptFrame(sp: Element, c: Omit<Caption, 'id'>, t?: { sx: number; sy: number; tx: number; ty: number }): string | null {
   const xf = kid(kid(sp, 'spPr'), 'xfrm'), bp = kid(kid(sp, 'txBody'), 'bodyPr');
   if (!xf || !bp || !kid(xf, 'off') || !kid(xf, 'ext')) return null;
-  const k: FrameKept = { xf: xmlOf(xf), bp: xmlOf(bp), ...(c.ph ? { ph: c.ph } : {}), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
+  let xfXml = xmlOf(xf);
+  if (t && (t.sx !== 1 || t.sy !== 1 || t.tx !== 0 || t.ty !== 0)) {
+    const EMU = 12700;
+    xfXml = xfXml
+      .replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Math.round(t.tx * EMU + t.sx * Number(x))}" y="${Math.round(t.ty * EMU + t.sy * Number(y))}"`)
+      .replace(/<a:ext cx="(\d+)" cy="(\d+)"/, (_, cx: string, cy: string) => `<a:ext cx="${Math.round(t.sx * Number(cx))}" cy="${Math.round(t.sy * Number(cy))}"`);
+  }
+  const k: FrameKept = { xf: xfXml, bp: xmlOf(bp), ...(c.ph ? { ph: c.ph } : {}), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
   return JSON.stringify(k);
 }
 

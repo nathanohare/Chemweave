@@ -309,3 +309,33 @@ describe('PowerPoint boxes that grow with their text, turned, vertical or not wr
     expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'ctr' }))))).toEqual(at);
   });
 });
+
+// (coordinators #68)
+describe('a text box in a group whose child coordinates differ from its place', () => {
+  const frameOf = (xml: string, text: string) => {
+    const sp = [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes(text))!;
+    return /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(sp)!.slice(1).map(Number);
+  };
+  /** The groups round the box in the saved slide, as offsets: each group's off minus its chOff (scale 1). */
+  const groupShift = (xml: string) => [...xml.matchAll(/<p:grpSpPr><a:xfrm[^>]*><a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext[^>]*\/><a:chOff x="(-?\d+)" y="(-?\d+)"\/>/g)]
+    .reduce((s, m) => [s[0] + Number(m[1]) - Number(m[3]), s[1] + Number(m[2]) - Number(m[4])], [0, 0]);
+  const group = (inner: string, ext: number[], chExt: number[]) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
+    + `<p:grpSpPr><a:xfrm><a:off x="1000000" y="1000000"/><a:ext cx="${ext[0]}" cy="${ext[1]}"/><a:chOff x="3048000" y="2921000"/><a:chExt cx="${chExt[0]}" cy="${chExt[1]}"/></a:xfrm></p:grpSpPr>`
+    + inner + textBox(`<a:p>${run('Partner')}</a:p>`, undefined, [3048000, 4000000, 1000000, 400000]) + '</p:grpSp>';
+
+  it('is saved where it is on the slide, not at its place in the group', async () => {
+    const box = textBox(`<a:p>${run('Grouped')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
+    const xml = await save(deck(group(box, [3000000, 2000000], [3000000, 2000000])));
+    const [x, y, cx, cy] = frameOf(xml, 'Grouped');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 2000000, 500000]);
+  });
+
+  it('takes the group\'s scale too', async () => {
+    const box = textBox(`<a:p>${run('Halved')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
+    const xml = await save(deck(group(box, [3000000, 2000000], [6000000, 4000000])));
+    const [x, y, cx, cy] = frameOf(xml, 'Halved');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 1000000, 250000]);
+  });
+});
