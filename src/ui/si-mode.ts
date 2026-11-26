@@ -940,7 +940,7 @@ export class SiMode {
     for (const s of [hy, wm]) if (s) s.disabled = !p;
     const sec = this.currentSection();
     const or = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="orient"]');
-    if (or) { or.value = sec && sectionLandscape(sec) ? 'landscape' : 'portrait'; or.disabled = !sec || sec.type === 'spectra'; }
+    if (or) { or.value = sec && this.landscapeOf(sec) ? 'landscape' : 'portrait'; or.disabled = !sec || sec.type === 'spectra'; }
     const brk = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="break"]');
     const item = this.flowItem();
     if (brk) { brk.value = item && startsNewPage(item.data) ? 'nextPage' : 'continuous'; brk.disabled = !item; }
@@ -950,8 +950,16 @@ export class SiMode {
   private flowItem(): SiCompound | SiSection | null {
     const c = this.currentCompound();
     if (c) return c;
+    // (a scheme page's own start isn't set here: not its section's either)
+    if (this.pick.kind === 'scheme') return null;
     const s = this.currentSection();
     return s && s.type !== 'spectra' ? s : null;
+  }
+
+  /** A section's pages are on their side: its own orientation or its section's. */
+  private landscapeOf(s: SiSection): boolean {
+    const p = this.project;
+    return sectionLandscape(s, (x) => { try { return x.parentId && p ? p.section(x.parentId) : null; } catch { return null; } });
   }
 
   /** Layout ▸ Orientation (the section picked) or Breaks (the compound or section picked), in one step of Undo. */
@@ -962,10 +970,13 @@ export class SiMode {
       const sec = this.currentSection();
       const on = v === 'landscape';
       if (!sec || sec.type === 'spectra') { this.host.flash(sec ? 'The Spectra section sets its own pages (each spectrum’s Orientation).' : 'Select a section first.'); this.pageLookState(); return; }
-      if (on === sectionLandscape(sec)) { this.pageLookState(); return; }
+      if (on === this.landscapeOf(sec)) { this.pageLookState(); return; }
       const before = sec.data.orientation;
+      // (the same as its section's: it just follows it again; else its own)
+      const parent = ((): SiSection | null => { try { return sec.parentId ? p.section(sec.parentId) : null; } catch { return null; } })();
+      const follows = on === (parent ? this.landscapeOf(parent) : false);
       await this.act(async () => {
-        if (on) sec.data.orientation = 'landscape'; else delete sec.data.orientation;
+        if (follows) delete sec.data.orientation; else sec.data.orientation = on ? 'landscape' : 'portrait';
         try { await p.saveSection(sec); } catch (e) { if (before === undefined) delete sec.data.orientation; else sec.data.orientation = before; throw e; }
       }, false, undefined, undefined, on ? 'Landscape' : 'Portrait');
     } else {
