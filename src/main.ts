@@ -4,6 +4,9 @@
 
 // every modal window keeps the title bar usable and opens on the screen, before any window opens
 import './ui/modal-guard';
+// the Animations setting on the page before anything shows (Off on the web until settings load)
+import { chosenMotion, enter as motionEnter, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
+import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
@@ -373,6 +376,11 @@ const pickSlideSize = later(() => import('./ui/slide-size-dialog'), 'pickSlideSi
 const pickTemplate = later(() => import('./ui/template-gallery'), 'pickTemplate');
 const askEnergy = later(() => import('./ui/energy-dialog'), 'askEnergy');
 import type { EnergyStructureHooks } from './ui/energy-dialog';
+
+/** The kind of tab last brought to the front (null: none yet): a new mode fades in (enterTab). */
+let enteredMode: Tab['mode'] | null = null;
+// the selected ribbon tab's shape glides to the tab clicked
+watchRibbonTabs();
 
 // help text in data-info attributes becomes an "i" beside its header as each window opens
 infoTipsOnOpen();
@@ -4826,6 +4834,9 @@ function finishTab(): void {
 
 /** Set the window up for a tab that has just come to the front. */
 function enterTab(tab: Tab, opened: boolean): void {
+  // another kind of file (mode) fades in; another file of the same kind shows at once, for comparing (Motion Choices)
+  if (enteredMode !== null && enteredMode !== tab.mode) motionEnter($('#work'), 'fade', 'large');
+  enteredMode = tab.mode;
   // a new or opened drawing starts on Select; going back to a tab keeps the tool last used
   if (opened && tab.mode === 'drawing') modeTool.drawing = START_TOOL.drawing;
   if (slideSplit && tab !== slideSplit.partner) slideSplit = null;
@@ -6353,8 +6364,8 @@ const tabLeft = tabButton('tab-left', '‹', 'Scroll the tabs left');
 const tabRight = tabButton('tab-right', '›', 'Scroll the tabs right');
 const tabList = tabButton('tab-list', '▾', 'List of open files');
 const tabAdd = tabButton('tab-add', '+', 'New file: canvas, presentation, spreadsheet, document or design');
-tabLeft.addEventListener('click', () => tabStrip.scrollBy({ left: -tabStrip.clientWidth * 0.7, behavior: 'smooth' }));
-tabRight.addEventListener('click', () => tabStrip.scrollBy({ left: tabStrip.clientWidth * 0.7, behavior: 'smooth' }));
+tabLeft.addEventListener('click', () => tabStrip.scrollBy({ left: -tabStrip.clientWidth * 0.7, behavior: motionScroll() }));
+tabRight.addEventListener('click', () => tabStrip.scrollBy({ left: tabStrip.clientWidth * 0.7, behavior: motionScroll() }));
 tabStrip.addEventListener('scroll', () => showTabArrows(), { passive: true });
 tabStrip.addEventListener('wheel', (e) => { if (Math.abs(e.deltaY) > Math.abs(e.deltaX)) { tabStrip.scrollLeft += e.deltaY; e.preventDefault(); } }, { passive: false });
 new ResizeObserver(() => showTabArrows()).observe(tabStrip);
@@ -13084,7 +13095,10 @@ async function personalPreferences(): Promise<void> {
     { name: 'siCustom', label: 'Mark text no field holds with', value: siPreviewPrefs.custom, short: true, options: [
       { value: 'underline', label: 'An amber dotted underline and a flag' }, { value: 'fill', label: 'An amber fill and a bar' }],
       help: 'Text typed in the preview where no field is: it is kept and prints where it was typed, and is listed on the Warnings page.' },
-    { name: 'iconsHeading', label: 'Icons', type: 'heading', value: '' },
+    { name: 'iconsHeading', label: 'Interface', type: 'heading', value: '' },
+    { name: 'animations', label: 'Animations', value: motionLevel(), short: true, options: [
+      { value: 'off', label: 'Off' }, { value: 'fast', label: 'Fast' }, { value: 'normal', label: 'Normal' }],
+      help: 'Windows, menus, ribbon tabs and panels fade or slide in briefly as they open. Off shows everything at once. Clicks and keys never wait for an animation. Unless changed here, the desktop app starts on Fast and the web app on Off, and both start on Off when your system asks for reduced motion.' },
     { name: 'iconSet', label: 'Icon set', value: iconSet(), short: true, options: [
       { value: 'new', label: 'New: one style in every mode' },
       { value: 'classic', label: 'Classic: the simple line icons, closest to ChemDraw' }],
@@ -13100,6 +13114,8 @@ async function personalPreferences(): Promise<void> {
   unitPrefs.place = r.tplUnits === 'header' || r.tplUnits === 'cell' ? r.tplUnits : 'both';
   smilesPrefs.draw = r.smilesCells === 'true';
   setIconSet(r.iconSet === 'classic' ? 'classic' : 'new');
+  // (kept only when changed here, so the automatic choice follows the system until then)
+  if (isMotionLevel(r.animations) && r.animations !== motionLevel()) setMotion(r.animations);
   docPagePrefs.cropMarks = r.cropMarks === 'true';
   docPagePrefs.whiteSpace = r.whiteSpace === 'true';
   docMode?.applyPagePrefs();
@@ -13227,6 +13243,7 @@ function currentSettings(): Settings {
     shadows,
     iconLook,
     iconSet: iconSet(),
+    ...(chosenMotion() ? { animations: chosenMotion()! } : {}),
     shapeInk: shapeInkNow,
     oneColumnTools,
     toolCells,
@@ -13483,6 +13500,7 @@ function applySettings(s: Settings): void {
   setShadows(s.shadows);
   setIconLook(s.iconLook);
   setIconSet(s.iconSet);
+  setMotion(s.animations ?? null);
   setShapesInk(s.shapeInk);
   setOneColumnTools(s.oneColumnTools);
   setToolCells(s.toolCells);
@@ -13687,7 +13705,7 @@ function revealStylePanel(focus = false): void {
     const sec = $('#style-section');
     if (sec.hidden || sec.classList.contains('empty')) return;
     sideSections.show('style-section');
-    sec.scrollIntoView({ block: 'nearest' });
+    motionScrollTo(sec);
     if (focus) sec.querySelector<HTMLElement>('input, select, button')?.focus();
   }, 60);
 }
@@ -16395,12 +16413,14 @@ function sideIsFolded(): boolean {
 function foldSide(fold: boolean): void {
   if (narrowWindow()) {
     narrowOpen = !fold;
-    if (!fold && sideFolded(toolboxState, ws.active.mode)) { toolboxes.setSideCollapsed(ws.active.mode, false); return; }
+    if (!fold && sideFolded(toolboxState, ws.active.mode)) { toolboxes.setSideCollapsed(ws.active.mode, false); requestAnimationFrame(() => motionEnter(document.querySelector('.toolbox[data-id="details"]:not(.collapsed)'), 'slide-in-right', 'large')); return; }
     placeSidePanel();
     tickToolboxes();
     return;
   }
   toolboxes.setSideCollapsed(ws.active.mode, fold);
+  // the Side Panel slides in from the edge as it opens
+  if (!fold) requestAnimationFrame(() => motionEnter(document.querySelector('.toolbox[data-id="details"]:not(.collapsed)'), 'slide-in-right', 'large'));
 }
 let wasNarrow = narrowWindow();
 addEventListener('resize', () => {
@@ -16702,7 +16722,7 @@ watchRibbons((on) => { ribbonChosen = on; storeSettings(); });
 // (in the order of the list: the pages of a group together, under its heading)
 const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'general', group: 'General', title: 'General', words: 'backup back up copy move settings file new computer install reinstall export import groups selecting click outline linked text above below ask whole page tracked changes reviewer name start view recent files chemdraw objects ole word powerpoint docx pptx save structures pictures svg png compatibility', open: generalPreferences },
-  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group icon icons icon set classic chemdraw new pictures toolbox stereochemistry stereo wedges wedge chiral flag racemic enantiomer absolute abs rac molfile mol sdf rxn', open: personalPreferences },
+  { id: 'preferences', group: 'General', title: 'Preferences', words: 'crop marks white space between pages margins focal point points center mark target diamond crosshair mass align line up largest ring personal personalize new files templates template window show templates habits enter return key finish text tool box new line alt option escape esc taste alkyl isomer prefix prefixes italic dash hyphen raised superscript tbu t-bu ipr i-pr nbu sbu ibu tert-butyl isopropyl problems warnings marks red box circle pointer cursor angle length units pixels px millimeters mm inches readout hints modifier shift alt ctrl keys counterions ions salt bf4 nbu4 charges group interface animation animations motion speed fast normal off icon icons icon set classic chemdraw new pictures toolbox stereochemistry stereo wedges wedge chiral flag racemic enantiomer absolute abs rac molfile mol sdf rxn', open: personalPreferences },
   { id: 'hotkeys', group: 'General', title: 'Keyboard Shortcuts', words: 'keys keyboard shortcuts import export reset', open: () => hotkeysDialog.open() },
   { id: 'typing', group: 'General', title: 'Typing and Spelling', words: 'typing spelling dictionary autocorrect replacements chemistry formulas subscripts', open: () => typingDialog.open() },
   { id: 'autosave', group: 'General', title: 'AutoSave and Recovery', words: 'autosave recovery versions backup copies shared folders onedrive', open: () => keeper.optionsCommand() },

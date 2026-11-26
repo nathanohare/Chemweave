@@ -4,6 +4,7 @@
 // of it is saved, printed, copied or exported.
 
 import type { Rect } from '../geom';
+import { motionMs } from './motion';
 import {
   type OrientPrefs, type EdgeMark, NAV_SIZES, GRID_SPACING, GRID_ALPHA, TINT_ALPHA,
   gridStep, seenRect, inside, union, fitInto, edgeMarks,
@@ -16,14 +17,14 @@ export interface OrientView {
   dpr: number;
 }
 
-const reduceMotion = () => typeof matchMedia !== 'undefined' && matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-/** Move the view so the point `p` (in points) is in the middle of the window, gliding there unless motion is reduced. */
+/** Move the view so the point `p` (in points) is in the middle of the window, gliding there when animations are on. */
 export function glideTo(r: OrientView, p: { x: number; y: number }, moved: () => void): void {
   const tx = r.width / 2 - p.x * r.view.scale, ty = r.height / 2 - p.y * r.view.scale;
   const fx = r.view.ox, fy = r.view.oy;
-  if (reduceMotion() || Math.hypot(tx - fx, ty - fy) < 2) { r.view.ox = tx; r.view.oy = ty; moved(); return; }
-  const t0 = performance.now(), ms = 220;
+  const ms = motionMs('large');
+  if (!ms || Math.hypot(tx - fx, ty - fy) < 2) { r.view.ox = tx; r.view.oy = ty; moved(); return; }
+  const t0 = performance.now();
   const step = () => {
     const t = Math.min(1, (performance.now() - t0) / ms);
     const e = 1 - (1 - t) ** 3;

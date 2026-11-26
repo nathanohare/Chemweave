@@ -5,6 +5,7 @@
 // send it there, or away from the grid to take it out. A press that doesn't move is a click.
 
 import { slotAt } from './toolboxes';
+import { EASE_OUT, motionMs } from './motion';
 
 export type TileDrop =
   | { kind: 'at'; at: number }
@@ -39,14 +40,13 @@ export interface TileDragOptions {
   drop(where: TileDrop): void;
 }
 
-const reduceMotion = () => matchMedia('(prefers-reduced-motion: reduce)').matches;
-
-/** Change a grid, its icons sliding from where they were to where they go (no slide with less motion). */
+/** Change a grid, its icons sliding from where they were to where they go (no slide with animations Off). */
 export function flip(grid: HTMLElement, change: () => void): void {
   const tiles = [...grid.querySelectorAll<HTMLElement>('.tbe-tile')];
   const was = new Map(tiles.map((t) => [t, t.getBoundingClientRect()]));
   change();
-  if (reduceMotion()) return;
+  const ms = motionMs('std');
+  if (!ms) return;
   for (const t of grid.querySelectorAll<HTMLElement>('.tbe-tile')) {
     const a = was.get(t);
     if (!a || t.hidden) continue;
@@ -56,7 +56,7 @@ export function flip(grid: HTMLElement, change: () => void): void {
     t.style.transition = 'none';
     t.style.transform = `translate(${dx}px, ${dy}px)`;
     void t.offsetWidth;
-    t.style.transition = 'transform 160ms ease-out';
+    t.style.transition = `transform ${ms}ms ${EASE_OUT}`;
     t.style.transform = '';
   }
 }

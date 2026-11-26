@@ -7,6 +7,7 @@
 import type { Json } from '../si/project';
 import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
+import { scrollToItem } from './motion';
 
 export interface SiFigureHost extends SiPictureHost {
   /** The figure was picked, or changed: the ribbon's Figure tab shows its state. */
@@ -89,7 +90,7 @@ export class SiFigureEditor {
   }
   private gone = false;
 
-  focus(): void { this.el.scrollIntoView({ block: 'nearest', behavior: 'smooth' }); this.el.focus(); }
+  focus(): void { scrollToItem(this.el); this.el.focus(); }
 
   private paint(): void {
     for (const u of this.urls) URL.revokeObjectURL(u);
