@@ -332,9 +332,6 @@ const RIBBON = `
     </div><div class="rb-label">Cell Picture</div></div>
   </div>
   <div class="rb-panel" data-si-panel="place" hidden>
-    <div class="rb-group" data-si-place-for="structures"><div class="rb-row">
-      <button class="rb-big" data-si-place="edit" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
-    </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-place="position" data-ic="position" aria-haspopup="true" title="Position: in the line, or at the left, center or right with the text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
       <div class="rb-fly rb-selgal" data-name="Wrap Text" data-ic="wrap-text" data-pic="wrap" title="How the text wraps around it"><select data-si-place-wrap>
@@ -353,7 +350,6 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="figure" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="picture" data-ic="picture" title="Change Picture: a picture file (PNG, JPG, SVG or PDF) in place of the figure's"><span class="rb-icon">▣</span>Change Picture</button>
-      <button class="rb-big" data-si-fig="draw-structure" data-ic="structure" title="Draw the figure with the drawing tools (a picture made here is drawn again; double-click the figure does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
       <div class="rb-col">
         <button data-si-fig="paste-picture" title="The copied picture or drawing in place of the figure's">Paste Picture</button>
         <button data-si-fig="compound" title="A compound's structure in place of the figure's">Compound…</button>
@@ -385,7 +381,6 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="xray" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
-      <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: rotate it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
     </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -406,7 +401,6 @@ const RIBBON = `
       <button class="rb-big" data-si="insert-citation" data-ic="insert-citation" title="Insert Citation: cite references from My Library in the selected compound's References field (they join the project's reference list)"><span class="rb-icon">❝</span>Insert Citation</button>
       <div class="rb-col">
         <button data-si="manage-references" data-ic="manage-references" title="Manage References: the project's reference list, to add, edit or delete references">Manage References</button>
-        <button data-si="bibliography" data-ic="insert-bibliography" title="Bibliography: the compiled SI prints the cited references in its References section, in the journal style's format; this opens the list">Bibliography</button>
       </div>
     </div><div class="rb-label">Citations</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -419,7 +413,6 @@ const RIBBON = `
     </div><div class="rb-label">Add</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="ref-edit" disabled title="Edit the selected reference (double-click it does the same): every value can be changed">Edit Reference…</button>
         <button data-si="ref-delete" disabled data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
@@ -427,11 +420,6 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="layout" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
-      <div class="rb-col">
-        <button data-si="header" data-ic="header-edit" title="Header: what prints at the top of each page (Project Settings ▸ Page)">Header</button>
-        <button data-si="footer" data-ic="footer-edit" title="Footer: what prints at the bottom of each page (Project Settings ▸ Page)">Footer</button>
-        <button data-si="page-number" data-ic="page-number-format" title="Page Number: where the numbers go, their prefix (S1, S2…) and roman numbers for the front pages (Project Settings ▸ Page)">Page Number</button>
-      </div>
     </div><div class="rb-label">Page Setup</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -489,7 +477,6 @@ const RIBBON = `
     </div><div class="rb-label">Check</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-ms="ms-open" title="Open the compound of the selected result at the field concerned (double-click a result does the same)">Open Compound</button>
         <button data-si-ms="ms-dismiss" title="Hide the selected result, with a reason: it comes back if the values it is about change">Dismiss…</button>
         <button data-si-ms="ms-restore" title="Bring back the selected dismissed result">Restore</button>
       </div>
@@ -535,7 +522,6 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="scheme" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-scheme="draw" data-ic="structure" title="Draw the selected box's structure with the drawing tools (double-click a box does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
       <div class="rb-col">
         <button data-si-scheme="paste" data-ic="paste" title="The copied structure (from ChemDraw or Chemweave) in the selected box">Paste Structure</button>
       </div>
@@ -608,7 +594,6 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Editing</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
       <div class="rb-col">
         <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
         <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
@@ -643,7 +628,6 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
-        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
       </div>
       <div class="rb-col">
         <button data-si="name-pubchem" title="Name from PubChem: look the selected compound up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
@@ -2762,7 +2746,7 @@ export class SiMode {
     const head = el('div', 'si-card si-cpd-head');
     const pic = el('button', 'si-struct');
     pic.type = 'button';
-    pic.title = 'Edit Structure: draw it with the drawing tools';
+    pic.title = 'Click to draw or change the structure';
     pic.addEventListener('click', () => this.editStructure(c));
     pic.addEventListener('paste', (e) => { e.preventDefault(); void this.pasteStructure(c, e); });
     const info = el('div', 'si-cpd-info');
@@ -3693,6 +3677,7 @@ export class SiMode {
       refresh: () => this.liveSoon(0),
       structureChosen: (id) => this.structureChosen(id),
       structureMenu: (id, x, y) => this.structureMenu(id, x, y),
+      editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
     });
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();

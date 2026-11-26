@@ -25,4 +25,12 @@ describe('SI ribbon tabs', () => {
     const missing = [...cmds].filter((c) => !handled.has(c));
     expect(missing).toEqual([]);
   });
+  it('has each command once, and none that only repeats a click or double-click', () => {
+    // a structure, figure, crystal structure or scheme box is edited by clicking or double-clicking it,
+    // a reference or a check result by double-clicking it; Header, Footer and Page Number were only
+    // Page Setup again, and Bibliography only Manage References again
+    for (const gone of ['data-si="edit-structure"', 'data-si-place="edit"', 'data-si-fig="draw-structure"', 'data-si-xray="edit"', 'data-si-scheme="draw"', 'data-si="ref-edit"', 'data-si-ms="ms-open"', 'data-si="header"', 'data-si="footer"', 'data-si="page-number"', 'data-si="bibliography"']) expect(RIBBON, gone).not.toContain(gone);
+    const all = [...RIBBON.matchAll(/data-si="([a-z0-9-]+)"/g)].map((m) => m[1]);
+    expect(all.filter((c, i) => all.indexOf(c) !== i)).toEqual([]);
+  });
 });

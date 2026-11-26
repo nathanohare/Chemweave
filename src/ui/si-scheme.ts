@@ -110,7 +110,7 @@ export class SiSchemePage {
     head.append(top, this.preview);
     const edit = el('div', 'si-card');
     const h2 = el('h3', 'si-sub', 'Edit');
-    addInfo(h2, 'Click a box, then use the Scheme tab: Draw Structure (or double-click), Paste Structure, Add Starting Material or Product, Move Left or Right, Remove, Mark as Compound. Click in the conditions to type them (Home ▸ Font formats them; Insert Structure puts a structure in them, printed at the Layout’s size).');
+    addInfo(h2, 'Double-click a box to draw its structure. Click a box, then use the Scheme tab: Paste Structure, Add Starting Material or Product, Move Left or Right, Remove, Mark as Compound. Click in the conditions to type them (Home ▸ Font formats them; Insert Structure puts a structure in them, printed at the Layout’s size).');
     edit.append(h2, this.strip);
     this.el.append(head, edit);
     void this.paint();
@@ -167,7 +167,7 @@ export class SiSchemePage {
     const svg = mol ? this.host.pictureOf(mol) : null;
     if (svg) pic.innerHTML = sized(svg, 0.9);
     else pic.append(el('span', 'muted', str(box.picture) ? 'Pasted picture (draw it to replace)' : 'Double-click to draw'));
-    pic.title = 'Double-click to draw the structure (Scheme ▸ Draw Structure)';
+    pic.title = 'Double-click to draw the structure';
     pic.addEventListener('dblclick', () => void this.command('draw'));
     const idRow = el('div', 'si-scheme-id');
     if (c) {

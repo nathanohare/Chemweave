@@ -53,6 +53,8 @@ export interface SiPreviewHost {
   structureChosen(key: string | null): void;
   /** Right-click on a compound's structure or a figure (picked first): its menu at the pointer. */
   structureMenu(key: string, x: number, y: number): void;
+  /** Double-click on a compound's structure: the drawing tools open on it. */
+  editStructure(key: string): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
@@ -711,7 +713,8 @@ export class SiPreview {
       // between pages: the white space hidden, or shown again (Word's double-click)
       const space = this.spaceAt(e);
       if (space) { e.preventDefault(); this.setHideSpace(space === 'hide', e.clientY); this.hoverSpace(e); return; }
-      if (this.structureUnder(e)) return;
+      const ref = this.structureUnder(e);
+      if (ref) { e.preventDefault(); this.api.editStructure(ref.key); return; }
       const at = this.offsetAt(e);
       if (at !== null) this.file?.ed.selectWord(at);
     });
@@ -925,7 +928,7 @@ export class SiPreview {
     if (this.pickedStructure && !e.altKey) {
       const k = e.key.toLowerCase();
       if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
-      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'Double-click a compound’s structure to change it; here you can also change where it goes (Picture Format).'));
       if (e.key === 'Enter' || (ctrl && (k === 'v' || k === 'x'))) return run(() => this.api.flash(PICKED_TYPING));
       if (moves[e.key]) return run(() => { const at = this.pickedAt(); this.unpickStructure(); if (at !== null) ed.setCaret(at); ed.move(moves[e.key], shift); });
       if (ctrl && k === 'a') this.unpickStructure();

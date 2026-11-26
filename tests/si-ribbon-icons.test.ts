@@ -47,7 +47,6 @@ describe('SI ribbon', () => {
     const drawn = (sel: string) => ribbon.querySelector(`${sel} svg`)!.innerHTML;
     const norm = (d: string) => { const g = document.createElementNS('http://www.w3.org/2000/svg', 'svg'); g.innerHTML = d; return g.innerHTML; };
     expect(drawn('[data-si-tbl="row-above"]')).toBe(norm(TEXT_ICONS['doc:table-row-above']));
-    expect(drawn('[data-si-ms="ms-open"]')).toBe(drawn('[data-si-scheme="open-compound"]'));
     expect(drawn('[data-si-spectrum="up"]')).toBe(drawn('[data-si="move-up"]'));
   });
   it('draws each SI command differently, with the set\'s roles only', () => {
