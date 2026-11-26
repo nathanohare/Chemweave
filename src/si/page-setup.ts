@@ -5,13 +5,15 @@
 //            "number_prefix": "S", "number_style": "1" | "i" | "I", "number_size": 0 (the text's),
 //            "number_bold": false, "number_on_cover": false,
 //            "paper": "letter" | "a4" (Chemweave's; absent: Letter), "margins": {"top", "bottom", "left",
-//            "right"} in inches (Chemweave's; absent: 1 inch each)}
+//            "right"} in inches (Chemweave's; absent: 1 inch each),
+//            "watermark": {"text", "font", "color", "layout": "diagonal" | "horizontal", "faded"}
+//            (Chemweave's; absent: none), "hyphenation": true (Chemweave's; absent: off)}
 //
 // Texts may hold {page}, {pages}, {title}, {authors} and {date}; {page} and {pages} become page
 // fields of the compiled document, the others are filled in when it is compiled.
 
 import type { TextRun } from '../model';
-import { A4, LETTER, type HeaderFooter, type PageNumFormat, type PageSetup } from '../document/document';
+import { A4, LETTER, type DocText, type HeaderFooter, type PageNumFormat, type PageSetup, type Watermark } from '../document/document';
 import type { Json } from './project';
 
 export interface PageSettings {
@@ -27,6 +29,10 @@ export interface PageSettings {
   paper: 'letter' | 'a4';
   /** Inches. */
   margins: { top: number; bottom: number; left: number; right: number };
+  /** Words across every page, behind the text (Layout ▸ Watermark), or none. */
+  watermark: Watermark | null;
+  /** Automatic hyphenation (Layout ▸ Hyphenation). */
+  hyphenation: boolean;
 }
 
 export const PAPER_SIZES: Record<PageSettings['paper'], string> = { letter: 'Letter (8.5 × 11 in)', a4: 'A4 (210 × 297 mm)' };
@@ -63,7 +69,44 @@ export function pageSettings(settings: Json): PageSettings {
     number_on_cover: !!raw.number_on_cover,
     paper: raw.paper === 'a4' ? 'a4' : 'letter',
     margins: Object.fromEntries(MARGIN_SIDES.map((k) => [k, margin(isObj(raw.margins) ? raw.margins[k] : undefined)])) as PageSettings['margins'],
+    watermark: watermarkOf(raw.watermark),
+    hyphenation: raw.hyphenation === true,
   };
+}
+
+const HEX = /^#[0-9a-f]{6}$/i;
+/** A stored watermark as read: its words are needed; the rest falls back to Word's defaults. */
+function watermarkOf(raw: unknown): Watermark | null {
+  if (!isObj(raw) || typeof raw.text !== 'string' || !raw.text.trim()) return null;
+  return {
+    text: raw.text.trim().slice(0, 200),
+    font: typeof raw.font === 'string' && raw.font.trim() ? raw.font.trim() : 'Calibri',
+    color: typeof raw.color === 'string' && HEX.test(raw.color) ? raw.color : '#c0c0c0',
+    layout: raw.layout === 'horizontal' ? 'horizontal' : 'diagonal',
+    faded: raw.faded !== false,
+  };
+}
+
+/** Set or remove the watermark (null), leaving the other page settings as they are. */
+export function storeWatermark(settings: Json, w: Watermark | null): void {
+  const page: Json = isObj(settings.page) ? { ...settings.page } : {};
+  const got = w ? watermarkOf(w) : null;
+  if (got) page.watermark = { ...got }; else delete page.watermark;
+  settings.page = page;
+}
+
+/** Turn automatic hyphenation on or off, leaving the other page settings as they are. */
+export function storeHyphenation(settings: Json, on: boolean): void {
+  const page: Json = isObj(settings.page) ? { ...settings.page } : {};
+  if (on) page.hyphenation = true; else delete page.hyphenation;
+  settings.page = page;
+}
+
+/** The compiled SI's watermark and hyphenation, put on its document. */
+export function pageLookOn(doc: Pick<DocText, 'watermark' | 'hyphen'>, settings: Json): void {
+  const v = pageSettings(settings);
+  if (v.watermark) doc.watermark = { ...v.watermark }; else delete doc.watermark;
+  if (v.hyphenation) doc.hyphen = { ...doc.hyphen, auto: true }; else delete doc.hyphen;
 }
 
 /** The compiled SI's page: its paper and margins, the header and footer half an inch from the edge (as the default page). */
@@ -75,7 +118,7 @@ export function pageOf(settings: Json, base: PageSetup): PageSetup {
 }
 
 /** Keep page settings as SI Assistant keeps them (a footer equal to the journal style's isn't stored, so it follows the style). */
-export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerIsStyle' | 'paper' | 'margins'> & Partial<Pick<PageSettings, 'paper' | 'margins'>>): void {
+export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerIsStyle' | 'paper' | 'margins' | 'watermark' | 'hyphenation'> & Partial<Pick<PageSettings, 'paper' | 'margins'>>): void {
   const was = pageSettings(settings);
   const paper = v.paper ?? was.paper, margins = v.margins ?? was.margins;
   const page: Json = {
@@ -85,6 +128,9 @@ export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerI
   // (the defaults aren't stored: a project made before keeps reading as it did)
   if (paper !== 'letter') page.paper = paper;
   if (MARGIN_SIDES.some((k) => margins[k] !== 1)) page.margins = { ...margins };
+  // (set from the Layout tab: kept as they are)
+  if (was.watermark) page.watermark = { ...was.watermark };
+  if (was.hyphenation) page.hyphenation = true;
   if (v.footer.join('\u0000') !== styleFooter(String(settings.journal_style ?? 'ACS')).join('\u0000')) page.footer = Object.fromEntries(POSITIONS.map((p, i) => [p, v.footer[i]]));
   settings.page = page;
 }

@@ -13,10 +13,11 @@ import { MentionTip } from './si-mention-tip';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
-import { defaultStyles, type DocText } from '../document/document';
+import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Watermark } from '../document/document';
 import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
 import type { SiPreview } from './si-preview';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
+import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
@@ -427,7 +428,22 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="layout" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
+      <div class="rb-col">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Hyphenation" data-ic="hyphenation" title="Hyphenation: break words at the ends of lines where English allows, in the whole compiled SI (Live Preview, Word document and PDF)"><select data-si-page="hyphen">
+          <option value="none">None</option>
+          <option value="auto">Automatic</option>
+        </select></div>
+      </div>
     </div><div class="rb-label">Page Setup</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-fly rb-selgal" data-name="Watermark" data-ic="watermark" data-pic="watermark" data-gal="grid" title="Watermark: words across every page of the compiled SI, behind the text (saved as Word's watermark)"><select data-si-page="watermark">
+        <option value="" hidden>None</option>
+        <option value="0">CONFIDENTIAL</option><option value="1">DRAFT</option><option value="2">DO NOT COPY</option><option value="3">SAMPLE</option><option value="4">PRELIMINARY</option><option value="5">NOT FOR DISTRIBUTION</option><option value="6">ASAP</option><option value="7">URGENT</option>
+        <option value="other" hidden>Custom</option>
+        <option value="custom">Custom Watermark…</option>
+        <option value="remove">Remove Watermark</option>
+      </select></div>
+    </div><div class="rb-label">Page Background</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="styles" data-ic="style-set" title="Styles: the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions (Project Settings ▸ Styles)">Styles</button>
@@ -832,6 +848,8 @@ export class SiMode {
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
       if (fw) { const f = this.activeFigure; if (f) void this.setWrap(figureKey(f.id), fw.value as SiWrap | 'inline').then(() => this.figurePlaceState()); return; }
+      const pg = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-page]');
+      if (pg) { void this.pageLook(pg.dataset.siPage!, pg.value); return; }
       const mf = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-ms]');
       if (mf) { void this.msCommand(mf.dataset.siMs!, mf.value); return; }
       const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
@@ -900,6 +918,51 @@ export class SiMode {
   private showRibbonTab(name: string): void {
     for (const b of this.ribbon.querySelectorAll<HTMLElement>('[data-si-tab]')) b.setAttribute('aria-selected', String(b.dataset.siTab === name));
     for (const p of this.ribbon.querySelectorAll<HTMLElement>('[data-si-panel]')) p.hidden = p.dataset.siPanel !== name;
+    if (name === 'layout') this.pageLookState();
+  }
+
+  /** Layout ▸ Hyphenation and Watermark show the project's settings. */
+  private pageLookState(): void {
+    const p = this.project;
+    const v = p ? pageSettings(p.settings) : null;
+    const hy = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="hyphen"]');
+    if (hy) hy.value = v?.hyphenation ? 'auto' : 'none';
+    const wm = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="watermark"]');
+    if (wm) { const at = v?.watermark ? WATERMARKS.indexOf(v.watermark.text) : -1; wm.value = !v?.watermark ? '' : at >= 0 ? String(at) : 'other'; }
+    for (const s of [hy, wm]) if (s) s.disabled = !p;
+  }
+
+  /** Layout ▸ Hyphenation or Watermark: the project's page settings, in one step of Undo; the Live Preview shows it. */
+  private async pageLook(what: string, v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.pageLookState(); return; }
+    let change: (() => void) | null = null;
+    if (what === 'hyphen') change = () => storeHyphenation(p.settings, v === 'auto');
+    else if (what === 'watermark') {
+      if (v === 'remove') change = () => storeWatermark(p.settings, null);
+      else if (v === 'custom') {
+        const w: Watermark = pageSettings(p.settings).watermark ?? defaultWatermark();
+        this.pageLookState();
+        const got = await ask('Watermark', [
+          { name: 'text', label: 'Text', value: w.text, suggestions: WATERMARKS },
+          { name: 'font', label: 'Font', value: w.font, suggestions: ['Calibri', 'Arial', 'Times New Roman', 'Inter', 'IBM Plex Sans'] },
+          { name: 'color', label: 'Color', value: w.color, type: 'color' },
+          { name: 'layout', label: 'Layout', value: w.layout, options: [{ value: 'diagonal', label: 'Diagonal' }, { value: 'horizontal', label: 'Horizontal' }] },
+          { name: 'faded', label: 'Semitransparent', value: String(w.faded), type: 'checkbox' },
+        ], { ok: 'Apply', note: 'Words across every page of the compiled SI, behind the text. Saved in the Word document as Word’s own watermark.' });
+        if (!got || this.project !== p) return;
+        const text = got.text.trim();
+        change = () => storeWatermark(p.settings, text ? { text, font: got.font.trim() || 'Calibri', color: got.color || '#c0c0c0', layout: got.layout === 'horizontal' ? 'horizontal' : 'diagonal', faded: got.faded === 'true' } : null);
+      } else if (WATERMARKS[Number(v)] !== undefined && v !== '') {
+        const was = pageSettings(p.settings).watermark;
+        change = () => storeWatermark(p.settings, { ...(was ?? defaultWatermark()), text: WATERMARKS[Number(v)] });
+      }
+    }
+    if (!change) { this.pageLookState(); return; }
+    const f = change;
+    await this.act(async () => { f(); await p.saveSettings(); }, false);
+    this.pageLookState();
   }
 
   /** A table's cell picked (or none): the Table Layout tab shows (or goes), with that table's state. */

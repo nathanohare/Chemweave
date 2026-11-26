@@ -38,7 +38,7 @@ import { POINTS } from '../editor/arrange';
 import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 import { inlineIds, inlineMol } from './scheme-edit';
-import { headerFooter, pageOf } from './page-setup';
+import { headerFooter, pageLookOn, pageOf } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
@@ -251,6 +251,8 @@ class Compiler {
   constructor(readonly p: SiProject, readonly host: CompileHost, words: Set<string>, styleLooks: StyleLooks = {}) {
     // Project Settings ▸ Page: the paper and margins
     this.b.doc.page = pageOf(p.settings, this.b.doc.page);
+    // Layout ▸ Watermark and Hyphenation
+    pageLookOn(this.b.doc, p.settings);
     // Project Settings ▸ Styles, before the SI's own styles are made from Normal and the headings (and again after: si-styles.ts)
     applyStyleLooks(this.b.doc.styles, styleLooks);
     this.captionLook = styleLooks.Caption ?? {};
