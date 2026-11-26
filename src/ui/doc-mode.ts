@@ -3203,7 +3203,9 @@ export class DocumentMode {
       if ((link || siField !== null) && (this.reading || (isMac ? e.metaKey : e.ctrlKey))) { this.view.scroller.style.cursor = 'pointer'; return; }
       if (this.tables.painting && this.cellAt(p)) { this.view.scroller.style.cursor = 'crosshair'; return; }
       if (this.painter && !this.reading) { this.view.scroller.style.cursor = BRUSH; return; }
-      this.view.scroller.style.cursor = across && across.left !== across.top ? 'nesw-resize' : corner || across ? 'nwse-resize' : id === null || o?.kind === 'table' ? 'text'
+      this.view.scroller.style.cursor = across && across.left !== across.top ? 'nesw-resize' : corner || across ? 'nwse-resize'
+        // off the page (the grey round it) the plain arrow, as there is no text there to type into
+        : id === null ? (this.view.onPage(e.clientX, e.clientY) ? 'text' : 'default') : o?.kind === 'table' ? 'text'
         : o?.kind === 'textbox' ? (o.geo || this.nearEdge(id, p) ? 'move' : 'text') : o?.kind === 'note' ? 'text'
         : floatOf(o) ? 'move' : o?.kind === 'drawing' ? 'pointer' : 'default';
       return;
