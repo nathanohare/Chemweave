@@ -130,6 +130,8 @@ export function insertColumn(t: Json, at: number, align: Align = 'center'): void
   }
   rows.forEach((row, r) => row.splice(at, 0, covered.has(r) ? null : { text: '' }));
   (t.columns as unknown[]).splice(at, 0, align);
+  // (a column's typed width, SI Assistant's "widths", stays with its column; the new one fits its text)
+  if (Array.isArray(t.widths)) { while (t.widths.length < n) t.widths.push(null); t.widths.splice(at, 0, null); }
 }
 
 /** Remove column `c`. A merged cell starting there moves right a column; one passing through it gets narrower. */
@@ -145,6 +147,7 @@ export function deleteColumn(t: Json, c: number): void {
   }
   for (const row of rows) row.splice(c, 1);
   (t.columns as unknown[]).splice(c, 1);
+  if (Array.isArray(t.widths)) t.widths.splice(c, 1);
 }
 
 /** The smallest block holding (r0, c0)–(r1, c1) that cuts no merged cell in two. */

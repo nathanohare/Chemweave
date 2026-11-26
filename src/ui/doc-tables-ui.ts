@@ -33,6 +33,8 @@ export interface DocTablesHost {
   /** Type into a table's cell. */
   startCell(id: number, r: number, c: number): void;
   changed(): void;
+  /** Whether one cell is being worked on (Cell Margins then offers its own margins); else whether a cell of the file is typed into. */
+  inCell?(): boolean;
 }
 
 /** The look choices for a table (other than the style), in the order Word lists them. */
@@ -174,7 +176,7 @@ export class DocTablesUI {
     const own = tg.t.rows[tg.r]?.[tg.c]?.pad;
     const mine = cellMargins(tg.t, tg.r, tg.c);
     const len = (pt: number) => showLength(pt, 'in');
-    const inCell = !!f?.box?.cell;
+    const inCell = this.host.inCell ? this.host.inCell() : !!f?.box?.cell;
     const got = await ask('Cell Margins', [
       { name: 'top', label: 'Top', value: len(base.top), unit: 'in' },
       { name: 'bottom', label: 'Bottom', value: len(base.bottom), unit: 'in' },
@@ -336,6 +338,33 @@ export function penSwatch(b: BorderLine): string {
 }
 
 export { BORDER_STYLES, BORDER_WIDTHS };
+
+/** A Borders group's pen controls: the line kind, its weight, its color and a swatch of the line. */
+export interface PenControls {
+  style: HTMLSelectElement;
+  width: HTMLSelectElement;
+  color: HTMLInputElement;
+  swatch?: HTMLElement | null;
+}
+
+/** Fill the pen's line kinds and weights in, and have choosing one set the pen (`done`: after each choice). */
+export function wirePen(c: PenControls, ui: DocTablesUI, done: () => void): void {
+  for (const [v, label] of BORDER_STYLES) c.style.append(new Option(label, v));
+  c.style.addEventListener('change', () => { ui.setPen({ style: c.style.value as BorderLine['style'] }); done(); });
+  for (const w of BORDER_WIDTHS) c.width.append(new Option(`${w} pt`, String(w)));
+  c.width.addEventListener('change', () => { ui.setPen({ w: Number(c.width.value) }); done(); });
+  c.color.addEventListener('change', () => { ui.setPen({ color: c.color.value.toLowerCase() }); done(); });
+}
+
+/** Show the pen in its controls (a control being typed in is left as it is). */
+export function showPen(c: PenControls, pen: BorderLine): void {
+  const active = document.activeElement;
+  for (const [el, v] of [[c.style, pen.style], [c.width, String(pen.w)]] as const) {
+    if (el !== active) el.value = [...el.options].some((o) => o.value === v) ? v : 'other';
+  }
+  if (c.color !== active) c.color.value = pen.color;
+  if (c.swatch) { const svg = penSwatch(pen); if (c.swatch.innerHTML !== svg) c.swatch.innerHTML = svg; }
+}
 
 function placePopup(m: HTMLElement, x: number, y: number): void {
   // where the keys went before (the caret's hidden field, in a table cell): Escape goes back there

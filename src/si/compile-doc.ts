@@ -46,6 +46,7 @@ import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type Sou
 import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
 import { addFlagComments } from './flag-comments';
 import { applyPreviewFormats, readPreviewFormats } from './preview-format';
+import { cellFormat, siColumns, tableFormat } from './table-format';
 import { applyStyleLooks, readStyleLooks, SI_COMPOUND_LOOK, SI_TOC_HEADING_LOOK, type StyleLooks } from './si-styles';
 import { figureFrame, figureKey, floatOf as placedFloat, placementOf, structureKey, type Placement } from './placement';
 
@@ -716,8 +717,10 @@ class Compiler {
       if (rowSpan > 1) cell.rowSpan = rowSpan;
       const a = str(cd.align);
       if (a === 'left' || a === 'center' || a === 'right') cell.align = a;
-      return cell;
+      // (its borders, shading, alignment down and margins: Table Design and Table Layout on the SI tab)
+      return { ...cell, ...cellFormat(cd) };
     }));
+    const tf = tableFormat(data);
     const head = Math.max(0, Math.min(rows.length, Math.round(Number(data.header_rows ?? 1)) || 0));
     // (below a figure floating above it)
     if (this.clearAtBlock) { this.clearAtBlock = false; this.clearNext = true; }
@@ -726,8 +729,10 @@ class Compiler {
     const table: Extract<DocObject, { kind: 'table' }> = {
       kind: 'table',
       table: {
-        cols: Array.from({ length: nCols }, () => Math.round((this.textW / nCols) * 100) / 100),
-        rows: cells, head, lines: 'acs', size: 10, width: 'auto', autofit: true,
+        // (SI Assistant's widths typed for the columns, AutoFit to Window; else Word fits them to their text)
+        ...siColumns(data, nCols, this.textW),
+        rows: cells, head, lines: 'acs', size: 10,
+        ...(tf.pad ? { pad: tf.pad } : {}),
         align: Array.from({ length: nCols }, (_, k) => (['left', 'center', 'right'].includes(cols[k]) ? cols[k] : 'center') as Justify),
       },
     };

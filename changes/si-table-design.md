@@ -1,0 +1,3 @@
+Added: SI Project: a Table Design tab for SI tables, with Shading and No Shading, and Borders as in Word (line, weight and pen color, the Borders menu and Border Painter) for the selected cells or the whole table; they show on the SI page and in the Live Preview and are in the compiled Word file.
+Added: SI Project: Table Layout has Select Table, View Gridlines, Top, Middle and Bottom alignment in cells, Cell Margins, a column Width box, AutoFit Contents, AutoFit Window and Distribute Columns. Each is one step of Undo.
+Fixed: SI Project: column widths typed for a table in Chem SI Assistant are now used in the compiled SI, and stay with their columns when columns are added or deleted.
