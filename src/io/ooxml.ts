@@ -67,6 +67,12 @@ export function hex6(color: string | undefined): string {
   return named[c.toLowerCase()] ?? '000000';
 }
 
+/**
+ * The time each zip entry carries: 1 January 1980 in local time, as the zip format has it (made at
+ * each save, so a change of time zone since, as in a test, can't put it in 1979, which zip can't hold).
+ */
+const zipDate = (): Date => new Date(1980, 0, 1);
+
 /** A package being written: parts by path, and the relationships of each part. */
 export class Package {
   private parts = new Map<string, Uint8Array>();
@@ -135,12 +141,15 @@ export class Package {
       // pictures are compressed already
       files[path] = data;
     }
-    const opts: Record<string, [Uint8Array, { level: 0 | 6 }]> = {};
+    // (each entry dated 1 January 1980, as Office dates them, not when it was saved: the same file
+    // saves the same bytes, which a workbook kept inside another, a chart's data, needs)
+    const opts: Record<string, [Uint8Array, { level: 0 | 6; mtime: Date }]> = {};
+    const mtime = zipDate();
     for (const [name, data] of Object.entries(files)) {
       // the zip library tells files from folders by their type, so bytes made elsewhere (a
       // text encoder in another window) are copied into this one's
       const bytes = data instanceof Uint8Array ? data : new Uint8Array(data);
-      opts[name] = [bytes, { level: /\.(png|jpe?g|gif|webp)$/i.test(name) ? 0 : 6 }];
+      opts[name] = [bytes, { level: /\.(png|jpe?g|gif|webp)$/i.test(name) ? 0 : 6, mtime }];
     }
     return zipSync(opts);
   }

@@ -258,7 +258,7 @@ export function drawTable(ctx: CanvasRenderingContext2D, t: TableData, lay: Tabl
     }
   } else {
     ctx.strokeStyle = color ?? '#000';
-    ctx.lineWidth = lw;
+    ctx.lineWidth = t.lineW ?? lw;
     ctx.beginPath();
     for (const l of tableRules(t, lay)) {
       ctx.moveTo(ox + l.x1, oy + l.y1);

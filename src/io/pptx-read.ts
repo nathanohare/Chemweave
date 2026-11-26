@@ -20,7 +20,7 @@ import { COMMENT_REL, readCommentAuthors, readLegacyComments, readModernComments
 import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, Contents, Placeholder, Justify, stripBase, type TableCell, type TableData, type PictureFx, type BackgroundRemoval, type PictureLook, type Frame, type ShapeMath, type Media, type OleMark } from '../model';
 import { layoutTable, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, slideCellLook, unstyledRuns } from '../deck/table-styles';
-import { linesFromBorders, type Borders } from './cdxml-table';
+import { linesFromBorders, commonBorderWidth, tableBorders, tableShapeKey, sharedBorders, type Borders } from './cdxml-table';
 import { turnAbout, normDegrees, DEG, type Vec, type Rect } from '../geom';
 import { POINTS, rotation, snapshot, transform, mirrorX, mirrorY } from '../editor/arrange';
 import { BULLETS, autoNumLabel, listInfo } from '../text/paragraphs';
@@ -42,7 +42,7 @@ import { layoutText, caretPos, ASCENT, PPT_SINGLE } from '../text/layout';
 import { Master, SlideSize, LayoutId, type TemplateArt, type ArtLayer, type KeptRel, type KeptXmlPart, type NotesKept, defaultMaster, textStyles, slideDrawingStyle, slideBackground, slideColours, hasLayout, newLayoutId, deckLayouts, type LayoutDef, type PlaceholderBox, type PicturePlaceholder, type ThemeColor, type SectionCount, type DeckSettings, type SlideHF, type DateFormat, showsNumber, showsFooter, showsDate } from '../deck/deck';
 import { backgroundColour, isPlain, sameBackground, type Background } from '../deck/background';
 import { readFill, readOneFill, type FillContext } from './pptx-background';
-import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
+import { TAG, PPT_NAME, PPT_ASCENT, MIME_EXT, slideEmuOk, arialMeasure, NS_A14, NS_M, swapBox, tableLookKey, savedTableLook, joinTagPieces, tagLooksCut } from './pptx-write';
 import { ommlToTex, toOmml } from '../document/math';
 import { shapeMathPicture, shapeMathSize } from '../deck/equation';
 import { GEOS } from '../design/geo';
@@ -53,14 +53,14 @@ import { gluePoint, arrowPoints, boxOf as pointsBox } from '../objects';
 import { stackAsRead, type StackItem } from '../editor/stacking';
 import { roughBox } from '../deck/split-slide';
 import { readEffects } from './pptx-effects';
-import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame, wordUnderline } from './pptx-keep';
+import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame, keptBox, wordUnderline } from './pptx-keep';
 import { readViewProps, readSlideGuides } from '../deck/guides';
 import { readMasterHF } from '../deck/notes-pages';
 import { readShowPr, readCustShows } from '../deck/show-setup';
 import { NARRATION_NAME } from '../deck/narration';
 import { readTransition, readTiming, readMediaTiming, type Transition, type Anim, type AnimTarget } from '../deck/animation';
 import { mediaMime } from '../deck/media';
-import { readChart } from './office-chart';
+import { readChart, rethemed } from './office-chart';
 import { freshBox, sameBoxData, sizedBox, type ChartBox } from '../sheet/chart-box';
 import { cleanLook, type RunLook } from '../sheet/rich-text';
 import { NOTE_BULLET, notesLookOf, type NotesLook } from '../deck/notes-look';
@@ -376,6 +376,10 @@ class Reader {
     const sz = kid(root, 'sldSz');
     if (sz) {
       this.size = { w: Math.round(fromEmu(sz.getAttribute('cx'))), h: Math.round(fromEmu(sz.getAttribute('cy'))) };
+      // (and exactly, where that isn't a whole number of points: A4, B5...)
+      const whole = (v: string | null) => (v !== null && /^\d+$/.test(v) ? Number(v) : NaN);
+      const cx = whole(sz.getAttribute('cx')), cy = whole(sz.getAttribute('cy'));
+      if (slideEmuOk(cx) && slideEmuOk(cy) && (cx !== this.size.w * 12700 || cy !== this.size.h * 12700)) this.size.emu = { cx, cy };
       // the size's name in Page Setup (Letter, A4...), unless it is the one 10 × 7.5 in is written with anyway
       const type = sz.getAttribute('type');
       if (type && SLIDE_SIZE_TYPES.includes(type) && !(type === 'screen4x3' && this.size.w === 720 && this.size.h === 540)) this.size.type = type;
@@ -1163,8 +1167,16 @@ class Reader {
         const hadShapes = new Set(doc.shapes.keys()), hadArrows = new Set(doc.arrows.keys());
         this.tree(s, layout, el, inner, doc);
         if (diagramTag && off && ext) this.diagramFrame(diagramTag, off, ext, t, doc, hadShapes, hadArrows);
-        // a group stays a group (one level deep, as ours are: groups in it join it)
-        else groupNew(doc, before);
+        // a group stays a group (one level deep, as ours are: groups in it join it), with its name
+        else {
+          groupNew(doc, before);
+          const gName = kid(el, 'nvGrpSpPr', 'cNvPr')?.getAttribute('name')?.trim() ?? '';
+          // (one PowerPoint names itself, or none: no name, not one saved here before PowerPoint changed the group)
+          const own = gName && !PPT_NAME.test(gName) ? gName : undefined;
+          for (const m of [doc.atoms, doc.captions, doc.arrows, doc.shapes] as Map<number, { id: number; grp?: number; grpName?: string }>[]) {
+            for (const x of m.values()) if (x.id >= before && x.grp !== undefined) { if (own) x.grpName = own; else delete x.grpName; }
+          }
+        }
         // a flipped or turned group: everything in it flipped, then turned, together about the group's middle
         if (gb) poseNew(doc, before, gb);
         break;
@@ -1205,6 +1217,7 @@ class Reader {
     const hidden = c.getAttribute('hidden') === '1' || c.getAttribute('hidden') === 'true';
     const shapes = [...doc.shapes.values()].filter((x) => x.id >= mark);
     const caps = [...doc.captions.values()].filter((x) => x.id >= mark);
+    const arrows = [...doc.arrows.values()].filter((x) => x.id >= mark);
     if (hidden) {
       for (const x of shapes) doc.updateShape(x.id, { hidden: true });
       for (const x of caps) doc.updateCaption(x.id, { hidden: true });
@@ -1212,6 +1225,8 @@ class Reader {
     if (!name || el.localName === 'grpSp' || PPT_NAME.test(name)) return;
     if (shapes.length === 1) doc.updateShape(shapes[0].id, { name });
     else if (!shapes.length && caps.length === 1) doc.updateCaption(caps[0].id, { name });
+    // (a line or connector: an arrow here; not a drawing's arrow, whose picture or object the name is of)
+    else if ((el.localName === 'cxnSp' || el.localName === 'sp') && !shapes.length && !caps.length && arrows.length === 1 && ![...doc.atoms.keys()].some((id) => id >= mark)) doc.updateArrow(arrows[0].id, { name });
   }
 
   /**
@@ -1421,7 +1436,7 @@ class Reader {
     const path = ref ? this.r.rels(s.path).get(rAttr(ref, 'id') ?? '')?.target : undefined;
     if (!box || !path) return;
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
-    const got = readChart(this.r, path, w, h);
+    const got = readChart(this.r, path, w, h, this.theme.colors);
     if (!got) { this.warnings.add('Some charts could not be read and were left out.'); return; }
     let kept: (ChartBox & { pr?: unknown }) | null = null;
     try {
@@ -1432,6 +1447,8 @@ class Reader {
     if (kept) delete kept.pr;
     const ours = kept?.chart && Array.isArray(kept.cells) && sameBoxData(kept, got.box) && (typeof pr !== 'string' || pr === got.print);
     const chosen = sizedBox(ours ? freshBox(kept!) : got.box, w, h);
+    // (a kept copy in the theme the file has now: PowerPoint may have changed it, review)
+    if (ours) rethemed(chosen.chart, this.theme.colors);
     if (chosen === got.box && got.partial) this.warnings.add('Some charts mix chart types (a line over columns, a second axis): they show as one type.');
     const alt = kid(el, 'nvGraphicFramePr', 'cNvPr')?.getAttribute('descr')?.trim();
     doc.addShape({ kind: 'picture', x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2, src: chartBoxPng(chosen, w, h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(alt ? { alt } : {}) });
@@ -1886,8 +1903,13 @@ class Reader {
         // a filled shape with an outline of another colour keeps both
         if (look.fill && look.line && look.line.toLowerCase() !== look.fill.toLowerCase()) { sh.color = look.line; sh.fillColor = look.fill; }
         // (a dashed outline whenever one is drawn: round no fill, or round a fill of its own color)
-        if (look.dashed && (!look.fill || sh.fillColor)) sh.dashed = true;
+        if (look.dashed && (!look.fill || sh.fillColor)) { if (look.dotted) sh.dotted = true; else sh.dashed = true; }
         if (!look.fill && look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
+        // (the outline's width as the file has it, where it isn't the drawing's or its bold one)
+        if (look.line && (!look.fill || sh.fillColor)) {
+          const plain = sh.bold ? 2.5 * doc.style.lineWidth : doc.style.lineWidth;
+          if (Math.abs(look.width - plain) > 0.01) sh.lineWidth = +look.width.toFixed(2);
+        }
         if (prst === 'roundRect') {
           sh.rounded = true;
           sh.radius = roundRadius(spPr, box);
@@ -1909,7 +1931,7 @@ class Reader {
     // a text box or placeholder of PowerPoint's: its frame as the file had it (size, place, anchor
     // and margins), kept while it isn't resized here (a placeholder placed by its layout has none of
     // its own, and one that comes back as this program saved it keeps the frame in its tag)
-    if (c && !c.pbox && (!ph || !asSaved)) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
+    if (c && !c.pbox && (!ph || !asSaved)) c = { ...c, pbox: keptFrame(sp, c, t) ?? undefined };
     if (c && !c.pbox) delete c.pbox;
     // a table's title or footnotes, saved here as a text box beside it
     const part = (() => {
@@ -2030,6 +2052,11 @@ class Reader {
       if (!geo) return null;
       const look = this.look(sp, spPr);
       const sh: Omit<Shape, 'id'> = { kind: 'geo', geo, ...where, color: look.line ?? look.fill ?? '#000000' };
+      // its adjust values (corner size, head length...), kept to write back while it is the same preset
+      const gds = kids(kid(spPr, 'prstGeom', 'avLst'), 'gd').filter((g) => /^[A-Za-z0-9]+$/.test(g.getAttribute('name') ?? '') && /^val -?\d+$/.test(g.getAttribute('fmla') ?? ''));
+      const named = new Map<string, string>();
+      for (const g of gds) if (!named.has(g.getAttribute('name')!)) named.set(g.getAttribute('name')!, g.getAttribute('fmla')!);
+      if (named.size) sh.adjust = { prst, gd: [...named].map(([n, f]) => `<a:gd name="${n}" fmla="${f}"/>`).join('') };
       // an action button, or any shape with an action on a click
       const click = this.hlinkOf(kid(sp, 'nvSpPr', 'cNvPr', 'hlinkClick'));
       if (click) sh.link = click;
@@ -2071,10 +2098,14 @@ class Reader {
       // changed to another shape in PowerPoint (Change Shape): PowerPoint's shape (a shape not in
       // the library: read as PowerPoint's shapes are, with a warning)
       const reshaped = typeof pr?.g === 'string' && pr.g !== spPrPrint(spPr, 'geom');
-      let sh: Omit<Shape, 'id'> | null = reshaped ? native() : null;
-      if (reshaped && !sh) return false;
+      const theirGeom = reshaped ? native() : null;
+      if (reshaped && !theirGeom) return false;
+      // (the same shape with a handle dragged there: the saved shape, with PowerPoint's adjust values)
+      const dragged = !!theirGeom && theirGeom.geo === saved.s.geo;
+      let sh: Omit<Shape, 'id'> | null = dragged ? null : theirGeom;
       if (!sh) {
         sh = { ...saved.s, ...where, kind: 'geo' } as Omit<Shape, 'id'>;
+        if (dragged) { if (theirGeom!.adjust) sh.adjust = theirGeom!.adjust; else delete sh.adjust; }
         // its fill, outline or effects changed in PowerPoint: PowerPoint's look, the rest as saved
         const theirs = typeof pr?.l === 'string' && pr.l !== spPrPrint(spPr, 'look', kid(sp, 'style')) ? native(saved.s.geo) : null;
         if (theirs) {
@@ -2140,6 +2171,10 @@ class Reader {
       if (look.dashed) sh.dashed = true;
       if (look.dotted) sh.dotted = true;
       if (look.width > 1.75 * doc.style.lineWidth) sh.bold = true;
+      if (look.line && sh.kind !== 'line') {
+        const plain = sh.bold ? 2.5 * doc.style.lineWidth : doc.style.lineWidth;
+        if (Math.abs(look.width - plain) > 0.01) sh.lineWidth = +look.width.toFixed(2);
+      }
     }
     const made = doc.addShape(sh);
     if (typeof saved?.sid === 'number') this.saveId('s', saved.sid, made.id);
@@ -2192,6 +2227,8 @@ class Reader {
       color ??= this.color(fill) ?? undefined;
       return fromEmu(e.getAttribute('w') ?? 12700);
     };
+    // (places covered by a joined cell)
+    const covered = new Set<string>();
     for (const tr of kids(tbl, 'tr')) {
       const tcs = kids(tr, 'tc');
       const row: TableCell[] = [];
@@ -2200,7 +2237,7 @@ class Reader {
         const tc = tcs[c];
         const tcPr = kid(tc ?? null, 'tcPr');
         // (a cell covered by a joined one shows none of its own lines)
-        if (!tc || tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') { bs.push({ left: 0, top: 0, bottom: 0, right: 0 }); row.push({ runs: [] }); continue; }
+        if (!tc || tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') { bs.push({ left: 0, top: 0, bottom: 0, right: 0 }); row.push({ runs: [] }); covered.add(`${rows.length},${c}`); continue; }
         bs.push({ left: width(tcPr, 'lnL'), top: width(tcPr, 'lnT'), bottom: width(tcPr, 'lnB'), right: width(tcPr, 'lnR') });
         const cap = this.text(tc, { x1: 0, y1: 0, x2: cols[c], y2: 100 }, null, []);
         const cell: TableCell = { runs: cap?.runs ?? [] };
@@ -2247,7 +2284,26 @@ class Reader {
         read = baked.table;
         if (!lines) color = baked.line;
       }
-      if (lines) read = { ...read, ...linesFromBorders(borders) };
+      if (lines) {
+        read = { ...read, ...linesFromBorders(borders) };
+        // (the cells' line width, kept: PowerPoint's 2 pt borders stay 2 pt)
+        const w = commonBorderWidth(borders);
+        if (w !== undefined && read.lines !== 'none') {
+          // (the drawing's width: none of its own, so it follows the drawing's)
+          if (Math.abs(w - this.masterOut.drawing.lineWidth) > 0.01) read.lineW = w;
+          // and each cell's own, where the lines they draw aren't the kind's at that width (a line
+          // two cells share counted once, at the heavier); a joined cell and the places it covers
+          // have the kind's (the file gives a covered place none of its own)
+          const plain = sharedBorders(tableBorders(read, w));
+          const joined = (r: number, c: number) => covered.has(`${r},${c}`) || (read.rows[r]?.[c]?.span ?? 1) > 1 || (read.rows[r]?.[c]?.rowSpan ?? 1) > 1;
+          const own = sharedBorders(borders.map((row, r) => row.map((b, c) => (joined(r, c) ? plain[r]?.[c] ?? b : b))));
+          if (own.some((row, r) => row.some((b, c) => (['left', 'top', 'bottom', 'right'] as const).some((k) => Math.abs(b[k] - (plain[r]?.[c]?.[k] ?? 0)) > 0.01)))) {
+            read.lineW = w;
+            read.edges = own;
+            read.edgesKey = tableShapeKey(read);
+          }
+        }
+      }
     }
     // what was saved here, when the table still has its rows and columns (and its text, for its formatting)
     const tags = this.tagsOf(s.path, kid(el, 'nvGraphicFramePr', 'nvPr'));
@@ -2947,7 +3003,7 @@ const GONE = Symbol('gone');
 /** A design shape's look: taken from PowerPoint when its fill, outline or effects were changed there. */
 const GEO_LOOK_KEYS = ['color', 'filled', 'fill', 'fillColor', 'fill2', 'gradAngle', 'gradRadial', 'pattern', 'patternColor', 'patternSize', 'patternTransparency', 'patternClear', 'fade', 'transparency', 'lineWidth', 'bold', 'dashed', 'dotted', 'hashSpacing', 'shadow', 'shadowBetween', 'shadowSize', 'shadowBlur', 'shadowAngle', 'shadowColor', 'shadowOpacity', 'glow', 'softEdge', 'reflection', 'bevel', 'picFill'] as const;
 /** A text box's settings PowerPoint has no place for, kept from our tag when PowerPoint's text is read. */
-const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'stack', 'attach', 'ignoreWarnings', 'chem', 'results'] as const;
+const OWN_CAPTION_KEYS = ['piece', 'ole', 'grp', 'grpPath', 'grpName', 'stack', 'attach', 'ignoreWarnings', 'chem', 'results'] as const;
 
 const dropUndefined = (r: TextRun): Partial<TextRun> => Object.fromEntries(Object.entries(r).filter(([, v]) => v !== undefined));
 
@@ -3143,8 +3199,44 @@ function poseNew(doc: Doc, mark: number, box: Rect & { rot: number; flipH: boole
   if (box.flipH || box.flipV) {
     const ids = <T extends { id: number }>(m: Map<number, T>) => new Set([...m.values()].filter((x) => x.id >= mark).map((x) => x.id));
     const sel = { atoms: ids(doc.atoms), bonds: ids(doc.bonds), captions: ids(doc.captions), arrows: ids(doc.arrows), shapes: ids(doc.shapes) };
-    if (box.flipH) transform(doc, snapshot(doc, sel, POINTS), mirrorX(c.x), true);
-    if (box.flipV) transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true);
+    // a PowerPoint text box with its frame kept (not turned): the frame mirrored in the group, the
+    // text where it was in it, as PowerPoint shows it (its start isn't mirrored as a point; coordinators #69);
+    // text running down or up too, whose quarter turn is its direction, not a turn of its box: it reads
+    // the same way in the flipped group (coordinators #70)
+    const framed = new Map<number, NonNullable<ReturnType<typeof keptBox>>>();
+    const quarterOf = (dir: string | undefined) => (dir === 'vert' ? 90 : dir === 'vert270' ? -90 : 0);
+    for (const id of sel.captions) {
+      const cap = doc.captions.get(id);
+      let f = cap && Math.abs(normDegrees((cap.rot ?? 0) - quarterOf(cap.dir))) < 1e-6 ? keptBox(cap.pbox) : null;
+      // (text running down or up made longer or thicker here: its frame grows another way, so it is
+      // placed afresh below, reading the same way; review)
+      if (f && cap?.dir && ((cap.wrap ?? null) !== f.wrap || (cap.boxH ?? null) !== f.boxH)) f = null;
+      if (f) framed.set(id, f);
+    }
+    for (const id of framed.keys()) sel.captions.delete(id);
+    // text running down or up mirrored with the rest: a flip turns its box the other way, not its
+    // direction (each flip negates the turn; the quarter its direction gives is put back)
+    const upright = () => {
+      for (const id of sel.captions) {
+        const cap = doc.captions.get(id);
+        const q = quarterOf(cap?.dir);
+        if (cap && q) doc.updateCaption(id, { rot: normDegrees((cap.rot ?? 0) + 2 * q) });
+      }
+    };
+    if (box.flipH) { transform(doc, snapshot(doc, sel, POINTS), mirrorX(c.x), true); upright(); }
+    if (box.flipV) { transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true); upright(); }
+    for (const [id, f] of framed) {
+      const cap = doc.captions.get(id)!;
+      // (the frame where it is now, moved with the text since it was read: by a group flipped inside this one)
+      const fx = f.x + cap.x - f.tx, fy = f.y + cap.y - f.ty;
+      // (and its size now: made wider or taller in PowerPoint since, as frameNow writes it)
+      const fw = f.w + (cap.wrap !== undefined && f.wrap !== null ? cap.wrap - f.wrap : 0);
+      const fh = f.h + (cap.boxH !== undefined && f.boxH !== null ? cap.boxH - f.boxH : 0);
+      doc.updateCaption(id, {
+        ...(box.flipH ? { x: 2 * c.x - (fx + fw) + (f.tx - f.x) } : {}),
+        ...(box.flipV ? { y: 2 * c.y - (fy + fh) + (f.ty - f.y) } : {}),
+      });
+    }
   }
   const rot = normDegrees(box.rot);
   if (Math.abs(rot) > 1e-6) turnNew(doc, mark, c, rot);
@@ -3289,7 +3381,7 @@ function roundRadius(spPr: Element | null, box: Pick<Shape, 'x1' | 'y1' | 'x2' |
  */
 // (every field of Shape but those is listed, so a field added to Shape must be added here too)
 const PLAIN_SHAPE_FIELDS: { [K in Exclude<keyof Shape, 'id' | 'kind' | 'x1' | 'y1' | 'x2' | 'y2' | 'name' | 'hidden' | 'ring' | 'pin' | 'frame'>]-?: 'number' | 'string' | 'boolean' | 'object' } = {
-  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', stack: 'number', poly: 'object', geo: 'string', orbital: 'string', orb: 'object',
+  piece: 'number', ppt: 'boolean', grp: 'number', grpPath: 'object', grpName: 'string', stack: 'number', poly: 'object', geo: 'string', adjust: 'object', orbital: 'string', orb: 'object',
   text: 'object', textAlign: 'string', textValign: 'string', lineWidth: 'number', transparency: 'number', rot: 'number', dashed: 'boolean',
   hashSpacing: 'number', dotted: 'boolean', filled: 'boolean', fill: 'string', fill2: 'string', gradAngle: 'number', gradRadial: 'boolean',
   pattern: 'string', patternColor: 'string', patternSize: 'number', patternTransparency: 'number', patternClear: 'boolean', fillColor: 'string',

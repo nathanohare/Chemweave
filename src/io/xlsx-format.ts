@@ -301,6 +301,7 @@ export function readTable(doc: Document, id: number, query?: string | null, dxfs
     return { name, ...(calc?.textContent ? { calc: mainXml(calc) } : {}) };
   });
   if (columns.some((c) => c.calc) || !table.header) table.columns = columns;
+  if (table.header && !kid(t, 'autoFilter')) table.noFilter = true;
   const sort = kid(t, 'sortState');
   const sortKept = sort ? keptWithDxfs(sort, dxfs) : undefined;
   if (sortKept) {

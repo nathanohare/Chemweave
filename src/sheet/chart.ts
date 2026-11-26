@@ -86,6 +86,8 @@ export interface Series {
    * schemeClr element, such as accent1 made darker), written back so while it has no colour of its own.
    */
   scheme?: string;
+  /** What `scheme` looks like in the theme of the file the chart came from: shown while it has no colour of its own (not saved; the file keeps the theme's colour). */
+  themeColor?: string;
 }
 
 /**
@@ -129,6 +131,8 @@ export interface Chart {
   title?: string;
   /** The title's looks as a file had them: italic, bold, more than one paragraph (see titleRunsOf). */
   titleRuns?: TitleRun[];
+  /** The title's text size (in the chart's units, as fontSize), as a file gave it; unset: 1.4 times the chart's. */
+  titleSize?: number;
   /**
    * Excel's automatic title, made from the series' names ("Chart Title" for more than one), on as
    * an Excel file had it, for a chart with no title of its own: 'title' with its title element
@@ -145,6 +149,8 @@ export interface Chart {
   stacked?: boolean;
   /** Colours given to series without their own. */
   palette?: string;
+  /** The accent colours of the theme of the Word or PowerPoint file the chart came from: given to series without their own while no palette is picked here. */
+  themePalette?: string[];
   font?: string;
   fontSize?: number;
   /** The chart's background colour; 'none' for see-through (on slides). Unset: white. */
@@ -327,9 +333,15 @@ export function cellLabel(v: Value): string {
   return typeof v === 'number' ? String(Number(v.toPrecision(10))) : String(v);
 }
 
+/** The colours a chart gives series (or pie slices) without their own: its palette, or its file's theme's accents while none is picked here. */
+export function chartPalette(chart: Pick<Chart, 'palette' | 'themePalette'>): string[] {
+  if (chart.palette === undefined && chart.themePalette?.length) return chart.themePalette;
+  return (CHART_PALETTES[chart.palette ?? 'office'] ?? CHART_PALETTES.office).colors;
+}
+
 /** The series of a chart with their numbers read from the sheets. */
 export function chartData(wb: Workbook, home: Sheet, chart: Chart, leaveOut?: Map<Sheet, Set<number>>): SeriesData[] {
-  const palette = (CHART_PALETTES[chart.palette ?? 'office'] ?? CHART_PALETTES.office).colors;
+  const palette = chartPalette(chart);
   return chart.series.map((s, i) => {
     const yv = refValues(wb, s.y, home, chart.showHidden, leaveOut) ?? [];
     const xv = s.x ? refValues(wb, s.x, home, chart.showHidden, leaveOut) ?? [] : null;
@@ -338,7 +350,7 @@ export function chartData(wb: Workbook, home: Sheet, chart: Chart, leaveOut?: Ma
     const cats = xv ? xv.map(cellLabel) : ys.map((_, j) => String(j + 1));
     let name = s.name ?? '';
     if (name.startsWith('=')) name = (refValues(wb, name, home, true) ?? []).map(cellLabel).join(' ');
-    const d: SeriesData = { name: name || `Series ${i + 1}`, xs, cats, ys, color: s.color ?? palette[i % palette.length], index: i };
+    const d: SeriesData = { name: name || `Series ${i + 1}`, xs, cats, ys, color: s.color ?? s.themeColor ?? palette[i % palette.length], index: i };
     if (chart.kind === 'bubble') {
       const sz = s.size ? (refValues(wb, s.size, home, chart.showHidden, leaveOut) ?? []).map(toNum) : [];
       d.sizes = ys.map((_, j) => (s.size ? sz[j] ?? NaN : 1));

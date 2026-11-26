@@ -2,6 +2,9 @@
 // glued to their units and hyphens in number ranges. Used to format chemistry as it is typed
 // and by the formatting check (blue underlines). Rewritten from SI Assistant's chemtext.py.
 
+import { ALKYL_MARKS, MARKS, PIN_MARK, markFormulaLetters } from './formula-marks';
+import { guardedAt, notAfter, guarded } from '../regex-behind';
+
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn '
   + 'Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce '
   + 'Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi D T').split(' ');
@@ -19,11 +22,12 @@ const alternatives = (words: string[]) => [...words].sort((a, b) => b.length - a
 
 // one unit of a formula: an element, a group, or an alkyl group with an i/n/s/t in front
 // (iPr2NEt, nBu4NI, tBu3P, N(iPr)2, Ti(OiPr)4)
-const UNIT = `(?:(?<![A-Za-z])[inst]-?(?:Pr|Bu)|(?<=O)[int]-?(?:Pr|Bu)|${alternatives([...ELEMENTS, ...GROUPS])})`;
-const INNER = `(?:${alternatives(LIGANDS)}|${UNIT})`;
+// (the i, n, s or t that counts is marked first: see formula-marks.ts)
+const UNIT = `(?:[${ALKYL_MARKS}]-?(?:Pr|Bu)|${alternatives([...ELEMENTS, ...GROUPS])})`;
+const INNER = `(?:${alternatives(LIGANDS).replace(/\bpin\b/, `[p${PIN_MARK}]in`)}|${UNIT})`;
 const PAREN = `\\((?:${INNER}\\d*)+\\)\\d*`;
 const BRACKET = `\\[(?:${INNER}\\d*|${PAREN})+\\]\\d*`;
-const ITEM = `(?:${UNIT}\\d*|(?:(?<=B)|(?<=B\\d))(?:${alternatives(BARE_LIGANDS)})\\d*|${PAREN}|${BRACKET})`;
+const ITEM = `(?:${UNIT}\\d*|(?:${alternatives(BARE_LIGANDS).replace('p', PIN_MARK)})\\d*|${PAREN}|${BRACKET})`;
 
 // Words that look like formulas but are not: SN1/SN2 mechanisms, transition states, IC50
 // values, photosystems, optical density, supplementary labels, protein and cell-line names.
@@ -46,13 +50,13 @@ const MOLECULE_HYPHEN = new Set(['filled', 'free', 'saturated', 'purged', 'flush
 
 // A formula-like word: two or more units with a digit after one of them (CDCl3, Na2SO4,
 // Pd(PPh3)4, [Ir(cod)Cl]2), or a molecule of one element (checked in context).
-const FORMULA = new RegExp(
-  '(?<![A-Za-z0-9])(?=\\S{1,100}(?!\\S))'
-  + `(?!(?:${FORMULA_EXCEPTIONS})(?![A-Za-z0-9]))`
-  + `(?:(?=[A-Za-z()\\[\\]-]*\\d)(?:${ITEM}{2,}`
+const FORMULA = notAfter(new RegExp(
+  '(?=\\S{1,100}(?!\\S))'
+  + `(?!(?:${FORMULA_EXCEPTIONS})(?![A-Za-z0-9${MARKS}]))`
+  + `(?:(?=[A-Za-z${MARKS}()\\[\\]-]*\\d)(?:${ITEM}{2,}`
   + `|\\[(?:${INNER}\\d*|${PAREN}){2,}\\]\\d*${ITEM}*)`
   + `|(?:${SINGLE_ELEMENT.join('|')}))`
-  + '(?![A-Za-z0-9])', 'g');
+  + `(?![A-Za-z0-9${MARKS}])`, 'g'), /[A-Za-z0-9\uFDD0-\uFDD4]/);
 
 /** A word in any capitals, as a regex (JavaScript has no inline (?i:) everywhere yet). */
 const anyCase = (w: string) => w.replace(/[A-Za-z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
@@ -60,12 +64,15 @@ const DEUTERATED_NAMES = 'DMSO|DMF|acetone|THF|toluene|benzene|methanol|MeOH|MeO
   + 'dichloromethane|chloroform|dioxane|cyclohexane|nitromethane';
 const NAMES_ANY_CASE = DEUTERATED_NAMES.split('|').map(anyCase).join('|');
 // "DMSO-d6", "methanol-d4", "chloroform-d" (no digits): group 1 the name, group 2 the digits
-const DEUTERATED = new RegExp(`\\b(${NAMES_ANY_CASE})-d(\\d+|(?<=${anyCase('chloroform')}-d))(?![A-Za-z0-9])`, 'g');
+// (no digits only for chloroform-d)
+const CHLOROFORM_D = /[cC][hH][lL][oO][rR][oO][fF][oO][rR][mM]-d$/;
+const DEUTERATED = guarded(new RegExp(`\\b(${NAMES_ANY_CASE})-d(\\d+|)(?![A-Za-z0-9])`, 'g'),
+  (m) => m[2] !== '' || CHLOROFORM_D.test(m[0]));
 // the same the other way round: "d6-DMSO"
-const DEUTERATED_PREFIX = new RegExp(`(?<![A-Za-z0-9])d(\\d+)-(?=(?:${NAMES_ANY_CASE})\\b)`, 'g');
+const DEUTERATED_PREFIX = notAfter(new RegExp(`d(\\d+)-(?=(?:${NAMES_ANY_CASE})\\b)`, 'g'), /[A-Za-z0-9]/);
 export const SOLVENT_FORMULAS = ['CDCl3', 'CD2Cl2', 'CD3OD', 'CD3CN', 'C6D6', 'D2O', 'CD3SOCD3'];
 // a nucleus only before "NMR" or a decoupling brace, so integrations ("2H") are left alone
-const NUCLEUS = /(?<![A-Za-z0-9])(\d{1,3})(H|C|F|P|B|N|Si|Se|Sn|Pt|Li|O|Al)(?=\s*NMR\b|\{|\})/g;
+const NUCLEUS = notAfter(/(\d{1,3})(H|C|F|P|B|N|Si|Se|Sn|Pt|Li|O|Al)(?=\s*NMR\b|\{|\})/g, /[A-Za-z0-9]/);
 const RANGE_CHAIN = /\d[\d.]*(?:-\d[\d.]*)+/g;
 
 /** Units written after a number with a space (ACS: "1.2 mmol", "8.0 Hz", "25 °C"). */
@@ -75,12 +82,13 @@ export const UNITS = ['mmol', 'µmol', 'μmol', 'nmol', 'mol', 'mg', 'µg', 'μg
 const esc = (s: string) => s.replace(/[.*+?^${}()|[\]\\%]/g, '\\$&');
 const LONG_UNITS = [...UNITS].sort((a, b) => b.length - a.length).map(esc).join('|');
 const GLUED_UNITS = [
-  new RegExp(`(?<![\\w.,])(\\d+(?:\\.\\d+)?)(${LONG_UNITS})(?![A-Za-z%])`, 'g'),
-  /(?<![\w.,])(\d+\.\d+)([ghs])(?![A-Za-z%])/g,
-  /(?<![\w.,])(\d+(?:\.\d+)?)([LMK])(?![A-Za-z%])/g,
+  notAfter(new RegExp(`(\\d+(?:\\.\\d+)?)(${LONG_UNITS})(?![A-Za-z%])`, 'g'), /[\w.,]/),
+  notAfter(/(\d+\.\d+)([ghs])(?![A-Za-z%])/g, /[\w.,]/),
+  notAfter(/(\d+(?:\.\d+)?)([LMK])(?![A-Za-z%])/g, /[\w.,]/),
 ];
 const UNIT_START = new RegExp(`^(?:${LONG_UNITS}|wt|[ghsLMK])(?![A-Za-z])`);
-const URL = /(?<!\S)\S*?(?:https?:\/\/|www\.|doi\.org|doi:)\S*|\b10\.\d{4,}\/\S+/gi;
+const URL = guardedAt(/\S*?(?:https?:\/\/|www\.|doi\.org|doi:)\S*|\b10\.\d{4,}\/\S+/gi,
+  (at, s) => at === 0 || /\s/.test(s[at - 1]) || s.startsWith('10.', at));
 
 const DASHES = "-–—‐'′’";
 
@@ -111,8 +119,8 @@ export interface Found { start: number; end: number; text: string }
 /** The formulas in a text, with the context rules applied. Words in `leave` (lower case) are skipped. */
 export function formulaMatches(text: string, leave: ReadonlySet<string> = new Set()): Found[] {
   const out: Found[] = [];
-  for (const m of text.matchAll(FORMULA)) {
-    const word = m[0];
+  for (const m of markFormulaLetters(text, true).matchAll(FORMULA)) {
+    const word = text.slice(m.index, m.index! + m[0].length);
     const start = m.index!;
     if (leave.has(word.toLowerCase())) continue;
     if (/[DT]\d{3}/.test(word)) continue; // OD600, HCT116
@@ -333,7 +341,7 @@ const DESCRIPTOR_SET = /\(([^()]{1,80})\)/g;
  * endo-, rel-, sec-, tert-, meso-, threo-; the n-, i-, s-, t- of alkyl groups (n-BuLi, t-BuOK);
  * and o-, m-, p- before a name. Element locants (N-, O-) are left as they are: "N-H bond" is not one.
  */
-const PREFIX_WORD = /(?<![A-Za-z0-9])(cis|trans|syn|anti|endo|exo|rel|rac|sec|tert|meso|erythro|threo|ent|epi|[nist](?=-(?:Bu|Pr|Pent|Hex|Am|Oct|Dec|C\d))|[omp](?=-[A-Za-z]))-/g;
+const PREFIX_WORD = notAfter(/(cis|trans|syn|anti|endo|exo|rel|rac|sec|tert|meso|erythro|threo|ent|epi|[nist](?=-(?:Bu|Pr|Pent|Hex|Am|Oct|Dec|C\d))|[omp](?=-[A-Za-z]))-/g, /[A-Za-z0-9]/);
 
 /**
  * The letters of the stereodescriptors and italic prefixes found in text[from, to): letters in

@@ -1,6 +1,6 @@
 # Files and sharing
 
-This page covers the files Chemweave opens and saves, copying and pasting with ChemDraw and Office, Split View, workspaces, AutoSave and recovery, Version History, shared folders, recent files, printing and fonts.
+This page covers the files Chemweave opens and saves, copying and pasting with ChemDraw and Office, Split Screen, workspaces, AutoSave and recovery, Version History, shared folders, recent files, printing and fonts.
 
 ## File types
 
@@ -9,7 +9,7 @@ Each kind of tab saves to its own file type. **Save** (Ctrl+S) uses the first ty
 | Tab | Opens | Saves | Also exports |
 |---|---|---|---|
 | Canvas | .cdxml, .cdx, .cds, .mol, .rxn, .mrv, .ket, .cml, ChemDoodle .json | .cdxml (the default), .cdx, .mol, .sdf, .rxn, .mrv, .ket, .cml, ChemDoodle .json | Molfile (.mol), PDF, PNG, TIFF, SVG, EMF, EPS |
-| Presentation | .pptx | .pptx | PDF (one page per slide), PNG, TIFF, SVG, EMF or EPS of the current slide |
+| Presentation | .pptx | .pptx | PDF (one page per slide, not the hidden ones), PNG, TIFF, SVG, EMF or EPS of the current slide |
 | Design | .pptx | .pptx (one slide) | PDF, PNG, TIFF, SVG, EMF, EPS |
 | Document | .docx, .doc, .rtf, .odt | .docx (the default), .rtf, .odt | PDF |
 | Spreadsheet | .xlsx, .xlsm, .xls, .ods, .csv, .tsv, .txt, .sdf | .xlsx, .xlsm, .csv, .sdf | Charts as PNG or SVG |
@@ -70,7 +70,7 @@ A figure wider than the column is shrunk by the journal, which makes its text an
 - **Reactions:** **Edit ▸ Copy As ▸ Copy Reaction as SMILES** copies the selected reaction step (or the only one) as reaction SMILES (starting materials>reagents>products), and **Copy Reaction as RXN** as an MDL RXN file, for electronic notebooks and reaction databases. Paste either with Ctrl+V and the reaction is drawn: starting materials with + between them, the arrow with the reagents over it, and the products.
 - **Many files at once:** **File ▸ Export ▸ Batch Convert…** turns a set of CDXML, CDX, molfile, SD, SMILES, RXN, Marvin, Ketcher, CML and ChemDoodle files into CDXML, CDX, molfiles, SVG or PNG pictures, or one SMILES list. Each record of an SD file and each line of a SMILES file becomes a file of its own, named after its title. The desktop app saves them in a folder you pick or in one zip; the web version saves a zip.
 - **SD files (.sdf):** open in a spreadsheet with one row per structure and its data fields as columns.
-- **PDF:** **File ▸ Export ▸ Export PDF…** for canvases, presentations, designs and documents. Structures and text stay sharp at any zoom. The fonts go inside the file, so it looks the same everywhere and passes journals' "all fonts embedded" checks. Arial, Helvetica and similar fonts are drawn with Arimo, Times with Tinos, Courier with Cousine, Calibri with Carlito and Cambria with Caladea: free fonts with exactly the same letter widths. The same free fonts stand in on screen on a computer that doesn't have Calibri or Cambria, so a Word document breaks its lines in the same places. A character none of those has (an arrow such as →) uses the reader's Symbol font.
+- **PDF:** **File ▸ Export ▸ Export PDF…** for canvases, presentations, designs and documents. Structures and text stay sharp at any zoom. The fonts go inside the file, so it looks the same everywhere and passes journals' "all fonts embedded" checks. Arial, Helvetica and similar fonts are drawn with Arimo, Times with Tinos, Courier with Cousine, Calibri with Carlito and Cambria with Caladea: free fonts with exactly the same letter widths. The same free fonts stand in on screen on a computer that doesn't have Calibri or Cambria, so a Word document breaks its lines in the same places. Chinese, Japanese, Hebrew and Arabic letters, and symbols such as ✓, ■ and ① (Wingdings bullets too), are drawn with the free Noto Sans fonts that come with the app; only the files of them that hold characters the document uses go inside it. Hebrew and Arabic letters are drawn one by one, left to right, and Arabic letters are not yet joined. Any other character none of those has (an arrow such as →) uses the reader's Symbol font.
 - **Pictures:** **File ▸ Export ▸ Export Picture…** for a canvas, the current slide or a design page. Pick a white or page-colored background or a see-through one.
   - **PNG** and **TIFF** are pictures made of dots. Type the dpi (300 for color, 600 to 1200 for line art). TIFF files are LZW-compressed, the kind many journals ask for.
   - **SVG**, **EMF** and **EPS** keep shapes and text sharp at any size. SVG suits Illustrator, Inkscape and web pages; EMF suits Word and PowerPoint on Windows; EPS suits older journal systems. EPS uses the standard PostScript fonts (Helvetica, Times, Courier and Symbol), and has no see-through colors, so those are mixed with white.
@@ -115,16 +115,18 @@ Tables travel too:
 
 Charts in a spreadsheet have **Copy as Picture** on the **Chart** tab, to paste into Word, PowerPoint, or a document or slide here.
 
-## Split View
+## Split Screen
 
-Split View puts a canvas beside a document, spreadsheet, presentation or design, so you can draw and write at the same time.
+Split Screen shows two open tabs side by side: a canvas beside a document, two canvases, a presentation beside a spreadsheet, or any other pair.
 
-![A canvas beside a document in Split View](../images/split-view.png)
+![A canvas beside a document in Split Screen](../images/split-view.png)
 
-1. In a document, spreadsheet, presentation or design tab, choose **View ▸ Split View: Canvas Beside**. A canvas opens on the right: the first canvas tab, or a new one.
-2. Click a side to work on it. Beside a document or spreadsheet, both sides stay live; Ctrl+Z and Ctrl+S act on the side you clicked last. Beside slides or a design, the side you aren't working on shows as a picture until you click it.
-3. The bar above the canvas picks another open canvas or a new one. **Insert into Document** (or **Cell**, **Slide** or **Design**) puts the selected structures, or the whole drawing, in at the cursor, the selected cell, the slide or the design.
-4. Drag the divider to change the widths. The × closes the split; the canvas stays open in its own tab.
+1. Drag a tab down from the tab row into the window. While you hold it there, an outline shows the split it will make: the tab goes on the half you're pointing at, beside the tab you're working on. Let go to split the screen. To call it off, press Esc or move back out of the window. (On a touch screen or with a pen, hold the tab for a moment first.) You can also right-click a tab and choose **Split Screen Left** or **Split Screen Right**.
+2. Click a side to work on it. The ribbon, the Side Panel and the status bar change to match it, and Undo and Save act on it. The two tabs sit next to each other in the tab row, left then right, and the tab of the side you aren't working on is shaded. The other side shows its tab as you left it until you click it. A canvas beside a document or spreadsheet stays live on both sides, so you can draw and type without clicking first.
+3. Drag the divider to change the widths, or double-click it to share the width half and half. Each side keeps at least a fifth of the window.
+4. Drag another tab onto a side to replace the tab on that side. Drag a tab in the split to the other side to swap them.
+5. With a canvas beside a document, spreadsheet, presentation or design, **Insert into Document** (or **Cell**, **Slide** or **Design**) on the bar above the side you are not working on puts the selected structures, or the whole canvas, into the other side.
+6. Clicking a tab that isn't in the split shows it on its own; clicking either tab of the split brings the split back. The × on the bar, **View ▸ Close Split** or **Close Split** on a tab's right-click menu ends the split. Both tabs stay open.
 
 ## Workspaces
 
@@ -135,7 +137,7 @@ A workspace saves all your open tabs together, so a project's scheme, slides, SI
    - **Save changes to tabs already saved as files.**
 2. Click **Choose Folder…**, pick or make a folder, and name the workspace.
 
-The folder then holds your files plus a small `.ciworkspace` file listing the tabs, their order, which tab was showing and any Split View. Tabs never saved are saved there under their tab names; a file that would replace another gets "(2)" added instead.
+The folder then holds your files plus a small `.ciworkspace` file listing the tabs, their order, which tab was showing and any Split Screen. Tabs never saved are saved there under their tab names; a file that would replace another gets "(2)" added instead.
 
 To open it again, use **File ▸ Workspace ▸ Open Workspace…** or **File ▸ Open**, and pick the `.ciworkspace` file. **Save Workspace** then saves back to the same place, and **Save Workspace As…** saves a new one.
 

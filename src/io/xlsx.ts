@@ -52,8 +52,8 @@ import { dataUrlBytes, bytesDataUrl, seenObjectId } from '../sheet/sheet-objects
 import { dataTableXml, readDataTable, pivotParts, readPivot, samePivot, PIVOT_CT, PIVOT_REL } from './xlsx-pivot';
 import { type DataTable, seenDataTableId } from '../sheet/what-if';
 import { type PivotTable, seenPivotId } from '../sheet/pivot';
-import { Persons, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
-import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
+import { Persons, isGuid, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
+import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, collapsedSummary, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
 import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, withDxfs } from './xlsx-view';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders } from '../sheet/cell-styles';
 import type { WorkbookTheme } from '../sheet/themes';
@@ -68,6 +68,7 @@ import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEA
 import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
 import { chemdrawObject, chemdrawProg, chemdrawCdx, oleCellTag, OLE_CELL_STREAM } from './ole-object';
 import { maxOf } from './min-max';
+import { notAfter } from '../regex-behind';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -167,7 +168,7 @@ export const BUILTIN_FORMATS: Record<number, string> = {
   0: 'General', 1: '0', 2: '0.00', 3: '#,##0', 4: '#,##0.00', 9: '0%', 10: '0.00%', 11: '0.00E+00', 12: '# ?/?', 13: '# ??/??',
   14: 'm/d/yyyy', 15: 'd-mmm-yy', 16: 'd-mmm', 17: 'mmm-yy', 18: 'h:mm AM/PM', 19: 'h:mm:ss AM/PM', 20: 'h:mm', 21: 'h:mm:ss',
   22: 'm/d/yyyy h:mm', 37: '#,##0 ;(#,##0)', 38: '#,##0 ;[Red](#,##0)', 39: '#,##0.00;(#,##0.00)', 40: '#,##0.00;[Red](#,##0.00)',
-  45: 'mm:ss', 46: '[h]:mm:ss', 47: 'mmss.0', 48: '##0.0E+0', 49: '@',
+  45: 'mm:ss', 46: '[h]:mm:ss', 47: 'mm:ss.0', 48: '##0.0E+0', 49: '@',
 };
 
 // FIELDVALUE too: Excel has it, but for its own data types, and would find no compound here
@@ -226,7 +227,7 @@ function usesUnknownFunction(text: string, names: ReadonlySet<string>): boolean 
   if (/\[/.test(bare)) return true;
   for (const m of bare.matchAll(/_xlfn\.(?:_xlws\.)?([A-Za-z0-9.]+)\(/g)) if (!KNOWN.has(m[1].toUpperCase())) return true;
   // other names before a bracket, leaving out quoted sheet names and _xlfn./_xlpm. ones
-  for (const m of bare.replace(/'(?:[^']|'')*'/g, "''").matchAll(/(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.]*)\(/g)) {
+  for (const m of bare.replace(/'(?:[^']|'')*'/g, "''").matchAll(notAfter(/([A-Za-z][A-Za-z0-9_.]*)\(/g, /[A-Za-z0-9_.]/))) {
     const up = m[1].toUpperCase();
     if (!KNOWN.has(up) && !names.has(up)) return true;
   }
@@ -295,6 +296,8 @@ export interface ModelSheet {
   filter: Filter | null;
   /** Rows grown to fit (Excel is given them as set heights), with their heights in pixels: they keep fitting here. */
   autoRows?: [number, number][];
+  /** Rows Excel had fitted itself (given back to it as set heights), with their heights in pixels: fitted rows again here. */
+  fitRows?: [number, number][];
   /** Conditional formatting and tables as this program holds them (Excel's own copy can't say everything). */
   condFormats?: CondFormat[];
   tables?: TableDef[];
@@ -608,7 +611,7 @@ class Axis {
  * Save a workbook as Excel's. With `macros` it is a macro-enabled workbook (.xlsm), carrying the
  * VBA project it was opened with, untouched.
  */
-export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean } = {}): Promise<Uint8Array> {
+export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean; undated?: boolean } = {}): Promise<Uint8Array> {
   // a sheet name Excel refuses (however it was made) is put right in a copy, and the formulas that use it follow
   const fixes: [number, string][] = [];
   const names = book.sheets.map((s) => s.name);
@@ -622,7 +625,7 @@ export async function writeXlsx(book: Workbook, deps: XlsxPictures, opts: { macr
   return writeBook(copy, deps, opts);
 }
 
-async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean }): Promise<Uint8Array> {
+async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: boolean; undated?: boolean }): Promise<Uint8Array> {
   const pkg = new Package();
   const vba = opts.macros ? book.macros : null;
   // theme links in fonts kept from the file hold while the theme written is the file's (or, with none, Excel's own still)
@@ -647,7 +650,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
   // calls to defined names (LAMBDA ones) are dynamic array formulas in Excel
   const lambdaNames = new Set(book.names.map((n) => n.name.toUpperCase()));
   const nameCase = book.nameCase();
-  const persons = new Persons();
+  const persons = new Persons(book.excel?.persons);
+  // (threaded comments' ids, each used once in the workbook)
+  const usedIds = new Set<string>();
   // Excel's own values for formulas this program can't work out, while they still hold
   const saved = fileValues(book);
   pkg.defaultType('png', 'image/png');
@@ -702,17 +707,25 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // set (customHeight): Excel fits rows without it again when it opens our save, and a row it
     // showed at 40 pt came back at the default height (laptop check 51)
     const keptFit = new Set<number>();
-    for (const [r, px] of s.fittedRows) if (!auto.has(r)) { auto.set(r, px); keptFit.add(r); }
+    // (a row is Excel's fit while it is unchanged here, since a change takes its fit off: at Excel's
+    // height, whatever the grid measures for it, as fonts here differ slightly from Excel's)
+    for (const [r, px] of s.fittedRows) { auto.set(r, px); keptFit.add(r); }
     // rows grown for a structure's picture keep their height in Excel (its text can't show how tall the picture is)
     const pictureRows = new Set<number>();
     for (const [k, c] of s.cells) {
       if (!c.structure) continue;
       const r = rowOf(k);
       const h = Math.min(MAX_AUTO_ROW, Math.ceil(structureHeight(deps.box(c.structure, book.drawingStyle), s.colWidths.get(colOf(k)) ?? DEFAULT_COL_W)));
-      if (h > DEFAULT_ROW_H) { auto.set(r, Math.max(auto.get(r) ?? 0, h)); pictureRows.add(r); }
+      if (h > DEFAULT_ROW_H) {
+        auto.set(r, Math.max(auto.get(r) ?? 0, h));
+        pictureRows.add(r);
+        // (a structure taller than Excel's fit: the row is grown for it here, not Excel's fit)
+        if (h > (s.fittedRows.get(r) ?? Infinity)) keptFit.delete(r);
+      }
     }
     const rowH = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? auto.get(r) ?? DEFAULT_ROW_H);
-    ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r));
+    ms.autoRows = [...auto].filter(([r]) => !s.rowHeights.has(r) && !keptFit.has(r));
+    if (keptFit.size) ms.fitRows = [...keptFit].map((r): [number, number] => [r, s.fittedRows.get(r)!]);
     const cols = new Axis(colW), rows = new Axis(rowH);
     // a column's style number (the many columns a range to the end of the sheet formats share one look, looked up once)
     const colXfs = new Map<CellStyle, number>();
@@ -732,7 +745,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       const list = byRow.get(r);
       if (list) list.push(k); else byRow.set(r, [k]);
     }
-    for (const r of [...s.rowHeights.keys(), ...auto.keys(), ...s.hiddenRows.keys(), ...s.rowLevels.keys(), ...[...s.rowLevels.keys()].map((r) => (s.outline?.summaryAbove ? r - 1 : r + 1)).filter((r) => r >= 0)]) if (!byRow.has(r)) byRow.set(r, []);
+    for (const r of [...s.rowHeights.keys(), ...auto.keys(), ...s.hiddenRows.keys(), ...s.rowLevels.keys(), ...[...s.rowLevels.keys()].map((r) => (s.outline?.summaryAbove ? r - 1 : r + 1)).filter((r) => r >= 0 && r < MAX_ROWS)]) if (!byRow.has(r)) byRow.set(r, []);
     // a sheet whose unlisted rows are hidden (zeroHeight): every row shown, down to the last in use, is listed
     const zero = !!own.fileRowHeight?.zero;
     if (zero) {
@@ -821,7 +834,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         } else {
           wrote = excelCellText(v as string);
           body = f
-            ? `<c r="${ref}"${sAttr} t="str">${f}<v>${xml(wrote)}</v></c>`
+            ? `<c r="${ref}"${sAttr} t="str">${f}<v>${xml(excelEscape(wrote))}</v></c>`
             : `<c r="${ref}"${sAttr} t="s"><v>${strings.index(wrote, chem, wrote === v ? runsOf(cell) : undefined, style)}</v></c>`;
         }
         if (entry) entry.wrote = wrote;
@@ -897,7 +910,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
 
     // columns: widths, hidden, and whole-column formatting
     // (columns pushed past the sheet's last by inserting ones are gone, as in Excel)
-    const colKeys = [...new Set([...s.colWidths.keys(), ...s.hiddenCols.keys(), ...s.colStyles.keys(), ...s.colLevels.keys()])].filter((c) => c < MAX_COLS).sort((a, b) => a - b);
+    // (and the summary column beside a collapsed group, which says collapsed="1" though nothing else is set on it)
+    const summaries = [...s.colLevels.keys()].map((c) => (s.outline?.summaryLeft ? c - 1 : c + 1)).filter((c) => c >= 0 && collapsedSummary(s.colLevels, s.hiddenCols, c, !!s.outline?.summaryLeft));
+    const colKeys = [...new Set([...s.colWidths.keys(), ...s.hiddenCols.keys(), ...s.colStyles.keys(), ...s.colLevels.keys(), ...summaries])].filter((c) => c < MAX_COLS).sort((a, b) => a - b);
     const colAttrs = colKeys.map((c): [number, string] => {
       const w = s.colWidths.get(c);
       const xf = colXf(c);
@@ -928,7 +943,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     // a filter on a table goes in the table's part (Excel allows no sheet filter over a table)
     const filterTable = s.filter ? s.tables.find((t) => rangesOverlap(t.range, s.filter!.range)) : undefined;
     if (s.filter && !filterTable) {
-      const R = { ...s.filter.range, r2: Math.max(s.filter.range.r2, s.lastDataRow) };
+      // the rows it filters: to the last row with data, stopping above a table below it (a sheet filter can't take in a table)
+      const R = { ...s.filter.range, r2: s.filterRows()!.r2 };
       const ref = `${cellName(R.r1, R.c1)}:${cellName(R.r2, R.c2)}`;
       const colsXml = Object.entries(s.filter.conditions).map(([col, cond]) => filterColumnXml(Number(col) - R.c1, cond)).filter(Boolean).join('');
       filterXml = `<autoFilter ref="${ref}">${colsXml}</autoFilter>`;
@@ -945,6 +961,9 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
         const colsXml = Object.entries(s.filter!.conditions).filter(([col]) => Number(col) >= R.c1 && Number(col) <= R.c2)
           .map(([col, cond]) => filterColumnXml(Number(col) - R.c1, cond)).filter(Boolean).join('');
         af = `<autoFilter ref="${cellName(R.r1, R.c1)}:${cellName(dataEnd, R.c2)}">${colsXml}</autoFilter>`;
+      } else if (t.header && !t.noFilter) {
+        // every other table's filter buttons, filtering nothing (only one filter on a sheet is kept here)
+        af = `<autoFilter ref="${cellName(R.r1, R.c1)}:${cellName(dataEnd, R.c2)}"/>`;
       }
       const totals = t.totals
         ? Array.from({ length: R.c2 - R.c1 + 1 }, (_, i) => {
@@ -1015,7 +1034,7 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
     // notes and comments (a dashboard's stand-in has none), and objects embedded in the sheet kept
     // from the file read, which share the notes' VML drawing (their shapes numbered after the notes')
-    const notes = standIn ? null : notesParts(s, si + 1, persons);
+    const notes = standIn ? null : notesParts(s, si + 1, persons, usedIds);
     const vmlPath = `xl/drawings/vmlDrawing${vmlNo + 1}.vml`;
     const objects = [...(own.ole ?? []), ...made];
     const ole = !standIn && objects.length ? writeSheetOle(pkg, objects, path, vmlPath, (si + 1) * 1024 + 1 + (notes ? s.notes.size : 0), oleState) : null;
@@ -1169,7 +1188,8 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
   pkg.relate('', REL.coreProps, 'docProps/core.xml');
   pkg.relate('', REL.extendedProps, 'docProps/app.xml');
   // the workbook's properties (File > Info) as the file had them, brought up to date
-  pkg.add('docProps/core.xml', corePropsXml(book.kept?.docProps), CT.core);
+  // (`undated`: no times, for a workbook made afresh on every save, as a chart's data is)
+  pkg.add('docProps/core.xml', corePropsXml(book.kept?.docProps, { undated: opts.undated }), CT.core);
   pkg.add('docProps/app.xml', appPropsXml(book.kept?.docProps), CT.app);
   return pkg.build();
 }
@@ -1452,7 +1472,7 @@ function readTheme(doc: Document | null): string[] {
  * "_x" that would read as one as _x005F_x: undone on reading, and done on writing.
  */
 const excelUnescape = (s: string) => s.replace(/_x([0-9A-Fa-f]{4})_/g, (_, h: string) => String.fromCharCode(parseInt(h, 16)));
-export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_x005F_').replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, (c) => `_x${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`);
+export const excelEscape = (s: string) => s.replace(/_(?=x[0-9A-Fa-f]{4}_)/g, '_x005F_').replace(/[\u0000-\u0008\u000B-\u001F]/g, (c) => `_x${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}_`);
 
 /** A run of a shared string as the file has it: its whole look, or none (the cell's). */
 interface FileRun {
@@ -1776,7 +1796,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
             value = item.text;
             chem = item.chem;
             fileRuns = item.runs;
-          } else if (t === 'str' || t === 'e') value = v ?? '';
+          } else if (t === 'str') value = excelUnescape(v ?? '');
+          else if (t === 'e') value = v ?? '';
           else if (t === 'b') value = isOn(v);
           else if (t === 'd' && v) value = Date.parse(v) / 86400000 + 25569;
           else if (v !== null && v !== '') value = Number(v);
@@ -1921,6 +1942,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       if (cf.skipped) notKept.add('some conditional formatting rules');
       // tables
       const tables: TableDef[] = [];
+      const tableFilters: { range: Range; conditions: Record<number, Condition>; set: boolean }[] = [];
       for (const r of pkg.rels(path!).values()) {
         if (r.type !== RELS.table) continue;
         const td = pkg.xml(r.target);
@@ -1939,15 +1961,21 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         if (mine) seenTableId(mine.id);
         tables.push(mine ? { ...got.table, id: mine.id, ...(mine.custom ? { custom: mine.custom } : {}), ...(got.table.style === 'none' && mine.style !== 'none' ? { style: mine.style } : {}) } : got.table);
         const afr = got.autoFilter ? parseRange(got.autoFilter.getAttribute('ref') ?? '') : null;
-        if (got.autoFilter && afr && !filters.some((f) => f.s === s)) {
+        if (got.autoFilter && afr) {
           const conditions: Record<number, Condition> = {};
           for (const fc of kids(got.autoFilter, 'filterColumn')) {
             const cond = readFilterColumn(fc);
             if (cond) conditions[afr.c1 + Number(fc.getAttribute('colId') ?? 0)] = cond;
           }
-          const keep = ms?.filter && sameRange(ms.filter.range, afr) ? ms.filter : { range: afr, conditions };
-          filters.push({ s, f: keep });
+          tableFilters.push({ range: afr, conditions, set: kids(got.autoFilter, 'filterColumn').length > 0 });
         }
+      }
+      // the sheet's one filter, from its tables' (each table has its buttons): ours where we saved it,
+      // else one that filters something, else (a file not saved here) the first table's
+      if (!filters.some((f) => f.s === s)) {
+        const ours = ms?.filter ? tableFilters.find((x) => sameRange(ms.filter!.range, x.range)) : undefined;
+        const pick = ours ?? tableFilters.find((x) => x.set) ?? (ms ? undefined : tableFilters[0]);
+        if (pick) filters.push({ s, f: ours && ms?.filter ? ms.filter : { range: pick.range, conditions: pick.conditions } });
       }
       if (tables.length) s.setTables(tables);
       // data tables and PivotTables: our own copy where it says the same as Excel's
@@ -2125,6 +2153,12 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   if (filters.length) book.build(() => { for (const { s, f } of filters) s.restoreFilter(f); });
   book.active = Math.min(Math.max(0, activeTab), book.sheets.length - 1);
   book.excel = richValues ? { ...bookKept, richValues } : bookKept;
+  // the people of threaded comments, with the ids the file gave them (and their sign-in names), to write back the same
+  const people = personsDoc ? Array.from(personsDoc.getElementsByTagNameNS('*', 'person')).flatMap((p) => {
+    const id = p.getAttribute('id'), userId = p.getAttribute('userId'), providerId = p.getAttribute('providerId');
+    return isGuid(id) ? [{ name: p.getAttribute('displayName') ?? '', id, ...(userId ? { userId } : {}), ...(providerId ? { providerId } : {}) }] : [];
+  }) : [];
+  if (people.length) book.excel = { ...book.excel, persons: people };
   keepFileValues(book, formulaValues);
   if (!unvalued && !date1904 && !isOn(kid(root, 'calcPr')?.getAttribute('fullCalcOnLoad')) && book.sheets.every((s) => !s.dataTables.length) && asSaved(book, formulaValues)) {
     book.excel = { ...book.excel, calculated: true };

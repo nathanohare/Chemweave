@@ -45,6 +45,75 @@
   --mono-font: 'IBM Plex Mono', ui-monospace, Consolas, monospace;
   color-scheme: light;
 }
+
+/* ---- Motion (UI style guide S91 to S97; src/ui/motion.ts) ----
+   Every interface animation takes its time and curve from these, and nothing else writes a duration
+   (tests/motion.test.ts). Settings ▸ Preferences ▸ Animations puts data-motion on the root: Normal is
+   Fast × 1.5; Off is 0, so nothing moves and nothing waits, and a highlight still shows for its time,
+   then goes without fading. Animate opacity, transform (or translate, scale) and colors only. */
+:root {
+  --m-short: 80ms;
+  --m-toggle: 96ms;
+  --m-std: 120ms;
+  --m-large: 180ms;
+  --m-hi: 600ms;
+  --ease-out: cubic-bezier(0.215, 0.61, 0.355, 1);
+  --ease-in: cubic-bezier(0.55, 0.055, 0.675, 0.19);
+  --ease-hi: ease-out;
+}
+:root[data-motion='normal'] { --m-short: 120ms; --m-toggle: 144ms; --m-std: 180ms; --m-large: 270ms; }
+:root[data-motion='off'] { --m-short: 0ms; --m-toggle: 0ms; --m-std: 0ms; --m-large: 0ms; --ease-hi: steps(1, end); }
+/* the arrivals (translate and scale, so an element's own transform, used to place it, is kept) */
+@keyframes m-fade { from { opacity: 0; } }
+@keyframes m-pop { from { opacity: 0; scale: 0.97; } }
+@keyframes m-drop { from { opacity: 0; translate: 0 -4px; } }
+@keyframes m-from-left { from { opacity: 0; translate: -24px 0; } }
+/* windows: fade and grow from 97% as they open; a quick fade as they close (engines that can keep a
+   closing window in the top layer: others close at once) */
+dialog[open] { animation: m-pop var(--m-std) var(--ease-out); }
+dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
+.sw-pane dialog[open] { animation-name: m-fade; }
+@supports (overlay: auto) {
+  dialog { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
+  dialog:not([open]) { opacity: 0; pointer-events: none; }
+  dialog::backdrop { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
+  dialog:not([open])::backdrop { opacity: 0; pointer-events: none; }
+}
+/* menus and drop-downs slide 4 px out of their button; right-click menus and submenus just fade, quickly */
+.menu:not([hidden]), .flyout:not([hidden]), .rb-fly-menu:not([hidden]), .combo-list:not([hidden]), .colour-pop:not([hidden]), .shape-pop:not([hidden]) { animation: m-drop var(--m-std) var(--ease-out); }
+.context-menu:not([hidden]), .menu.popup-menu:not([hidden]), .menu.sub:not([hidden]) { animation: m-fade var(--m-short) var(--ease-out); }
+/* tooltips, "i" tips and a template's larger picture fade in */
+.tool-tip:not([hidden]), .info-pop, .tw-zoom { animation: m-fade var(--m-std) var(--ease-out); }
+/* a ribbon tab's contents fade in (a Settings page, a template category's cards, a folding section's
+   contents and a Side Panel section unfolded fade in from code: src/ui/motion.ts enter()) */
+.ribbon > .rb-panel:not([hidden]) { animation: m-fade var(--m-std) var(--ease-out); }
+/* the File tab's page slides in from the left, over the work */
+#backstage:not([hidden]) { animation: m-from-left var(--m-large) var(--ease-out); }
+/* buttons change color with a quick fade */
+button { transition: background-color var(--m-short), border-color var(--m-short), color var(--m-short); }
+/* the selected ribbon tab's shape glides to the tab clicked (src/ui/ribbon-glide.ts) */
+.rb-glide { position: fixed; z-index: 0; pointer-events: none; background: var(--panel); border-radius: var(--r-control) var(--r-control) 0 0; }
+body:not(.mode-window) .rb-glide { background: var(--accent); border-radius: 0; }
+.rb-glide-on [role='tab'] { position: relative; z-index: 1; }
+.rb-tabs [role='tab'].rb-gliding { background: transparent !important; box-shadow: none !important; }
+/* check boxes (Nate, 2026-11-26): an outlined box when clear; filled with the mode's accent when ticked,
+   its white check mark drawn in from the left (Toggle: a quarter faster than Standard). :where() keeps
+   the box's size and place under any control's own styles; the ticked look outranks a control's plain
+   background, so ticked and clear always look different */
+:where(input[type='checkbox']) { -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; flex: none; width: 13px; height: 13px; vertical-align: -2px; border: 1px solid var(--muted); border-radius: var(--r-control); background: var(--panel); cursor: pointer; transition: background-color var(--m-toggle) var(--ease-out), border-color var(--m-toggle) var(--ease-out); }
+:where(input[type='checkbox'])::before { content: ''; width: 7px; height: 3px; margin-top: -2px; border-left: 2px solid var(--on-accent); border-bottom: 2px solid var(--on-accent); transform: rotate(-45deg); clip-path: inset(0 100% 0 0); transition: clip-path var(--m-toggle) var(--ease-out); }
+input[type='checkbox']:checked { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:checked::before { clip-path: inset(0); }
+input[type='checkbox']:indeterminate { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:indeterminate::before { width: 7px; height: 0; margin-top: 0; border-left: 0; transform: none; clip-path: inset(0); }
+:where(input[type='checkbox']):hover:not(:disabled) { border-color: var(--accent); }
+:where(input[type='checkbox']):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+:where(input[type='checkbox']):disabled { opacity: 0.5; cursor: default; }
+input[type='checkbox'][hidden] { display: none; }
+@media (forced-colors: active) { :where(input[type='checkbox']) { -webkit-appearance: auto; appearance: auto; } :where(input[type='checkbox'])::before { content: none; } }
+/* repeating motion (the busy stripe, the toolbox editor's jiggle) stands still when Off */
+:root[data-motion='off'] .tbe-wig { animation: none; }
+:root[data-motion='off'] .si-progress-bar.busy > span { animation: none; translate: none; width: 100%; opacity: 0.4; }
 @media (prefers-color-scheme: dark) {
   :root:not([data-theme='light']) {
     --bg: #1b1e24;
@@ -224,7 +293,6 @@ header > button, header > select { white-space: nowrap; flex-shrink: 0; }
 .recent-files small.muted { color: var(--muted); font-size: var(--fs-xs); overflow: hidden; text-overflow: ellipsis; }
 button:focus-visible, select:focus-visible, #overlay:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #side-content td, .cr-lent td { font-family: var(--mono-font); font-size: var(--fs-sm); }
-@media (prefers-reduced-motion: reduce) { #flash { transition: none; } }
 label.check { display: inline-flex; align-items: center; gap: 4px; color: var(--text); cursor: pointer; }
 
 #tools {
@@ -278,6 +346,12 @@ label.check { display: inline-flex; align-items: center; gap: 4px; color: var(--
 .toolbox.locked:not(.floating) + .toolbox { padding-top: 6px; }
 /* docked down a side, the title bar takes the toolbox's width rather than widening it: the name on its own line */
 .toolbox.vertical:not(.floating) > .tb-head, .toolbox.floating.upright:not(.collapsed) > .tb-head { contain: inline-size; flex-wrap: wrap; row-gap: 0; }
+/* older WebKit (macOS 12) ignores that containment: a head of no width of its own, stretched to the box, adds none either */
+@supports not (contain: inline-size) {
+  .toolbox.vertical:not(.floating) > .tb-head, .toolbox.floating.upright:not(.collapsed) > .tb-head { width: 0; min-width: 100%; }
+  html:not(.touch-ui) .toolbox.toolbox.floating.upright:not(.collapsed) > .tb-head { min-width: 100%; }
+  html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) { min-width: 66px; }
+}
 .toolbox.vertical:not(.floating) > .tb-head > .tb-title, .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-title { order: -1; flex-basis: 100%; white-space: normal; line-height: 1.2; }
 /* two columns wide: the grip, padlock, fold and close fit on one line under the title (and still have
    their room when the box is one column wide) */
@@ -511,19 +585,46 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 #canvas-host.drop { outline: 3px dashed var(--accent); outline-offset: -6px; }
 #canvas-host canvas { position: absolute; left: 0; top: 0; display: block; }
 #canvas-host canvas[hidden] { display: none; }
-.tab { transition: transform 0.12s ease; }
+.tab { transition: transform var(--m-std) var(--ease-out); }
 .tab.tab-dragging { transition: none; position: relative; z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); cursor: grabbing; }
-@media (prefers-reduced-motion: reduce) { .tab { transition: none; } }
 
-/* scroll bars over the drawing's bottom and right edges */
-.scrollbar { position: absolute; z-index: 4; background: rgba(120, 130, 150, 0.08); }
+/* scroll bars over the drawing's bottom and right edges: a thin line until in use (S98, ui/scrollbar-fade.ts) */
+.scrollbar { position: absolute; z-index: 4; background: transparent; border-color: transparent; transition: background-color var(--m-std) var(--ease-out), border-color var(--m-std) var(--ease-out); }
 .scrollbar[hidden] { display: none; }
-.scrollbar-h { left: 0; right: 12px; bottom: 0; height: 12px; border-top: 1px solid rgba(120, 130, 150, 0.18); }
-.scrollbar-v { top: 0; bottom: 12px; right: 0; width: 12px; border-left: 1px solid rgba(120, 130, 150, 0.18); }
-.scroll-thumb { position: absolute; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); }
+.scrollbar-h { left: 0; right: 12px; bottom: 0; height: 12px; border-top: 1px solid transparent; }
+.scrollbar-v { top: 0; bottom: 12px; right: 0; width: 12px; border-left: 1px solid transparent; }
+.scrollbar.sb-full { background: rgba(120, 130, 150, 0.08); border-color: rgba(120, 130, 150, 0.18); }
+.scroll-thumb { position: absolute; }
+/* (the thin look is drawn by ::before, so the whole thumb stays there to grab while it is thin) */
+.scroll-thumb::before { content: ''; position: absolute; inset: 0; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); transition: clip-path var(--m-std) var(--ease-out), background-color var(--m-std) var(--ease-out); }
 .scrollbar-h .scroll-thumb { top: 2px; bottom: 2px; left: 0; }
 .scrollbar-v .scroll-thumb { left: 2px; right: 2px; top: 0; }
-.scroll-thumb:hover, .scroll-thumb.dragging { background: rgba(70, 80, 100, 0.6); }
+.scrollbar-h .scroll-thumb::before { clip-path: inset(5px 0 0 0 round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar-v .scroll-thumb::before { clip-path: inset(0 0 0 5px round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar.sb-full .scroll-thumb::before { clip-path: inset(0 round var(--r-control)); background: rgba(90, 100, 120, 0.38); }
+.scrollbar .scroll-thumb:hover::before, .scrollbar .scroll-thumb.dragging::before { background: rgba(70, 80, 100, 0.6); }
+
+/* the page's own scroll bars (documents, spreadsheets, SI pages, panels, lists): the same room
+   always (nothing moves when a bar grows), a thin thumb drawn inside it until the pane is in use
+   and under the pointer (data-sb, ui/scrollbar-fade.ts). Chromium and WebKit (every Tauri webview)
+   draw these; other browsers keep their own thin bars. Not where the system's own bars already
+   overlay the page and fade (macOS): sb-fade is then left off. These bars change at once (a scroll
+   bar's parts can't be animated). Elements with a look of their own (the Toolbox, sheet tabs) keep it. */
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar { width: 12px; height: 12px; background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-track, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-corner { background: transparent; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-button { display: none; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb {
+  background: rgba(29, 35, 48, 0.42) content-box;
+  background: color-mix(in srgb, var(--text, #1d2330) 42%, transparent) content-box;
+  border: solid transparent; border-width: 2px 2px 2px 7px; border-radius: 9px; min-height: 24px; min-width: 24px;
+}
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:horizontal { border-width: 7px 2px 2px 2px; }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar { background: color-mix(in srgb, var(--text, #1d2330) 8%, transparent); }
+.sb-fade [data-sb]:not(.tb-body, .sh-tabs):hover::-webkit-scrollbar-thumb, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { border-width: 2px; }
+.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:hover, .sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb:active { background-color: color-mix(in srgb, var(--text, #1d2330) 65%, transparent); }
+@supports not selector(::-webkit-scrollbar) {
+  .sb-fade * { scrollbar-width: thin; }
+}
 /* Settings > Navigation: the Document Map and the arrows at the edge (ui/orientation.ts) */
 .navigator { position: absolute; left: 0; top: 0; z-index: 5; border: 1px solid var(--line); border-radius: var(--r-tab); overflow: hidden; background: #fff; box-shadow: 0 2px 10px rgba(0, 0, 0, 0.14); cursor: crosshair; opacity: 0.94; touch-action: none; }
 .navigator:hover { opacity: 1; }
@@ -536,7 +637,6 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 .edge-arrow svg { width: 22px; height: 22px; display: block; fill: currentColor; stroke: #fff; stroke-width: 1.2; paint-order: stroke; }
 .edge-count { position: absolute; right: -8px; top: -7px; min-width: 14px; padding: 0 3px; border-radius: 7px; background: var(--accent); color: var(--on-accent); font: 600 9px/14px var(--ui-font); text-align: center; }
 .edge-count[hidden] { display: none; }
-@media (prefers-reduced-motion: reduce) { .edge-arrow { transition: none; } }
 .go-buttons { display: inline-flex; gap: 4px; }
 .go-buttons[hidden] { display: none; }
 #status-notes[hidden] { display: none; }
@@ -727,8 +827,9 @@ label.style-row.check { display: flex; gap: 6px; }
 details.style-group { margin: 4px 0; border-top: 1px solid var(--line); padding-top: 3px; }
 details.style-group > summary { cursor: pointer; display: flex; align-items: baseline; gap: 6px; font-size: var(--fs-sm); padding: 2px 0; list-style: none; }
 details.style-group > summary::-webkit-details-marker { display: none; }
-details.style-group > summary::before { content: '▸'; font-size: 10px; color: var(--muted); width: 10px; }
-details.style-group[open] > summary::before { content: '▾'; }
+details.style-group > summary::before { content: '▸'; display: inline-block; font-size: 10px; color: var(--muted); width: 10px; text-align: center; transition: transform var(--m-std) var(--ease-out); }
+/* (the arrow turns as the group opens, rather than changing to ▾) */
+details.style-group[open] > summary::before { transform: rotate(90deg); }
 details.style-group > summary .style-group-state { margin-left: auto; color: var(--muted); font-size: var(--fs-xs); }
 details.style-group > :not(summary) { margin-left: 12px; }
 .style-buttons { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0 2px; }
@@ -807,20 +908,20 @@ footer {
 }
 #hint { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; }
 .zoom-pick select { font: var(--fs-sm) var(--ui-font); color: var(--text); background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 1px 4px; }
-body.sheet-mode .canvas-only, body.doc-mode:not(.split-view) .canvas-only, body.si-mode .canvas-only { display: none; }
+body.sheet-mode .canvas-only, body.doc-mode:not(.split-live) .canvas-only, body.si-mode .canvas-only { display: none; }
 
 #flash {
   position: fixed;
   left: 50%;
   bottom: 40px;
-  transform: translate(-50%, 20px);
+  transform: translate(-50%, 6px);
   background: var(--text);
   color: var(--panel);
   padding: 8px 14px;
   border-radius: var(--r-panel);
   opacity: 0;
   pointer-events: none;
-  transition: opacity 0.2s, transform 0.2s;
+  transition: opacity var(--m-large) var(--ease-out), transform var(--m-large) var(--ease-out);
   max-width: min(90vw, 720px);
   z-index: 20;
 }
@@ -870,7 +971,8 @@ dialog ul { margin: 0; padding-left: 16px; }
   }
   #work { grid-template-columns: minmax(0, 1fr); grid-template-rows: auto minmax(0, 1fr) auto auto auto; grid-template-areas: 'list' 'host' 'notes' 'split' 'mpanel'; }
   #master-panel { width: auto; max-height: 32vh; border-left: 0; border-top: 1px solid var(--line); }
-  #split-pane { width: auto; max-width: none; height: 45vh; border-left: 0; border-top: 1px solid var(--line); }
+  #split-pane, body.split-flip #split-pane { width: auto; max-width: none; height: 45vh; border-left: 0; border-right: 0; border-top: 1px solid var(--line); }
+  body.split-flip #work { grid-template-columns: minmax(0, 1fr); grid-template-areas: 'list' 'host' 'notes' 'split' 'mpanel'; }
   #split-handle, .pane-handle { display: none; }
   #slide-list, #design-lib { width: auto !important; max-height: 120px; border-right: 0; border-bottom: 1px solid var(--line); }
   .sl-list { flex-direction: row; overflow-x: auto; overflow-y: hidden; }
@@ -896,10 +998,9 @@ dialog.ask { min-width: min(92vw, 340px); }
 dialog.si-progress { width: min(92vw, 400px); }
 .si-progress-text { margin: 0 0 6px; }
 .si-progress-bar { position: relative; height: 6px; overflow: hidden; border-radius: 3px; background: var(--line); }
-.si-progress-bar > span { position: absolute; left: 0; top: 0; bottom: 0; background: var(--accent); transition: width 0.12s linear; }
-.si-progress-bar.busy > span { width: 30%; animation: si-progress-busy 1.1s ease-in-out infinite; }
-@keyframes si-progress-busy { from { left: -30%; } to { left: 100%; } }
-@media (prefers-reduced-motion: reduce) { .si-progress-bar.busy > span { animation: none; left: 0; width: 100%; opacity: 0.4; } }
+.si-progress-bar > span { position: absolute; left: 0; top: 0; bottom: 0; width: 100%; background: var(--accent); transform-origin: 0 50%; transform: scaleX(var(--done, 0)); transition: transform var(--m-std) linear; }
+.si-progress-bar.busy > span { width: 30%; transform: none; animation: si-progress-busy 1.1s ease-in-out infinite; }
+@keyframes si-progress-busy { from { translate: -100% 0; } to { translate: 334% 0; } }
 .si-progress-sub { display: flex; justify-content: space-between; margin-top: 3px; font-size: var(--fs-xs); color: var(--muted); }
 /* one grid for the whole window, so names take the width they need and every box starts in one line */
 .ask-form { display: grid; grid-template-columns: max-content minmax(12em, 1fr) auto auto; align-items: center; gap: 4px 8px; }
@@ -1841,7 +1942,7 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .dp-unpin { display: none; padding: 1px 3px; border: 0; background: none; color: var(--accent); cursor: pointer; border-radius: var(--r-control); }
 .dp-unpin:hover { background: var(--hover, rgb(0 0 0 / 0.06)); }
 .dp-pinned > h3 > .dp-unpin { display: inline-flex; }
-.dp-flash { animation: dp-flash 0.9s ease-out; }
+.dp-flash { animation: dp-flash var(--m-hi) var(--ease-hi); }
 @keyframes dp-flash { from { background: color-mix(in srgb, var(--accent) 22%, transparent); } to { background: transparent; } }
 .dp-section[hidden], #doc-body > .dp-note[hidden] { display: none; }
 
@@ -1887,7 +1988,7 @@ body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='tru
 .ribbon button.rb-launch:hover { background: var(--hover, rgb(0 0 0 / 0.08)); color: var(--text); }
 /* ------------------------------------------------------------------ the Canvas ribbon */
 /* (only on a Canvas: the other modes have ribbons of their own) */
-body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode #canvas-ribbon, body.doc-mode #canvas-ribbon, body.si-mode #canvas-ribbon { display: none; }
+body.slides-mode #canvas-ribbon, body.design-mode #canvas-ribbon, body.sheet-mode:not(.split-drawing) #canvas-ribbon, body.doc-mode:not(.split-drawing) #canvas-ribbon, body.si-mode #canvas-ribbon { display: none; }
 /* three rows of buttons under the tabs, as the other ribbons have, with the group names under them;
    the major commands picture over name, all three rows tall */
 .canvas-ribbon > .rb-panel { align-items: stretch; }
@@ -2423,32 +2524,54 @@ dialog.cite-pick input[type='search'] { width: 100%; box-sizing: border-box; fon
 .cite-num { text-align: right; color: var(--muted); font-variant-numeric: tabular-nums; }
 dialog.cite-pick .ask-buttons .spacer { flex: 1; }
 
-/* ------------------------------------------------------------------ Split view: a drawing beside a document, sheet or slides */
+/* ------------------------------------------------------------------ Split screen: two tabs side by side (src/ui/split-screen.ts) */
 #split-pane {
   grid-area: split; position: relative; display: flex; flex-direction: column;
-  width: var(--split-w, 45vw); min-width: 220px; max-width: 80vw; min-height: 0;
+  width: var(--split-w, 50%); min-width: 220px; min-height: 0;
   border-left: 1px solid var(--line); background: var(--panel);
 }
 #split-pane[hidden] { display: none; }
-#split-bar { display: flex; align-items: center; gap: 6px; padding: 4px 8px; border-bottom: 1px solid var(--line); min-width: 0; }
-#split-bar .split-label { font-size: var(--fs-xs); font-weight: 600; letter-spacing: 0.04em; text-transform: uppercase; color: var(--muted); }
-#split-bar select { min-width: 0; max-width: 14em; font: inherit; }
+/* the tab showing on the right: the other side on its left */
+body.split-flip #work { grid-template-columns: auto auto minmax(0, 1fr) auto; grid-template-areas: 'split list host mpanel' 'split list notes mpanel'; }
+body.split-flip #split-pane { border-left: 0; border-right: 1px solid var(--line); }
+#split-bar { display: flex; align-items: center; gap: 6px; padding: 2px 4px 2px 8px; border-bottom: 1px solid var(--line); min-width: 0; }
+#split-name { display: flex; align-items: center; gap: 5px; min-width: 0; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; font-size: var(--fs-sm); color: var(--muted); }
+#split-name .tab-icon { flex: none; display: inline-flex; }
 #split-bar .grow { flex: 1; }
 #split-close { border: 0; background: none; font-size: var(--fs-xl); line-height: 1; padding: 0 4px; cursor: pointer; color: var(--muted); }
 #split-close:hover { color: var(--text); }
-#split-body { position: relative; flex: 1; min-height: 0; background: #fff; overflow: hidden; cursor: pointer; }
+#split-body { position: relative; flex: 1; min-height: 0; background: var(--surround); overflow: hidden; cursor: pointer; }
+body.split-live #split-body { background: #fff; }
 body.split-drawing #split-body, body.split-live #split-body { cursor: auto; }
 body.split-view #split-body > #canvas-host { display: block; position: absolute; inset: 0; margin: 0; border: 0; box-shadow: none; }
 #split-snap { position: absolute; left: 0; top: 0; }
-#split-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; color: var(--muted); pointer-events: none; }
+#split-snap[hidden] { display: none; }
+#split-empty { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; margin: 0; padding: 0 12px; text-align: center; color: var(--muted); pointer-events: none; }
 #split-empty[hidden] { display: none; }
-/* the side being worked on has the mode's colour along its top */
+/* the canvas beside a document or sheet, with the keys: its bar has the mode's color */
 body.split-drawing #split-bar { box-shadow: inset 0 -2px 0 var(--accent); }
-#split-handle { position: absolute; left: -4px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 4; }
-#split-handle:hover, #split-handle.dragging { background: color-mix(in srgb, var(--accent) 35%, transparent); }
-#main-snap { grid-area: host; position: relative; overflow: hidden; background: var(--surround); cursor: pointer; min-height: 0; }
-#main-snap[hidden] { display: none; }
-#main-snap canvas { position: absolute; left: 0; top: 0; }
+body.split-drawing #split-name { color: var(--text); }
+#split-handle { position: absolute; left: -4px; top: 0; bottom: 0; width: 7px; cursor: col-resize; z-index: 6; }
+body.split-flip #split-handle { left: auto; right: -4px; }
+#split-handle:hover, #split-handle.dragging, #split-handle:focus-visible { background: color-mix(in srgb, var(--accent) 35%, transparent); outline: none; }
+/* the tab beside the one being worked on: shaded halfway between an active and an inactive tab (Nate, 2026-11-26) */
+.tab.tab-beside { background: color-mix(in srgb, var(--panel) 50%, transparent); }
+header .tab.tab-beside { background: color-mix(in srgb, var(--bg) 50%, transparent); border-color: color-mix(in srgb, var(--line) 50%, transparent); }
+body.mode-window header .tab.tab-beside { background: rgba(255, 255, 255, 0.11); border-color: rgba(255, 255, 255, 0.25); }
+.rb-tabs .tab.tab-beside { background: color-mix(in srgb, var(--text) 10%, transparent); border-color: color-mix(in srgb, var(--text) 18%, transparent); }
+.tab.tab-held { outline: 2px solid var(--accent); outline-offset: -2px; }
+/* a finger moving along the tab row scrolls it; moving down drags the tab held (dragTab) */
+.tab-strip .tab { touch-action: none; }
+/* a tab dragged down out of the tab row, and the ghost of the split it would make */
+.tab-lift { position: fixed; left: 0; top: 0; z-index: 9000; display: flex; align-items: center; gap: 5px; max-width: 220px; padding: 3px 8px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); box-shadow: 0 3px 10px rgba(0, 0, 0, 0.25); pointer-events: none; white-space: nowrap; }
+.tab-lift[hidden] { display: none; }
+.tab-lift .tab-name { overflow: hidden; text-overflow: ellipsis; }
+body.tab-lifting, body.tab-lifting * { cursor: grabbing !important; }
+.split-ghost { position: fixed; z-index: 8999; display: grid; gap: 4px; padding: 4px; box-sizing: border-box; pointer-events: none; }
+.split-ghost[hidden] { display: none; }
+.split-ghost .sg-side { display: flex; align-items: flex-start; justify-content: center; padding-top: 24px; min-width: 0; border: 2px dashed color-mix(in srgb, var(--muted) 70%, transparent); border-radius: var(--r-control); background: color-mix(in srgb, var(--panel) 88%, transparent); }
+.split-ghost .sg-side.sg-on { border: 2px solid var(--accent); background: color-mix(in srgb, var(--accent) 28%, var(--panel)); }
+.split-ghost .sg-side span { max-width: 90%; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; padding: 4px 10px; border-radius: var(--r-control); background: var(--panel); color: var(--text); font-size: var(--fs-sm); box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2); }
 @media (max-width: 900px) { #split-pane { min-width: 160px; } }
 
 /* References > Manage References > Style Options */
@@ -2609,7 +2732,6 @@ dialog.toolbox-dialog { width: min(96vw, 900px); }
 .tbe-wig { display: flex; flex-direction: column; align-items: center; gap: 3px; animation: tbe-jiggle 0.28s ease-in-out infinite alternate; transform-origin: 50% 40%; }
 @keyframes tbe-jiggle { from { transform: rotate(-1.6deg); } to { transform: rotate(1.6deg); } }
 .toolbox-dialog.still .tbe-wig, .toolbox-dialog.dragging .tbe-tile.hole .tbe-wig { animation: none; }
-@media (prefers-reduced-motion: reduce) { .tbe-wig { animation: none; } }
 .tbe-ic { display: grid; place-items: center; width: 42px; height: 42px; border-radius: var(--r-panel); background: linear-gradient(var(--tile), var(--tile)), var(--panel); color: var(--tile-ink); border: 1px solid var(--line); box-shadow: 0 1px 2px rgb(0 0 0 / 0.12); overflow: hidden; }
 .tbe-ic svg { width: 26px; height: 26px; }
 .tbe-ic.word, .tbe-row-ic.word { font: 600 var(--fs-md) system-ui, sans-serif; letter-spacing: 0.02em; }
@@ -2816,7 +2938,7 @@ dialog.cf-manage { width: min(92vw, 640px); }
 #formula-bar[hidden] { display: none; }
 
 /* View > Reading Mode: the page canvases only, on screen (see dark-page.ts) */
-.dark-page #scene, .dark-page #overlay, .dark-page .navigator canvas, .dark-page .doc-canvas, .dark-page .sh-canvas, .dark-page #main-snap canvas, .dark-page #split-snap { filter: url(#dark-page-filter); }
+.dark-page #scene, .dark-page #overlay, .dark-page .navigator canvas, .dark-page .doc-canvas, .dark-page .sh-canvas, .dark-page #split-snap.page-picture { filter: url(#dark-page-filter); }
 .dark-page #canvas-host { background: var(--dark-paper, #1e1e1e); }
 /* short choices in the Layout ribbon need less room */
 #doc-ribbon #doc-orient, #doc-ribbon #doc-columns { min-width: 96px; }
@@ -2969,7 +3091,7 @@ dialog.equation-dialog textarea { width: 100%; box-sizing: border-box; font: var
 
 /* Comments (Review > New Comment): cards beside a document's page, or listed beside a slide */
 .doc-comments { position: absolute; top: 0; bottom: 0; pointer-events: none; overflow: hidden; z-index: 3; }
-.doc-comments .cmt-card { position: absolute; left: 0; pointer-events: auto; box-sizing: border-box; transition: top 0.12s ease-out; }
+.doc-comments .cmt-card { position: absolute; left: 0; pointer-events: auto; box-sizing: border-box; transition: translate var(--m-std) var(--ease-out); }
 .cmt-card { background: var(--panel); border: 1px solid var(--line); border-left: 3px solid #e0a83a; border-radius: var(--r-tab); padding: 7px 9px; font: var(--fs-sm)/1.4 var(--ui-font); color: var(--text); box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1); }
 .cmt-card.active { border-color: #d8901f; border-left-color: #d8901f; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.18); }
 .cmt-card.done { opacity: 0.62; border-left-color: var(--muted); }
@@ -3143,7 +3265,7 @@ dialog.diagram-dialog { width: min(96vw, 1060px); max-height: 94vh; }
 .gw-page code { font-family: var(--mono-font); font-size: 0.92em; background: var(--bg); padding: 0 3px; border-radius: var(--r-control); }
 .gw-page kbd { font-family: var(--mono-font); font-size: 0.9em; border: 1px solid var(--line); border-bottom-width: 2px; border-radius: var(--r-control); padding: 0 4px; }
 .gw-page a { color: var(--accent); }
-.gw-page .gw-here { scroll-margin-top: 8px; animation: gw-here 2s ease-out; }
+.gw-page .gw-here { scroll-margin-top: 8px; animation: gw-here var(--m-hi) var(--ease-hi); }
 @keyframes gw-here { from { background: var(--accent-soft); } to { background: transparent; } }
 .gw-hits li { margin: 3px 0; }
 @media (max-width: 640px) { .gw-list { display: none; } }
@@ -3298,7 +3420,7 @@ dialog.theme-editor form { margin: 0; }
 .te-previews canvas { display: block; border: 1px solid var(--line); box-shadow: var(--page-shadow); }
 .tg-card-wrap { position: relative; display: flex; }
 .tg-card-wrap > .tg-card { flex: 1 1 auto; }
-.tg-mine { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity 0.1s; }
+.tg-mine { position: absolute; right: 6px; bottom: 6px; display: flex; gap: 2px; opacity: 0; transition: opacity var(--m-short); }
 .tg-card-wrap:hover .tg-mine, .tg-card-wrap:focus-within .tg-mine { opacity: 1; }
 .tg-mine button { padding: 0 6px; font-size: var(--fs-xs); line-height: 18px; }
 .st-tools { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
@@ -3371,7 +3493,7 @@ dialog.sd-find { position: fixed; inset: max(64px, var(--dlg-top, 0px)) 18px aut
 .media-dialog audio.md-player { background: none; height: 40px; }
 
 /* Pointer tools in the slide show: the bar at the bottom left, faint until the mouse is on it */
-.show-tools { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: var(--r-tab); background: rgba(30, 32, 36, 0.72); opacity: 0.28; transition: opacity 0.15s; }
+.show-tools { position: absolute; left: 12px; bottom: 12px; z-index: 3; display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: var(--r-tab); background: rgba(30, 32, 36, 0.72); opacity: 0.28; transition: opacity var(--m-std); }
 .show-tools:hover, .show-tools:focus-within { opacity: 1; }
 .show-tools button { width: 30px; height: 28px; border: 0; border-radius: var(--r-control); background: transparent; color: #f2f2f2; font-size: var(--fs-lg); cursor: pointer; padding: 0; }
 .show-tools button:hover { background: rgba(255, 255, 255, 0.14); }
@@ -3381,7 +3503,7 @@ dialog.sd-find { position: fixed; inset: max(64px, var(--dlg-top, 0px)) 18px aut
 .show-tools .show-swatch { width: 18px; height: 18px; border-radius: 50%; border: 1px solid rgba(255, 255, 255, 0.6); }
 .show-tools .show-swatch[aria-pressed="true"] { outline: 2px solid #fff; outline-offset: 1px; }
 .present.no-cursor .show-tools { opacity: 0; }
-.show-corner { position: absolute; right: 12px; top: 12px; z-index: 3; display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: var(--r-tab); background: rgba(30, 32, 36, 0.72); opacity: 0.28; transition: opacity 0.15s; }
+.show-corner { position: absolute; right: 12px; top: 12px; z-index: 3; display: flex; gap: 2px; align-items: center; padding: 3px; border-radius: var(--r-tab); background: rgba(30, 32, 36, 0.72); opacity: 0.28; transition: opacity var(--m-std); }
 .show-corner:hover, .show-corner:focus-within { opacity: 1; }
 .present.no-cursor .show-corner { opacity: 0; }
 .show-corner button { min-width: 30px; height: 28px; border: 0; border-radius: var(--r-control); background: transparent; color: #f2f2f2; font: var(--fs-md) var(--ui-font, system-ui), sans-serif; cursor: pointer; padding: 0 6px; }
@@ -3519,7 +3641,7 @@ button.sym:hover, button.sym:focus-visible { border-color: var(--accent); backgr
 .rehearse-notes { position: absolute; left: 50%; bottom: 56px; transform: translateX(-50%); z-index: 3; width: min(900px, calc(100% - 32px)); max-height: 28vh; overflow: auto; padding: 10px 14px; border-radius: var(--r-panel); background: #1d2024e6; color: #f2f3f5; font: var(--fs-lg) / 1.45 var(--ui-font, system-ui), sans-serif; white-space: pre-wrap; box-shadow: 0 2px 10px #0008; }
 .rehearse-notes.off { display: none; }
 .rehearse-countdown { position: absolute; inset: 0; z-index: 4; display: grid; place-items: center; background: #0006; color: #fff; font: 700 160px / 1 var(--ui-font, system-ui), sans-serif; cursor: pointer; }
-@media (prefers-reduced-motion: no-preference) { .rehearse-countdown { transition: opacity 0.2s; } }
+.rehearse-countdown { transition: opacity var(--m-large); }
 /* Header and Footer, Set Up Show, Custom Shows */
 dialog.hf-dialog { width: min(94vw, 600px); }
 .hf-tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line, #ccd); margin-bottom: 10px; }
@@ -3820,9 +3942,9 @@ body:not(.mode-window) .rb-tabs button.rb-context[aria-selected='true'] { backgr
 #structure-start, .structure-more, .structure-fold { display: none; }
 /* (the button alone doesn't keep the left dock open when every toolbox has moved off it) */
 #dock-left:not(:has(> :not(#structure-start, .structure-more, .structure-fold))) { display: none; }
-body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) #dock-left:has(> #structure-start) { display: flex; }
-body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .toolbox[data-id='main'] { display: none; }
-body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) {
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) #dock-left:has(> #structure-start) { display: flex; }
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) .toolbox[data-id='main'] { display: none; }
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) :is(#structure-start, .structure-more) {
   display: flex; flex-direction: column; align-items: center; gap: 3px; flex: none; width: 52px; padding: 6px 2px 5px;
   border: 1px solid transparent; border-radius: var(--r-control); background: transparent; color: var(--text);
   font-size: var(--fs-xs); line-height: 1.15; text-align: center; cursor: pointer;
@@ -3831,14 +3953,14 @@ body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#str
 .structure-more svg { width: 22px; height: 22px; }
 :is(#structure-start, .structure-more):hover { border-color: var(--line); background: var(--accent-soft); }
 /* the arrow that folds the rail to a sliver, and opens it again */
-body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { display: block; flex: none; align-self: center; width: 20px; height: 20px; margin-top: 4px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
+body:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) .structure-fold { display: block; flex: none; align-self: center; width: 20px; height: 20px; margin-top: 4px; padding: 0; border: 1px solid transparent; border-radius: var(--r-control); background: none; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }
 .structure-fold:hover { border-color: var(--line); color: var(--text); }
-body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) :is(#structure-start, .structure-more) { display: none; }
+body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) :is(#structure-start, .structure-more) { display: none; }
 /* Make Editable sits on the rail only while a picture is picked in a document */
 body:not(.doc-mode) .make-editable-btn, body.doc-mode:not(.doc-picture-picked) .make-editable-btn { display: none !important; }
 body:not(.doc-mode) .convert-figure-btn, body.doc-mode:not(.doc-picture-picked) .convert-figure-btn { display: none !important; }
 body:not(.doc-mode) .compare-original-btn, body.doc-mode:not(.doc-from-picture) .compare-original-btn { display: none !important; }
-body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-view) .structure-fold { margin-top: 2px; width: 14px; }
+body.structure-rail-folded:is(.sheet-mode, .doc-mode):not(.floating-drawing):not(.split-live) .structure-fold { margin-top: 2px; width: 14px; }
 /* Dark Gray: the button sits on the dark dock itself (toolboxes sit on light cards), so it takes the menu bar's colors */
 :root[data-gray]:not([data-shadows='off']) #dock-left > :is(#structure-start, .structure-more, .structure-fold) { --text: #eceef2; --line: #474b53; --accent-soft: #41464f; --accent: var(--mode-accent-dark, #4ea9bc); --muted: #aeb4c0; }
 
@@ -4944,8 +5066,22 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-tree-grip:hover, .si-tree-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
 /* the live preview: the page picked as it prints, on the right; folded to a strip */
 .si-live { position: relative; display: flex; flex-direction: column; min-width: 0; min-height: 0; border-left: 1px solid var(--line); background: var(--surround); }
-.si-live-grip { position: absolute; left: -3px; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; }
-.si-live-grip:hover { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
+/* the divider between the SI page and the preview: a bar in the grey round the pages, with a grip; drag it to change the preview's width */
+.si-live:not(.off) { border-left: 0; padding-left: 6px; }
+.si-live-grip { position: absolute; left: 0; top: 0; bottom: 0; width: 6px; cursor: col-resize; z-index: 2; background: var(--surround); }
+.si-live-grip::after { content: ''; position: absolute; left: 2px; top: 50%; width: 2px; height: 24px; margin-top: -12px; background: radial-gradient(circle, color-mix(in srgb, var(--text) 45%, var(--surround)) 0.9px, transparent 1.2px) 0 0 / 2px 4px; }
+.si-live-grip:hover { background: linear-gradient(to right, var(--surround) 2px, var(--accent) 2px, var(--accent) 4px, var(--surround) 4px); }
+.si-live-grip:hover::after { display: none; }
+/* on the divider: hide the SI page so the preview takes its width (the list stays), and show it again */
+.si-page-fold { position: absolute; left: 0; top: 36px; z-index: 4; width: 16px; height: 30px; padding: 0; display: flex; align-items: center; justify-content: center; border: 1px solid var(--line); border-radius: 3px; background: var(--panel); color: var(--muted); cursor: pointer; }
+.si-page-fold:hover { color: var(--text); border-color: var(--accent); }
+/* (a target at least 24 px across) */
+.si-page-fold::before { content: ''; position: absolute; inset: -2px -4px; }
+.si-page-fold svg { width: 10px; height: 10px; }
+#si-pane.si-page-off:not(.si-live-off) { grid-template-columns: var(--si-tree-w, 260px) 0 minmax(0, 1fr); }
+#si-pane.si-page-off:not(.si-live-off) > .si-page { visibility: hidden; padding: 0; overflow: hidden; }
+#si-pane.si-page-off:not(.si-live-off) .si-live-grip { cursor: default; background: var(--surround); }
+#si-pane.si-page-off:not(.si-live-off) .si-live-grip::after { display: none; }
 .si-live-head { display: flex; align-items: center; gap: 4px; padding: 3px 6px; border-bottom: 1px solid var(--line); background: var(--panel); font-size: var(--fs-sm); white-space: nowrap; }
 .si-live-title { font-weight: 600; }
 .si-live-state { overflow: hidden; text-overflow: ellipsis; min-width: 0; }
@@ -4963,6 +5099,12 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-live-empty { padding: 16px 12px; font-size: var(--fs-sm); }
 .si-live-empty[hidden] { display: none; }
 .si-live-strip { display: none; }
+/* Synchronous Scrolling on the SI page: the soft barrier's hint at its bottom (or top), filling as the scrolling pushes on */
+.si-barrier { position: absolute; z-index: 3; box-sizing: border-box; height: 24px; display: flex; align-items: center; padding: 0 10px; overflow: hidden; background: var(--panel); border-top: 1px solid var(--line); font-size: var(--fs-sm); color: var(--text); pointer-events: none; white-space: nowrap; }
+.si-barrier.up { border-top: 0; border-bottom: 1px solid var(--line); }
+.si-barrier[hidden] { display: none; }
+.si-barrier-text { position: relative; z-index: 1; overflow: hidden; text-overflow: ellipsis; }
+.si-barrier-fill { position: absolute; left: 0; top: 0; bottom: 0; width: 0; background: color-mix(in srgb, var(--tab-si, #b4234f) 16%, transparent); border-right: 2px solid var(--tab-si, #b4234f); }
 .si-live.off > * { display: none; }
 .si-live.off > .si-live-strip { display: block; flex: 1; border: 0; padding: 8px 0; background: var(--panel); color: var(--muted); font-size: var(--fs-sm); writing-mode: vertical-rl; cursor: pointer; }
 .si-live.off > .si-live-strip:hover { color: var(--text); background: var(--accent-soft); }
@@ -5584,11 +5726,14 @@ dialog.template-window.tw-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0p
 .si-dash-color { display: grid; grid-template-columns: 26px 230px 44px auto; align-items: center; gap: 8px; }
 .si-dash-swatch { display: inline-flex; justify-content: center; align-items: center; height: 20px; border: 1px solid var(--line); }
 .si-dash-colors .si-link { align-self: flex-start; margin: 4px 0 0; padding: 0; }
-.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; transition: outline-color 0.6s; }
+.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; animation: si-flash-fade var(--m-hi) var(--ease-hi) forwards; }
+@keyframes si-flash-fade { to { outline-color: transparent; } }
 
 /* ---- Side panel: one header row (grip, the sections as tabs, padlock, close) wherever it sits ----
    (the class is tripled to outrank the title-bar rules for docked and upright toolboxes above) */
 .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { display: flex; flex-wrap: nowrap; contain: inline-size; align-items: stretch; gap: 2px; min-width: 0; height: 24px; padding: 0 0 0 2px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+/* (as above, for WebKit without inline-size containment) */
+@supports not (contain: inline-size) { .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { width: 0; min-width: 100%; } }
 .toolbox[data-id='details'] { gap: 3px; flex-direction: column !important; align-items: stretch !important; }
 .toolbox[data-id='details'].ss-bare { gap: 0; }
 .toolbox[data-id='details'].ss-bare > .tb-head { border-bottom-color: transparent; }
@@ -5629,8 +5774,9 @@ dialog.template-window.tw-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0p
 #side-content > section.ss-stacked:first-child { margin-top: 0; border-top: 0; padding-top: 0; }
 #side-content > section.ss-stacked > h2 { margin: 0 0 3px; cursor: grab; touch-action: none; }
 #side-content > section.ss-stacked > h2 > .ss-title { cursor: pointer; }
-#side-content > section.ss-stacked > h2 > .ss-title::before { content: '▾'; display: inline-block; width: 12px; font-size: 10px; letter-spacing: 0; }
-#side-content > section.ss-folded > h2 > .ss-title::before { content: '▸'; }
+#side-content > section.ss-stacked > h2 > .ss-title::before { content: '▸'; display: inline-block; width: 12px; font-size: 10px; letter-spacing: 0; text-align: center; transform: rotate(90deg); transition: transform var(--m-std) var(--ease-out); }
+/* (the arrow turns as the section folds, rather than changing glyph) */
+#side-content > section.ss-folded > h2 > .ss-title::before { transform: none; }
 #side-content > section.ss-stacked > h2 > .ss-title:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 #side-content > section.ss-folded > :not(h2) { display: none; }
 #side-content > section.ss-folded > h2 { margin-bottom: 0; }

@@ -1,0 +1,1 @@
+Fixed: Documents: a right-to-left paragraph (Hebrew, Arabic; Word's right-to-left setting) is laid out from the right, with Latin words and numbers in it in their own order, the caret and selection where the letters are, and its PDF letters in the order they are seen, Arabic joined.

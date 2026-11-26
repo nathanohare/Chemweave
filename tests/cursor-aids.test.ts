@@ -44,6 +44,13 @@ describe('modifier hints', () => {
     expect(modifierHints({ ...base, tool: 'select', drag: 'pan' }, { shift: true, alt: true, ctrl: true })).toEqual([]);
     expect(modifierHints({ ...base, drag: 'pan' }, none)).toEqual([]);
   });
+  it('Select tool: Shift says it adds to the selection only when something is selected', () => {
+    const sel: HintState = { ...base, tool: 'select', drag: 'none' };
+    expect(modifierHints(sel, none).map((h) => h.key)).toEqual(['Ctrl']);
+    expect(modifierHints({ ...sel, drag: 'marquee' }, { ...none, shift: true })).toEqual([]);
+    expect(modifierHints({ ...sel, selected: true }, none).map((h) => h.key)).toEqual(['Shift', 'Ctrl']);
+    expect(modifierHints({ ...sel, drag: 'marquee', selected: true }, none)[0]).toMatchObject({ key: 'Shift', text: 'add to the selection' });
+  });
   it('moving, turning and resizing', () => {
     expect(modifierHints({ ...base, drag: 'move', snapping: true }, { ...none, shift: true }).map((h) => [h.key, h.on])).toEqual([['Shift', true], ['Alt', false]]);
     expect(modifierHints({ ...base, drag: 'rotate' }, none)[0].text).toBe('15° steps');

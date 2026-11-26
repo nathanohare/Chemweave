@@ -17,7 +17,7 @@ Chemweave is licensed under the GNU General Public License, version 3 or later (
 | [polygon-clipping](https://github.com/mfogel/polygon-clipping) 0.15.7 by Mike Fogel (forked from martinez by Alexander Milevski), with [splaytree](https://github.com/w8r/splay-tree) 3.2.3 by Alexander Milevski | Highlight effects (soft edges, shadows, glow, textures) and ring fill shadows in saved files and copied pictures: the exact shape of each step of a fade | MIT (full text below) |
 | [robust-predicates](https://github.com/mourner/robust-predicates) 3.0.3 by Vladimir Agafonkin (part of polygon-clipping) | Exact geometry tests for polygon-clipping | Unlicense (public domain; text below) |
 | [fflate](https://github.com/101arrowz/fflate) 0.8.2 | Packing and unpacking PowerPoint, Excel and Word files (.pptx, .xlsx, .docx), and compressing PDF pages | MIT (full text below) |
-| Free fonts from [Google Fonts](https://fonts.google.com), packaged by [Fontsource](https://fontsource.org) 5.3 (`@fontsource/*`): Inter, Source Sans 3, IBM Plex Sans, Lato, Source Serif 4, Merriweather, Libre Baskerville, Montserrat, Oswald, Bebas Neue, Archivo Black, Barlow Condensed, JetBrains Mono, IBM Plex Mono (Latin, Latin-extended and Greek letters, regular and bold); and Arimo, Tinos, Cousine, Carlito and Caladea | The font boxes in every mode; put inside saved Word and PowerPoint files that use them. Arimo, Tinos, Cousine, Carlito and Caladea are put inside saved PDFs in place of Arial, Times, Courier, Calibri and Cambria, and stand in for those fonts on screen where they are missing | SIL Open Font License 1.1 (copyright lines and full text below) |
+| Free fonts from [Google Fonts](https://fonts.google.com), packaged by [Fontsource](https://fontsource.org) 5.3 (`@fontsource/*`): Inter, Source Sans 3, IBM Plex Sans, Lato, Source Serif 4, Merriweather, Libre Baskerville, Montserrat, Oswald, Bebas Neue, Archivo Black, Barlow Condensed, JetBrains Mono, IBM Plex Mono (Latin, Latin-extended and Greek letters, regular and bold); and Arimo, Tinos, Cousine, Carlito and Caladea; and Noto Sans SC, Noto Sans JP, Noto Sans Hebrew, Noto Sans Arabic, Noto Sans Symbols and Noto Sans Symbols 2 (regular only: the Chinese and Japanese files, the Hebrew and Arabic ones, and the symbol and math ones) | The font boxes in every mode; put inside saved Word and PowerPoint files that use them. Arimo, Tinos, Cousine, Carlito and Caladea are put inside saved PDFs in place of Arial, Times, Courier, Calibri and Cambria, and stand in for those fonts on screen where they are missing. The Noto fonts are put inside saved PDFs for characters the text's own fonts haven't got (only the files that have them) | SIL Open Font License 1.1 (copyright lines and full text below) |
 | [Material Design Icons](https://pictogrammers.com/library/mdi/) 7.4.47 by Pictogrammers (`@mdi/svg`; the icons' outlines are copied into the app by `scripts/build-icons.mjs`, company and product logos left out) | Insert ▸ Icons in Design, Slides and Document modes | Apache-2.0 (the Pictogrammers Free License: icons under Apache-2.0, code under MIT). Some icons were contributed by other authors under Apache-2.0, as listed in the package's `meta.json`. |
 | [marked](https://marked.js.org) 18.1 by Christopher Jeffrey and the MarkedJS team | Help ▸ User Guide: showing the guide's pages | MIT. Copyright (c) 2018+, MarkedJS; Copyright (c) 2011-2018, Christopher Jeffrey. Includes code under the original Markdown licence (BSD-style, Copyright (c) 2004, John Gruber). |
 | [ONNX Runtime Web](https://onnxruntime.ai) 1.22.0 by Microsoft (`onnxruntime-web`, its WebAssembly build) | File ▸ Import Structures from a picture or PDF: runs the structure-reading model on this computer | MIT. Copyright (c) Microsoft Corporation. |
@@ -71,7 +71,7 @@ A few residual-solvent and water shifts (G. R. Fulmer et al., *Organometallics* 
 
 ## Font copyrights and licence
 
-The bundled fonts are used unchanged (only the Latin, Latin-extended and Greek parts of each, as Fontsource provides them).
+The bundled fonts are used unchanged (only the Latin, Latin-extended and Greek parts of each, as Fontsource provides them; for the Noto fonts, the parts named above).
 
 - Inter: Copyright 2016 The Inter Project Authors (https://github.com/rsms/inter)
 - Source Sans 3: © 2023 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source'
@@ -92,6 +92,10 @@ The bundled fonts are used unchanged (only the Latin, Latin-extended and Greek p
 - Cousine: Copyright 2026 The Cousine Project Authors (https://github.com/googlefonts/cousine)
 - Carlito: Copyright 2013 The Carlito Project Authors (https://github.com/googlefonts/carlito)
 - Caladea: Copyright 2012 The Caladea Project Authors (https://github.com/huertatipografica/Caladea)
+- Noto Sans SC, Noto Sans JP: Google Inc. (the fonts' own copyright line: (c) 2014-2021 Adobe (http://www.adobe.com/), with Reserved Font Name 'Source')
+- Noto Sans Hebrew: Copyright 2024 The Noto Project Authors (https://github.com/notofonts/hebrew)
+- Noto Sans Arabic: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/arabic)
+- Noto Sans Symbols, Noto Sans Symbols 2: Copyright 2022 The Noto Project Authors (https://github.com/notofonts/symbols)
 
 ```
 This Font Software is licensed under the SIL Open Font License, Version 1.1.

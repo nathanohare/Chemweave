@@ -93,11 +93,11 @@ const ids: Spec = [0];
 const pt: Spec = { x: 0, y: 0 };
 const run = { text: str, bold: true, italic: true, underline: true, sub: true, sup: true, formula: true, size: length, font: '', color: '',
   highlight: '', obj: 0, strike: true, rev: '', fmt: '', hide: true, cmt: '', link: '', spacing: 0, field: '', cite: '', lang: '', smallCaps: true,
-  allCaps: true, cstyle: '', cc: '', noKern: true, noFill: true, transparency: 0, outline: '', outlineW: 0, shadow: true, wfx: '', noProof: true,
+  allCaps: true, cstyle: '', cc: '', noKern: true, kernAt: 0, noFill: true, transparency: 0, outline: '', outlineW: 0, shadow: true, wfx: '', noProof: true,
   raise: 0, symbolFont: true, ukind: '', wrx: '', ucolor: '', dstrike: true, pfx: '' } satisfies Record<keyof TextRun, Spec>;
 const para = { list: oneOf('bullet', 'number'), level: 0, cont: true, soft: true, wpx: '', align: oneOf('left', 'center', 'right', 'justify'),
   spaceBefore: 0, spaceAfter: 0, indent: 0, style: '', ppx: '', pageBreak: true, colBreak: true, firstLine: 0, line: 0, keepNext: true,
-  keepLines: true, clear: true, frame: { w: 0, align: oneOf('left', 'center', 'right'), wrap: oneOf('square', 'topBottom'), gap: 0 }, noWidow: true, indentRight: 0, linePt: 0, lineRule: oneOf('exact', 'atLeast'), section: null, noLineNumbers: true,
+  keepLines: true, clear: true, frame: { w: 0, align: oneOf('left', 'center', 'right'), wrap: oneOf('square', 'topBottom'), gap: 0 }, noWidow: true, rtl: true, indentRight: 0, linePt: 0, lineRule: oneOf('exact', 'atLeast'), section: null, noLineNumbers: true,
   noHyphen: true, numLook: { bold: true, italic: true }, marks: [''], tabs: [null], scheme: '', bullet: '', numType: '', startAt: 0,
   border: null, shade: '', xe: [null], ta: [null], cc: '' } satisfies Record<keyof ParaStyle, Spec>;
 const pin = { on: oneOf('atom', 'bond', 'gap'), ref: ids, at: pt, hand: 0, was: pt, len: 0, dir: pt } satisfies Record<keyof Pin, Spec>;
@@ -115,7 +115,7 @@ const step = { reactants: [''], products: [''], above: [''], below: [''], plusse
 const morph = { pairs: [[0]], exact: true, shifts: [[0]], slides: [[[0]]] } satisfies Record<keyof MorphStep, Spec>;
 const textLook = { align: { above: '', below: '', results: '' }, guides: true } satisfies Record<keyof ArrowTextLook, Spec>;
 const cell = { runs: [run], paras: [para], align: '', span: 0, rowSpan: 0, fill: '', valign: '', fig: { w: 0, h: 0 }, borders: null, pad: null } satisfies Record<keyof TableCell, Spec>;
-const table = { ...(specimenOf(emptyTable(2, 2, 10)) as { [k: string]: Spec }), rows: [[cell]], title: [run], notes: [run], size: length } satisfies Partial<Record<keyof TableData, Spec>>;
+const table = { ...(specimenOf(emptyTable(2, 2, 10)) as { [k: string]: Spec }), rows: [[cell]], title: [run], notes: [run], size: length, lineW: length, edges: [[{ left: 0, top: 0, bottom: 0, right: 0 }]], edgesKey: '' } satisfies Partial<Record<keyof TableData, Spec>>;
 const look = { line: 0, lineColor: '', round: 0, shadow: '' } satisfies Record<keyof PictureLook, Spec>;
 const fx = { bright: 0, contrast: 0, sharpen: 0, recolor: null, alpha: 0, clear: '', bg: null, shape: '' } satisfies Record<keyof PictureFx, Spec>;
 const media = { src: '', once: true, audio: true, trimStart: 0, trimEnd: 0, fadeIn: 0, fadeOut: 0, start: '', vol: 0, mute: true, rewind: true,
@@ -126,7 +126,7 @@ const bevel = { kind: '', w: 0, h: 0 } satisfies Record<keyof ShapeBevel, Spec>;
 const reflection = { size: 0, opacity: 0, dist: 0, blur: 0 } satisfies Record<keyof ShapeReflection, Spec>;
 const picFill = { src: '', px: { w: 0, h: 0 }, transparency: 0 } satisfies Record<keyof PicFill, Spec>;
 const math = { tex: '', size: length, color: '', font: '' } satisfies Record<keyof ShapeMath, Spec>;
-const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids, stack: 0 };
+const common = { piece: 0, ole: { id: 0, prog: '' }, id: 0, grp: 0, grpPath: ids, grpName: '', stack: 0 };
 
 const atom = {
   ...common, x: 0, y: 0, z: (v: unknown) => num(v) && (v as number) >= 0 && (v as number) < 200, label: orNull(str), charge: 0, isotope: 0,
@@ -156,12 +156,12 @@ const arrow = {
   line: oneOf('solid', 'dashed', 'bold', 'wavy'), noGo: true, noGoKind: oneOf('hash'), dipole: true, equilibrium: true, boldWidth: 0,
   hashSpacing: length, shaftSpacing: length, sweep: 0, headLength: 0, headWidth: 0, headCenter: 0, color: '', lineWidth: 0, step, reagentFor: 0,
   from: { shape: 0, port: 0 }, to: { shape: 0, port: 0 }, elbow: true, morph, bez: [pt], ellipse: { center: pt, major: pt, minor: pt, angular: 0 },
-  pin: { tail: pin, head: pin }, bent: true, textLook, kind: oneOf('reaction', 'mechanism', 'plain'),
+  pin: { tail: pin, head: pin }, bent: true, textLook, kind: oneOf('reaction', 'mechanism', 'plain'), name: '',
 } satisfies Record<keyof Arrow, Spec>;
 const L = 14.4;
 const shape = {
   ...common, ppt: true, kind: oneOf('line', 'rect', 'oval', 'symbol', 'bracket', 'picture', 'table', 'geo', 'ring'), ring: ids, poly: [pt], pin,
-  geo: '', orbital: '', orb, text: orNull((v) => fits(v, { runs: [run], paras: [para] }, 'text', 1) && obj(v) && Array.isArray(v.runs)),
+  geo: '', adjust: { prst: '', gd: '' }, orbital: '', orb, text: orNull((v) => fits(v, { runs: [run], paras: [para] }, 'text', 1) && obj(v) && Array.isArray(v.runs)),
   textAlign: oneOf('left', 'center', 'right', 'justify'), textValign: oneOf('top', 'middle', 'bottom'), lineWidth: 0, transparency: 0,
   x1: 0, y1: 0, x2: 0, y2: 0, rot: 0, dashed: true, hashSpacing: length, dotted: true, filled: true, fill: oneOf('faded', 'shaded', 'gradient'),
   fill2: '', gradAngle: 0, gradRadial: true, pattern: oneOf('hatch', 'backhatch', 'crosshatch', 'horizontal', 'vertical', 'grid', 'dots', 'dense-dots'),

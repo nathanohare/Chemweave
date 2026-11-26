@@ -6,7 +6,7 @@
 // of is drawn faded, so what was picked stands out.
 
 import type { Chart, SeriesData } from '../sheet/chart';
-import { CHART_PALETTES } from '../sheet/chart';
+import { chartPalette } from '../sheet/chart';
 import { findNode, levelFlows, levelRows, levelTree, reachablePath, squarify, type LevelNode } from '../sheet/levels';
 import { generalNumber } from '../sheet/numfmt';
 import type { VectorContext } from './vector';
@@ -26,7 +26,7 @@ export interface Pen {
 
 const INK = '#404040', MUTED = '#a6a6a6', LINK = '#2f5597';
 
-const paletteOf = (chart: Chart): string[] => (CHART_PALETTES[chart.palette ?? 'office'] ?? CHART_PALETTES.office).colors;
+const paletteOf = (chart: Chart): string[] => chartPalette(chart);
 
 /** The red, green and blue of "#rrggbb" (null for any other way of writing a color). */
 function rgbOf(hex: string): [number, number, number] | null {

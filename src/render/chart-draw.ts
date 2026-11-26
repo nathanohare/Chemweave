@@ -3,7 +3,7 @@
 // 100%; the caller scales the canvas. Titles take simple sub- and superscripts: k_{obs}, s^{−1}.
 
 import type { Chart, ChartAxis, CategoryPick, SeriesData, MarkerShape } from '../sheet/chart';
-import { niceTicks, logTicks, CHART_PALETTES, isXY, hasLevels, comboAs, onSecondAxis, titleRunsOf, titleMarkup, type TitleRun } from '../sheet/chart';
+import { niceTicks, logTicks, chartPalette, isXY, hasLevels, comboAs, onSecondAxis, titleRunsOf, titleMarkup, type TitleRun } from '../sheet/chart';
 import { histogram, boxGroups } from '../sheet/chart-stats';
 import { bandAt, drawDecomp, drawSankey, drawTreemap, type Pen } from './level-charts';
 import { fitPoints, fitAt, fitEquation, fitResults, r2Text, Fit, FitKind } from '../sheet/fit';
@@ -358,7 +358,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   let top = pad, bottom = h - pad, left = pad, right = w - pad;
 
   if (chart.title) {
-    const ts = fs * 1.4;
+    const ts = chart.titleSize ?? fs * 1.4;
     // each paragraph of the title on a line of its own, as Excel draws it
     const lines = titleLines(titleRunsOf(chart.title, chart.titleRuns));
     if (!lines) text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center' }));
@@ -369,7 +369,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   // legend
   const legend: LegendItem[] = [];
   if (kind === 'pie') {
-    const pal = (CHART_PALETTES[chart.palette ?? 'office'] ?? CHART_PALETTES.office).colors;
+    const pal = chartPalette(chart);
     (data[0]?.cats ?? []).forEach((c, i) => legend.push({ name: c || String(i + 1), color: pal[i % pal.length], kind: 'box' }));
   } else if (!hasLevels(kind)) {
     data.forEach((d, i) => {
@@ -975,7 +975,7 @@ function drawPie(ctx: Ctx, chart: Chart, data: SeriesData[], area: Box, fs: numb
   const d = data[0];
   const plot = area;
   if (!d) return { plot, fitLabels: [], fits: [] };
-  const pal = (CHART_PALETTES[chart.palette ?? 'office'] ?? CHART_PALETTES.office).colors;
+  const pal = chartPalette(chart);
   const vals = d.ys.map((v) => (Number.isFinite(v) && v > 0 ? v : 0));
   const total = vals.reduce((a, b) => a + b, 0);
   const cx = area.x + area.w / 2, cy = area.y + area.h / 2, r = Math.max(4, Math.min(area.w, area.h) / 2 - 4);
@@ -1022,7 +1022,7 @@ function scaleItems(items: Item[], k: number): Item[] {
     const c = one.clip;
     const it = c ? { ...one, clip: { x1: c.x1 * k, y1: c.y1 * k, x2: c.x2 * k, y2: c.y2 * k } } : one;
     if (it.kind === 'path') return { ...it, segs: it.segs.map(seg), ...(it.stroke ? { stroke: { ...it.stroke, width: it.stroke.width * k } } : {}) };
-    if (it.kind === 'text') return { ...it, x: it.x * k, y: it.y * k, size: it.size * k, widths: it.widths.map((w) => w * k) };
+    if (it.kind === 'text') return { ...it, x: it.x * k, y: it.y * k, size: it.size * k, widths: it.widths.map((w) => w * k), ...(it.stroke ? { stroke: it.stroke * k } : {}) };
     return { ...it, x: it.x * k, y: it.y * k, w: it.w * k, h: it.h * k };
   });
 }

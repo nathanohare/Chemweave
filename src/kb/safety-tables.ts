@@ -5,6 +5,7 @@
 import data from './safety-data.json';
 import { badges, fmtIdlh, haveReady, incident, lethalByRoute, rate, skinKp, vapourRatio, vpMmHg, type SafetyRecord } from './safety';
 import type { Cell, KbSource, KbTable } from './tables';
+import { guardedAt } from '../regex-behind';
 
 export const SAFETY_RECORDS = (data as unknown as { compounds: SafetyRecord[] }).compounds;
 
@@ -21,7 +22,7 @@ export function sig(n: number): string {
 export function short(text: string | undefined): string | null {
   if (!text) return null;
   const t = text.replace(/\s+/g, ' ').trim();
-  const cut = t.split(/(?<=°C|°F|g\/cu cm|g\/mL|g\/cm3)[;(,]/)[0].trim();
+  const cut = t.split(guardedAt(/[;(,]/, (at, s) => /(?:°C|°F|g\/cu cm|g\/mL|g\/cm3)$/.test(s.slice(Math.max(0, at - 8), at))))[0].trim();
   return cut.length > 48 ? cut.slice(0, 46).trimEnd() + '…' : cut;
 }
 

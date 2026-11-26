@@ -15,6 +15,7 @@
 
 // ---------------------------------------------------------------- solvents
 import { markFloat } from './pyjson';
+import { after, notAfter } from '../regex-behind';
 
 /** Each solvent's usual name, with the ways a report may write it (compared after `plainSolvent`). */
 export const SOLVENT_NAMES: Record<string, string[]> = {
@@ -84,7 +85,7 @@ export function canonicalSolvent(t: string): string {
 const canonicalSeen = new Map<string, string>();
 
 /** "CDCl3" → "CDCl₃" for messages. */
-export const prettySolvent = (name: string): string => name.replace(/(?<=[A-Za-z])(\d+)/g, (d) => [...d].map((c) => String.fromCharCode(0x2080 + Number(c))).join(''));
+export const prettySolvent = (name: string): string => name.replace(after(/(\d+)/g, /[A-Za-z]/), (d) => [...d].map((c) => String.fromCharCode(0x2080 + Number(c))).join(''));
 
 // ---------------------------------------------------------------- peak reports
 
@@ -130,7 +131,7 @@ export function peaks(text: string): Peak[] {
   const data = dataPart(text);
   const out: Peak[] = [];
   // (a number run into letters or other digits, as in "13C" or "400MHz", is not a shift)
-  const pattern = new RegExp(`(?<![\\w.])(${NUMBER})(?:\\s*[–—-]\\s*(${NUMBER}))?(?!\\w|\\.\\d)\\s*`, 'g');
+  const pattern = notAfter(new RegExp(`(${NUMBER})(?:\\s*[–—-]\\s*(${NUMBER}))?(?!\\w|\\.\\d)\\s*`, 'g'), /[\w.]/);
   let pos = 0;
   for (;;) {
     pattern.lastIndex = pos;
@@ -160,7 +161,7 @@ export function peaks(text: string): Peak[] {
 // A coupling constant: "J = 8.3 Hz", "J = 8.3, 2.0 Hz", "2J = 14.0 Hz", "JH–F = 47.6 Hz",
 // "J(H,F) = 47.6 Hz", decimal commas. A number followed by "H" is an integration, not a J.
 const J_VALUE = '\\d+(?:[.,]\\d+)?(?!\\d|\\s*H(?![a-z]))';
-const COUPLING = new RegExp(`(?<![A-Za-z])J([^=;\\n]{0,15}?)\\s*=\\s*(${J_VALUE}(?:\\s*Hz)?(?:\\s*(?:,|and|&)\\s*${J_VALUE}(?:\\s*Hz)?)*)`, 'g');
+const COUPLING = notAfter(new RegExp(`J([^=;\\n]{0,15}?)\\s*=\\s*(${J_VALUE}(?:\\s*Hz)?(?:\\s*(?:,|and|&)\\s*${J_VALUE}(?:\\s*Hz)?)*)`, 'g'), /[A-Za-z]/);
 
 export interface Coupling {
   /** Hz. */

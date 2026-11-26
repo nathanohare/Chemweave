@@ -216,7 +216,7 @@ function lineY(lines: P.Line[], rec: Rec): number {
 export async function pdfjsLib() {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   return pdfjs;
 }

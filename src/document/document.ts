@@ -13,12 +13,13 @@
 import type { TableStyleDef } from './table-styles';
 import type { CommentThread } from './comments';
 import type { Protection } from './protect';
-import type { Contents, Justify, ParaStyle, PictureFx, TableData, TextRun } from '../model';
+import type { Contents, Justify, ParaBorders, ParaStyle, PictureFx, TableData, TextRun } from '../model';
 import type { RichText } from '../text/editing';
 import type { Measure } from '../text/layout';
 import { ACS_1996, type DocStyle } from '../style';
 import * as rt from '../richtext';
 import { cleanPara, fitParas, paraCount, paraRange } from '../text/paragraphs';
+import { cleanBorders } from './para-borders';
 import { citationTexts, type CiteStyle, type Reference } from './references';
 import type { CiteFormat } from './cite-styles';
 import type { BibLive, CiteLive, CiteManager } from './live-cites';
@@ -58,12 +59,30 @@ export interface NamedStyle {
   /** Its paragraphs' lines kept together on one page, and widow and orphan lines allowed (Word's settings, kept from its files). */
   keepLines?: boolean;
   noWidow?: boolean;
+  /** Its paragraphs run right to left (Word's w:bidi in the style). */
+  rtl?: boolean;
   /** The style a new paragraph gets after Enter at the end of one of these (Normal after a heading). */
   next?: string;
   /** A heading's level (1 to 9). */
   outline?: number;
+  /** Lines round its paragraphs (Word's w:pBdr in the style), and the colour behind them (w:shd's fill). */
+  border?: ParaBorders;
+  shade?: string;
   /** Made by the person (Styles pane > New Style), so it can be deleted. */
   custom?: boolean;
+  /** Word's character style linked to it (w:link: the same look for words, Quote Char for Quote), by its Word id, written back while that style is in the file. */
+  link?: string;
+  /**
+   * The style it is based on in Word (w:basedOn), by id, where it isn't Normal: written back while
+   * that style is one of these (each is written with all its settings). Its settings here are its own and those it inherits, all written.
+   */
+  basedOn?: string;
+  /**
+   * Word's numbering in the style (w:numPr: the file's list, by its w:numId, and the level), kept to
+   * write back while that list is in the file. Its paragraphs are lists here as read; one that isn't
+   * says so to Word (list 0).
+   */
+  wnum?: { num: string; ilvl?: number };
 }
 
 /**
@@ -78,6 +97,8 @@ export interface CharStyle {
   bold?: boolean;
   italic?: boolean;
   underline?: boolean;
+  /** Its underline's kind in Word (dotted, wave...; TextRun.ukind), where it isn't single. */
+  ukind?: string;
   color?: string;
   smallCaps?: boolean;
   allCaps?: boolean;
@@ -85,6 +106,8 @@ export interface CharStyle {
   custom?: boolean;
   /** Word's theme colour and font for the style (see NamedStyle.wth). */
   wth?: string;
+  /** The character style it is based on in Word (w:basedOn), by id: written back while that one is a style here. */
+  basedOn?: string;
 }
 
 /** A watermark (Design > Watermark): words across every page, behind the text, as Word's text watermarks. */
@@ -313,8 +336,17 @@ export type WrapKind = 'square' | 'topBottom' | 'behind' | 'front';
  * anchored (its paragraph). `x` is from the left margin (or the page's edge), `y` from the top of
  * the anchor paragraph (or of the margin, or the page), in points.
  */
+/** A figure's name and hidden mark in Word's Selection Pane (wp:docPr name and hidden, ECMA-376 Part 1 §20.4.2.5). */
+export interface WordPane { name?: string; hidden?: boolean }
+
 export interface Float {
   wrap: WrapKind;
+  /**
+   * Which side of a figure wrapped square the text goes (Word's wrapText): only at its left or
+   * its right, or both sides; left out, the wider side (Word's "largest"). Text on both sides is
+   * laid out here on the wider side.
+   */
+  side?: 'bothSides' | 'left' | 'right';
   x: number;
   y: number;
   xFrom?: 'margin' | 'page';
@@ -342,6 +374,11 @@ export interface Float {
   name?: string;
   /** Hidden from the page in the Selection Pane (still in the document). */
   hidden?: boolean;
+  /**
+   * In line with text in Word (a shape or text box read so, shown here on its own line): written
+   * back so while it is still where it was put (at 0, 0, top and bottom wrap).
+   */
+  inline?: boolean;
   /**
    * Room Word's own effects take round the figure (a border or shadow Word drew, wp:effectExtent),
    * beyond what its look here takes, in points: text keeps clear of it too, as in Word.
@@ -383,6 +420,22 @@ export function lookOf(o: DocObject | undefined): FigureLook | undefined {
 }
 
 /** Where a figure, picture or text box floats on the page (none when it sits in its line). */
+/**
+ * A picture or drawing put in the line or made to float (Position, In Line with Text): its name
+ * and hidden mark in Word's Selection Pane go with it, from its float to its wordPr or back.
+ */
+export function withFloat(o: DocObject, float: Float | undefined): DocObject {
+  if (o.kind !== 'picture' && o.kind !== 'drawing') return { ...o, float } as DocObject;
+  const was: WordPane = o.float ? { name: o.float.name, hidden: o.float.hidden } : { ...o.wordPr };
+  const pane: WordPane = { ...(was.name ? { name: was.name } : {}), ...(was.hidden ? { hidden: true } : {}) };
+  const { wordPr: _w, float: _f, ...rest } = o;
+  if (float) {
+    const { name: _n, hidden: _h, ...fl } = float;
+    return { ...rest, float: { ...fl, ...pane } } as DocObject;
+  }
+  return { ...rest, ...(Object.keys(pane).length ? { wordPr: pane } : {}) } as DocObject;
+}
+
 export function floatOf(o: DocObject | undefined): Float | undefined {
   return o && (o.kind === 'drawing' || o.kind === 'picture' || o.kind === 'textbox') ? o.float : undefined;
 }
@@ -454,7 +507,7 @@ export interface TocLook { font?: string; size?: number; bold?: boolean; italic?
 
 export type DocObject =
   /** A structure, scheme or table: a drawing, edited with the drawing tools. `scale` 1 is the drawing's own size. */
-  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
+  | { kind: 'drawing'; contents: Contents; scale?: number; look?: FigureLook; float?: Float; /** In line with text: its name and hidden mark in Word's Selection Pane (a floating one keeps them on its float), saved back to Word; it is shown here. */ wordPr?: WordPane; alt?: string; /** A figure: a set area of the page (in the drawing's points) its structures are drawn in, sized by it rather than by them, so drawing inside it never moves the text round it. Never drawn when printed. */ frame?: FigureFrame; /** Turned and flipped, as a picture (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean; /** A Chem4Word structure: its id in the file's CML part, and a fingerprint of the drawing as read (changed = the CML is written afresh). */ c4w?: { guid: string; sig: string }; /** Saved as a ChemDraw object, by this program name (ChemDraw.Document.6.0): one that came from a ChemDraw object stays one, to open in ChemDraw from Word. */ ole?: string; /** Cropping and color changes Word made to its picture: not shown here, saved back to Word while the structure is as read. */ wordLook?: WordLook; /** Made from a picture (Make Editable): the picture, kept to compare with and to go back to. */ fromPicture?: FromPicture }
   /**
    * A picture: its own size is w × h points (`px` its pixels); `scale` 1 is that size. A chart
    * (Insert > Chart) is a picture with its chart and data: drawn from them, saved as Word's chart.
@@ -463,12 +516,12 @@ export type DocObject =
    * embedded object (Insert > Document > Object) is a picture with another program's file in `embed`. `alt` is
    * its alt text (a structure without it is described by its SMILES).
    */
-  | { kind: 'picture'; src: string; w: number; h: number; px?: { w: number; h: number }; scale?: number; look?: FigureLook; float?: Float; chart?: ChartBox; crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; /** Turned clockwise about its middle, in degrees, and flipped (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean }
+  | { kind: 'picture'; src: string; w: number; h: number; px?: { w: number; h: number }; scale?: number; look?: FigureLook; float?: Float; /** In line with text: its name and hidden mark in Word's Selection Pane (a floating one keeps them on its float), saved back to Word; it is shown here. */ wordPr?: WordPane; chart?: ChartBox; crop?: { l: number; t: number; r: number; b: number }; fx?: PictureFx; embed?: Embedded; alt?: string; /** Turned clockwise about its middle, in degrees, and flipped (Arrange > Rotate). */ rot?: number; flipH?: boolean; flipV?: boolean }
   /**
    * A text box: text of its own (typed into in place), `w` wide; it grows to fit its text, and is
    * at least `h` tall when that is set. Always placed on the page. `fill` is its background.
    */
-  | { kind: 'textbox'; runs: TextRun[]; paras?: ParaStyle[]; w: number; h?: number; fill?: string; look?: FigureLook; float: Float; /** A shape (Insert > Shapes): the library's outline (design/geo.ts) instead of a plain box, `w` × `h` (it doesn't grow down), its text in the middle; a click picks it and drags it, typing or a double-click goes into its text, as in PowerPoint. */ geo?: string }
+  | { kind: 'textbox'; runs: TextRun[]; paras?: ParaStyle[]; w: number; h?: number; fill?: string; look?: FigureLook; float: Float; /** Word's gradient fill as the file had it (its a:gradFill), shown as `fill` (its first colour) and written back while that is unchanged. */ wfill?: string; /** A shape (Insert > Shapes): the library's outline (design/geo.ts) instead of a plain box, `w` × `h` (it doesn't grow down), its text in the middle; a click picks it and drags it, typing or a double-click goes into its text, as in PowerPoint. */ geo?: string }
   /**
    * A table in the text, typed into in place as in Word: its own paragraph, cells of text that
    * can hold structures and pictures (objects of the document, like those in the text), and
@@ -635,7 +688,7 @@ export function noteStyle(t: Pick<DocText, 'styles'>): NamedStyle {
   const own = t.styles.FootnoteText;
   if (own) return own;
   const N = styleOf(t, undefined);
-  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined };
+  return { ...N, id: 'FootnoteText', name: 'Footnote Text', size: Math.max(6, N.size - 1), align: 'left', spaceBefore: 0, spaceAfter: 0, line: 1, indent: 0, firstLine: 0, keepNext: false, next: undefined, outline: undefined, border: undefined, shade: undefined, link: undefined, basedOn: undefined, wnum: undefined };
 }
 
 // ---------------------------------------------------------------- defaults
@@ -716,15 +769,18 @@ export function runStyleOf(s: NamedStyle): rt.RunStyle {
 }
 
 /** A paragraph in a style: the style's spacing, indents and alignment, keeping its list, level and page break. */
-export function paraFromStyle(s: NamedStyle, keep: ParaStyle): ParaStyle {
+export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle): ParaStyle {
+  // (lines and shading the paragraph had from its old style give way to the new style's; its own stay)
+  const ownBorder = keep.border && !(was && JSON.stringify(cleanBorders(keep.border) ?? null) === JSON.stringify(cleanBorders(was.border) ?? null)) ? keep.border : undefined;
+  const ownShade = keep.shade && !(was && keep.shade.toLowerCase() === (was.shade ?? '').toLowerCase()) ? keep.shade : undefined;
   return cleanPara({
     list: keep.list, level: keep.level, cont: keep.cont, pageBreak: keep.pageBreak, colBreak: keep.colBreak, section: keep.section, noLineNumbers: keep.noLineNumbers,
-    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: keep.border, shade: keep.shade,
+    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: was ? ownBorder ?? s.border : s.border ?? keep.border, shade: was ? ownShade ?? s.shade : s.shade ?? keep.shade,
     style: s.id === 'Normal' ? undefined : s.id,
     align: s.align === 'left' ? undefined : s.align,
     spaceBefore: s.spaceBefore, spaceAfter: s.spaceAfter,
     line: s.line === 1 ? undefined : s.line,
-    indent: s.indent, firstLine: s.firstLine, keepNext: s.keepNext, keepLines: s.keepLines, noWidow: s.noWidow,
+    indent: s.indent, firstLine: s.firstLine, keepNext: s.keepNext, keepLines: s.keepLines, noWidow: s.noWidow, rtl: s.rtl,
   });
 }
 
@@ -733,19 +789,22 @@ function paraValue(p: ParaStyle, k: (typeof PARA_KEYS)[number]): unknown {
   switch (k) {
     case 'align': return p.align ?? 'left';
     case 'line': return p.line ?? 1;
-    case 'keepNext': case 'keepLines': case 'noWidow': return !!p[k];
+    case 'keepNext': case 'keepLines': case 'noWidow': case 'rtl': return !!p[k];
     default: return p[k] ?? 0;
   }
 }
 
-const PARA_KEYS = ['align', 'spaceBefore', 'spaceAfter', 'line', 'indent', 'firstLine', 'keepNext', 'keepLines', 'noWidow'] as const;
+const PARA_KEYS = ['align', 'spaceBefore', 'spaceAfter', 'line', 'indent', 'firstLine', 'keepNext', 'keepLines', 'noWidow', 'rtl'] as const;
 
 /** A paragraph after its style changed from `from` to `to`: what looked like `from` now looks like `to`. */
 export function restylePara(p: ParaStyle, from: NamedStyle, to: NamedStyle): ParaStyle {
-  const want = paraFromStyle(to, p);
-  const out: ParaStyle = { ...p, style: want.style };
+  const want = paraFromStyle(to, p, from);
+  // (lines and shading as the other settings: where the paragraph had the old style's, the new style's)
+  const sameLines = JSON.stringify(cleanBorders(p.border) ?? null) === JSON.stringify(cleanBorders(from.border) ?? null);
+  const sameShade = (p.shade ?? '').toLowerCase() === (from.shade ?? '').toLowerCase();
+  const out: ParaStyle = { ...p, style: want.style, border: sameLines ? to.border : p.border, shade: sameShade ? to.shade : p.shade };
   for (const k of PARA_KEYS) {
-    const fromV = k === 'keepLines' || k === 'noWidow' ? !!from[k] : from[k];
+    const fromV = k === 'keepLines' || k === 'noWidow' || k === 'rtl' ? !!from[k] : from[k];
     if (paraValue(p, k) === fromV) (out as Record<string, unknown>)[k] = (want as Record<string, unknown>)[k];
   }
   return cleanPara(out);
@@ -784,7 +843,7 @@ export function setParaStyle(t: DocText, first: number, last: number, id: string
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const from = paras.map((p) => styleOf(t, p));
   const runs = mapParagraphRuns(t.runs, (r, p) => (p < first || p > last ? r : restyleRun(r, from[p], to)));
-  return { ...t, runs, paras: paras.map((p, i) => (i < first || i > last ? p : paraFromStyle(to, p))) };
+  return { ...t, runs, paras: paras.map((p, i) => (i < first || i > last ? p : paraFromStyle(to, p, from[i]))) };
 }
 
 /** Change a named style: every paragraph in it changes too (except what was formatted by hand). */
@@ -824,12 +883,14 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
   const p = paras[para] ?? {};
   const from = styleOf(t, p);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: NamedStyle = {
-    ...from, id, name: name.trim() || id, custom: true, outline: undefined,
+    ...from, id, name: name.trim() || id, custom: true, outline: undefined, link: undefined, basedOn: undefined, wnum: undefined,
     font: look.font ?? from.font, size: look.size ?? from.size, bold: !!look.bold, italic: !!look.italic, color: look.color,
     align: p.align ?? 'left', spaceBefore: p.spaceBefore ?? 0, spaceAfter: p.spaceAfter ?? 0, line: p.line ?? 1,
     indent: p.indent ?? 0, firstLine: p.firstLine ?? 0, keepNext: !!p.keepNext, next: undefined,
+    // (the paragraph's lines and shading, as it shows)
+    border: cleanBorders(p.border), shade: p.shade,
   };
   const withIt = { ...t, styles: { ...t.styles, [id]: s } };
   return { t: setParaStyle(withIt, para, para, id), id };
@@ -841,7 +902,9 @@ export function deleteStyle(t: DocText, id: string): DocText {
     const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
     let out = t;
     paras.forEach((p, i) => { if (p.style === id) out = setParaStyle(out, i, i, 'Normal'); });
-    const { [id]: _, ...styles } = out.styles;
+    const { [id]: _, ...rest } = out.styles;
+    // (those based on it: on Normal)
+    const styles = Object.fromEntries(Object.entries(rest).map(([k, s]) => [k, s.basedOn === id ? { ...s, basedOn: undefined } : s]));
     return { ...out, styles };
   }
   const cs = t.charStyles?.[id];
@@ -871,7 +934,7 @@ export function charStylesOf(t: Pick<DocText, 'charStyles'>): Record<string, Cha
   return { ...defaultCharStyles(), ...(t.charStyles ?? {}) };
 }
 
-const CHAR_KEYS = ['font', 'size', 'bold', 'italic', 'underline', 'color', 'smallCaps', 'allCaps', 'strike'] as const;
+const CHAR_KEYS = ['font', 'size', 'bold', 'italic', 'underline', 'ukind', 'color', 'smallCaps', 'allCaps', 'strike'] as const;
 
 /** The text formatting a character style gives (only what it sets; off-switches included, so Strong on bold text stays bold). */
 export function charStyleLook(s: CharStyle): Partial<rt.RunStyle> {
@@ -936,7 +999,7 @@ export function modifyCharStyle(t: DocText, s: CharStyle): DocText {
 /** Styles pane > New Style (character): a character style with the look of the selected text, given to it. */
 export function newCharStyle(t: DocText, name: string, start: number, end: number, look: rt.RunStyle, para: ParaStyle): { t: DocText; id: string } {
   const N = styleOf(t, para);
-  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x]);
+  const id = styleIdFor(name, (x) => !!t.styles[x] || !!charStylesOf(t)[x] || !!t.kept?.styles?.some((k) => k.id === x));
   const s: CharStyle = { id, name: name.trim() || id, custom: true };
   if (look.font && look.font !== N.font) s.font = look.font;
   if (look.size && look.size !== N.size) s.size = look.size;

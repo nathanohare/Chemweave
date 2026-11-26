@@ -4,7 +4,7 @@
 // survive a save here as Office keeps them: only the time modified, who modified it and the
 // revision number change (ECMA-376 Part 2 §8; finding P4).
 
-import { afterEach, describe, it, expect } from 'vitest';
+import { afterEach, describe, it, expect, vi } from 'vitest';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
 import { Doc } from '../src/model';
 import { writePptx, type PptxOptions } from '../src/io/pptx-write';
@@ -127,5 +127,39 @@ describe('document properties kept on save (P4)', () => {
     expect(el(core, 'dc:title')).toBe('Seminar');
     expect(el(core, 'cp:revision')).toBe('1');
     expect(el(core, 'dcterms:created')).toBe(el(core, 'dcterms:modified'));
+  });
+});
+
+describe('the same file saves the same bytes (office sampler F-P-012, F-W-026)', () => {
+  afterEach(() => { vi.useRealTimers(); });
+  const pictures: XlsxPictures = { box: () => ({ w: 60, h: 40 }), async picture() { return PNG; } };
+  const at = async (time: string, undated: boolean) => {
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(new Date(time));
+    return writeXlsx(new Workbook(['Sheet1']), pictures, { undated });
+  };
+
+  it('dates each zip entry 1 January 1980, as Office does, not when it was saved', async () => {
+    const a = await at('2026-03-01T10:00:00Z', false), b = await at('2026-03-01T10:00:07Z', false);
+    const same = (x: Uint8Array, y: Uint8Array, name: string) => strFromU8(unzipSync(x)[name]) === strFromU8(unzipSync(y)[name]);
+    expect(same(a, b, 'xl/workbook.xml')).toBe(true);
+    // (the zip's local headers: DOS time 0, date 1980-01-01, for every entry)
+    const view = new DataView(a.buffer, a.byteOffset, a.byteLength);
+    let entries = 0;
+    for (let i = 0; i + 30 < a.length && view.getUint32(i, true) === 0x04034b50; i += 30 + view.getUint32(i + 18, true) + view.getUint16(i + 26, true) + view.getUint16(i + 28, true)) {
+      entries++;
+      expect([view.getUint16(i + 10, true), view.getUint16(i + 12, true)]).toEqual([0, (0 << 9) | (1 << 5) | 1]);
+    }
+    expect(entries).toBe(Object.keys(unzipSync(a)).length);
+  });
+
+  it('writes a chart\'s data workbook, made afresh on every save, with no times, so saving it again gives the same bytes', async () => {
+    const a = await at('2026-03-01T10:00:00Z', true), b = await at('2026-03-02T11:30:00Z', true);
+    expect(a).toEqual(b);
+    const core = parts(a)['docProps/core.xml'];
+    expect(core).not.toContain('dcterms:created');
+    expect(core).not.toContain('dcterms:modified');
+    // (a workbook saved as a file is dated as before)
+    expect(parts(await at('2026-03-01T10:00:00Z', false))['docProps/core.xml']).toContain('<dcterms:modified xsi:type="dcterms:W3CDTF">2026-03-01T10:00:00Z</dcterms:modified>');
   });
 });

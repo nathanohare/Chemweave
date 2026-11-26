@@ -67,6 +67,8 @@ export interface Atom {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   x: number;
@@ -415,6 +417,11 @@ export interface TextRun {
   cc?: string;
   /** Text effects (the Font box): no kerning between letter pairs (they are kerned unless this is set). */
   noKern?: boolean;
+  /**
+   * Documents: Word's kerning size (w:kern, in points) where the file's is not the usual 1 pt: text
+   * this size and larger is kerned. Written back while it agrees with `noKern` at the text's size.
+   */
+  kernAt?: number;
   /** Text effects: no fill inside the letters (outline-only text, with `outline`). */
   noFill?: boolean;
   /** Text effects: how much shows through the letters' fill, 0 (solid) to 1. */
@@ -582,6 +589,11 @@ export interface ParaStyle {
   frame?: ParaFramePlace;
   /** Documents: a single first or last line may be left on a page by itself (Word's Widow/Orphan control off). */
   noWidow?: boolean;
+  /**
+   * Documents: a right-to-left paragraph (Hebrew, Arabic: Word's w:bidi). Its lines start at the
+   * right; its alignment and indents are by start and end (left is the start: on the right).
+   */
+  rtl?: boolean;
   /** Documents: indent from the right margin, in points. */
   indentRight?: number;
   /** Documents: line spacing in points instead of a multiple: exactly this, or at least this. */
@@ -677,6 +689,8 @@ export interface Caption {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   /** Left end of the first line's baseline (for centred/right text, of the line box). */
@@ -849,6 +863,8 @@ export interface Attachment {
 export type ArrowHead = 'none' | 'full' | 'halfLeft' | 'halfRight';
 
 export interface Arrow {
+  /** Slides: its name in PowerPoint's Selection Pane, where it was given one (not PowerPoint's own "Straight Arrow Connector 3"). */
+  name?: string;
   /** Auto-Animate Steps: things with the same piece number move as one piece in the slide show (and are one picture in PowerPoint). */
   piece?: number;
   /** Part of a ChemDraw object from PowerPoint: saved back to PowerPoint as that object, which opens in ChemDraw (OleMark). */
@@ -863,6 +879,8 @@ export interface Arrow {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   tail: Vec;
@@ -1053,6 +1071,8 @@ export interface Shape {
   grp?: number;
   /** Groups inside groups as ChemDraw keeps them (outermost first; grp is the first), for writing the nesting back. Set only when nested. */
   grpPath?: number[];
+  /** Its group's name (Slides: PowerPoint's Selection Pane), the same on every member, where it was given one. */
+  grpName?: string;
   /** Place in the drawing order set by Format > Order (higher is in front); not set keeps the usual layers (issue #406, editor/stacking.ts). */
   stack?: number;
   kind: 'line' | 'rect' | 'oval' | 'symbol' | 'bracket' | 'picture' | 'table' | 'geo' | 'ring';
@@ -1066,6 +1086,12 @@ export interface Shape {
   pin?: Pin;
   /** A design shape (kind 'geo'): which one, from the shape library (design/geo.ts). */
   geo?: string;
+  /**
+   * A PowerPoint shape's adjust values (its corner size, an arrow's head, a star's depth: prstGeom's
+   * avLst, ECMA-376 Part 1 §20.1.9.5), as the file wrote them for that preset (`prst`), written back
+   * while the shape is still that preset. Not drawn here (the library's shape is drawn as it is).
+   */
+  adjust?: { prst: string; gd: string };
   /** ChemDraw's orbital (an oval it draws as an orbital lobe or s orbital): its OrbitalType, kept for writing back. */
   orbital?: string;
   /** A part of an orbital drawn with Chemistry ▸ Orbital (chem/orbitals.ts): how it was asked for, so it can be changed later. */
@@ -1472,6 +1498,12 @@ export interface BorderLine {
   style: 'none' | 'single' | 'double' | 'dotted' | 'dashed';
   w: number;
   color: string;
+  /**
+   * Documents: Word's own line kind (w:val, ECMA-376 Part 1 §17.18.2 ST_Border: thick, triple,
+   * dotDash, wave...) where it isn't one drawn here, written back while the line is still drawn as
+   * `style` (the kind it was read as).
+   */
+  word?: string;
 }
 
 export type BorderSide = 'top' | 'bottom' | 'left' | 'right';
@@ -1506,6 +1538,16 @@ export interface TableData {
   head: number;
   /** ACS style (rules above and below the headings and under the last row), every cell boxed, or no lines. */
   lines: 'acs' | 'grid' | 'none';
+  /** The width of those lines in points, when not the drawing's line width (a PowerPoint table's 2 pt borders). */
+  lineW?: number;
+  /**
+   * Each cell's own borders as a PowerPoint file had them (their widths in points, 0 for none),
+   * saved back while the table has the same rows and columns and its lines are still these
+   * (a cell with heavier borders than the rest keeps them).
+   */
+  edges?: { left: number; top: number; bottom: number; right: number }[][];
+  /** The table's rows, columns, joined cells, lines and style when `edges` were read (tableShapeKey): they count only while it is the same. */
+  edgesKey?: string;
   /** How each column lines up (the first is left, the others centred, when not given). */
   align?: Justify[];
   /** Text size in points for runs that don't give one (the drawing's caption size when not given). */

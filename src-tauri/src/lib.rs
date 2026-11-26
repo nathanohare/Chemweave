@@ -7,6 +7,8 @@ mod clipboard;
 mod file_types;
 mod folders;
 mod keep;
+#[cfg(target_os = "macos")]
+mod mac_quit;
 mod ole;
 mod open_dialog;
 mod portable;
@@ -414,6 +416,14 @@ fn catch_panics(app: &tauri::AppHandle) {
     }));
 }
 
+/// The window was not closed after all (Cancel when asked about unsaved work): on a Mac a quit
+/// that was waiting for that answer is called off (src/mac_quit.rs).
+#[tauri::command]
+fn quit_cancelled() {
+    #[cfg(target_os = "macos")]
+    mac_quit::cancelled();
+}
+
 /// View > Developer Tools > Inspector: the web inspector, built into the Windows and Linux apps
 /// (the "devtools" feature in Cargo.toml). Apple doesn't allow it in App Store apps.
 #[tauri::command]
@@ -449,6 +459,9 @@ pub fn run() {
         .plugin(tauri_plugin_opener::init())
         .setup(|app| {
             catch_panics(app.handle());
+            // quitting asks about unsaved work, as closing the window does
+            #[cfg(target_os = "macos")]
+            mac_quit::install(app.handle());
             portable::tidy();
             // the files the app was opened with (double-clicked, or "Open with")
             file_types::open_files(app.handle(), file_types::files_in(std::env::args(), None));
@@ -486,6 +499,7 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             selftest_requested,
             open_inspector,
+            quit_cancelled,
             selftest_report,
             read_text_file,
             write_text_file,

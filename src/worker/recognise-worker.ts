@@ -2,6 +2,7 @@
 // WebAssembly build, and readStructure's decoding (src/recognise/molscribe.ts). Pictures come in
 // as pixels; what was read goes back as atoms, places and bonds.
 
+import '../old-webkit';
 import * as ort from 'onnxruntime-web/wasm';
 import { imageTensor, readStructure, type ReadGraph, type Runner, type T, type Vocab } from '../recognise/molscribe';
 import { cropWhite, resize, type Pixels } from '../recognise/picture';

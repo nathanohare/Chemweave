@@ -162,10 +162,12 @@ const BY_EXTENSION: Record<string, string> = {
 export async function webpToPng(bytes: Uint8Array): Promise<Uint8Array | null> {
   try {
     const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: 'image/webp' }));
-    const c = new OffscreenCanvas(bmp.width, bmp.height);
-    c.getContext('2d')!.drawImage(bmp, 0, 0);
+    // (a canvas element where there is no OffscreenCanvas)
+    const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
+    (c.getContext('2d') as CanvasRenderingContext2D).drawImage(bmp, 0, 0);
     bmp.close();
-    return new Uint8Array(await (await c.convertToBlob({ type: 'image/png' })).arrayBuffer());
+    const blob = 'convertToBlob' in c ? await c.convertToBlob({ type: 'image/png' }) : await new Promise<Blob>((ok, no) => c.toBlob((b) => (b ? ok(b) : no(new Error('no picture'))), 'image/png'));
+    return new Uint8Array(await blob.arrayBuffer());
   } catch {
     return null;
   }

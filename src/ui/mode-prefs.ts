@@ -33,10 +33,13 @@ export interface SiPreviewLook {
   link: 'tint' | 'bracket';
   /** Text no field holds: an amber dotted underline and a flag in the margin, or an amber fill and a bar. */
   custom: 'underline' | 'fill';
+  /** The white space between pages shown (false: each page's top and bottom margins hidden; a double-click between pages hides or shows it, as in Word). */
+  whiteSpace: boolean;
 }
-export const DEFAULT_SI_PREVIEW: SiPreviewLook = { dim: true, link: 'tint', custom: 'underline' };
+export const DEFAULT_SI_PREVIEW: SiPreviewLook = { dim: true, link: 'tint', custom: 'underline', whiteSpace: true };
 export function parseSiPreviewLook(v: unknown): SiPreviewLook {
   const r = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-  return { dim: r.dim !== false, link: r.link === 'bracket' ? 'bracket' : 'tint', custom: r.custom === 'fill' ? 'fill' : 'underline' };
+  return { dim: r.dim !== false, link: r.link === 'bracket' ? 'bracket' : 'tint', custom: r.custom === 'fill' ? 'fill' : 'underline', whiteSpace: r.whiteSpace !== false };
 }
-export const siPreviewPrefs: SiPreviewLook & { changed?: () => void } = { ...DEFAULT_SI_PREVIEW };
+/** `changed`: the preview drawn again in the look chosen; `save`: the settings stored (white space hidden or shown by a double-click). */
+export const siPreviewPrefs: SiPreviewLook & { changed?: () => void; save?: () => void } = { ...DEFAULT_SI_PREVIEW };

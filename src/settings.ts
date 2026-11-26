@@ -146,6 +146,8 @@ export interface Settings {
   canvasRibbon: 'classic' | 'simple';
   /** The start view (new tabs, recent files) on the empty drawing the program opens with. */
   startView: boolean;
+  /** Settings ▸ Preferences ▸ Animations: Off, Fast or Normal (src/ui/motion.ts). Not set: Fast in the desktop app, Off on the web, Off when the system asks for reduced motion. */
+  animations?: 'off' | 'fast' | 'normal';
   /** Settings ▸ Preferences: Enter finishes text typed with the Text tool (in every mode) and Alt+Enter (Option+Enter on a Mac) starts a new line. Off: Enter starts a new line and Esc finishes (ChemDraw). */
   enterFinishesText: boolean;
   /** Settings ▸ Preferences: opening a document whose structures aren't figures offers to make them figures (Make All Structures Figures stays on the right-click menu either way). */
@@ -341,7 +343,7 @@ function webDefaults(): boolean {
 export const DEFAULT_SETTINGS: Settings = {
   hotkeys: {}, keepHotspotOnBond: true, stickyHotspot: false, fixedLength: true, fixedAngles: true, devTools: false, showRoles: true, showAllRoles: false,
   chemTyping: true, stereoItalic: true, boldNumbers: false, autoLinks: true, linkCtrlClick: true, spellCheck: true, replacements: DEFAULT_TYPING.replacements, dictionary: [],
-  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.38, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, menusInFile: webDefaults(), uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: webDefaults() ? 'simple' : 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
+  modeColours: DEFAULT_MODE_COLOURS, nicknames: {}, templates: [], splitWidth: 0.5, slidePaneWidth: 160, notesHeight: 32, slideNotes: true, scrollBars: true, ribbonCollapsed: false, ribbonAutoFold: false, tabsInMenu: true, menusInFile: webDefaults(), uiScale: 1, titleBar: typeof navigator !== 'undefined' && /Mac/.test(navigator.platform || navigator.userAgent) ? 'system' : 'app', page: { name: 'letter', w: 540, h: 720, grow: true }, welcomed: false, textBar: 'docked', appTheme: 'darkgray', density: 'cozy', shadows: 'light', iconLook: 'mode', iconSet: 'new', shapeInk: 'neutral', oneColumnTools: false, toolCells: 'off', canvasRibbon: webDefaults() ? 'simple' : 'classic', startView: true, enterFinishesText: false, offerFigures: true, templatesOnNew: { document: true, sheet: true, slides: true }, sheetTemplateUnits: 'both', sheetSmilesStructures: true, groupTips: true, toolTips: true, touchMode: 'auto', penSketch: false,
   citeStyle: DEFAULT_STYLE, citeOptions: {}, methylStyle: 'Me', axialStyle: 'RaSa', circledCharges: false, ionCharges: false, unflaggedWedges: 'racemic', saltGroups: false, groupClick: 'group', groupOutline: true, rerouteArrows: true, arrowProducts: true, arrowStartGap: null, arrowEndGap: null, superscriptR: true, superscriptRText: false, alkylLook: 'typed', warnLook: 'box', bondEnds: DEFAULT_BOND_ENDS, mapLook: 'grey', mapBox: { ...DEFAULT_MAP_BOX }, depthShade: { ...DEFAULT_DEPTH_SHADE }, linkLook: 'style', slideTemplate: null, slideThemes: [], askWholeDrawing: true, palettes: [], toolboxes: defaultToolboxes(), ribbons: {}, quickBar: null,
   myStyles: [], modeStyles: {}, darkPage: false, darkPalette: 'Graphite', darkPalettes: [],
   guides: { slides: true, design: true },
@@ -437,6 +439,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (typeof r.oneColumnTools === 'boolean') s.oneColumnTools = r.oneColumnTools;
   if (typeof r.startView === 'boolean') s.startView = r.startView;
   if (typeof r.enterFinishesText === 'boolean') s.enterFinishesText = r.enterFinishesText;
+  if (r.animations === 'off' || r.animations === 'fast' || r.animations === 'normal') s.animations = r.animations;
   if (typeof r.offerFigures === 'boolean') s.offerFigures = r.offerFigures;
   if (r.templatesOnNew && typeof r.templatesOnNew === 'object') {
     const t = r.templatesOnNew as Record<string, unknown>;

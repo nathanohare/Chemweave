@@ -28,7 +28,7 @@ export const CAN_RUN_CHECKS: ReadonlySet<string> = new Set<string>([...Object.ke
 export function tableHere(s: Sheet, sel: SheetSelection): boolean {
   const { r, c } = sel.active;
   const R = sel.range;
-  if (s.filter && inRange({ ...s.filter.range, r2: Math.max(s.filter.range.r2, s.lastDataRow) }, r, c)) return true;
+  if (s.filter && inRange({ ...s.filter.range, r2: s.filterRows()!.r2 }, r, c)) return true;
   if (R.r1 !== R.r2 || R.c1 !== R.c2) return true;
   if (s.values.has(keyOf(r, c))) return true;
   for (let rr = r - 1; rr <= r + 1; rr++) for (let cc = c - 1; cc <= c + 1; cc++) {

@@ -4,7 +4,7 @@
 // heading moves to another page), dots up to each page number, saved to Word as Word's own TOC
 // field, and opened here again live.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, onTestFinished } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
 import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
 import { DocLayouter } from '../src/document/doc-layout';
@@ -122,5 +122,86 @@ describe('table of contents', () => {
   it('asks Word to fill in the numbers when it has none from here', async () => {
     const body = strFromU8(unzipSync(await writeDocx(sample(), deps))['word/document.xml']);
     expect(body).toContain('w:fldCharType="begin" w:dirty="true"');
+  });
+});
+
+describe('a Word file saved again here is the same (office sampler F-W-018)', () => {
+  const styleOf = (bytes: Uint8Array, id: string) => {
+    const xml = strFromU8(unzipSync(bytes)['word/styles.xml']);
+    const at = xml.indexOf(`w:styleId="${id}"`);
+    return at < 0 ? '' : xml.slice(xml.lastIndexOf('<w:style ', at), xml.indexOf('</w:style>', at) + 10);
+  };
+
+  it('writes the contents\' "toc 1" style it made the same way after the file is opened again', async () => {
+    const once = await writeDocx(sample(), deps);
+    const back = await readDocx(once);
+    // (left out of the document's styles: it is this program's own, written again on saving)
+    expect(back.doc.styles.TOC1).toBeUndefined();
+    const twice = await writeDocx(back.doc, deps);
+    for (const id of ['TOC1', 'TOC2', 'TOC3']) {
+      expect(styleOf(twice, id)).not.toBe('');
+      expect(styleOf(twice, id)).toBe(styleOf(once, id));
+    }
+  });
+
+  it('writes them the same again where Normal has lines of its own (they say they haven\'t them)', async () => {
+    const d = sample();
+    d.styles = { ...d.styles, Normal: { ...d.styles.Normal, border: { top: { style: 'single', w: 1, color: '#000000' } } } };
+    const once = await writeDocx(d, deps);
+    expect(styleOf(once, 'TOC1')).toContain('<w:top w:val="nil"/>');
+    const back = (await readDocx(once)).doc;
+    expect(back.styles.TOC1).toBeUndefined();
+    const twice = await writeDocx(back, deps);
+    for (const id of ['TOC1', 'TOC2', 'TOC3']) expect(styleOf(twice, id)).toBe(styleOf(once, id));
+  });
+
+  it('keeps a "toc 1" style changed in Word as the document\'s own', async () => {
+    const once = await writeDocx(sample(), deps);
+    const files = unzipSync(once);
+    const styles = strFromU8(files['word/styles.xml']).replace('<w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/>',
+      '<w:name w:val="toc 1"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:before="240" w:after="0"/>');
+    expect(styles).toContain('w:before="240"');
+    const { zipSync, strToU8 } = await import('fflate');
+    const changed = zipSync({ ...files, 'word/styles.xml': strToU8(styles) });
+    const back = await readDocx(changed);
+    expect(back.doc.styles.TOC1?.spaceBefore).toBe(12);
+  });
+
+  it('keeps its own "toc 2" style when a paragraph of the text has it (contents turned into plain text in Word)', async () => {
+    const once = await writeDocx(sample(), deps);
+    const files = unzipSync(once);
+    const body = strFromU8(files['word/document.xml']).replace('<w:sectPr', '<w:p><w:pPr><w:pStyle w:val="TOC2"/></w:pPr><w:r><w:t>A plain line</w:t></w:r></w:p><w:sectPr');
+    const { zipSync, strToU8 } = await import('fflate');
+    const back = await readDocx(zipSync({ ...files, 'word/document.xml': strToU8(body) }));
+    expect(back.doc.styles.TOC2).toBeDefined();
+    expect(back.doc.styles.TOC1).toBeUndefined();
+    // (a paragraph in a table's cell too)
+    const cell = strFromU8(files['word/document.xml']).replace('<w:sectPr', '<w:tbl><w:tblPr><w:tblW w:w="0" w:type="auto"/></w:tblPr><w:tblGrid><w:gridCol w:w="4000"/></w:tblGrid><w:tr><w:tc><w:tcPr><w:tcW w:w="4000" w:type="dxa"/></w:tcPr><w:p><w:pPr><w:pStyle w:val="TOC3"/></w:pPr><w:r><w:t>In a cell</w:t></w:r></w:p></w:tc></w:tr></w:tbl><w:p/><w:sectPr');
+    const inCell = await readDocx(zipSync({ ...files, 'word/document.xml': strToU8(cell) }));
+    expect(inCell.doc.styles.TOC3).toBeDefined();
+  });
+
+  it('writes a legacy form field\'s bookmark once, round the field, after the file is opened again', async () => {
+    // (the saved time in docProps/core.xml is to the second: two saves either side of one differ)
+    vi.useFakeTimers({ toFake: ['Date'] });
+    vi.setSystemTime(1_700_000_000_000);
+    onTestFinished(() => { vi.useRealTimers(); });
+    const d = sample();
+    d.objects = { ...d.objects, 2: { kind: 'form', type: 'text', name: 'Text1' } };
+    d.runs = [...d.runs, { ...d.runs[d.runs.length - 1], text: '\nName: ' }, objectRun(2, runStyleOf(d.styles.Normal))];
+    d.paras = [...d.paras, paraFromStyle(d.styles.Normal, {})];
+    const marks = (bytes: Uint8Array) => {
+      const body = strFromU8(unzipSync(bytes)['word/document.xml']);
+      return [...body.matchAll(/<w:bookmarkStart w:id="\d+" w:name="Text1"\/>(<w:r>)?/g)].map((m) => !!m[1]);
+    };
+    const once = await writeDocx(d, deps);
+    expect(marks(once)).toEqual([true]);
+    const back = (await readDocx(once)).doc;
+    // (the bookmark still on its paragraph here, for links and page references to it)
+    expect(back.paras.some((p) => p.marks?.includes('Text1'))).toBe(true);
+    const twice = await writeDocx(back, deps);
+    // (one bookmark, still just before the field's first run)
+    expect(marks(twice)).toEqual([true]);
+    expect(twice).toEqual(await writeDocx((await readDocx(twice)).doc, deps));
   });
 });

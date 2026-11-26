@@ -309,7 +309,7 @@
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="tool-tips" title="Hold the mouse on a tool for a moment to see what it does and what Alt, Shift and Ctrl change. Off: a one-line tip"><span>Detailed Tooltips</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="scroll-bars" title="Scroll bars along the bottom and right of the drawing, showing where you are"><span>Scroll Bars</span></button>
     <button role="menuitemcheckbox" aria-checked="false" data-cmd="dark-page" title="Reading Mode: the page dark on screen only; files, printing, copying and exports are not changed"><span>Reading Mode</span></button>
-    <button role="menuitemcheckbox" aria-checked="false" data-cmd="split-view" title="A canvas beside the document, spreadsheet, presentation or design, so you can draw and write without switching tabs"><span>Split View: Canvas Beside</span></button>
+    <button role="menuitem" data-cmd="close-split" title="Show only the tab you are working on; both tabs stay open. (To split the screen, drag a tab down from the tab row into the window, or right-click a tab.)"><span>Close Split</span></button>
     <hr />
     <!-- Document commands straight in the menu, not in a submenu named after the mode (S85; review of F5, R11) -->
     <hr />
@@ -3147,19 +3147,17 @@
         <p class="welcome-buttons"><button type="button" data-start="open">Open…</button><span class="grow"></span><label class="sv-again"><input type="checkbox" checked> Show at start</label></p>
       </section>
     </div>
-    <div id="main-snap" hidden title="Click to work on the slide again"><canvas></canvas></div>
     <div id="split-pane" hidden>
-      <div id="split-handle" title="Drag to change how wide the drawing is"></div>
+      <div id="split-handle" role="separator" tabindex="0" aria-orientation="vertical" aria-label="Split screen divider" aria-valuemin="20" aria-valuemax="80" title="Drag to share the width between the two sides (double-click: half each)"></div>
       <div id="split-bar">
-        <span class="split-label">Canvas</span>
-        <select id="split-pick" aria-label="Canvas shown beside" title="The canvas shown here: any canvas open in a tab, or a new one"></select>
-        <button id="split-insert" type="button" title="Put the selected structures (or the whole drawing, when nothing is selected) into the document at the cursor">Insert into Document</button>
+        <span id="split-name"></span>
+        <button id="split-insert" type="button" hidden>Insert into Document</button>
         <span class="grow"></span>
-        <button id="split-close" type="button" title="Close split view (the drawing stays open in its tab)" aria-label="Close split view">×</button>
+        <button id="split-close" type="button" title="Close Split (both tabs stay open)" aria-label="Close Split">×</button>
       </div>
       <div id="split-body">
         <canvas id="split-snap"></canvas>
-        <p id="split-empty" hidden>Click here to draw</p>
+        <p id="split-empty" hidden></p>
       </div>
     </div>
     <div id="notes-pane" class="slides-only" hidden>

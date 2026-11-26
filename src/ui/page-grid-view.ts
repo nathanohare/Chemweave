@@ -35,11 +35,22 @@ function clip(a: Rect, b: Rect): Rect | null {
   return r.x2 > r.x1 && r.y2 > r.y1 ? r : null;
 }
 
-/** The grid lines (multiples of the page's size) that cross a box, as one path. */
-function gridPath(ctx: CanvasRenderingContext2D, p: PageSetup, box: Rect): void {
+/**
+ * The grid lines (multiples of the page's size) that cross a box, as one path. Lines on `skip`'s
+ * edges are left out: at the top and left fixed edges the view stops, so a dashed line there only
+ * doubles the window's edge (the fixed edge's own bold line marks it when edges are shown).
+ */
+export function gridPath(ctx: Pick<CanvasRenderingContext2D, 'beginPath' | 'moveTo' | 'lineTo'>, p: PageSetup, box: Rect, skip?: Rect): void {
+  const onWall = (v: number, a: number, b: number) => !!skip && (Math.abs(v - a) < 1e-6 || Math.abs(v - b) < 1e-6);
   ctx.beginPath();
-  for (let c = Math.ceil(box.x1 / p.w); c * p.w <= box.x2; c++) { ctx.moveTo(c * p.w, box.y1); ctx.lineTo(c * p.w, box.y2); }
-  for (let r = Math.ceil(box.y1 / p.h); r * p.h <= box.y2; r++) { ctx.moveTo(box.x1, r * p.h); ctx.lineTo(box.x2, r * p.h); }
+  for (let c = Math.ceil(box.x1 / p.w); c * p.w <= box.x2; c++) {
+    if (onWall(c * p.w, skip?.x1 ?? NaN, skip?.x2 ?? NaN)) continue;
+    ctx.moveTo(c * p.w, box.y1); ctx.lineTo(c * p.w, box.y2);
+  }
+  for (let r = Math.ceil(box.y1 / p.h); r * p.h <= box.y2; r++) {
+    if (onWall(r * p.h, skip?.y1 ?? NaN, skip?.y2 ?? NaN)) continue;
+    ctx.moveTo(box.x1, r * p.h); ctx.lineTo(box.x2, r * p.h);
+  }
 }
 
 /**
@@ -61,6 +72,8 @@ export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: Ori
   const view = { x1: seen.x1 - pad, y1: seen.y1 - pad, x2: seen.x2 + pad, y2: seen.y2 + pad };
   const grid = extentRect(p, e);
   const walls = wallRect(p);
+  // (the top and left fixed edges, where scrolling stops: no dashed line drawn along them)
+  const stops: Rect = { x1: walls.x1, y1: walls.y1, x2: Infinity, y2: Infinity };
   const room = clip(walls, view);
   const shade = dark ? SHADE.dark : SHADE.light;
   const lineHex = dark && look.lineColour === DEFAULT_LINE_COLOUR ? DARK_LINE : look.lineColour;
@@ -127,7 +140,7 @@ export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: Ori
     ctx.rect(grid.x1, grid.y1, grid.x2 - grid.x1, grid.y2 - grid.y1);
     ctx.clip('evenodd');
     ctx.strokeStyle = rgba(lineHex, look.lineOpacity * 0.45);
-    gridPath(ctx, p, room);
+    gridPath(ctx, p, room, stops);
     ctx.stroke();
     ctx.restore();
   }
@@ -135,7 +148,7 @@ export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: Ori
   // the page boundaries, and the grid's open edges
   if (inView && !tiny) {
     ctx.strokeStyle = rgba(lineHex, look.lineOpacity);
-    gridPath(ctx, p, { x1: Math.max(grid.x1, view.x1), y1: Math.max(grid.y1, view.y1), x2: Math.min(grid.x2, view.x2), y2: Math.min(grid.y2, view.y2) });
+    gridPath(ctx, p, { x1: Math.max(grid.x1, view.x1), y1: Math.max(grid.y1, view.y1), x2: Math.min(grid.x2, view.x2), y2: Math.min(grid.y2, view.y2) }, stops);
     ctx.stroke();
   }
 

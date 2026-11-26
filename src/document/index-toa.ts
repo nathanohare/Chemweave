@@ -11,6 +11,7 @@ import * as rt from '../richtext';
 import { withStack, layoutText, type Glyphs, type LaidLine, type Measure } from '../text/layout';
 import { fitParas, paraCount } from '../text/paragraphs';
 import type { DocText, NamedStyle } from './document';
+import { notAfter } from '../regex-behind';
 
 /** Word's categories of authorities, numbered from 1 as in its Mark Citation window (Word's own 8 to 16 have no names). */
 export const TOA_CATEGORIES = ['Cases', 'Statutes', 'Other Authorities', 'Rules', 'Treatises', 'Regulations', 'Constitutional Provisions'];
@@ -350,7 +351,7 @@ export function parseXe(instr: string): IndexMark | null {
   const w = fieldWords(instr);
   if (w[0]?.text.toUpperCase() !== 'XE' || !w[1]) return null;
   // levels are split at colons not escaped (\:)
-  const levels = w[1].text.split(/(?<!\\):/).map((x) => x.replace(/\\:/g, ':').trim());
+  const levels = w[1].text.split(notAfter(/:/, /\\/)).map((x) => x.replace(/\\:/g, ':').trim());
   if (!levels[0]) return null;
   const see = switchArg(w, 't');
   return {

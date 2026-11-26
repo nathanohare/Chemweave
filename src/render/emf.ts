@@ -6,7 +6,7 @@
 // (ChemDraw's 14.4 pt bonds come out 14.4 pt long in Word).
 
 import { deflateSync, inflateSync } from 'fflate';
-import { Item, Seg, parseColor } from './vector';
+import { Item, Seg, outlineOfPrevious, parseColor } from './vector';
 
 const UNIT = 100; // logical units per point
 const DEVICE_MM = 300; // reference device: 300 mm square at 0.1 mm per pixel
@@ -151,7 +151,7 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
     clipKey = key;
   };
 
-  for (const it of items) {
+  for (const [idx, it] of items.entries()) {
     // pictures go with the PNG copy on the clipboard, not in the EMF
     if (it.kind === 'image') continue;
     clipTo(it.clip);
@@ -185,7 +185,8 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
       }
     } else {
       const c = colorRef(it.color);
-      if (c === null || !it.text) continue;
+      // (an outline drawn over its own letters: EMF's text has none, so the letters alone)
+      if (c === null || !it.text || outlineOfPrevious(items, idx)) continue;
       const height = Math.round(it.size * UNIT);
       use('font', `${it.family}/${height}/${it.bold}/${it.italic}/${it.angle ?? 0}`, (slot) => {
         begin(EMR.EXTCREATEFONTINDIRECTW);

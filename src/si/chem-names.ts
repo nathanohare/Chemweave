@@ -11,17 +11,18 @@
 
 import { R } from './format';
 import type { Run } from './markup';
+import { after, guardedAt } from '../regex-behind';
 
 /** Where a prefix may start: the start of the name, or after a space, bracket or hyphen. */
-const BEFORE = String.raw`(?<=^|[\s(\[{\-–])`;
+const startsPrefix = (at: number, s: string): boolean => at === 0 || /[\s(\[{\-–]/.test(s[at - 1]);
 /** Primes after a locant (N′, N″), not an apostrophe. */
 const PRIMES = '[′″]*';
 const LOCANT = `[NOSP]${PRIMES}`;
 const RULES: RegExp[] = [
   // N-, N,N-, N,O-, N′-: each letter of the list (the list must end in a hyphen)
-  new RegExp(`${BEFORE}${LOCANT}(?:,${LOCANT})*(?=-)`, 'g'),
+  guardedAt(new RegExp(`${LOCANT}(?:,${LOCANT})*(?=-)`, 'g'), startsPrefix),
   // tert-, sec-, cis-, trans-, o-, m-, p- (in lower case)
-  new RegExp(`${BEFORE}(?:tert|sec|cis|trans|o|m|p)(?=-)`, 'g'),
+  guardedAt(/(?:tert|sec|cis|trans|o|m|p)(?=-)/g, startsPrefix),
 ];
 /** Brackets of stereodescriptors only: (E), (2E,4Z), (1R,2S), (R*,S*), (S,E). */
 const STEREO = /\((\d*[RSEZ]\*?(?:,\d*[RSEZ]\*?)*)\)/g;
@@ -48,7 +49,7 @@ export function italicSpans(name: string): [number, number][] {
 
 /** Whether a name chooses its italics by hand: an asterisk that isn't escaped or a relative configuration's (R*). */
 export function typedItalics(name: string): boolean {
-  const plain = name.replace(/\\\*/g, '').replace(/(?<=[RS])\*(?=[,)])/g, '');
+  const plain = name.replace(/\\\*/g, '').replace(after(/\*(?=[,)])/g, /[RS]/), '');
   return plain.includes('*');
 }
 

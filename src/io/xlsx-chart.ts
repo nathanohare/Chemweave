@@ -260,7 +260,7 @@ export function chartXml(c: Chart, data: SeriesData[]): string {
   const bg = c.background === 'none' ? '<a:noFill/>' : fill(c.background ?? '#ffffff');
   const border = c.border === false ? '<a:ln><a:noFill/></a:ln>' : `<a:ln w="9525">${fill('#d9d9d9')}</a:ln>`;
   return `<c:chartSpace xmlns:c="${C_NS}" xmlns:a="${A_NS}" xmlns:r="${R_NS}">${v('roundedCorners', false)}` +
-    `<c:chart>${titleXml(c.title, sizePt * 1.4, false, c.titleRuns)}${autoTitle === 'title' ? '<c:title><c:overlay val="0"/></c:title>' : ''}${v('autoTitleDeleted', !c.title && !autoTitle)}<c:plotArea><c:layout/>${plot}</c:plotArea>${legend}` +
+    `<c:chart>${titleXml(c.title, c.titleSize ? c.titleSize * 0.75 : sizePt * 1.4, false, c.titleRuns)}${autoTitle === 'title' ? '<c:title><c:overlay val="0"/></c:title>' : ''}${v('autoTitleDeleted', !c.title && !autoTitle)}<c:plotArea><c:layout/>${plot}</c:plotArea>${legend}` +
     `${v('plotVisOnly', !c.showHidden)}${v('dispBlanksAs', 'gap')}</c:chart>` +
     `<c:spPr>${bg}${border}</c:spPr>` +
     `<c:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}"><a:solidFill><a:srgbClr val="404040"/></a:solidFill>${c.font ? `<a:latin typeface="${xml(c.font)}"/>` : ''}</a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></c:txPr>` +
@@ -319,7 +319,7 @@ export function chartExXml(c: Chart, data: SeriesData[]): string {
   const border = c.border === false ? '<a:ln><a:noFill/></a:ln>' : `<a:ln w="9525">${fill('#d9d9d9')}</a:ln>`;
   return `<cx:chartSpace xmlns:a="${A_NS}" xmlns:r="${R_NS}" xmlns:cx="${CX_NS}">` +
     `<cx:chartData>${blocks}</cx:chartData>` +
-    `<cx:chart>${title(c.title, sizePt * 1.4, c.titleRuns)}<cx:plotArea><cx:plotAreaRegion>${sers}</cx:plotAreaRegion>${axes}</cx:plotArea>${legend}</cx:chart>` +
+    `<cx:chart>${title(c.title, c.titleSize ? c.titleSize * 0.75 : sizePt * 1.4, c.titleRuns)}<cx:plotArea><cx:plotAreaRegion>${sers}</cx:plotAreaRegion>${axes}</cx:plotArea>${legend}</cx:chart>` +
     `<cx:spPr>${bg}${border}</cx:spPr>` +
     `<cx:txPr><a:bodyPr/><a:lstStyle/><a:p><a:pPr><a:defRPr sz="${Math.round(sizePt * 100)}"><a:solidFill><a:srgbClr val="404040"/></a:solidFill>${c.font ? `<a:latin typeface="${xml(c.font)}"/>` : ''}</a:defRPr></a:pPr><a:endParaRPr lang="en-US"/></a:p></cx:txPr>` +
     `</cx:chartSpace>`;
@@ -449,11 +449,16 @@ const withEq = (f: string | null | undefined) => (f ? `=${f}` : undefined);
  * breaks joined by a space), and its runs with their looks when it has more than that markup
  * holds (bold, italic or underlined text, more than one line), so they are drawn and saved again.
  */
-function readTitle(t: Element | null): { title?: string; runs?: TitleRun[] } {
+function readTitle(t: Element | null): { title?: string; runs?: TitleRun[]; size?: number } {
   const rich = kid(t, 'tx', 'rich');
+  // (its text size in points: its first run's, or its paragraph's, or the title's own text settings')
+  const szOf = (el: Element | null) => { const v = Number(el?.getAttribute('sz') ?? NaN); return v > 0 ? v / 100 : undefined; };
+  let size = szOf(kid(t, 'txPr', 'p', 'pPr', 'defRPr'));
   if (rich) {
     const runs: TitleRun[] = [];
     let more = false;
+    const firstP = kid(rich, 'p');
+    size = szOf(kid(kid(firstP, 'r'), 'rPr')) ?? szOf(kid(firstP, 'pPr', 'defRPr')) ?? size;
     kids(rich, 'p').forEach((p, i) => {
       if (i) { runs.push({ text: '\n' }); more = true; }
       // a run's look is its own, or its paragraph's (a:pPr/a:defRPr)
@@ -472,10 +477,10 @@ function readTitle(t: Element | null): { title?: string; runs?: TitleRun[] } {
       }
     });
     const title = titleMarkup(runs);
-    return title.trim() ? { title, ...(more ? { runs } : {}) } : {};
+    return title.trim() ? { title, ...(more ? { runs } : {}), ...(size ? { size } : {}) } : {};
   }
   const plain = kid(t, 'tx', 'txData', 'v')?.textContent;
-  return plain ? { title: plain.replace(/([\\_^])/g, '\\$1') } : {};
+  return plain ? { title: plain.replace(/([\\_^])/g, '\\$1'), ...(size ? { size } : {}) } : {};
 }
 
 /** Put a title read from a file on a chart or axis. */
@@ -660,7 +665,8 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   if (kind === 'scatter' || kind === 'line') chart.y.grid = chart.y.grid ?? false;
   if (y2Ax) chart.y2 = readAxis(y2Ax);
   if (kind === 'radar' && val(main, 'radarStyle') === 'filled') chart.filled = true;
-  putTitle(chart, readTitle(kid(ch, 'title')));
+  const chartTitle = readTitle(kid(ch, 'title'));
+  putTitle(chart, chartTitle);
   const title = chart.title;
   // Excel's automatic title: a title element with no text of its own, or none but not deleted (autoTitleDeleted 0)
   const deleted = kid(ch, 'autoTitleDeleted') ? bool(ch, 'autoTitleDeleted') : null;
@@ -671,6 +677,11 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   else if (bg && bg !== '#ffffff') chart.background = bg;
   if (kid(chartSp, 'ln') && kid(kid(chartSp, 'ln'), 'noFill')) chart.border = false;
   if (sz && Math.abs(sz / 100 / 0.75 - 12) > 0.5) chart.fontSize = Math.round((sz / 100 / 0.75) * 10) / 10;
+  // the title's own text size, where it is not the usual (1.4 times the chart's): a 14 pt title on 14 pt text stays 14 pt (F-V-05)
+  if (chart.title && chartTitle.size) {
+    const own = Math.round((chartTitle.size / 0.75) * 100) / 100;
+    if (Math.abs(own - (chart.fontSize ?? 12) * 1.4) > 0.5) chart.titleSize = own;
+  }
   if (!bool(ch, 'plotVisOnly', true)) chart.showHidden = true;
   seenChartId(id);
   return { chart, partial: (found.length > 1 && kind !== 'combo') || known.length > found.length };

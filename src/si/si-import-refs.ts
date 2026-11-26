@@ -52,7 +52,7 @@ export function splitEntries(textsIn: string[]): [string, string][] {
   let pos = 0, n = first;
   for (;;) {
     // the next number, after a space (the end of the entry before)
-    const m = search(rx('(?<=\\s)' + pattern.replace('{n}', String(n)) + '\\s*(?=\\S)'), joined, pos);
+    const m = search(rx(pattern.replace('{n}', String(n)) + '\\s*(?=\\S)', '', (m, t) => /\s$/.test(t.slice(0, m.index))), joined, pos);
     if (!m) break;
     if (n > first && (kind === 'plain' || kind === 'dot') && !search(rx('[.)\\]\\d/a-z]\\s*$'), joined.slice(0, m.index))) {
       pos = m.end;          // ("… 100 159–185": a number inside an entry)
@@ -68,7 +68,7 @@ export function splitEntries(textsIn: string[]): [string, string][] {
 
 /** An entry with parts "(a) …; (b) …" or "a) …; b) …" as one entry per part. */
 function parts(number: string, text: string): [string, string][] {
-  const marks = [...finditer(rx('(?:^|(?<=[;.]\\s))\\(?([a-z])\\)\\s+(?=\\S)'), text)];
+  const marks = [...finditer(rx('\\(?([a-z])\\)\\s+(?=\\S)', '', (m, t) => m.index === 0 || /[;.]\s$/.test(t.slice(Math.max(0, m.index - 2), m.index))), text)];
   const letters = marks.map((m) => m.group(1)!);
   if (marks.length < 2 || letters.some((l, i) => l !== String.fromCharCode(97 + i))) return [[number, strip(text)]];
   return marks.map((m, k) => {
@@ -130,7 +130,7 @@ const PAGES = '[A-Za-z]?\\d+[A-Za-z]?(?:\\s?[-–—]\\s?[A-Za-z]?\\d+[A-Za-z]?)
 
 export function tidy(text: string): string {
   let t = strip(text.replace(/\s+/g, ' '));
-  t = sub(rx(`(?<=[A-Za-z.])(?=${YEAR}\\s?,)`), ' ', t);    // "Chem.1978," (PDF)
+  t = sub(rx(`(?=${YEAR}\\s?,)`, '', (m, t) => m.index > 0 && /[A-Za-z.]/.test(t[m.index - 1])), ' ', t);    // "Chem.1978," (PDF)
   t = sub(rx('\\s+([,;:.])(?=\\s|$)'), '\\1', t);            // "10 , 6615"
   t = sub(rx('([A-Z])\\s\\.'), '\\1.', t);                    // "V . R." (PDF)
   return t;
@@ -194,7 +194,7 @@ const ABBREVIATION = rx(`[${UP}][a-z]{0,5}\\.`);
 /** [title, journal] of "Rapid Technique … Resolution. J. Org. Chem."; a title alone → [title, ""]. */
 function splitTitleJournal(beforeIn: string): [string, string] {
   const before = strip(beforeIn, ' ,');
-  const m = search(rx(`(?:^|(?<=[.?!,]\\s)|(?<=[.?!,]))(?P<j>${JOURNAL_RE})\\.?$`), before);
+  const m = search(rx(`(?P<j>${JOURNAL_RE})\\.?$`, '', (m, t) => m.index === 0 || /[.?!,]\s?$/.test(t.slice(Math.max(0, m.index - 2), m.index))), before);
   if (m) return [strip(before.slice(0, m.index), ' ,.'), strip(m.group('j')!)];
   // Not a known journal: the capitalised words after the title's last full stop.
   const words = before.split(' ');
@@ -298,7 +298,7 @@ export function numbersOf(spec: string): string[] | null {
 }
 
 // Words a superscript number after which is not a citation: units, substituent labels and groups, single letters.
-const NOT_BEFORE = rx('(?:(?<![A-Za-z])(?:[A-Za-z]|[a-zµμ]?m|[kM]?Hz|[kmµμ]?[gL]|[mµμ]?mol|[mµ]?M|min|cm|mm|nm|Å|eV|kJ|kcal|cal|bar|Pa|ppm|Ar|Het|Nu|PG|Ln|Me|Et|Pr|Bu|Ph|Bn|Ts|Ms|Tf|Ac|Bz|Boc|Cbz|Si|Sn|Ge|Pd|Pt|Rh|Ir|Ru|Cu|Ni|Co|Fe|Zn|Mg|Li|Na|Cs|Al|Ti|Zr)\\s?)$');
+const NOT_BEFORE = rx('(?:(?:[A-Za-z]|[a-zµμ]?m|[kM]?Hz|[kmµμ]?[gL]|[mµμ]?mol|[mµ]?M|min|cm|mm|nm|Å|eV|kJ|kcal|cal|bar|Pa|ppm|Ar|Het|Nu|PG|Ln|Me|Et|Pr|Bu|Ph|Bn|Ts|Ms|Tf|Ac|Bz|Boc|Cbz|Si|Sn|Ge|Pd|Pt|Rh|Ir|Ru|Cu|Ni|Co|Fe|Zn|Mg|Li|Na|Cs|Al|Ti|Zr)\\s?)$', '', (m, t) => m.index === 0 || !/[A-Za-z]/.test(t[m.index - 1]));
 
 /** Numbered citations in imported text (stored text format) as the program's citations of those references. */
 export function linkCitations(markup: string, numbers: Map<string, string[]>): string {

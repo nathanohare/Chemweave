@@ -4,6 +4,7 @@
 // for. The structure arrives as a graph made from RDKit (src/chem/namer-graph.ts); the name goes
 // back unchecked, and the caller confirms it by reading it back with OPSIN.
 
+import '../old-webkit';
 import type { PyodideAPI } from 'pyodide';
 import bridge from './namer_bridge.py?raw';
 import type { NamerGraph } from '../chem/namer-graph';

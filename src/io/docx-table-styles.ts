@@ -14,10 +14,24 @@ const hex6 = (c: string) => (c.startsWith('#') ? c.slice(1) : c).slice(0, 6).toU
 const EDGE_ORDER: StyleEdge[] = ['top', 'left', 'bottom', 'right', 'insideH', 'insideV'];
 const WORD_LINE: Record<BorderLine['style'], string> = { none: 'nil', single: 'single', double: 'double', dotted: 'dotted', dashed: 'dashed' };
 
-/** One border element (w:top…): Word's line kind, its width in eighths of a point, and its colour. */
+/** Word's line kinds (ECMA-376 Part 1 §17.18.2 ST_Border) for paragraph and table lines (not its page border art). */
+const WORD_KINDS = new Set(['single', 'thick', 'double', 'dotted', 'dashed', 'dotDash', 'dotDotDash', 'triple', 'thinThickSmallGap', 'thickThinSmallGap', 'thinThickThinSmallGap', 'thinThickMediumGap', 'thickThinMediumGap', 'thinThickThinMediumGap', 'thinThickLargeGap', 'thickThinLargeGap', 'thinThickThinLargeGap', 'wave', 'doubleWave', 'dashSmallGap', 'dashDotStroked', 'threeDEmboss', 'threeDEngrave', 'outset', 'inset']);
+
+/** The line kind Word is given for a line: its own (while still drawn as read), else ours. */
+export function wordKind(b: BorderLine): string {
+  if (b.style === 'none') return 'nil';
+  return typeof b.word === 'string' && WORD_KINDS.has(b.word) && lineStyleOf(b.word) === b.style ? b.word : WORD_LINE[b.style];
+}
+
+/** How a Word line kind (ST_Border) is drawn here. */
+export function lineStyleOf(v: string): BorderLine['style'] {
+  return /double|triple|thinThick|thickThin/i.test(v) ? 'double' : /dot(?!Dash)/i.test(v) && !/dash/i.test(v) ? 'dotted' : /dash/i.test(v) ? 'dashed' : 'single';
+}
+
+/** One border element (w:top…): Word's line kind (its own, while still drawn as read), its width in eighths of a point, and its colour. */
 export function borderXml(name: string, b: BorderLine): string {
   if (b.style === 'none') return `<w:${name} w:val="nil"/>`;
-  return `<w:${name} w:val="${WORD_LINE[b.style]}" w:sz="${Math.max(2, Math.round(b.w * 8))}" w:space="0" w:color="${hex6(b.color)}"/>`;
+  return `<w:${name} w:val="${wordKind(b)}" w:sz="${Math.max(2, Math.round(b.w * 8))}" w:space="0" w:color="${hex6(b.color)}"/>`;
 }
 
 export function bordersXml(wrap: string, sides: Partial<Record<StyleEdge, BorderLine>> | undefined): string {
@@ -95,8 +109,11 @@ export function readBorder(el: Element | null, a: Attr): BorderLine | null {
   const sz = Number(a(el, 'sz') ?? 4);
   const col = a(el, 'color');
   const color = col && /^[0-9a-f]{6}$/i.test(col) ? `#${col.toLowerCase()}` : '#000000';
-  const style: BorderLine['style'] = /double|triple|thinThick|thickThin/i.test(v) ? 'double' : /dot(?!Dash)/i.test(v) && !/dash/i.test(v) ? 'dotted' : /dash/i.test(v) ? 'dashed' : 'single';
-  return { style, w: Math.max(0.25, (Number.isFinite(sz) ? sz : 4) / 8), color };
+  const style = lineStyleOf(v);
+  // (Word's own kind, where it isn't one of those)
+  const own = a(el) ?? '';
+  const word = WORD_KINDS.has(own) && own !== WORD_LINE[style] ? own : undefined;
+  return { style, w: Math.max(0.25, (Number.isFinite(sz) ? sz : 4) / 8), color, ...(word ? { word } : {}) };
 }
 
 export function readBorders(el: Element | null, a: Attr): Partial<Record<StyleEdge, BorderLine>> {
@@ -209,7 +226,7 @@ function canon(parts: TableStyleDef['parts']): string {
       for (const e of [...EDGE_ORDER].sort()) {
         const b = p.borders[e];
         if (!b) continue;
-        bs[e] = b.style === 'none' ? 'none' : `${b.style}/${Math.round(b.w * 8)}/${b.color.toLowerCase()}`;
+        bs[e] = b.style === 'none' ? 'none' : `${wordKind(b)}/${Math.round(b.w * 8)}/${b.color.toLowerCase()}`;
       }
       if (Object.keys(bs).length) q.borders = bs;
     }
@@ -231,7 +248,8 @@ export function keepDirectBorders(t: TableData, table: Partial<Record<StyleEdge,
   const same = (x: BorderLine | null | undefined, y: BorderLine | null | undefined) => {
     const nx = shown(x), ny = shown(y);
     if (!nx || !ny) return !nx && !ny;
-    return nx.style === ny.style && Math.abs(nx.w - ny.w) < 0.07 && nx.color.toLowerCase() === ny.color.toLowerCase();
+    // (and the kind Word draws: a triple line isn't the double one drawn here for it)
+    return nx.style === ny.style && wordKind(nx) === wordKind(ny) && Math.abs(nx.w - ny.w) < 0.07 && nx.color.toLowerCase() === ny.color.toLowerCase();
   };
   const ownOf = (r: number, c: number) => { const o = coveringCell(t, r, c); return { o, b: cells[o.r]?.[o.c] }; };
   // the line Word draws on an edge from the two cells' own lines, else the table's

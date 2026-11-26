@@ -4,6 +4,8 @@
 // "an" before a consonant, and a sentence starting with a small letter. Text that a chemist
 // writes on purpose (n-BuLi, p-TsOH, mL, e.g., i.e., et al.) is left alone.
 
+import { notAfter } from '../regex-behind';
+
 export interface GrammarIssue {
   start: number;
   end: number;
@@ -39,7 +41,7 @@ export function grammarIssues(text: string): GrammarIssue[] {
     out.push({ start, end: start + m[2].length, message: `Space before “${m[3]}”`, fix: '' });
   }
   // "a" or "an" before the wrong sound
-  for (const m of text.matchAll(/(?<![\p{L}\-])(a|an|A|An)\s+([\p{L}][\p{L}\d\-]*)/gu)) {
+  for (const m of text.matchAll(notAfter(/(a|an|A|An)\s+([\p{L}][\p{L}\d\-]*)/gu, /[\p{L}\-]/u))) {
     const art = m[1], next = m[2];
     if (/^[A-Z]{2,}/.test(next) && !AN_WORDS.test(next)) {
       // an abbreviation said letter by letter: "an FTIR", "a DFT study" go by the letter's sound

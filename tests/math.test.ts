@@ -163,3 +163,96 @@ describe('equations in documents', () => {
     }
   });
 });
+
+describe("Word's arrow over or under its text (group character)", () => {
+  const r = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
+  const arrow = (pr: string) => ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="→"/>${pr}</m:groupChrPr><m:e>${r('a')}</m:e></m:groupChr>`);
+  it('reads text over the arrow (the arrow below, Word\'s default) and under it (pos top)', () => {
+    expect(ommlToTex(arrow('<m:vertJc m:val="bot"/>'))).toBe('\\xrightarrow{a}');
+    expect(ommlToTex(arrow('<m:pos m:val="top"/><m:vertJc m:val="top"/>'))).toBe('\\xrightarrow[a]{}');
+  });
+  it('writes each back as Word had it, and the same again', () => {
+    const under = toOmml('\\xrightarrow[a]{}');
+    expect(under).toMatch(/<m:groupChr><m:groupChrPr><m:chr m:val="→"\/><m:pos m:val="top"\/><m:vertJc m:val="top"\/><\/m:groupChrPr><m:e>.*a.*<\/m:e><\/m:groupChr>/);
+    expect(roundTrip('\\xrightarrow[a]{}')).toBe('\\xrightarrow[a]{}');
+    // (over it, and over and under: as before)
+    expect(toOmml('\\xrightarrow{a}')).not.toContain('<m:pos');
+    expect(roundTrip('\\xrightarrow{a}')).toBe('\\xrightarrow{a}');
+    expect(roundTrip('\\xrightarrow[hv]{a}')).toBe('\\xrightarrow[hv]{a}');
+  });
+  it('keeps bracketed text under it whole ([O], a concentration), and another arrow (⇌)', () => {
+    const o = ommlToTex(ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:pos m:val="top"/></m:groupChrPr><m:e>${r('[O]')}</m:e></m:groupChr>`));
+    expect(parseMath(o)).toMatchObject({ t: 'arrow' });
+    expect(roundTrip(o)).toBe(o);
+    expect(mathText(o)).toContain('[O]');
+    const eq = ommlToTex(ommlEl(`<m:groupChr><m:groupChrPr><m:chr m:val="⇌"/><m:pos m:val="top"/></m:groupChrPr><m:e>${r('a')}</m:e></m:groupChr>`));
+    expect(roundTrip(eq)).toBe(eq);
+    expect(eq).toMatch(/\[a\]\{\}$/);
+  });
+  it('says its text in plain text, over or under, and reads the form older saves have', () => {
+    expect(mathText('A \\xrightarrow[a]{} B')).toContain('→ (a)');
+    expect(mathText('A \\xrightarrow{b} B')).toContain('→ (b)');
+    expect(mathText('A \\xrightarrow{} B')).not.toContain('()');
+    // (older saves: a blank group character with the text as its lower limit)
+    const old = ommlEl(`<m:limLow><m:e><m:groupChr><m:groupChrPr><m:chr m:val="→"/><m:vertJc m:val="bot"/></m:groupChrPr><m:e>${r(' ')}</m:e></m:groupChr></m:e><m:lim>${r('hv')}</m:lim></m:limLow>`);
+    const tex = ommlToTex(old);
+    expect(mathText(tex)).toContain('hv');
+    expect(tex).toBe('\\xrightarrow[hv]{}');
+    expect(roundTrip(tex)).toBe(tex);
+  });
+});
+describe('matrices', () => {
+  const r = (t: string) => `<m:r><m:t>${t}</m:t></m:r>`;
+  it('reads \\begin{matrix} and the bracketed ones', () => {
+    expect(parseMath(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`)).toMatchObject({ t: 'matrix', rows: [[{}, {}], [{}, {}]] });
+    const p = parseMath(String.raw`\begin{pmatrix} 1 & 0 \\ 0 & 1 \\ \end{pmatrix}`);
+    expect(p).toMatchObject({ t: 'delim', open: '(', close: ')', body: { t: 'matrix' } });
+    expect((p as { body: { rows: unknown[] } }).body.rows).toHaveLength(2);
+  });
+  it('lays out its entries in columns and rows', () => {
+    const t = texts(lay(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`));
+    const at = (s: string) => t.find((x) => x.s === s)!;
+    expect(at('a').y).toBe(at('b').y);
+    expect(at('c').y).toBeGreaterThan(at('a').y);
+    expect(at('b').x).toBeGreaterThan(at('a').x);
+    expect(at('c').x).toBeCloseTo(at('a').x, 5);
+  });
+  it("is Word's matrix, and read back the same; Word's bracketed one too", () => {
+    const tex = String.raw`\begin{matrix}a & b \\ c & d\end{matrix}`;
+    const x = toOmml(tex);
+    expect(x).toContain('<m:m><m:mPr><m:mcs><m:mc><m:mcPr><m:count m:val="2"/>');
+    expect(x.match(/<m:mr>/g)).toHaveLength(2);
+    expect(roundTrip(tex)).toBe(tex);
+    const word = ommlEl(`<m:d><m:dPr><m:begChr m:val="["/><m:endChr m:val="]"/></m:dPr><m:e><m:m><m:mr><m:e>${r('1')}</m:e><m:e>${r('2')}</m:e></m:mr><m:mr><m:e>${r('3')}</m:e><m:e>${r('4')}</m:e></m:mr></m:m></m:e></m:d>`);
+    const read = ommlToTex(word);
+    expect(read).toBe(String.raw`\left[\begin{matrix}1 & 2 \\ 3 & 4\end{matrix}\right]`);
+    expect(roundTrip(read)).toBe(read);
+    // (a short row is filled out to the widest)
+    expect(toOmml(String.raw`\begin{matrix} a & b \\ c \end{matrix}`).match(/<m:e>/g)).toHaveLength(4);
+  });
+  it('says its entries in plain text, in its own brackets', () => {
+    expect(mathText(String.raw`\begin{pmatrix} a & b \\ c & d \end{pmatrix}`)).toContain('(a, b; c, d)');
+    expect(mathText(String.raw`\begin{matrix} a & b \\ c & d \end{matrix}`)).toContain('[a, b; c, d]');
+  });
+  it("keeps a Word column's empty last row (2 × 1, 3 × 1)", () => {
+    for (const n of [2, 3]) {
+      const word = ommlEl(`<m:m>${Array.from({ length: n }, (_, i) => `<m:mr><m:e>${i === 0 ? r('1') : ''}</m:e></m:mr>`).join('')}</m:m>`);
+      const tex = ommlToTex(word);
+      expect(toOmml(tex).match(/<m:mr>/g)).toHaveLength(n);
+      expect(roundTrip(tex)).toBe(tex);
+    }
+  });
+  it('is only the matrix environments: others as typed; cases with its brace; a space before the name', () => {
+    expect(parseMath(String.raw`\begin{align} a \end{align}`)).not.toMatchObject({ t: 'matrix' });
+    expect(parseMath(String.raw`\begin{cases} a & x \\ b & y \end{cases}`)).toMatchObject({ t: 'delim', open: '{', close: '', body: { t: 'matrix' } });
+    expect(parseMath(String.raw`\begin {pmatrix} a \end {pmatrix}`)).toMatchObject({ t: 'delim', open: '(', body: { t: 'matrix', rows: [[{ t: 'sym', s: 'a' }]] } });
+    // (\\ outside a matrix is a space, as before)
+    expect(parseMath(String.raw`a \\ b`)).toMatchObject({ t: 'row', kids: [{}, { t: 'space' }, {}] });
+  });
+  it('stops at \\right while its \\end is still to be typed', () => {
+    const p = parseMath(String.raw`\left[\begin{matrix} a & b \right] + x`) as { t: string; body?: { t: string } };
+    expect(p).toMatchObject({ t: 'row' });
+    expect(mathText(String.raw`\left[\begin{matrix} a & b \right] + x`)).toContain('+ x');
+  });
+});
+

@@ -17,7 +17,7 @@ import { withStack, layoutText, type Glyphs, type InlineBox, type LaidLine, type
 import { fitParas, laidParas, listMarkers, paraCount, paragraphMarks, splitParagraphs } from '../text/paragraphs';
 import { isCovered, rowSpanOf, spanOf } from '../table';
 import * as rt from '../richtext';
-import type { PageBorder } from './document';
+import type { Float, PageBorder } from './document';
 import { drawingOwnSize, nestedTables, BOX_PAD, LINE_NUMBER_GAP, OBJECT_CHAR, columnsOf, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, styleOf, numberStyle, FORM_SHADE, type DocObject, type DocText, type HeaderFooter, type HfKey, type NamedStyle, type PageSetup, type WrapKind } from './document';
 import { pageNumText, samePaper, sectionOfParas, sectionsOf } from './sections';
 import { bibliography, type BibEntry } from './references';
@@ -189,22 +189,22 @@ export function docCellAlign(t: TableData, r: number, c: number): Justify {
 }
 
 /** Room a floating figure keeps clear on its page, from the top left of the margins (gap included). */
-export interface WrapRect { x1: number; y1: number; x2: number; y2: number; wrap: WrapKind }
+export interface WrapRect { x1: number; y1: number; x2: number; y2: number; wrap: WrapKind; /** The side the text goes (see Float.side). */ side?: Float['side'] }
 
 /** Less room than this beside a figure (an inch) and text goes below it instead (as Word does). */
 export const MIN_BESIDE = 72;
 
-/**
- * The room a document line gives up to floating figures beside it. `y1`–`y2` is the line's
- * box (from the top of the margins), `textW` the width between them. Text wraps on the wider
- * side of a figure ("square"), or moves down past it ("top and bottom", or when too little
- * room is left beside it).
- */
 /** Two paragraphs' frames are one frame (Word: the same frame properties). */
 export function sameFrame(a: ParaStyle['frame'], b: ParaStyle['frame']): boolean {
   return !!a && !!b && a.w === b.w && a.align === b.align && a.wrap === b.wrap && a.gap === b.gap;
 }
 
+/**
+ * The room a document line gives up to floating figures beside it. `y1`–`y2` is the line's
+ * box (from the top of the margins), `textW` the width between them. Text wraps on the wider
+ * side of a figure ("square"), or on the side it says (Float.side: left or right only), or moves
+ * down past it ("top and bottom", or when too little room is left on that side).
+ */
 export function narrowLine(rects: WrapRect[], y1: number, y2: number, textW: number): Narrow | null {
   let left = 0, right = 0, hit = false, below = Infinity, block = false;
   for (const r of rects) {
@@ -213,8 +213,10 @@ export function narrowLine(rects: WrapRect[], y1: number, y2: number, textW: num
     hit = true;
     below = Math.min(below, r.y2);
     const roomL = r.x1, roomR = textW - r.x2;
-    if (r.wrap === 'topBottom' || Math.max(roomL, roomR) < MIN_BESIDE) block = true;
-    else if (roomL >= roomR) right = Math.max(right, textW - r.x1);
+    // (text only at the left or the right: there, or below when too little room is left there)
+    const onLeft = r.side === 'left' ? true : r.side === 'right' ? false : roomL >= roomR;
+    if (r.wrap === 'topBottom' || (onLeft ? roomL : roomR) < MIN_BESIDE) block = true;
+    else if (onLeft) right = Math.max(right, textW - r.x1);
     else left = Math.max(left, r.x2);
   }
   if (!hit) return null;
@@ -672,7 +674,7 @@ export class DocLayouter {
       // the figures' places from the column's left edge
       const near = all.filter((r) => r.y2 > y && (r.wrap === 'square' || r.wrap === 'topBottom')).map((r) => ({ ...r, x1: r.x1 - dx, x2: r.x2 - dx }));
       if (!a || !near.length) return laid[p];
-      const rel = near.map((r) => [r.x1, r.y1 - y, r.x2, r.y2 - y, r.wrap].map((v) => (typeof v === 'number' ? +v.toFixed(2) : v)));
+      const rel = near.map((r) => [r.x1, r.y1 - y, r.x2, r.y2 - y, r.wrap, r.side ?? ''].map((v) => (typeof v === 'number' ? +v.toFixed(2) : v)));
       const key = `${a.key}|${JSON.stringify(rel)}|${textH}`;
       let lay = this.cache.get(key);
       if (!lay) {
@@ -942,7 +944,7 @@ export class DocLayouter {
           const g = floatGaps(fl);
           // (text keeps clear of Word's effects round it too: a border Word drew on a group)
           const fx = fl.effect ?? { l: 0, t: 0, r: 0, b: 0 };
-          rects.push({ x1: bx - page.left - g.l - fx.l, y1: by - page.top - g.t - fx.t, x2: bx + bw - page.left + g.r + fx.r, y2: by + bh - page.top + g.b + fx.b, wrap: fl.wrap });
+          rects.push({ x1: bx - page.left - g.l - fx.l, y1: by - page.top - g.t - fx.t, x2: bx + bw - page.left + g.r + fx.r, y2: by + bh - page.top + g.b + fx.b, wrap: fl.wrap, ...(fl.side ? { side: fl.side } : {}) });
         }
         const wl = rects.length ? wrapped(p, cursor, rects, colX[col]).lines : own;
         pl = only?.firstLine?.has(p) ? wl.slice(0, 1) : wl;
@@ -1401,9 +1403,16 @@ function paraSpans(lines: LaidLine[], pages: PageBox[], paras: ParaStyle[], bRoo
       const lastOfPara = lines[i + 1]?.para !== l.para;
       const y1 = l.y - (l.above ?? l.ascent) - (firstOfPara ? bRoom?.above[l.para] ?? 0 : 0);
       const y2 = l.y + (l.below ?? l.descent) + (lastOfPara ? bRoom?.below[l.para] ?? 0 : 0);
-      const left = Math.min(firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left, l.marker?.x ?? Infinity);
-      const right = (l.band?.[1] ?? pg.x + pg.w - pg.setup.right) - (ps.indentRight ?? 0);
-      if (cur && cur.para === l.para && cur.col === col) { cur.y2 = y2; cur.x1 = Math.min(cur.x1, left); continue; }
+      let left = Math.min(firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left, l.marker?.x ?? Infinity);
+      let right = (l.band?.[1] ?? pg.x + pg.w - pg.setup.right) - (ps.indentRight ?? 0);
+      // (right to left: the start indent on the right, the end one on the left, the bullet at the right)
+      if (ps.rtl) {
+        const colLeft = l.band?.[0] ?? pg.x + pg.setup.left, colRight = l.band?.[1] ?? pg.x + pg.w - pg.setup.right;
+        const startIn = (firstOfPara ? l.left - Math.max(0, ps.firstLine ?? 0) : l.left) - colLeft;
+        left = colLeft + (ps.indentRight ?? 0);
+        right = Math.max(colRight - startIn, l.marker ? l.marker.x + l.marker.w : -Infinity);
+      }
+      if (cur && cur.para === l.para && cur.col === col) { cur.y2 = y2; cur.x1 = Math.min(cur.x1, left); cur.x2 = Math.max(cur.x2, right); continue; }
       cur = { para: l.para, page: pg.index, col, y1, y2, x1: left, x2: right };
       out.push(cur);
     }

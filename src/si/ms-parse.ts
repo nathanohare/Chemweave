@@ -13,6 +13,7 @@
 
 import { formulaMatches } from './chemtext';
 import { pyFloat } from './pyjson';
+import { after, guarded, guardedAt, notAfter } from '../regex-behind';
 
 const NORM: Record<string, string> = {
   '−': '-', '–': '-', '—': '-', '‐': '-', '‑': '-', '：': ':', '∶': ':',
@@ -27,7 +28,7 @@ export const RATIO = String.raw`(?:[<>≥≤]\s*)?${NUM}\s*:\s*${NUM}`;
 
 // Order matters: specific patterns first, then the generic bare percentage. Units that collide
 // with compound labels (3h, 8g, 1d) need a space before the unit: "24 h" is a time, "3h" a compound.
-const PATTERNS: [string, string][] = [
+const PATTERNS: [string, string, true?][] = [
   ['ee', String.raw`(?<v>[<>≥≤]?\s*${NUM})\s*%\s*ee\b`],
   ['ee', String.raw`\bee\s*(?:[=:]|of)?\s*(?<v>[<>≥≤]?\s*${NUM})\s*%`],
   ['ee', String.raw`enantiomeric\s+excess(?:\s+of)?\s*(?<v>[<>≥≤]?\s*${NUM})\s*%`],
@@ -48,17 +49,21 @@ const PATTERNS: [string, string][] = [
   ['loading', String.raw`(?<v>\d+(?:\.\d+)?)\s*mol\s*%`],
   ['temperature', String.raw`(?<v>-?\d{1,3})\s*°\s*C\b`],
   ['temperature', String.raw`\b(?<v>rt|r\.t\.|room temperature|reflux)\b`],
-  ['time', String.raw`(?<![\w.-])(?<v>\d+(?:\.\d+)?)\s*(?<u>min|hr|hrs)\b`],
-  ['time', String.raw`(?<![\w.-])(?<v>\d+(?:\.\d+)?)\s+(?<u>h|days?)\b`],
-  ['scale', String.raw`(?<![\w.-])(?<v>\d+(?:\.\d+)?)\s*(?<u>mmol|mg)\b`],
-  ['scale', String.raw`(?<![\w.-])(?<v>\d+(?:\.\d+)?)\s+(?<u>mol|g)\b(?!\s*%)`],
+  ['time', String.raw`(?<v>\d+(?:\.\d+)?)\s*(?<u>min|hr|hrs)\b`, true],
+  ['time', String.raw`(?<v>\d+(?:\.\d+)?)\s+(?<u>h|days?)\b`, true],
+  ['scale', String.raw`(?<v>\d+(?:\.\d+)?)\s*(?<u>mmol|mg)\b`, true],
+  ['scale', String.raw`(?<v>\d+(?:\.\d+)?)\s+(?<u>mol|g)\b(?!\s*%)`, true],
 ];
 const CASE_SENSITIVE = new Set(['ez', 'time', 'scale', 'temperature']);
-const COMPILED: [string, RegExp][] = PATTERNS.map(([k, p]) => [k, new RegExp(p, CASE_SENSITIVE.has(k) ? 'g' : 'gi')]);
+// (true: only where the number does not go on from a word, a point or a hyphen before it)
+const COMPILED: [string, RegExp][] = PATTERNS.map(([k, p, own]) => {
+  const re = new RegExp(p, CASE_SENSITIVE.has(k) ? 'g' : 'gi');
+  return [k, own ? notAfter(re, /[\w.-]/) : re];
+});
 const PCT = () => new RegExp(String.raw`(?<v>[<>≥≤]?\s*${NUM})\s*%`, 'g');
 
 // Footnote markers: "90%a", "8k[c]", "8k^c", "[a]" (a ring-fusion letter is not one: "benzo[b]thiophene")
-const FOOT = () => /(?<=%)(?<f>[a-h])\b|\[(?<g>[a-h])\](?![A-Za-z])|\^(?<h>[a-h])(?![a-z])/g;
+const FOOT = () => guarded(/(?<f>[a-h])\b|\[(?<g>[a-h])\](?![A-Za-z])|\^(?<h>[a-h])(?![a-z])/g, (m, s) => m.groups!.f === undefined || s[m.index - 1] === '%');
 
 // Compound labels: 3, 3a, 12b', S1, 4aa, (±)-5, ent-7, (R)-3b, (S,S)-3b, (1R,2S)-3b, cis-5a, trans-5h
 const DESCRIPTOR = String.raw`\d*[RSEZ]\*?`;
@@ -349,7 +354,7 @@ const FIELD: [string, RegExp][] = [
 
 export function headerField(h0: string): string {
   let h = splitFootnotes(h0.trim())[0];
-  h = h.trim().replace(/(?<=\))[a-h]$|(?<=%)[a-h]$/, '');
+  h = h.trim().replace(/([)%])[a-h]$/, '$1');
   for (const [name, rx] of FIELD) if (rx.test(h)) return name;
   return h;
 }
@@ -716,7 +721,7 @@ function underFigure(L: Line, above: Line[]): boolean {
 const plainFootnote = (text: string): boolean => /^[a-h]\s+[A-Z][a-z]/.test(text) || /^[a-h][A-Z][a-z]/.test(text);
 
 function splitInline(text: string): [string, string][] {
-  const marks = all(/(?:^|(?<=[\s.;)]))(?:\^([a-h])|\[([a-h])\])\s*/g, text);
+  const marks = all(guardedAt(/(?:\^([a-h])|\[([a-h])\])\s*/g, (at, s) => at === 0 || /[\s.;)]/.test(s[at - 1])), text);
   if (marks.length && marks[0].index === 0) {
     return marks.map((m, i) => [m[1] ?? m[2], text.slice(m.index + m[0].length, i + 1 < marks.length ? marks[i + 1].index : text.length).trim()]);
   }
@@ -768,7 +773,7 @@ const NOT_SCOPE_SENTENCE = /\b(?:without|controls?|scale[ds]?|scale-up|mmol|gram
 export function sentenceRecords(text: string): Rec[] {
   const out: Rec[] = [];
   const t = normalize(text);
-  for (const sentence of t.split(/(?<=[.;])\s+(?=[A-Z(])/)) {
+  for (const sentence of t.split(after(/\s+(?=[A-Z(])/, /[.;]/))) {
     if (NOT_SCOPE_SENTENCE.test(sentence)) continue;
     const [clean, notes] = splitFootnotes(sentence);
     const ids = new Set(findIds(clean).filter((i) => /\d[a-z]/.test(i)));
@@ -854,15 +859,15 @@ export const SOLVENTS = new Set(['THF', '2-MeTHF', 'DCM', 'DCE', 'MeCN', 'toluen
 const ATMOSPHERE = /\b(?:under|an?|of|with|in)\s+(?:an?\s+|dry\s+)?(Ar)\b|\b(Ar)\s+(?:atmosphere|balloon|gas|\(1\s*atm\))/g;
 const REAGENT_ALIASES = new Map<string, string>(Object.entries(REAGENT_SYNONYMS).flatMap(([name, aliases]) => aliases.map((a): [string, string] => [a, name])));
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-const REAGENT_RE = new RegExp(`(?<![\\w-])(${[...REAGENT_ALIASES.keys()].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![\\w-])`, 'gi');
+const REAGENT_RE = notAfter(new RegExp(`(${[...REAGENT_ALIASES.keys()].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![\\w-])`, 'gi'), /[\w-]/);
 
-const TEMP = /(?<![\w.])(-?\d{1,3}(?:\.\d+)?)\s*°\s*C\b|(?<![\w.])(-?\d{1,3})\s*(?:o|º)C\b/g;
+const TEMP = notAfter(/(-?\d{1,3}(?:\.\d+)?)\s*°\s*C\b|(-?\d{1,3})\s*(?:o|º)C\b/g, /[\w.]/);
 const TEMP_WORD = /\b(rt|r\.\s?t\.|room temperature|ambient temperature|reflux(?:ing)?)\b/gi;
-const TIME = /(?<![\w.-])(\d+(?:\.\d+)?)\s*(min|mins|minutes?|hrs?|hours?|days?|d|h)\b(?!\s*%)/g;
-const EQUIV = /(?<![\w.-])(\d+(?:\.\d+)?)\s*(?:equiv\.?|eq\.?|equivalents?)(?![\w])/gi;
-const LOADING = /(?<![\w.-])(\d+(?:\.\d+)?)\s*mol\s*%/gi;
-const SCALE = /(?<![\w.-])(\d+(?:\.\d+)?)\s*(mmol|µmol|μmol|umol)\b/g;
-const CONC = /(?<![\w.-])(\d+(?:\.\d+)?)\s*M\b(?!\s*%)/g;
+const TIME = notAfter(/(\d+(?:\.\d+)?)\s*(min|mins|minutes?|hrs?|hours?|days?|d|h)\b(?!\s*%)/g, /[\w.-]/);
+const EQUIV = notAfter(/(\d+(?:\.\d+)?)\s*(?:equiv\.?|eq\.?|equivalents?)(?![\w])/gi, /[\w.-]/);
+const LOADING = notAfter(/(\d+(?:\.\d+)?)\s*mol\s*%/gi, /[\w.-]/);
+const SCALE = notAfter(/(\d+(?:\.\d+)?)\s*(mmol|µmol|μmol|umol)\b/g, /[\w.-]/);
+const CONC = notAfter(/(\d+(?:\.\d+)?)\s*M\b(?!\s*%)/g, /[\w.-]/);
 const TIME_TO_MIN: Record<string, number> = { min: 1, mins: 1, minute: 1, minutes: 1, h: 60, hr: 60, hrs: 60, hour: 60, hours: 60, d: 1440, day: 1440, days: 1440 };
 
 /** The reaction conditions written in a text: temperatures, times ("3 h" but not "3h"), equivalents, mol%, scale, concentrations and named solvents/reagents. */
@@ -912,5 +917,5 @@ const WORKUP = /\b(?:cool(?:ed|ing)?|quench(?:ed|ing)?|extract(?:ed|ion|ions)?|w
 
 /** The sentences of a procedure that describe the reaction itself, without the work-up. */
 export function reactionPart(text: string): string {
-  return normalize(text).split(/(?<=[.;])\s+|\n+/).filter((s) => s.trim() && !WORKUP.test(s)).join(' ');
+  return normalize(text).replace(/([.;])\s+/g, '$1\u0000').split(/\u0000|\n+/).filter((s) => s.trim() && !WORKUP.test(s)).join(' ');
 }

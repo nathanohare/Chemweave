@@ -113,9 +113,9 @@ Chemweave has five modes, plus an **SI Project** tab for putting together a pape
 | ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with a three-column poster layout and the shape library](docs/images/design.png) |
 | Word's styles and keys, structures in the text, numbered captions, references, tracked changes, comments and equations. Saves as `.docx`. | Posters, TOC graphics and graphical abstracts at the journals' sizes, with templates and a shape library that includes flowcharts and lab glassware. |
 
-**Split View** puts a canvas beside a document, spreadsheet or presentation, so you can draw on one side and insert on the other.
+**Split Screen** shows any two tabs side by side: drag a tab down into the window, as with Snap in Windows. A canvas beside a document, spreadsheet or presentation lets you draw on one side and insert on the other.
 
-![Split View: a document on the left, the scheme it describes on the right](docs/images/split-view.png)
+![Split Screen: a document on the left, the scheme it describes on the right](docs/images/split-view.png)
 
 ### A reference manager in your documents
 
@@ -141,7 +141,7 @@ In Word, PowerPoint and Excel your structures show as sharp pictures; open the f
 Download the installer for your computer from the **[latest release](https://github.com/nathanohare/Chemweave/releases/latest)**:
 
 - **Windows**: the file ending in `x64-setup.exe`. Windows will warn that the installer isn't signed: click **More info**, then **Run anyway**. It installs for you alone, so it doesn't need administrator rights. To run it from a flash drive or a folder without installing anything, take `x64-portable.zip` instead and unzip it ([portable copy](https://github.com/nathanohare/Chemweave/wiki/Getting-Started#windows-without-installing-portable-copy)).
-- **macOS** (Apple silicon or Intel, macOS 11 or newer): the file ending in `universal.dmg`. Open it and drag **Chemweave** into **Applications**. The app is signed and notarised by Apple, so it opens without a warning.
+- **macOS** (Apple silicon or Intel, macOS 12.3 or newer): the file ending in `universal.dmg`. Open it and drag **Chemweave** into **Applications**. The app is signed and notarised by Apple, so it opens without a warning.
 - **Linux**: the `.AppImage` (any distribution), `.deb` (Ubuntu, Debian) or `.rpm` (Fedora).
 - **iPad**: the iPad app is in testing through Apple's TestFlight. Install the free **[TestFlight](https://apps.apple.com/app/testflight/id899247664)** app from the App Store, then open **[this invitation](https://testflight.apple.com/join/hMdcFJBH)** on the iPad and tap **Accept**, then **Install**. TestFlight offers each new test version as it comes out. Draw with an Apple Pencil or your finger; see [Pen and touch](https://github.com/nathanohare/Chemweave/wiki/Keyboard-and-Mouse#pen-and-touch-tablets).
 

@@ -211,7 +211,53 @@ describe('PowerPoint text box frames (G2-05)', () => {
     expect(off(sp).slice(2)).toEqual([800000, 3000000]);
     expect(sp).toContain('vert="vert270"');
   });
+
+  it('puts a vertical or turned box back where it was when saved again (office sampler F-P-004)', async () => {
+    for (const [vert, rot] of [['vert', 0], ['vert270', 0], ['', 1800000], ['vert', 5400000]] as const) {
+      const at = [304800, 292100, 2819400, 1003300];
+      const box = textBox(`<a:p>${run('Sideways')}</a:p>`, `<a:bodyPr${vert ? ` vert="${vert}"` : ''} wrap="square" rtlCol="0"><a:spAutoFit/></a:bodyPr>`, at)
+        .replace('<a:xfrm>', rot ? `<a:xfrm rot="${rot}">` : '<a:xfrm>');
+      // saved, read and saved again: the frame as it was, and the text where it was read
+      const once = readPptx(await saveBytes(deck(box)));
+      const twice = readPptx(await saveBytes(deck(box), 2));
+      const cap = (r: ReturnType<typeof readPptx>) => r.slides[0].contents.captions!.find((c) => c.runs.some((x) => x.text === 'Sideways'))!;
+      const first = readPptx(deck(box));
+      for (const r of [once, twice]) {
+        expect(cap(r).x).toBeCloseTo(cap(first).x, 1);
+        expect(cap(r).y).toBeCloseTo(cap(first).y, 1);
+      }
+      const xml = strFromU8(unzipSync(await saveBytes(deck(box), 2))['ppt/slides/slide1.xml']);
+      expect(off(parasOf(xml, 'Sideways').sp)).toEqual(at);
+    }
+  });
 });
+
+describe('slide number fields (office sampler F-P-004)', () => {
+  const fld = '<a:fld id="{11111111-2222-3333-4444-555555555555}" type="slidenum"><a:rPr lang="en-US" sz="1800" dirty="0"/><a:t>1</a:t></a:fld>';
+  const ids = (bytes: Uint8Array) => [...strFromU8(unzipSync(bytes)['ppt/slides/slide1.xml']).matchAll(/<a:fld id="([^"]+)"/g)].map((m) => m[1]);
+
+  it('numbers them the same in every save, saves made at the same time too', async () => {
+    const file = deck(textBox(`<a:p>${run('Page ')}${fld}</a:p><a:p>${fld}</a:p><a:p>${fld}</a:p>`));
+    const one = ids(await saveBytes(file));
+    expect(one).toHaveLength(3);
+    expect(new Set(one).size).toBe(3);
+    expect(ids(await saveBytes(file, 2))).toEqual(one);
+    const [x, y] = await Promise.all([saveBytes(file), saveBytes(file)]);
+    expect(ids(x)).toEqual(one);
+    expect(ids(y)).toEqual(one);
+  });
+});
+
+/** The deck saved this many times, each time from the last save as read. */
+async function saveBytes(bytes: Uint8Array, times = 1): Promise<Uint8Array> {
+  for (let i = 0; i < times; i++) {
+    const back = readPptx(bytes);
+    const doc = new Doc();
+    doc.restoreContents(back.slides[0].contents);
+    bytes = await writePptx({ size: back.size, master: back.master, slides: [{ layout: 'blank', doc, notes: '' }] }, opts);
+  }
+  return bytes;
+}
 
 describe('PowerPoint boxes that grow with their text, turned, vertical or not wrapping (review F2b-R02, F2b-R03)', () => {
   /** A "resize to fit text" box: turned `rot` (60000ths of a degree), its text direction, wrap and alignment. */
@@ -261,5 +307,92 @@ describe('PowerPoint boxes that grow with their text, turned, vertical or not wr
     expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'r' })), longer))).toEqual([1624083, 500000, 2075917, 378333]);
     // and as read while untouched
     expect(frame(await save(deck(fitBox('AAA', at, { wrap: 'none', algn: 'ctr' }))))).toEqual(at);
+  });
+});
+
+// (coordinators #68)
+describe('a text box in a group whose child coordinates differ from its place', () => {
+  const frameOf = (xml: string, text: string) => {
+    const sp = [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes(text))!;
+    return /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"\/>/.exec(sp)!.slice(1).map(Number);
+  };
+  /** The groups round the box in the saved slide, as offsets: each group's off minus its chOff (scale 1). */
+  const groupShift = (xml: string) => [...xml.matchAll(/<p:grpSpPr><a:xfrm[^>]*><a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext[^>]*\/><a:chOff x="(-?\d+)" y="(-?\d+)"\/>/g)]
+    .reduce((s, m) => [s[0] + Number(m[1]) - Number(m[3]), s[1] + Number(m[2]) - Number(m[4])], [0, 0]);
+  const group = (inner: string, ext: number[], chExt: number[]) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
+    + `<p:grpSpPr><a:xfrm><a:off x="1000000" y="1000000"/><a:ext cx="${ext[0]}" cy="${ext[1]}"/><a:chOff x="3048000" y="2921000"/><a:chExt cx="${chExt[0]}" cy="${chExt[1]}"/></a:xfrm></p:grpSpPr>`
+    + inner + textBox(`<a:p>${run('Partner')}</a:p>`, undefined, [3048000, 4000000, 1000000, 400000]) + '</p:grpSp>';
+
+  it('in a flipped group is saved where PowerPoint shows it: its frame mirrored in the group (coordinators #69)', async () => {
+    // (the group 1000000..4000000 across and 1000000..3000000 down; the box at 1000000..3000000, 1000000..1500000 in it)
+    for (const [flip, want] of [['flipH', [2000000, 1000000]], ['flipV', [1000000, 2500000]]] as const) {
+      const box = textBox(`<a:p>${run('Flipped')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
+      const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', `<a:xfrm ${flip}="1"><a:off x="1000000" y="1000000"/>`);
+      const xml = await save(deck(flipped));
+      const [x, y, cx, cy] = frameOf(xml, 'Flipped');
+      const [gx, gy] = groupShift(xml);
+      expect([x + gx, y + gy, cx, cy], flip).toEqual([...want, 2000000, 500000]);
+      // (and there on a second save)
+      const twice = strFromU8(unzipSync(await saveBytes(deck(flipped), 2))['ppt/slides/slide1.xml']);
+      expect(frameOf(twice, 'Flipped'), flip).toEqual([x, y, cx, cy]);
+    }
+  });
+
+  it('running down or up in a flipped group keeps its direction and frame, the frame mirrored (coordinators #70)', async () => {
+    for (const [vert, flip, want] of [['vert', 'flipH', [2000000, 1000000]], ['vert270', 'flipH', [2000000, 1000000]], ['vert', 'flipV', [1000000, 2500000]]] as const) {
+      const box = textBox(`<a:p>${run('Down')}</a:p>`, `<a:bodyPr vert="${vert}" wrap="square" rtlCol="0"/>`, [3048000, 2921000, 2000000, 500000]);
+      const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', `<a:xfrm ${flip}="1"><a:off x="1000000" y="1000000"/>`);
+      const xml = await save(deck(flipped));
+      const sp = [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes('Down'))!;
+      const [x, y, cx, cy] = frameOf(xml, 'Down');
+      const [gx, gy] = groupShift(xml);
+      expect([x + gx, y + gy, cx, cy], `${vert} ${flip}`).toEqual([...want, 2000000, 500000]);
+      // (not turned: reading as it did)
+      expect(sp, vert).not.toMatch(/<a:xfrm[^>]*rot=/);
+      expect(sp, vert).toContain(`vert="${vert}"`);
+      // (and there on a second save)
+      const twice = strFromU8(unzipSync(await saveBytes(deck(flipped), 2))['ppt/slides/slide1.xml']);
+      expect(frameOf(twice, 'Down'), `${vert} ${flip}`).toEqual([x, y, cx, cy]);
+    }
+  });
+
+  it('running down with a turn of its own in a flipped group turns the other way, still reading down (review)', async () => {
+    // (turned 10°: in a group flipped across, -10°, never upside down)
+    const box = textBox(`<a:p>${run('Tilted')}</a:p>`, '<a:bodyPr vert="vert" wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]).replace('<a:xfrm>', '<a:xfrm rot="600000">');
+    const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', '<a:xfrm flipH="1"><a:off x="1000000" y="1000000"/>');
+    const sp = [...(await save(deck(flipped))).matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes('Tilted'))!;
+    expect(sp).toContain('rot="21000000"');
+    expect(sp).toContain('vert="vert"');
+  });
+
+  it('in a flipped group in another flipped the same way is back where it started', async () => {
+    const g = (inner: string) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
+      + '<p:grpSpPr><a:xfrm flipH="1"><a:off x="1000000" y="1000000"/><a:ext cx="3000000" cy="2000000"/><a:chOff x="1000000" y="1000000"/><a:chExt cx="3000000" cy="2000000"/></a:xfrm></p:grpSpPr>'
+      + inner + '</p:grpSp>';
+    const box = textBox(`<a:p>${run('Twice')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [1000000, 1000000, 2000000, 500000]);
+    const xml = await save(deck(g(g(box))));
+    const [x, y, cx, cy] = frameOf(xml, 'Twice');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 2000000, 500000]);
+  });
+
+  it('is saved where it is on the slide, not at its place in the group', async () => {
+    const box = textBox(`<a:p>${run('Grouped')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
+    const xml = await save(deck(group(box, [3000000, 2000000], [3000000, 2000000])));
+    const [x, y, cx, cy] = frameOf(xml, 'Grouped');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 2000000, 500000]);
+    // (and the same on a second save; the groups written here move nothing)
+    const twice = strFromU8(unzipSync(await saveBytes(deck(group(box, [3000000, 2000000], [3000000, 2000000])), 2))['ppt/slides/slide1.xml']);
+    expect(frameOf(twice, 'Grouped')).toEqual([x, y, cx, cy]);
+    expect(groupShift(twice)).toEqual([0, 0]);
+  });
+
+  it('takes the group\'s scale too', async () => {
+    const box = textBox(`<a:p>${run('Halved')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
+    const xml = await save(deck(group(box, [3000000, 2000000], [6000000, 4000000])));
+    const [x, y, cx, cy] = frameOf(xml, 'Halved');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 1000000, 250000]);
   });
 });

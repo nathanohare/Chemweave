@@ -256,3 +256,50 @@ Dried over Na</t></r><r><rPr><vertAlign val="subscript"/><sz val="9"/><rFont val
     expect(xml).toContain('Dried over MgSO4');
   });
 });
+
+describe('threaded comments\' ids through saves (F-X-009)', () => {
+  const parts = (bytes: Uint8Array) => {
+    const f = unzipSync(bytes);
+    return ['xl/threadedComments/threadedComment1.xml', 'xl/persons/person.xml', 'xl/comments1.xml'].map((p) => strFromU8(f[p]));
+  };
+  it('keeps the ids a saved file gave its comments, replies and people, so the next save is the same', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => {
+      wb.sheet.setNote(0, 0, { ...thread('Is this yield right?'), replies: [{ author: 'Lab', date: '2026-01-02T00:00:00.000Z', text: 'Yes' }] });
+      wb.sheet.setNote(2, 1, thread('Check the melting point'));
+    });
+    const first = await writeXlsx(wb, pictures);
+    const second = await writeXlsx((await readXlsx(first)).book, pictures);
+    expect(parts(second)).toEqual(parts(first));
+  });
+  it('gives a copied comment ids of its own', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, thread('One')));
+    const back = (await readXlsx(await writeXlsx(wb, pictures))).book;
+    // the same comment, ids and all, in a second cell
+    back.edit('copy', () => back.sheet.setNote(1, 0, structuredClone(back.sheet.notes.get(0)!)));
+    const ids = [...parts(await writeXlsx(back, pictures))[0].matchAll(/<threadedComment [^>]*? id="([^"]+)"/g)].map((m) => m[1]);
+    // (each comment and each reply its own id)
+    expect(ids.length).toBeGreaterThanOrEqual(2);
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+});
+
+describe('threaded comments\' ids: the review\'s cases', () => {
+  const ids = (bytes: Uint8Array) => {
+    const f = unzipSync(bytes);
+    return [strFromU8(f['xl/threadedComments/threadedComment1.xml']), strFromU8(f['xl/persons/person.xml'])];
+  };
+  it('gives a comment made here the same ids on every save in a session', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, thread('New here')));
+    expect(ids(await writeXlsx(wb, pictures))).toEqual(ids(await writeXlsx(wb, pictures)));
+  });
+  it('keeps only ids shaped as Excel\'s, so one with odd characters can\'t break the file', async () => {
+    const wb = new Workbook();
+    wb.edit('fill', () => wb.sheet.setNote(0, 0, { ...thread('Odd'), tcIds: { id: 'a"<b', replies: ['&'] } }));
+    const [t] = ids(await writeXlsx(wb, pictures));
+    expect(t).not.toMatch(/a"<b|id="&"/);
+    expect([...t.matchAll(/ id="([^"]+)"/g)].every((m) => /^\{[0-9A-F-]{36}\}$/.test(m[1]))).toBe(true);
+  });
+});

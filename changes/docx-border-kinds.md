@@ -1,0 +1,1 @@
+Fixed: Documents: paragraph and table borders from a Word file in Word's other line kinds (thick, triple, dot-dash, wave, 3-D...) keep their kind when saved, instead of becoming single, dashed or double.
