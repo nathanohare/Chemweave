@@ -141,6 +141,20 @@ describe('a page or column break inside a Word paragraph', () => {
     expect(await wordParas(again.doc)).toEqual(ps);
   });
 
+  it('keeps an empty line after a break, and two breaks in a row, through two saves (review)', async () => {
+    for (const p of ['<w:p><w:r><w:t>a</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>next</w:t></w:r></w:p>',
+      '<w:p><w:r><w:t>a</w:t><w:br w:type="page"/><w:br w:type="page"/><w:t>b</w:t></w:r></w:p><w:p><w:r><w:t>next</w:t></w:r></w:p>',
+      '<w:p><w:r><w:t>a</w:t><w:br w:type="page"/><w:t>b</w:t><w:br w:type="page"/></w:r></w:p><w:p><w:r><w:t>next</w:t></w:r></w:p>']) {
+      const first = (await readDocx(wordFile(p))).doc;
+      const second = (await readDocx(new Uint8Array(await writeDocx(first, deps)))).doc;
+      const third = (await readDocx(new Uint8Array(await writeDocx(second, deps)))).doc;
+      const breaks = (d: typeof first) => d.paras.filter((q) => q.pageBreak).length;
+      expect(breaks(second), p).toBe(breaks(first));
+      expect(second.paras.length, p).toBe(first.paras.length);
+      expect(await wordParas(third), p).toEqual(await wordParas(second));
+    }
+  });
+
   it('does the same for a column break', async () => {
     const { doc } = await readDocx(wordFile('<w:p><w:r><w:t>one</w:t><w:br w:type="column"/><w:t>two</w:t></w:r></w:p>'));
     expect(doc.paras[1].colBreak).toBe(true);

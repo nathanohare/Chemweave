@@ -164,6 +164,12 @@ const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
  * the next paragraph's `clear` (docx-read.ts isClearPara).
  */
 export const CLEAR_PARA = '<w:p><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>';
+/**
+ * A page or column break with nothing after it in its paragraph: written as an empty paragraph
+ * with the break before it, as before, since a Word paragraph ending in a page break keeps its mark
+ * on the break's page (Word 2013 on) and the empty line, or a second break, would be lost (review).
+ */
+const emptyBreak = (ps: ParaStyle, runs: TextRun[]): boolean => !!(ps.pageBreak || ps.colBreak) && !runs.some((r) => r.text || r.obj !== undefined);
 /** A Word paragraph with another's runs added after a line break (or the page or column break `ps` starts with). */
 const joinTo = (para: string, body: string, ps?: ParaStyle): string =>
   `${para.slice(0, -'</w:p>'.length)}<w:r><w:br${ps?.pageBreak ? ' w:type="page"' : ps?.colBreak ? ' w:type="column"' : ''}/></w:r>${body}</w:p>`;
@@ -602,7 +608,7 @@ class DocxWriter {
         if (part.some((x) => x.text) || own.xe || own.ta) out.push(await partPara());
         close();
         plain = null;
-      } else if (plain?.p === p - 1 && plain.at === out.length - 1 && !sectXml && !endsSection.has(p - 1) && !markRev[p - 1] && !markRev[p] && joins(paras[p - 1], ps)) {
+      } else if (plain?.p === p - 1 && plain.at === out.length - 1 && !sectXml && !endsSection.has(p - 1) && !markRev[p - 1] && !markRev[p] && joins(paras[p - 1], ps) && !emptyBreak(ps, runs)) {
         out[plain.at] = joinTo(out[plain.at], await this.paragraph(main, ps, runs, listNum, p, '', true), ps);
         plain = { p, at: plain.at };
       } else {
