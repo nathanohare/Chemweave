@@ -11,6 +11,8 @@ export const BARRIER_ARRIVE_MS = 180;
 export const BARRIER_DECAY = 250;
 /** Wheel events closer together than this are one stream (a trackpad's, or a fling's tail). */
 export const BARRIER_STREAM_MS = 50;
+/** A scroll smaller than this, the same size as the one just before it in a stream, is taken as a fling's tail. */
+export const BARRIER_SMALL = 40;
 /** After a page is opened, the barrier stays shut until the scrolling has stopped this long (one push opens one page: a spin that goes on never runs through several). */
 export const BARRIER_REARM_MS = 350;
 
@@ -43,7 +45,10 @@ export function pushBarrier(s: BarrierState, dy: number, now: number, atEdge: bo
   const dir: 1 | -1 | 0 = dy > 0 ? 1 : dy < 0 ? -1 : 0;
   // (a stream of scrolls getting smaller: a fling dying away, which never pushes through)
   const abs = Math.abs(dy);
-  const dying = now - s.lastAt < BARRIER_STREAM_MS && abs < s.lastAbs;
+  // (equal small scrolls in a stream too: a device that rounds its fling's steps to whole pixels; a
+  // mouse wheel's notches are large, and count however fast they come)
+  const stream = now - s.lastAt < BARRIER_STREAM_MS;
+  const dying = stream && (abs < s.lastAbs || (abs === s.lastAbs && abs < BARRIER_SMALL));
   if (s.shut && now - s.lastAt >= BARRIER_REARM_MS) s.shut = false;
   s.lastAbs = abs;
   s.lastAt = now;

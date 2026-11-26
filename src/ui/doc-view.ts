@@ -423,6 +423,11 @@ export class DocView {
     this.fitting = this.stickyFit;
   }
 
+  /** Page Width kept (stickyFit) and the scrolled area changed (white space hidden, a new compile): fitted again, as a scrollbar may have come or gone. */
+  refit(): void {
+    if (this.fitting) this.fitWidth();
+  }
+
   /** Zoom so whole pages show: one (One Page), or a row of them (Multiple Pages, Side to Side: two). */
   fitPages(): void {
     const lay = this.layout;

@@ -18,7 +18,7 @@ import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } 
 import type { SiPreview } from './si-preview';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { siPreviewPrefs } from './mode-prefs';
-import { compoundSrc, gpSrc, parseSrc, readingLine, sectionSrc, sourceAccess } from '../si/source-map';
+import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -1739,7 +1739,7 @@ export class SiMode {
 
     // (the SI's own pages in order, for scrolling from one to the next on the SI page)
     this.pageOrder = specs.filter((x) => ['project', 'section', 'scheme', 'compound', 'spectra'].includes(x.sel.kind))
-      .map((x) => ({ sel: x.sel, label: x.sel.kind === 'project' ? 'the cover page' : x.cid !== undefined ? `${x.cid} ${x.text}` : x.text }));
+      .map((x) => ({ sel: x.sel, key: JSON.stringify(x.sel), label: x.sel.kind === 'project' ? 'the cover page' : `${x.sel.kind === 'spectra' ? 'spectra of ' : ''}${x.cid !== undefined ? `${x.cid} ${x.text}` : x.text}` }));
     // sections and scheme pages with rows under them fold (▸) and unfold (▾); the row picked is never hidden
     const shut = this.collapsedOf(p);
     const keyOf = (x: RowSpec): string => JSON.stringify(x.sel);
@@ -3027,18 +3027,22 @@ export class SiMode {
     strip.addEventListener('click', () => this.setLive(true));
     const grip = el('div', 'si-live-grip');
     grip.title = 'Drag to change the preview’s width';
+    grip.setAttribute('role', 'separator');
+    grip.setAttribute('aria-orientation', 'vertical');
+    grip.setAttribute('aria-label', 'Width of the Live Preview');
     grip.addEventListener('pointerdown', (e) => {
       e.preventDefault();
       grip.setPointerCapture(e.pointerId);
       const right = this.pane.getBoundingClientRect().right;
       const move = (ev: PointerEvent): void => { const w = Math.round(Math.max(240, Math.min(900, right - ev.clientX))); this.pane.style.setProperty('--si-live-w', `${w}px`); };
       const up = (): void => {
-        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up);
+        grip.removeEventListener('pointermove', move); grip.removeEventListener('pointerup', up); grip.removeEventListener('pointercancel', up);
         try { localStorage.setItem('si.livePreviewWidth', this.pane.style.getPropertyValue('--si-live-w')); } catch { /* (not kept) */ }
         this.live.view?.resize();
       };
       grip.addEventListener('pointermove', move);
       grip.addEventListener('pointerup', up);
+      grip.addEventListener('pointercancel', up);
     });
     try { const w = localStorage.getItem('si.livePreviewWidth'); if (w) this.pane.style.setProperty('--si-live-w', w); } catch { /* (default) */ }
     const head = el('div', 'si-live-head');
@@ -3106,7 +3110,7 @@ export class SiMode {
   // ---------------------------------------------------------------- Synchronous Scrolling on the SI page
 
   /** The SI's own pages in the list's order (the cover, sections, scheme pages, compounds, spectra pages), with what the barrier's hint calls them. */
-  private pageOrder: { sel: Pick; label: string }[] = [];
+  private pageOrder: { sel: Pick; key: string; label: string }[] = [];
   private barrier = freshBarrier();
   private barrierHint: HTMLElement | null = null;
   private barrierHide = 0;
@@ -3125,7 +3129,8 @@ export class SiMode {
     const pg = this.page;
     const user = (): void => { this.pageUserAt = performance.now(); };
     pg.addEventListener('wheel', (e) => {
-      if (e.ctrlKey || e.metaKey) return;
+      // (Ctrl+wheel zooms; a wheel a box inside the page took for itself)
+      if (e.ctrlKey || e.metaKey || e.defaultPrevented) return;
       user();
       if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
       this.pageEdgeScroll(wheelPixels(e.deltaY, e.deltaMode, pg.clientHeight), e.target);
@@ -3169,17 +3174,19 @@ export class SiMode {
   /** A scroll of the SI page (`dy` pixels, + down): at its edge, the soft barrier to the next page. */
   private pageEdgeScroll(dy: number, target: EventTarget | null): void {
     const pg = this.page;
-    const on = this.syncScroll && !!this.project && !this.innerScrolls(target, dy);
+    // (only with the preview shown: its header holds the Synchronous Scrolling button that turns this off)
     const dir: 1 | -1 = dy > 0 ? 1 : -1;
     const atEdge = dir > 0 ? pg.scrollTop + pg.clientHeight >= pg.scrollHeight - 1 : pg.scrollTop <= 0;
-    const next = on ? neighbourPage(this.pageOrder, (x) => JSON.stringify(x.sel), JSON.stringify(this.pick), dir) : null;
+    const on = atEdge && this.syncScroll && this.liveOn && !this.live.el.classList.contains('off') && !!this.project && !this.innerScrolls(target, dy);
+    const next = on ? neighbourPage(this.pageOrder, (x) => x.key, JSON.stringify(this.pick), dir) : null;
     const step = pushBarrier(this.barrier, dy, performance.now(), on && atEdge, !!next);
     if (!step || !next || step.shut) { this.showBarrier(null); return; }
     if (!step.through) { this.showBarrier({ dir, label: next.label, progress: step.progress }); return; }
     this.showBarrier(null);
     this.go(next.sel);
-    // (the new page from its top going down, from its end going up)
+    // (the new page from its top going down, from its end going up; its row in the list in view)
     pg.scrollTop = dir > 0 ? 0 : pg.scrollHeight;
+    this.tree.querySelector<HTMLElement>('.si-row.on')?.scrollIntoView({ block: 'nearest' });
   }
 
   /** The barrier's hint at the SI page's bottom (or top): where pushing on goes, and how far through (null: hidden). */
@@ -3215,14 +3222,18 @@ export class SiMode {
     if (!this.syncScroll || !pv || !this.liveOn || this.liveTarget()?.kind !== 'whole') return;
     if (pv.focusedNode !== this.liveNode()) return;
     const pg = this.page;
-    const k = readingLine(pg.scrollTop, pg.scrollHeight - pg.clientHeight, pg.clientHeight, 0.3);
     if (pg.scrollTop <= 0) { pv.revealFocus(); return; }
-    const r = pg.getBoundingClientRect();
-    const line = r.top + pg.clientHeight * k;
+    // (a fixed reading line a third of the way down: the preview never jumps as the page starts to
+    // move; the preview keeps the page's own text in view, so a short page doesn't drag the page before into it)
+    const k = 0.3;
+    const line = pg.getBoundingClientRect().top + pg.clientHeight * k;
     const fields = [...pg.querySelectorAll<HTMLElement>('.si-field[data-key], [data-src]')];
-    const start = fields.findIndex((f) => f.getBoundingClientRect().bottom >= line);
-    if (start < 0) return;
-    for (const f of fields.slice(start)) {
+    if (!fields.length) return;
+    let start = fields.findIndex((f) => f.getBoundingClientRect().bottom >= line);
+    // (past the last field, as at the page's end: the last one)
+    if (start < 0) start = fields.length - 1;
+    // (the first few fields from there with text in the preview: an empty field prints nothing)
+    for (const f of fields.slice(start, start + 8)) {
       const src = this.sourceOfElement(f);
       if (src && pv.alignSource(src, k)) return;
     }
@@ -3462,7 +3473,7 @@ export class SiMode {
         const pv = await this.livePreview();
         const ro = p.readOnly;
         pv.show({
-          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen,
+          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen, keepSpace: spectra,
           why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
         });
         pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key && !stay);
@@ -3553,6 +3564,9 @@ export class SiMode {
     });
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();
+    // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
+    const resized = this.preview.view.onResize;
+    this.preview.view.onResize = () => { resized(); this.zoomBar?.show(); };
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
     siPreviewPrefs.changed = () => this.preview?.applyPrefs();
     this.wirePageLinks();

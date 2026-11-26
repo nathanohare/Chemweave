@@ -70,3 +70,26 @@ describe('SI page soft barrier', () => {
     expect(wheelPixels(1, 2, 800)).toBe(800);
   });
 });
+
+describe('SI page soft barrier: devices that round', () => {
+  it('never lets a slow fling with whole-pixel steps through (equal steps one after another)', () => {
+    const s = freshBarrier();
+    let through = false;
+    for (let i = 0; i < 300; i++) through ||= !!pushBarrier(s, Math.round(40 * 0.98 ** i), 1000 + i * 16, true, true)?.through;
+    expect(through).toBe(false);
+  });
+
+  it('still lets a fast spin of a mouse wheel through (equal large notches close together)', () => {
+    const s = freshBarrier();
+    expect(notches(s, 30, 100, 30)).not.toBeNull();
+  });
+});
+
+describe('SI Live Preview white space setting', () => {
+  it('is shown unless turned off, settings from before it included', async () => {
+    const { parseSiPreviewLook } = await import('../src/ui/mode-prefs');
+    expect(parseSiPreviewLook({ dim: false, link: 'bracket', custom: 'fill' }).whiteSpace).toBe(true);
+    expect(parseSiPreviewLook(null).whiteSpace).toBe(true);
+    expect(parseSiPreviewLook({ whiteSpace: false }).whiteSpace).toBe(false);
+  });
+});
