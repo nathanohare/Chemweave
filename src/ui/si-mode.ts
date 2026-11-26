@@ -14,7 +14,7 @@ import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
 import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Watermark } from '../document/document';
-import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
+import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
 import type { SiPreview } from './si-preview';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
@@ -429,6 +429,14 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
       <div class="rb-col">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Orientation" data-ic="page-orientation" data-pic="orient" title="Orientation: the pages of the section picked upright (portrait) or on their side (landscape); the pages after it turn back"><select data-si-page="orient">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select></div>
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Breaks: start the compound or section picked on a new page (Next Page), or straight after what comes before it (Continuous)"><select data-si-page="break">
+          <option value="nextPage">Section: Next Page</option>
+          <option value="continuous">Section: Continuous</option>
+        </select></div>
         <div class="rb-fly rb-selgal" data-size="small" data-name="Hyphenation" data-ic="hyphenation" title="Hyphenation: break words at the ends of lines where English allows, in the whole compiled SI (Live Preview, Word document and PDF)"><select data-si-page="hyphen">
           <option value="none">None</option>
           <option value="auto">Automatic</option>
@@ -930,6 +938,48 @@ export class SiMode {
     const wm = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="watermark"]');
     if (wm) { const at = v?.watermark ? WATERMARKS.indexOf(v.watermark.text) : -1; wm.value = !v?.watermark ? '' : at >= 0 ? String(at) : 'other'; }
     for (const s of [hy, wm]) if (s) s.disabled = !p;
+    const sec = this.currentSection();
+    const or = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="orient"]');
+    if (or) { or.value = sec && sectionLandscape(sec) ? 'landscape' : 'portrait'; or.disabled = !sec || sec.type === 'spectra'; }
+    const brk = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="break"]');
+    const item = this.flowItem();
+    if (brk) { brk.value = item && startsNewPage(item.data) ? 'nextPage' : 'continuous'; brk.disabled = !item; }
+  }
+
+  /** What Breaks sets: the compound picked, else the section picked (not the Spectra section, whose pages are its own). */
+  private flowItem(): SiCompound | SiSection | null {
+    const c = this.currentCompound();
+    if (c) return c;
+    const s = this.currentSection();
+    return s && s.type !== 'spectra' ? s : null;
+  }
+
+  /** Layout ▸ Orientation (the section picked) or Breaks (the compound or section picked), in one step of Undo. */
+  private async sectionPageLook(what: 'orient' | 'break', v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (what === 'orient') {
+      const sec = this.currentSection();
+      const on = v === 'landscape';
+      if (!sec || sec.type === 'spectra') { this.host.flash(sec ? 'The Spectra section sets its own pages (each spectrum’s Orientation).' : 'Select a section first.'); this.pageLookState(); return; }
+      if (on === sectionLandscape(sec)) { this.pageLookState(); return; }
+      const before = sec.data.orientation;
+      await this.act(async () => {
+        if (on) sec.data.orientation = 'landscape'; else delete sec.data.orientation;
+        try { await p.saveSection(sec); } catch (e) { if (before === undefined) delete sec.data.orientation; else sec.data.orientation = before; throw e; }
+      }, false, undefined, undefined, on ? 'Landscape' : 'Portrait');
+    } else {
+      const item = this.flowItem();
+      const on = v === 'nextPage';
+      if (!item) { this.host.flash('Select a compound or section first.'); this.pageLookState(); return; }
+      if (on === startsNewPage(item.data)) { this.pageLookState(); return; }
+      const before = item.data.page_flow;
+      await this.act(async () => {
+        setNewPage(item.data, on);
+        try { await ('kind' in item ? p.saveCompound(item) : p.saveSection(item)); } catch (e) { if (before === undefined) delete item.data.page_flow; else item.data.page_flow = before; throw e; }
+      }, false, undefined, undefined, on ? 'Section Break' : 'Remove Section Break');
+    }
+    this.pageLookState();
   }
 
   /** Layout ▸ Hyphenation or Watermark: the project's page settings, in one step of Undo; the Live Preview shows it. */
@@ -969,6 +1019,7 @@ export class SiMode {
         change = () => storeWatermark(p.settings, to);
       }
     }
+    if (what === 'orient' || what === 'break') { await this.sectionPageLook(what, v); return; }
     if (!change) { this.pageLookState(); return; }
     const f = change;
     const before = p.settings.page;

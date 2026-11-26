@@ -155,3 +155,33 @@ describe('watermark and hyphenation (Layout tab)', () => {
     expect(t.hyphen?.auto).toBe(true);
   });
 });
+
+describe('Orientation and Breaks (Layout tab)', () => {
+  const OPT = 'sections/s-c1aa3466_reaction-optimizatio/section.json';
+  const COMPOUND = 'sections/s-972b3c47_synthesis-and-charac/compounds/c-cf3f4417_1-4-methoxyphe/compound.json';
+  /** The paragraph whose text starts with `start`, and its index. */
+  const paraOf = (t: DocText, start: string): number => plainText(t.runs).split('\n').findIndex((l) => l.startsWith(start));
+
+  it('a landscape section turns its pages, and the next section turns back', async () => {
+    const f = folder();
+    put(f, OPT, { ...json(f, OPT), orientation: 'landscape' });
+    const t = await compile(f);
+    const opt = t.paras[paraOf(t, 'Reaction Optimization')];
+    expect(opt?.section?.page && opt.section.page.w > opt.section.page.h).toBe(true);
+    const next = t.paras[paraOf(t, 'Synthesis and Characterization')];
+    expect(next?.section?.page && next.section.page.w < next.section.page.h).toBe(true);
+  });
+
+  it('a compound or section with Next Page starts on a new page (SI Assistant’s page_flow.new_page)', async () => {
+    const f = folder();
+    const before = await compile(f);
+    put(f, COMPOUND, { ...json(f, COMPOUND), page_flow: { new_page: true, keep: 'default' } });
+    put(f, OPT, { ...json(f, OPT), page_flow: { new_page: true } });
+    const t = await compile(f);
+    expect(t.paras[paraOf(t, 'Reaction Optimization')]?.pageBreak).toBe(true);
+    expect(before.paras[paraOf(before, 'Reaction Optimization')]?.pageBreak).toBeFalsy();
+    const breaks = (x: DocText): number => x.paras.filter((p) => p.pageBreak).length;
+    // (the compound's title too: one more page break than the section's alone)
+    expect(breaks(t)).toBe(breaks(before) + 2);
+  });
+});

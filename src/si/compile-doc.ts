@@ -224,10 +224,15 @@ class Compiler {
   readonly b = new DocBuilder();
   /** Project Settings ▸ Styles ▸ Caption: its alignment and space after win over the captions' own (a figure's own alignment still wins). */
   private captionLook: StyleLooks[string] = {};
-  /** The width of the text (the page's less its margins): what pictures, tables and schemes fit in. */
-  private readonly textW: number = TEXT_W;
-  /** The height of the text (the page's less its margins): no picture is made taller than fits (its caption below it still needs room). */
-  private readonly textH: number = 9 * PT;
+  /** The width and height of the text on an upright page (the page's less its margins). */
+  private readonly uprightW: number = TEXT_W;
+  private readonly uprightH: number = 9 * PT;
+  /** The width of the text (the page's less its margins, on its side on a landscape page): what pictures, tables and schemes fit in. */
+  private get textW(): number { return this.landscape ? this.sidewaysW : this.uprightW; }
+  /** The height of the text: no picture is made taller than fits (its caption below it still needs room). */
+  private get textH(): number { return this.landscape ? this.sidewaysH : this.uprightH; }
+  private get sidewaysW(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.h - p.left - p.right); }
+  private get sidewaysH(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.w - p.top - p.bottom); }
   private tallest(h: number): number { return Math.max(PT, Math.min(h, this.textH - 0.6 * PT)); }
   readonly sources: SourceSpan[] = [];
   readonly blocks: SourceBlock[] = [];
@@ -256,8 +261,8 @@ class Compiler {
     // Project Settings ▸ Styles, before the SI's own styles are made from Normal and the headings (and again after: si-styles.ts)
     applyStyleLooks(this.b.doc.styles, styleLooks);
     this.captionLook = styleLooks.Caption ?? {};
-    this.textW = Math.max(2 * PT, this.b.doc.page.w - this.b.doc.page.left - this.b.doc.page.right);
-    this.textH = Math.max(2 * PT, this.b.doc.page.h - this.b.doc.page.top - this.b.doc.page.bottom);
+    this.uprightW = Math.max(2 * PT, this.b.doc.page.w - this.b.doc.page.left - this.b.doc.page.right);
+    this.uprightH = Math.max(2 * PT, this.b.doc.page.h - this.b.doc.page.top - this.b.doc.page.bottom);
     this.styles = this.b.doc.styles;
     this.report = p.idReport();
     this.labels = new Labels(labelRules(p.settings));
@@ -830,6 +835,17 @@ class Compiler {
       await this.spectraSection(s, level);
       return;
     }
+    // Layout ▸ Orientation (Chemweave's) turns the section's pages, and Breaks ▸ Next Page (SI
+    // Assistant's page_flow.new_page) starts it on a new page; the pages after it turn back
+    const was = this.landscape;
+    const landscape = sectionLandscape(s);
+    if (landscape !== was) this.orient(landscape ? 'landscape' : 'portrait');
+    else if (startsNewPage(s.data) && !this.preview) this.b.pendingBreak = true;
+    await this.sectionBody(s, level);
+    if (this.landscape !== was) this.orient(was ? 'landscape' : 'portrait');
+  }
+
+  private async sectionBody(s: SiSection, level: number): Promise<void> {
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
       await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true, sectionSrc(s.id));
@@ -877,6 +893,8 @@ class Compiler {
   }
 
   private async compoundNow(c: SiCompound, level: number, inScheme: boolean): Promise<void> {
+    // Breaks ▸ Next Page (SI Assistant's page_flow.new_page); not for one compound's page in the Live Preview
+    if (startsNewPage(c.data) && !this.preview) this.b.pendingBreak = true;
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
     if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
@@ -1612,3 +1630,16 @@ export async function compileSi(p: SiProject, host: CompileHost, only?: SiPrevie
   return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed, structures: c.structures };
 }
 
+
+/** A section or compound starts on a new page (SI Assistant's "page_flow": {"new_page": true}). */
+export function startsNewPage(data: Json): boolean { return dict(data.page_flow).new_page === true; }
+
+/** A section's pages are on their side (Chemweave's "orientation": "landscape"; the Spectra section sets its own pages). */
+export function sectionLandscape(s: SiSection): boolean { return s.type !== 'spectra' && s.data.orientation === 'landscape'; }
+
+/** Start a section or compound on a new page, or not (SI Assistant's "page_flow", its other keys kept). */
+export function setNewPage(data: Json, on: boolean): void {
+  const flow: Json = { ...dict(data.page_flow) };
+  if (on) flow.new_page = true; else delete flow.new_page;
+  if (Object.keys(flow).length) data.page_flow = flow; else delete data.page_flow;
+}
