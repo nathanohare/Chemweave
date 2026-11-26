@@ -3200,16 +3200,31 @@ function poseNew(doc: Doc, mark: number, box: Rect & { rot: number; flipH: boole
     const ids = <T extends { id: number }>(m: Map<number, T>) => new Set([...m.values()].filter((x) => x.id >= mark).map((x) => x.id));
     const sel = { atoms: ids(doc.atoms), bonds: ids(doc.bonds), captions: ids(doc.captions), arrows: ids(doc.arrows), shapes: ids(doc.shapes) };
     // a PowerPoint text box with its frame kept (not turned): the frame mirrored in the group, the
-    // text where it was in it, as PowerPoint shows it (its start isn't mirrored as a point; coordinators #69)
+    // text where it was in it, as PowerPoint shows it (its start isn't mirrored as a point; coordinators #69);
+    // text running down or up too, whose quarter turn is its direction, not a turn of its box: it reads
+    // the same way in the flipped group (coordinators #70)
     const framed = new Map<number, NonNullable<ReturnType<typeof keptBox>>>();
+    const quarterOf = (dir: string | undefined) => (dir === 'vert' ? 90 : dir === 'vert270' ? -90 : 0);
     for (const id of sel.captions) {
       const cap = doc.captions.get(id);
-      const f = cap && !cap.rot ? keptBox(cap.pbox) : null;
+      let f = cap && Math.abs(normDegrees((cap.rot ?? 0) - quarterOf(cap.dir))) < 1e-6 ? keptBox(cap.pbox) : null;
+      // (text running down or up made longer or thicker here: its frame grows another way, so it is
+      // placed afresh below, reading the same way; review)
+      if (f && cap?.dir && ((cap.wrap ?? null) !== f.wrap || (cap.boxH ?? null) !== f.boxH)) f = null;
       if (f) framed.set(id, f);
     }
     for (const id of framed.keys()) sel.captions.delete(id);
-    if (box.flipH) transform(doc, snapshot(doc, sel, POINTS), mirrorX(c.x), true);
-    if (box.flipV) transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true);
+    // text running down or up mirrored with the rest: a flip turns its box the other way, not its
+    // direction (each flip negates the turn; the quarter its direction gives is put back)
+    const upright = () => {
+      for (const id of sel.captions) {
+        const cap = doc.captions.get(id);
+        const q = quarterOf(cap?.dir);
+        if (cap && q) doc.updateCaption(id, { rot: normDegrees((cap.rot ?? 0) + 2 * q) });
+      }
+    };
+    if (box.flipH) { transform(doc, snapshot(doc, sel, POINTS), mirrorX(c.x), true); upright(); }
+    if (box.flipV) { transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true); upright(); }
     for (const [id, f] of framed) {
       const cap = doc.captions.get(id)!;
       // (the frame where it is now, moved with the text since it was read: by a group flipped inside this one)

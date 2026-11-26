@@ -338,6 +338,33 @@ describe('a text box in a group whose child coordinates differ from its place', 
     }
   });
 
+  it('running down or up in a flipped group keeps its direction and frame, the frame mirrored (coordinators #70)', async () => {
+    for (const [vert, flip, want] of [['vert', 'flipH', [2000000, 1000000]], ['vert270', 'flipH', [2000000, 1000000]], ['vert', 'flipV', [1000000, 2500000]]] as const) {
+      const box = textBox(`<a:p>${run('Down')}</a:p>`, `<a:bodyPr vert="${vert}" wrap="square" rtlCol="0"/>`, [3048000, 2921000, 2000000, 500000]);
+      const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', `<a:xfrm ${flip}="1"><a:off x="1000000" y="1000000"/>`);
+      const xml = await save(deck(flipped));
+      const sp = [...xml.matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes('Down'))!;
+      const [x, y, cx, cy] = frameOf(xml, 'Down');
+      const [gx, gy] = groupShift(xml);
+      expect([x + gx, y + gy, cx, cy], `${vert} ${flip}`).toEqual([...want, 2000000, 500000]);
+      // (not turned: reading as it did)
+      expect(sp, vert).not.toMatch(/<a:xfrm[^>]*rot=/);
+      expect(sp, vert).toContain(`vert="${vert}"`);
+      // (and there on a second save)
+      const twice = strFromU8(unzipSync(await saveBytes(deck(flipped), 2))['ppt/slides/slide1.xml']);
+      expect(frameOf(twice, 'Down'), `${vert} ${flip}`).toEqual([x, y, cx, cy]);
+    }
+  });
+
+  it('running down with a turn of its own in a flipped group turns the other way, still reading down (review)', async () => {
+    // (turned 10°: in a group flipped across, -10°, never upside down)
+    const box = textBox(`<a:p>${run('Tilted')}</a:p>`, '<a:bodyPr vert="vert" wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]).replace('<a:xfrm>', '<a:xfrm rot="600000">');
+    const flipped = group(box, [3000000, 2000000], [3000000, 2000000]).replace('<a:xfrm><a:off x="1000000" y="1000000"/>', '<a:xfrm flipH="1"><a:off x="1000000" y="1000000"/>');
+    const sp = [...(await save(deck(flipped))).matchAll(/<p:sp>[\s\S]*?<\/p:sp>/g)].map((m) => m[0]).find((x) => x.includes('Tilted'))!;
+    expect(sp).toContain('rot="21000000"');
+    expect(sp).toContain('vert="vert"');
+  });
+
   it('in a flipped group in another flipped the same way is back where it started', async () => {
     const g = (inner: string) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
       + '<p:grpSpPr><a:xfrm flipH="1"><a:off x="1000000" y="1000000"/><a:ext cx="3000000" cy="2000000"/><a:chOff x="1000000" y="1000000"/><a:chExt cx="3000000" cy="2000000"/></a:xfrm></p:grpSpPr>'
