@@ -4,6 +4,7 @@
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
 import { isTauri } from '@tauri-apps/api/core';
+import { enter } from './motion';
 import { BOX_COLS, fullCols } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
@@ -618,6 +619,8 @@ export class Toolboxes {
     const shown = show ?? !p.shown;
     this.change({ ...st, places: { ...st.places, [id]: { ...p, shown } } });
     if (shown && !p.shown && p.dock === 'float') this.findRoom(id);
+    // a toolbox opened fades in
+    if (shown && !p.shown) enter(this.frames.get(id), 'fade');
   }
 
   /** Move a floating toolbox just shown to free space over the drawing, clear of the other toolboxes. */

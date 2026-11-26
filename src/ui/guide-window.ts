@@ -5,6 +5,7 @@
 
 import { Marked } from 'marked';
 import { REPO_URL } from '../feedback';
+import { scrollToItem } from './motion';
 export { guideSpot } from './guide-spot';
 
 // the pages load the first time the guide opens; pictures are files beside the program. Only the
@@ -165,6 +166,7 @@ export class GuideWindow {
 
   private async show(page: string, anchor: string): Promise<void> {
     if (!this.texts.has(page)) page = 'README.md';
+    const samePage = page === this.page;
     this.page = page;
     this.back.disabled = !this.history.length;
     for (const b of this.list.querySelectorAll<HTMLButtonElement>('button')) b.classList.toggle('on', b.dataset.page === page);
@@ -183,7 +185,11 @@ export class GuideWindow {
       img.loading = 'lazy';
     }
     const target = anchor ? this.article.querySelector<HTMLElement>(`#${CSS.escape(anchor)}`) : null;
-    if (target) { target.scrollIntoView({ block: 'start' }); target.classList.add('gw-here'); }
+    if (target) {
+      // a jump within the page glides; another page opens at its place at once
+      if (samePage) scrollToItem(target, 'start'); else target.scrollIntoView({ block: 'start' });
+      target.classList.add('gw-here');
+    }
     else this.article.scrollTop = 0;
     this.article.focus({ preventScroll: true });
   }

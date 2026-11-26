@@ -9,6 +9,7 @@
 // window, with changes not yet applied asks whether to apply them or throw them away.
 
 import { hostNextDialog, setPreviewSlot } from './dialog-host';
+import { enter } from './motion';
 
 export interface SettingsPage {
   id: string;
@@ -330,6 +331,8 @@ export class SettingsWindow {
     this.submit = null;
     this.start = null;
     this.pane.replaceChildren();
+    // the new page fades in
+    enter(this.pane, 'fade');
     this.aside.replaceChildren();
     this.aside.hidden = true;
     this.d!.classList.remove('with-preview');
