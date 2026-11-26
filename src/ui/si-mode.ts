@@ -599,9 +599,9 @@ const RIBBON = `
       <div class="rb-col">
         <div class="rb-pair">
           <button class="rb-sq rb-iconbtn" data-si-para="left" title="Align Left (the paragraphs selected in the Live Preview)" aria-label="Align Left">${RIBBON_ICONS['doc-align-left']}</button>
-          <button class="rb-sq rb-iconbtn" data-si-para="center" title="Center" aria-label="Center">${RIBBON_ICONS['doc-align-center']}</button>
-          <button class="rb-sq rb-iconbtn" data-si-para="right" title="Align Right" aria-label="Align Right">${RIBBON_ICONS['doc-align-right']}</button>
-          <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify (both edges straight)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="center" title="Center (the paragraphs selected in the Live Preview)" aria-label="Center">${RIBBON_ICONS['doc-align-center']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="right" title="Align Right (the paragraphs selected in the Live Preview)" aria-label="Align Right">${RIBBON_ICONS['doc-align-right']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify: both edges straight (the paragraphs selected in the Live Preview)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
         </div>
         <div class="rb-pair">
           <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
@@ -1206,6 +1206,7 @@ export class SiMode {
 
   /** A Font group command on the Live Preview's selection (si-preview.ts format). */
   private async formatPreview(pv: SiPreview, cmd: string, value?: string): Promise<void> {
+    if (!(await pv.ready())) return;
     const toggle = (k: 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup'): FormatLook => ({ [k]: !pv.selectionHas(k) });
     let look: FormatLook | 'clear' | null = null;
     switch (cmd) {
@@ -1230,7 +1231,9 @@ export class SiMode {
   /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
   private fontState(): void {
     const on = !!this.previewTyped;
-    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) { el.disabled = !on; el.closest('.rb-group')!.setAttribute('title', on ? '' : SI_PARA_REASON); }
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) el.disabled = !on;
+    const pg = this.ribbon.querySelector<HTMLElement>('.si-para-group');
+    if (pg) { if (on) pg.removeAttribute('title'); else pg.title = SI_PARA_REASON; }
     const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
     if (brush) { brush.disabled = !on; if (!on) this.preview?.stopPainting(); }
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
@@ -1246,6 +1249,8 @@ export class SiMode {
   private async paragraph(cmd: string, value?: string): Promise<void> {
     const pv = this.previewTyped;
     if (!pv) { this.host.flash(SI_PARA_REASON, 6000); return; }
+    // (what it toggles or steps from is read from the text shown: the last change shown first)
+    if (!(await pv.ready())) return;
     const INDENT = 36;
     switch (cmd) {
       case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
@@ -3779,7 +3784,7 @@ export class SiMode {
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
       },
-      writeFormat: async (fields, change, owner) => {
+      writeFormat: async (fields, change, owner, what = 'Format') => {
         const p = asProject(owner);
         let done = false;
         const save = async (): Promise<void> => {
@@ -3788,13 +3793,13 @@ export class SiMode {
           const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
           for (const { a, x } of access) {
             if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
-            if ((await a.read()) !== x.from) throw new Error('The text changed while it was being formatted. Select it and try again.');
+            if ((await a.read()) !== x.from) throw new Error(what === 'Replace' ? 'The text changed meanwhile. Find the words again and replace them.' : 'The text changed while it was being formatted. Select it and try again.');
           }
           for (const { a, x } of access) await a!.write(x.text);
           if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
           done = true;
         };
-        if (p !== this.project) await this.change(p, 'Format in Live Preview', save);
+        if (p !== this.project) await this.change(p, what === 'Replace' ? 'Replace in Live Preview' : 'Format in Live Preview', save);
         else await this.act(save, fields.length > 0);
         // (the reason was said)
         if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });

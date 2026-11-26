@@ -18,7 +18,7 @@ import type { DocText } from '../document/document';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
-import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
+import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
@@ -50,7 +50,7 @@ export interface SiPreviewHost {
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
   /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
-  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown): Promise<void>;
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace'): Promise<void>;
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
@@ -186,6 +186,28 @@ export class SiPreview {
   /** The edits written so far (for a compile to say which typing it has). */
   get generation(): number { return this.writtenGen; }
 
+  /** The newest edit the text shown has (a compile with it shown). */
+  private shownGen = 0;
+  private shownWaiters: (() => void)[] = [];
+
+  /**
+   * Whether the text shown is the stored text: typing written, and the compile after the last
+   * write (typing, formatting, Replace) shown. Commands that read the shown text (Replace, a
+   * toggle, Increase Indent) wait for it, so they never act on words already changed; false
+   * (said) when it doesn't come in time.
+   */
+  async ready(): Promise<boolean> {
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    if (this.shownGen >= this.editGen || !this.file) return true;
+    const ok = await new Promise<boolean>((done) => {
+      const t = window.setTimeout(() => { this.shownWaiters = this.shownWaiters.filter((x) => x !== go); done(false); }, 20000);
+      const go = (): void => { clearTimeout(t); done(true); };
+      this.shownWaiters.push(go);
+    });
+    if (!ok) this.api.flash('The Live Preview is still updating. Try again in a moment.');
+    return ok && !!this.file;
+  }
+
   /**
    * Show a compile. Typing not yet written keeps the text it is in: the compile waits for it. A
    * compile started before the last typing was written is not shown (a newer one follows the
@@ -195,6 +217,7 @@ export class SiPreview {
     if (this.dirty.size || this.fresh.size || this.busy || (this.file && this.file.ed.composing !== null)) { this.waiting = s; return; }
     if (!force && !this.failed && s.gen !== undefined && s.gen < this.editGen && this.file) return;
     this.failed = false;
+    this.shownGen = force || s.gen === undefined ? this.editGen : Math.max(this.shownGen, s.gen);
     const same = s.key === this.key && !!this.file;
     if (!same || s.owner !== this.owner) { clearTimeout(this.settleTimer); this.fromFor = undefined; }
     const v = this.view;
@@ -233,6 +256,7 @@ export class SiPreview {
     if (!same && this.focusNode) this.revealNode(this.focusNode);
     this.findAgain();
     v.redraw();
+    if (this.shownGen >= this.editGen && this.shownWaiters.length) { const w = this.shownWaiters; this.shownWaiters = []; for (const go of w) go(); }
   }
 
   /** The number of the last page shown (for the spectra's pages to go on from). */
@@ -1029,7 +1053,7 @@ export class SiPreview {
         flash: (m, ms) => this.api.flash(m, ms),
         redraw: () => { this.placeInput(); this.view.redraw(); },
         found: () => this.foundShown(),
-      }, { replace: (ranges, with_) => this.replaceAt(ranges, with_) });
+      }, { replace: (ranges, with_) => this.replaceAt(ranges, with_), ready: () => this.ready() });
     }
     this.finder.show(replace);
   }
@@ -1133,7 +1157,8 @@ export class SiPreview {
     for (const k of LOOK_KEYS) {
       const v = this.selectionValue(k);
       // (on or off for each look, so the words painted match; a font, size or color only when it has one)
-      if (k === 'font' || k === 'size' || k === 'color' || k === 'highlight') { if (v !== undefined) (look as Record<string, unknown>)[k] = v; }
+      // ('' for none: painted words lose a font, size, color or highlight the copied ones don't have)
+      if (k === 'font' || k === 'size' || k === 'color' || k === 'highlight') (look as Record<string, unknown>)[k] = v === undefined ? '' : v;
       else (look as Record<string, unknown>)[k] = !!v;
     }
     this.brush = { look, keep };
@@ -1157,33 +1182,41 @@ export class SiPreview {
     // only what differs is changed: words already so get no piece of their own
     const patch: FormatLook = {};
     for (const [k, v] of Object.entries(b.look) as [keyof RunFormatLook, RunFormatLook[keyof RunFormatLook]][]) {
-      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : this.selectionValue(k) !== v || this.selectionAny(k, v);
+      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : v === '' ? this.selectionAny(k) : this.selectionAny(k, v);
       if (differs) (patch as Record<string, unknown>)[k] = v;
     }
-    if (Object.keys(patch).length) void this.format(patch);
+    // (one paint after another: a drag while the last is being written waits for it)
+    if (Object.keys(patch).length) this.paints = this.paints.then(() => this.format(patch)).then(() => {}, () => {});
   }
+  private paints: Promise<void> = Promise.resolve();
 
   /**
    * Replace (Home ▸ Editing): the found places [a, b) of the preview's text become `with_` in the
    * fields they print from, all in one step of Undo; places in words the program writes (an ID, a
    * heading, a label) are left, and said so.
    */
-  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<void> {
-    if (!this.file || !ranges.length) return;
-    if (!this.editable) { this.api.flash(this.why); return; }
-    if (this.dirty.size || this.fresh.size) await this.writeNow();
+  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
+    if (!this.file || !ranges.length) return 0;
+    if (!this.editable) { this.api.flash(this.why); return 0; }
+    // (the places were found in the text shown: it must still be the stored text)
+    if (this.dirty.size || this.fresh.size || this.shownGen < this.editGen) { this.api.flash('The Live Preview is still updating. Try again in a moment.'); return 0; }
     const f = this.file;
-    if (!f) return;
     const owner = this.owner, text = f.ed.text;
     const spansNow = this.spans.map((x) => ({ ...x }));
-    // each place by the field it is in (a place across two fields, or in words of the program's own, is left)
+    const printedCache = new Map<string, ReturnType<typeof printedOf>>();
+    const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
+      let x = printedCache.get(src);
+      if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
+      return x;
+    };
+    // each place by the field it is in; a place across two fields, in a general procedure (every
+    // compound using it would change), in text typed in the preview, or in words Chemweave writes, is left
     const bySrc = new Map<string, [number, number][]>();
     let left = 0;
     for (const [a, b] of ranges) {
       const sp = spansNow.find((x) => x.start <= a && x.end >= b);
-      if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src)) { left++; continue; }
-      const p = printedOf(text, spansNow, sp.src);
-      const at = p.at(a);
+      if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src) || parseSrc(sp.src)?.owner === 'g') { left++; continue; }
+      const at = printedOfSrc(sp.src).at(a);
       const l = bySrc.get(sp.src);
       if (l) l.push([at, at + b - a]); else bySrc.set(sp.src, [[at, at + b - a]]);
     }
@@ -1192,7 +1225,7 @@ export class SiPreview {
     for (const [src, places] of bySrc) {
       const raw = await this.api.read(src, owner);
       if (raw === null) { left += places.length; continue; }
-      let printed = printedOf(text, spansNow, src).printed, out = raw;
+      let printed = printedOfSrc(src).printed, out = raw;
       // (from the last place back, each against the printed text as it is by then)
       for (const [pa, pb] of [...places].sort((x, y) => y[0] - x[0])) {
         const next = applyToRaw(out, printed, pa, pb, with_, markupSrc(src));
@@ -1205,16 +1238,20 @@ export class SiPreview {
     }
     if (fields.length) {
       try {
-        await this.api.writeFormat(fields, null, owner);
+        await this.api.writeFormat(fields, null, owner, 'Replace');
       } catch (err) {
         if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
-        return;
+        return 0;
       }
       for (const x of fields) this.written.delete(x.src);
       this.editGen++; this.writtenGen = this.editGen;
     }
     const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
-    if (ranges.length > 1 || left) this.api.flash(left ? `Replaced ${what(done)}. ${what(left)} ${left === 1 ? 'is' : 'are'} not a compound’s own text (a general procedure’s, an ID, a heading), left as ${left === 1 ? 'it is' : 'they are'}: change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.` : `Replaced ${what(done)}. Ctrl+Z restores them.`, left ? 9000 : 4000);
+    const why = 'in a general procedure, typed in the Live Preview, or written by Chemweave (an ID, a heading)';
+    if (!done && left) this.api.flash(`Nothing replaced: ${left === 1 ? 'the place is' : 'the places are'} ${why}. Change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.`, 9000);
+    else if (left) this.api.flash(`Replaced ${what(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
+    else if (done > 1) this.api.flash(`Replaced ${what(done)}. Ctrl+Z restores them.`, 4000);
+    return done;
   }
 
   /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */
@@ -1232,12 +1269,13 @@ export class SiPreview {
     if (one && !ed.collapsed) ed.setCaret(ed.start);
     if (ed.collapsed) {
       const t = ed.text, at = ed.start;
-      const a = t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
+      const a = at === 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
       if (b <= a) { this.api.flash('Click in a paragraph with words in it first.'); return false; }
       // (kept by the paragraph's first words only: typing later in it doesn't lose the look)
       ed.select(a, Math.min(b, a + PARA_ANCHOR));
       const done = await this.format(look);
       this.file?.ed.setCaret(Math.min(at, this.file.ed.text.length));
+      if (!done) this.api.flash('This paragraph can’t take formatting of its own: it has no words of a field or of the SI’s own text (a picture alone, or an empty line).');
       return done;
     }
     return this.format(look);

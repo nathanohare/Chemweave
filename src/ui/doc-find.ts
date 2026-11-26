@@ -48,11 +48,16 @@ export class DocFind {
   /** Finding only: no Replace row, and Ctrl+H does nothing. */
   private findOnly: boolean;
   /** Replacing done by the host (SI mode's Live Preview writes the fields the words come from): no look buttons. */
-  private replacer: ((ranges: [number, number][], with_: string) => Promise<void>) | null;
+  private replacer: ((ranges: [number, number][], with_: string) => Promise<number>) | null;
+  /** The host's text shown is its stored text again (false: it said why not). */
+  private ready: () => Promise<boolean>;
+  /** A host Replace is under way: another waits for it, never acting on text it has changed. */
+  private busy = false;
 
-  constructor(parent: HTMLElement, private host: DocFindHost, opts: { findOnly?: boolean; replace?: (ranges: [number, number][], with_: string) => Promise<void> } = {}) {
+  constructor(parent: HTMLElement, private host: DocFindHost, opts: { findOnly?: boolean; replace?: (ranges: [number, number][], with_: string) => Promise<number>; ready?: () => Promise<boolean> } = {}) {
     this.findOnly = !!opts.findOnly;
     this.replacer = opts.replace ?? null;
+    this.ready = opts.ready ?? (async () => true);
     const el = document.createElement('div');
     el.className = 'doc-find';
     el.setAttribute('role', 'search');
@@ -202,15 +207,11 @@ export class DocFind {
     if (this.findOnly) return;
     const f = this.host.file();
     if (!f) return;
+    if (this.replacer) { void this.hostReplace(false); return; }
     const i = this.current();
     if (i < 0) { this.go(1); return; }
     const [a, b] = this.hits[i];
     const with_ = this.withBox.value;
-    if (this.replacer) {
-      // (the text comes back from the fields: the next place is found when it shows)
-      void this.replacer([[a, b]], with_).then(() => { f.ed.setCaret(Math.min(a + with_.length, f.ed.text.length)); this.refresh(); this.go(1); });
-      return;
-    }
     const keep = !with_ && lookPatch(this.look) !== null;
     const who = keep ? null : f.ed.track?.();
     let after: number;
@@ -233,13 +234,52 @@ export class DocFind {
     this.showCount();
   }
 
+  /**
+   * Replace done by the host, which writes where the words come from: the text is looked at again
+   * once it shows what is stored (before and after), and one Replace at a time.
+   */
+  private async hostReplace(all: boolean): Promise<void> {
+    if (this.busy || !this.replacer) return;
+    this.busy = true;
+    try {
+      if (!(await this.ready())) return;
+      this.refresh();
+      const f = this.host.file();
+      if (!f || !this.hits.length) { this.host.flash('Nothing to replace: the words were not found.'); return; }
+      const with_ = this.withBox.value;
+      if (all) {
+        await this.replacer([...this.hits], with_);
+        await this.ready();
+        this.refresh();
+        return;
+      }
+      const i = this.current();
+      if (i < 0) { this.go(1); return; }
+      const [a, b] = this.hits[i];
+      const n = await this.replacer([[a, b]], with_);
+      await this.ready();
+      this.refresh();
+      // the next place from after this one (the text before it is as it was)
+      const from = n ? a + with_.length : b;
+      const h = this.hits, g = this.host.file()?.ed;
+      if (!h.length || !g) return;
+      const j = h.findIndex(([x]) => x >= from);
+      const k = j >= 0 ? j : 0;
+      g.select(h[k][0], h[k][1]);
+      this.showCount();
+      this.host.found?.();
+    } finally {
+      this.busy = false;
+    }
+  }
+
   private replaceAll(): void {
     if (this.findOnly) return;
     const f = this.host.file();
     if (!f || !this.hits.length) { this.host.flash('Nothing to replace: the words were not found.'); return; }
     const n = this.hits.length;
     const with_ = this.withBox.value;
-    if (this.replacer) { void this.replacer([...this.hits], with_).then(() => this.refresh()); return; }
+    if (this.replacer) { void this.hostReplace(true); return; }
     const keep = !with_ && lookPatch(this.look) !== null;
     const who = keep ? null : f.ed.track?.();
     const next = who ? trackedReplaceRanges(f.t, this.hits, with_, this.look, f.ed.defaults, who).t : ({ ...f.t, runs: replaceRanges(f.t.runs, this.hits, with_, this.look, f.ed.defaults) } as DocText);
