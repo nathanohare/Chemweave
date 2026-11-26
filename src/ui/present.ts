@@ -28,6 +28,8 @@ import { Recorder } from '../deck/narration';
 import { paintSlide } from '../deck/slide-view';
 
 const NOTES_KEY = 'chem-illustrator.rehearse-notes';
+/** How long the end of a rehearsal waits for the recordings to finish (ms). */
+const RECORDING_WAIT_MS = 5000;
 
 /** Whether the notes show under the slide in a rehearsal (on unless turned off). */
 function notesWanted(): boolean {
@@ -75,6 +77,8 @@ export class Presenter {
   private blank: 'black' | 'white' | 'end' | null = null;
   private typed = '';
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  /** What the show asked as it last ended, answered. */
+  private asked: Promise<void> = Promise.resolve();
   private resizeHandler = () => { this.size(); this.paint(); };
   private wasFullscreen = false;
   private hideCursorTimer = 0;
@@ -94,7 +98,7 @@ export class Presenter {
   /** Called with the ink drawn in the show, by slide, when the presenter keeps it. */
   onKeepInk: (ink: Map<number, Stroke[]>) => void = () => {};
   /** Called at the end of a rehearsal or recording with the times (and recordings) to keep. */
-  onRehearsed: (r: Rehearsal) => void = () => {};
+  onRehearsed: (r: Rehearsal) => void | Promise<void> = () => {};
 
   private opts: ShowOptions = {};
   /** Rehearse Timings and Record: the bar at the top, when each slide started, the times so far. */
@@ -413,7 +417,8 @@ export class Presenter {
     clearInterval(r.tick);
     if (r.countdown) clearInterval(r.countdown);
     this.endCountdown = null;
-    await Promise.all(r.pending);
+    // (a recording that never says it has stopped, a microphone unplugged, is not waited for long)
+    await Promise.race([Promise.all(r.pending), new Promise((done) => setTimeout(done, RECORDING_WAIT_MS))]);
     r.rec?.close();
     this.rehearse = null;
     if (!r.times.size) return;
@@ -426,7 +431,14 @@ export class Presenter {
       note: `This run took ${clockText(r.before)}. Save each slide's timing${recorded ? ' and its narration' : ''} so the show advances automatically? Slides not shown keep their timings. (${recorded ? 'Narration goes on each slide as a sound that plays as it comes in. ' : ''}Set Up Show can turn timings off.)`,
       lines,
     });
-    if (got) this.onRehearsed({ times: r.times, recordings: got.narration === 'false' ? new Map() : r.recordings, total: r.before });
+    // (waited for: the narration is converted before it goes on the slides, and a quit must not go first)
+    if (got) await this.onRehearsed({ times: r.times, recordings: got.narration === 'false' ? new Map() : r.recordings, total: r.before });
+  }
+
+  /** End the show and wait for what it asks as it ends (keep the rehearsal timings, keep the ink): before quitting. */
+  async finish(): Promise<void> {
+    this.stop();
+    await this.asked;
   }
 
   stop(): void {
@@ -454,7 +466,7 @@ export class Presenter {
     if (!this.opts.windowed) void this.fullscreen(false);
     this.onEnd(i);
     const after = rehearsing ? this.endRehearsal() : Promise.resolve();
-    if (ink) void after.then(() => askKeepInk()).then((keep) => { if (keep) this.onKeepInk(ink); });
+    this.asked = after.then(() => (ink ? askKeepInk() : false)).then((keep) => { if (keep && ink) this.onKeepInk(ink); }).catch((e: unknown) => console.error('Ending the show:', e));
   }
 
   private async fullscreen(on: boolean): Promise<void> {
@@ -521,7 +533,7 @@ export class Presenter {
   }
 
   private onKey(e: KeyboardEvent): void {
-    if (!this.root) return;
+    if (!this.root || systemShortcut(e)) return;
     // every key belongs to the show while it runs
     e.preventDefault();
     e.stopPropagation();
@@ -772,7 +784,21 @@ export class Presenter {
   }
 }
 
+/**
+ * The app's own ⌘Q (Quit) and ⌘H (Hide) on a Mac: a show lets them through. A key the page takes
+ * (preventDefault) never reaches the Mac's app menu, so taking every key made ⌘Q do nothing. With a
+ * keyboard layout that doesn't type Latin letters (Cyrillic, Greek) the Mac's menu still answers to
+ * the Q key, so the key's place counts when it types another letter.
+ */
+export function systemShortcut(e: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey' | 'key' | 'code'>): boolean {
+  if (!e.metaKey || e.ctrlKey) return false;
+  const latin = /^[a-z]$/i.test(e.key);
+  const is = (letter: string) => (latin ? e.key.toLowerCase() === letter : e.code === `Key${letter.toUpperCase()}`);
+  return is('q') || (is('h') && !e.altKey);
+}
+
 /** At the end of a show with ink: keep it on the slides, or throw it away (as PowerPoint asks). */
+
 export async function askKeepInk(): Promise<boolean> {
   const got = await ask('Keep Ink?', [], { ok: 'Keep', note: 'Do you want to keep your ink annotations? Kept, they go on the slides as shapes you can move, recolor or delete (and they go to PowerPoint). Cancel discards them.' });
   return !!got;
