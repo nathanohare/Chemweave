@@ -20,7 +20,7 @@ import { COMMENT_REL, readCommentAuthors, readLegacyComments, readModernComments
 import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, Contents, Placeholder, Justify, stripBase, type TableCell, type TableData, type PictureFx, type BackgroundRemoval, type PictureLook, type Frame, type ShapeMath, type Media, type OleMark } from '../model';
 import { layoutTable, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, slideCellLook, unstyledRuns } from '../deck/table-styles';
-import { linesFromBorders, commonBorderWidth, type Borders } from './cdxml-table';
+import { linesFromBorders, commonBorderWidth, tableBorders, type Borders } from './cdxml-table';
 import { turnAbout, normDegrees, DEG, type Vec, type Rect } from '../geom';
 import { POINTS, rotation, snapshot, transform, mirrorX, mirrorY } from '../editor/arrange';
 import { BULLETS, autoNumLabel, listInfo } from '../text/paragraphs';
@@ -2284,7 +2284,12 @@ class Reader {
         read = { ...read, ...linesFromBorders(borders) };
         // (the cells' line width, kept: PowerPoint's 2 pt borders stay 2 pt)
         const w = commonBorderWidth(borders);
-        if (w !== undefined && read.lines !== 'none') read.lineW = w;
+        if (w !== undefined && read.lines !== 'none') {
+          read.lineW = w;
+          // (and each cell's own, where they aren't all that width or the kind's lines)
+          const plain = tableBorders(read, w);
+          if (borders.some((row, r) => row.some((b, c) => (['left', 'top', 'bottom', 'right'] as const).some((k) => Math.abs(b[k] - (plain[r]?.[c]?.[k] ?? 0)) > 0.01)))) read.edges = borders;
+        }
       }
     }
     // what was saved here, when the table still has its rows and columns (and its text, for its formatting)

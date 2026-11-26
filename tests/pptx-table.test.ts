@@ -298,6 +298,27 @@ describe('a PowerPoint table\'s cell borders', () => {
     expect(tableOf(again).table.lineW).toBe(2);
   });
 
+  it('keeps one cell\'s heavier borders among lighter ones, until the table\'s rows change', async () => {
+    const bytes = await save(sample());
+    const ln = (side: string, w: number) => `<a:${side} w="${w}"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:${side}>`;
+    const cell = (t: string, w = 12700) => `<a:tc><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>${t}</a:t></a:r></a:p></a:txBody><a:tcPr>${ln('lnL', w)}${ln('lnR', w)}${ln('lnT', w)}${ln('lnB', w)}</a:tcPr></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 8"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>` +
+      `<p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="3657600" cy="1112520"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">` +
+      `<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="1219200"/><a:gridCol w="1219200"/><a:gridCol w="1219200"/></a:tblGrid>` +
+      `<a:tr h="370840">${cell('a')}${cell('b')}${cell('c')}</a:tr><a:tr h="370840">${cell('d')}${cell('heavy', 25400)}${cell('f')}</a:tr><a:tr h="370840">${cell('g')}${cell('h')}${cell('i')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const xml = slideXml(bytes).replace(/<p:graphicFrame>.*<\/p:graphicFrame>/s, frame).replace(/<p:sp>.*?<\/p:sp>/gs, '');
+    const { table } = tableOf(withSlide(bytes, xml));
+    expect(table.lineW).toBe(1);
+    expect(table.edges?.[1][1]).toEqual({ left: 2, top: 2, bottom: 2, right: 2 });
+    const cellPr = (x: string, text: string) => new RegExp(`<a:t>${text}</a:t>[\\s\\S]*?<a:tcPr[^>]*>([\\s\\S]*?)</a:tcPr>`).exec(x)![1];
+    const saved = slideXml(await save(table));
+    expect(cellPr(saved, 'heavy')).toMatch(/<a:lnB w="25400"/);
+    expect(cellPr(saved, 'a')).toMatch(/<a:lnB w="12700"/);
+    // a row added here: the table's lines at its width, as before
+    const added = { ...table, rows: [...table.rows, table.rows[2].map(() => R('x'))] };
+    expect(slideXml(await save(added))).not.toContain('w="25400"');
+  });
+
   it('leaves a table without its own width at the drawing\'s line width', async () => {
     const { table } = tableOf(await save(sample()));
     const xml = slideXml(await save({ ...table, lineW: undefined }));

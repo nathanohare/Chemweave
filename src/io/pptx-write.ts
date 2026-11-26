@@ -24,7 +24,7 @@ import { arrowPoints, shapeBox, boxOf, shapeOrder, elbowRoute } from '../objects
 import { geoDef, textArea, type GeoStep } from '../design/geo';
 import { layoutTable, cellAlign, spanOf, rowSpanOf, coveringCell, tableText, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, lookOf, slideCellLook, styledRuns, type CellLine, type Side } from '../deck/table-styles';
-import { tableBorders } from './cdxml-table';
+import { savedBorders } from './cdxml-table';
 import { writeCdxml } from './cdxml-write';
 import { REF_FIELDS, type RefKind } from './remap-refs';
 import { cdxmlToCdx } from './cdx';
@@ -1831,7 +1831,7 @@ class Writer {
 
     const n = t.rows.length, m = t.cols.length;
     const lw = doc.style.lineWidth;
-    const b = tableBorders(t, t.lineW ?? lw);
+    const b = savedBorders(t, lw);
     const color = s.color ?? '#000000';
     // PowerPoint puts the first baseline its font's ascent below the cell's top margin
     const marT = Math.max(0, lay.padY - (PPT_ASCENT - ASCENT) * size), marB = Math.max(0, lay.padY - 0.05 * size);

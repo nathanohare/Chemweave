@@ -80,6 +80,19 @@ export function tableBorders(t: TableData, lw: number): Borders[][] {
   return out;
 }
 
+/**
+ * The borders to save a table with: the cells' own as read (`edges`), while the table still has
+ * their rows and columns and its lines are the kind they make; else its lines at its width.
+ */
+export function savedBorders(t: TableData, lw: number): Borders[][] {
+  const e = t.edges;
+  if (e && e.length === t.rows.length && e.every((row) => row.length === t.cols.length)) {
+    const kind = linesFromBorders(e);
+    if (kind.lines === t.lines && (t.lines !== 'acs' || kind.head === t.head)) return e.map((row) => row.map((b) => ({ ...b })));
+  }
+  return tableBorders(t, t.lineW ?? lw);
+}
+
 /** The width most of a table's cell borders have (to 0.05 pt), or undefined when it has none. */
 export function commonBorderWidth(b: Borders[][]): number | undefined {
   const count = new Map<number, number>();

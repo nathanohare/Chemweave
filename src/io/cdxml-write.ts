@@ -40,7 +40,7 @@ import { shapeShadow } from '../render/highlight-fx';
 import { parseColor } from '../render/vector';
 import { layoutTable, cellAlign, isCovered, spanOf, partAt, NOTE_SCALE } from '../table';
 import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelSeen, captionAt, textSeen, fragMore, type BondZ, zPrint, type RefKind, type RefOut } from './cdxml-more';
-import { TABLE_TAG, TABLE_PART_TAG, tableBorders, type TableTag } from './cdxml-table';
+import { TABLE_TAG, TABLE_PART_TAG, savedBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
 import { ellipseAxes, isCircleRing, ringBonds, ringCircle, ringsThroughBond } from '../chem/aromatic';
@@ -2173,7 +2173,7 @@ class CdxmlWriter {
     }
     let zNext = z ?? 0;
     const table = this.el('table', { id: hasParts ? this.id() : outerId, BoundingBox: box({ x1: s.x1, y1: s.y1 + lay.ys[0], x2: s.x1 + lay.width, y2: s.y1 + lay.ys[lay.ys.length - 1] }), Z: z });
-    const borders = tableBorders(t, t.lineW ?? lw);
+    const borders = savedBorders(t, lw);
     const color = this.colorAttr(s.color) ?? '0';
     t.rows.forEach((row, r) => {
       for (let c = 0; c < t.cols.length; c++) {
