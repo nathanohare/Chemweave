@@ -2,7 +2,8 @@
 // heading formats, the page header and footer, and the drawing style.
 import { describe, expect, it } from 'vitest';
 import { headingFormat, headingNumber, presetOf, storeHeadingFormat, headingExample } from '../src/si/heading-format';
-import { headerFooter, pageSettings, storePageSettings } from '../src/si/page-setup';
+import { headerFooter, pageLookOn, pageOf, pageSettings, storeHyphenation, storePageSettings, storeWatermark } from '../src/si/page-setup';
+import { defaultPage, defaultWatermark, type DocText } from '../src/document/document';
 import { siDefaultStyle, siDrawingStyle, storeSiDrawingStyle } from '../src/si/drawing-style';
 import { ACS_1996 } from '../src/style';
 import type { Json } from '../src/si/project';
@@ -85,5 +86,80 @@ describe('the drawing style', () => {
     // a hand-edited value of the wrong kind is left at the default
     (s.drawing_style as Json).bondLength = 'big';
     expect(siDrawingStyle(s).bondLength).toBeCloseTo(18, 1);
+  });
+});
+
+describe('paper and margins', () => {
+  it('default to Letter with 1 inch margins, and nothing is stored for them', () => {
+    const s: Json = {};
+    const v = pageSettings(s);
+    expect(v.paper).toBe('letter');
+    expect(v.margins).toEqual({ top: 1, bottom: 1, left: 1, right: 1 });
+    storePageSettings(s, { ...v });
+    expect((s.page as Json).paper).toBeUndefined();
+    expect((s.page as Json).margins).toBeUndefined();
+  });
+
+  it('A4 and other margins are kept and make the page (A4 is 210 × 297 mm: 595.3 × 841.9 pt)', () => {
+    const s: Json = {};
+    storePageSettings(s, { ...pageSettings(s), paper: 'a4', margins: { top: 1, bottom: 1, left: 0.75, right: 0.75 } });
+    // storing the header again keeps them
+    storePageSettings(s, { ...pageSettings(s), header: ['x', '', ''] });
+    const page = pageOf(s, defaultPage());
+    expect(page.w).toBeCloseTo(595.3, 1);
+    expect(page.h).toBeCloseTo(841.9, 1);
+    expect(page.left).toBe(54);
+    expect(page.top).toBe(72);
+  });
+
+  it('a margin out of range reads as 1 inch', () => {
+    expect(pageSettings({ page: { margins: { top: 9, left: 0.1, right: 'x' } } }).margins).toEqual({ top: 1, bottom: 1, left: 1, right: 1 });
+  });
+});
+
+describe('watermark and hyphenation (Layout tab)', () => {
+  it('default to none and off, and nothing is stored for them', () => {
+    const s: Json = {};
+    const v = pageSettings(s);
+    expect(v.watermark).toBeNull();
+    expect(v.hyphenation).toBe(false);
+    storePageSettings(s, { ...v });
+    expect((s.page as Json).watermark).toBeUndefined();
+    expect((s.page as Json).hyphenation).toBeUndefined();
+  });
+
+  it('are stored, kept when Page Setup is saved again, and removed', () => {
+    const s: Json = { page: { number_prefix: 'S', paper: 'a4' } };
+    storeWatermark(s, { ...defaultWatermark('DRAFT'), layout: 'horizontal' });
+    storeHyphenation(s, true);
+    // (the other page settings stay)
+    expect((s.page as Json).paper).toBe('a4');
+    storePageSettings(s, { ...pageSettings(s), header: ['x', '', ''] });
+    const v = pageSettings(s);
+    expect(v.watermark).toEqual({ text: 'DRAFT', font: 'Calibri', color: '#c0c0c0', layout: 'horizontal', faded: true });
+    expect(v.hyphenation).toBe(true);
+    storeWatermark(s, null);
+    storeHyphenation(s, false);
+    expect((s.page as Json).watermark).toBeUndefined();
+    expect((s.page as Json).hyphenation).toBeUndefined();
+    expect((s.page as Json).header).toEqual({ left: 'x', center: '', right: '' });
+  });
+
+  it('read a hand-edited watermark safely: no words is none, a bad color or layout falls back', () => {
+    expect(pageSettings({ page: { watermark: { text: '  ' } } }).watermark).toBeNull();
+    expect(pageSettings({ page: { watermark: 'DRAFT' } }).watermark).toBeNull();
+    expect(pageSettings({ page: { watermark: { text: 'SAMPLE', color: 'red', layout: 'sideways', faded: false } } }).watermark)
+      .toEqual({ text: 'SAMPLE', font: 'Calibri', color: '#c0c0c0', layout: 'diagonal', faded: false });
+    expect(pageSettings({ page: { hyphenation: 'yes' } }).hyphenation).toBe(false);
+  });
+
+  it('go on the compiled document', () => {
+    const doc: Pick<DocText, 'watermark' | 'hyphen'> = {};
+    pageLookOn(doc, { page: { watermark: { text: 'CONFIDENTIAL' }, hyphenation: true } });
+    expect(doc.watermark?.text).toBe('CONFIDENTIAL');
+    expect(doc.hyphen?.auto).toBe(true);
+    pageLookOn(doc, {});
+    expect(doc.watermark).toBeUndefined();
+    expect(doc.hyphen).toBeUndefined();
   });
 });

@@ -1,10 +1,11 @@
 // The app runs on WebKit as old as Safari 15.4 (apps on macOS 12, older iPads). It can't read regex
 // lookbehind or class static blocks, and one in any script stops the app from starting.
 import { describe, expect, it } from 'vitest';
+import postcss from 'postcss';
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { problems } from '../scripts/check-old-webkit.mjs';
-import { replaceMixes } from '../scripts/color-mix-fallback.mjs';
+import colorMixFallback, { replaceMixes } from '../scripts/color-mix-fallback.mjs';
 import { after, guarded, notAfter, reflag } from '../src/regex-behind';
 import { safeText, rx, search, sub } from '../src/si/py';
 import { findIssues } from '../src/text/chemtext';
@@ -121,5 +122,73 @@ describe('Unicode patterns on an old engine', () => {
   it('finds the empty matches of a text with such characters once each, and ends', () => {
     expect(sub(rx('\\s*'), '-', 'a\u{1F600}b')).toBe('-a-\u{1F600}-b-');
     expect(parseIr('\u{1D45B}see https://doi.org/\u{1F600}calc./.')).toEqual({});
+  });
+});
+
+// (macOS 12 with "Show scroll bars: Always": the build's gray stand-in for color-mix() made the
+// page's scroll bar thumb the color of the Dark Gray surround, so it could not be seen)
+describe('the scroll bar thumb without color-mix()', () => {
+  const css = readFileSync(join(SRC, 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\//g, '');
+  const rgb = (hex: string) => [1, 3, 5].map((i) => parseInt(hex.slice(i, i + 2), 16));
+  const luminance = (c: number[]) => {
+    const [r, g, b] = c.map((v) => (v / 255 <= 0.03928 ? v / 255 / 12.92 : ((v / 255 + 0.055) / 1.055) ** 2.4));
+    return 0.2126 * r + 0.7152 * g + 0.0722 * b;
+  };
+  /** The block that sets a theme's tokens, found by what it begins with. */
+  const block = (start: string) => css.slice(css.indexOf(start), css.indexOf('}', css.indexOf(start)));
+  const token = (text: string, name: string): string | undefined => {
+    const at = text.indexOf(`${name}: `);
+    return at < 0 ? undefined : text.slice(at + name.length + 2, text.indexOf(';', at));
+  };
+
+  it('is set by a rule that comes after the build’s stand-ins, from a theme token', () => {
+    // (as the build writes the style sheet, its own stand-ins for color-mix() included: what an old
+    // engine reads last for the resting thumb must be the theme's token)
+    const built = postcss([colorMixFallback()]).process(css, { from: undefined }).css;
+    const seen: string[] = [];
+    postcss.parse(built).walkRules((rule) => {
+      const old = rule.parent?.type === 'atrule' && (rule.parent as postcss.AtRule).params.startsWith('not (color: color-mix');
+      if (rule.selector !== '.sb-fade :not(.tb-body, .sh-tabs)::-webkit-scrollbar-thumb') return;
+      rule.walkDecls('background', (d) => { if (old || !d.value.includes('color-mix(')) seen.push(d.value); });
+    });
+    expect(seen.at(-1)).toBe('var(--sb-thumb) content-box');
+  });
+
+  /** An rgba() thumb over a surface: how well it stands out (WCAG contrast). */
+  const contrast = (thumb: string, surface: string): number => {
+    const [r, g, b, a] = /rgba\(([^)]+)\)/.exec(thumb)![1].split(',').map(Number);
+    const under = surface.length === 4 ? rgb(`#${[...surface.slice(1)].map((c) => c + c).join('')}`) : rgb(surface);
+    const on = under.map((v, i) => a * [r, g, b][i] + (1 - a) * v);
+    const [hi, lo] = [luminance(on), luminance(under)].sort((x, y) => y - x);
+    return (hi + 0.05) / (lo + 0.05);
+  };
+
+  // (each pane whose ground isn't the theme's own, with the tokens set for it)
+  it.each([
+    ['the Dark Gray dock', ":root[data-gray]:not([data-shadows='off']) .dock {", ':root[data-gray] { --chrome', '--chrome'],
+    ['a card in the Dark Gray dock', ":root[data-gray]:not([data-shadows='off']) .dock > * {", ':root[data-gray] .dock, :root[data-gray] aside {', '--panel'],
+  ])('stands out on %s', (_name, tokens, from, surface) => {
+    for (const t of ['--sb-thumb', '--sb-thumb-on']) expect(contrast(token(block(tokens), t)!, token(block(from), surface)!), t).toBeGreaterThan(1.4);
+  });
+
+  it.each([['the grid', '\n.sh-scroll {', '#fff'], ['a dashboard', '\n.dash {', '#f3f4f6']])('stands out on %s, light in every theme', (_name, rule, ground) => {
+    expect(block(rule)).toContain(ground);
+    for (const t of ['--sb-thumb', '--sb-thumb-on']) expect(contrast(token(block('.sh-scroll, .dash {'), t)!, ground), t).toBeGreaterThan(1.4);
+  });
+
+  it('has the same colors for the Dark theme and the system’s dark mode', () => {
+    const dark = block(":root[data-theme='dark'] {"), system = block(":root:not([data-theme='light']) {");
+    for (const t of ['--sb-thumb', '--sb-thumb-on', '--sb-track']) expect(token(system, t), t).toBe(token(dark, t));
+  });
+
+  it.each([
+    ['Light', ':root {', undefined],
+    ['Dark', ":root[data-theme='dark'] {", undefined],
+    ['Dark Gray', ':root {', ':root[data-gray] { --chrome'],
+  ])('stands out from every surface of the %s theme', (_name, base, over) => {
+    for (const surface of ['--surround', '--bg', '--panel']) {
+      const color = (over && token(block(over), surface)) || token(block(base), surface)!;
+      for (const t of ['--sb-thumb', '--sb-thumb-on']) expect(contrast(token(block(base), t)!, color), `${t} ${surface} ${color}`).toBeGreaterThan(1.4);
+    }
   });
 });

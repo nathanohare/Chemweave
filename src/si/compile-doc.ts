@@ -38,13 +38,15 @@ import { POINTS } from '../editor/arrange';
 import { Doc } from '../model';
 import { drawScheme, schemeLayout, type DrawBox, type DrawStep, type SchemeLayout } from './scheme-draw';
 import { inlineIds, inlineMol } from './scheme-edit';
-import { headerFooter } from './page-setup';
+import { headerFooter, pageLookOn, pageOf } from './page-setup';
 import { siDrawingStyle } from './drawing-style';
 import { countText, headingFormat, headingNumber, type CountStyle } from './heading-format';
 import { coverGaps, tocLists, type TocLists } from './front-layout';
 import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type SourceSpan } from './source-map';
 import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
 import { addFlagComments } from './flag-comments';
+import { applyPreviewFormats, readPreviewFormats } from './preview-format';
+import { applyStyleLooks, readStyleLooks, SI_COMPOUND_LOOK, SI_TOC_HEADING_LOOK, type StyleLooks } from './si-styles';
 import { figureFrame, figureKey, floatOf as placedFloat, placementOf, structureKey, type Placement } from './placement';
 
 /** What compiling needs from the app: drawings made from molfiles, their sizes, and the structures' facts. */
@@ -181,7 +183,7 @@ function textObjects(text: string): TextObject[] {
 // ---------------------------------------------------------------- pictures
 
 /** Dots per inch a PNG or JPEG says it was made at (null when it doesn't say). */
-function pictureDpi(b: Uint8Array, mime: string): number | null {
+export function pictureDpi(b: Uint8Array, mime: string): number | null {
   const dv = new DataView(b.buffer, b.byteOffset, b.byteLength);
   if (mime === 'image/png') {
     for (let i = 8; i + 12 <= b.length;) {
@@ -220,6 +222,18 @@ interface Owner { key: string; name: string; folder: string; figures: Json }
 
 class Compiler {
   readonly b = new DocBuilder();
+  /** Project Settings ▸ Styles ▸ Caption: its alignment and space after win over the captions' own (a figure's own alignment still wins). */
+  private captionLook: StyleLooks[string] = {};
+  /** The width and height of the text on an upright page (the page's less its margins). */
+  private readonly uprightW: number = TEXT_W;
+  private readonly uprightH: number = 9 * PT;
+  /** The width of the text (the page's less its margins, on its side on a landscape page): what pictures, tables and schemes fit in. */
+  private get textW(): number { return this.landscape ? this.sidewaysW : this.uprightW; }
+  /** The height of the text: no picture is made taller than fits (its caption below it still needs room). */
+  private get textH(): number { return this.landscape ? this.sidewaysH : this.uprightH; }
+  private get sidewaysW(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.h - p.left - p.right); }
+  private get sidewaysH(): number { const p = this.b.doc.page; return Math.max(2 * PT, p.w - p.top - p.bottom); }
+  private tallest(h: number): number { return Math.max(PT, Math.min(h, this.textH - 0.6 * PT)); }
   readonly sources: SourceSpan[] = [];
   readonly blocks: SourceBlock[] = [];
   readonly notes: string[] = [];
@@ -239,7 +253,16 @@ class Compiler {
   /** Citations are raised, as the document's citation style (ACS) has them. */
   private readonly citeSup = citeSuper(formatOf({}));
 
-  constructor(readonly p: SiProject, readonly host: CompileHost, words: Set<string>) {
+  constructor(readonly p: SiProject, readonly host: CompileHost, words: Set<string>, styleLooks: StyleLooks = {}) {
+    // Project Settings ▸ Page: the paper and margins
+    this.b.doc.page = pageOf(p.settings, this.b.doc.page);
+    // Layout ▸ Watermark and Hyphenation
+    pageLookOn(this.b.doc, p.settings);
+    // Project Settings ▸ Styles, before the SI's own styles are made from Normal and the headings (and again after: si-styles.ts)
+    applyStyleLooks(this.b.doc.styles, styleLooks);
+    this.captionLook = styleLooks.Caption ?? {};
+    this.uprightW = Math.max(2 * PT, this.b.doc.page.w - this.b.doc.page.left - this.b.doc.page.right);
+    this.uprightH = Math.max(2 * PT, this.b.doc.page.h - this.b.doc.page.top - this.b.doc.page.bottom);
     this.styles = this.b.doc.styles;
     this.report = p.idReport();
     this.labels = new Labels(labelRules(p.settings));
@@ -296,6 +319,8 @@ class Compiler {
   private orient(o: 'portrait' | 'landscape'): void {
     if ((o === 'landscape') === this.landscape) return;
     this.landscape = o === 'landscape';
+    // (turned and turned back with no paragraph between: no break at all)
+    if (this.pendingSection) { this.pendingSection = null; return; }
     const p = this.b.doc.page;
     const page = this.landscape ? { ...p, w: p.h, h: p.w } : { ...p };
     // (its own header and footer, as the document's but on its first page too: only the cover goes without)
@@ -412,7 +437,7 @@ class Compiler {
   private compoundStyle(level: number, listed: boolean): string {
     const id = listed ? `SICompound${level}` : 'SICompound';
     if (!this.styles[id]) {
-      const s: NamedStyle = { ...this.styles.Normal, id, name: listed ? `SI Compound ${level}` : 'SI Compound', size: 11, bold: true, align: 'left', spaceBefore: 15, spaceAfter: 5, keepNext: true, next: 'Normal', custom: true };
+      const s: NamedStyle = { ...this.styles.Normal, id, name: listed ? `SI Compound ${level}` : 'SI Compound', ...SI_COMPOUND_LOOK, keepNext: true, next: 'Normal', custom: true };
       if (listed) s.outline = level;
       this.styles[id] = s;
     }
@@ -583,7 +608,11 @@ class Compiler {
     const body = this.chemistry(runs);
     const mark = target?.key ? siMark(target.key) : '';
     if (target?.key && label) this.targets.push({ key: target.key, kind: target.kind, label, caption: plainOf(body), mark });
-    this.para([R(`${label || 'Figure'}.`, { bold: true }), ...(body.length ? [R(' '), ...body] : [])], { style: 'Caption', ...ps, ...(mark ? { marks: [mark] } : {}) }, where);
+    const look = this.captionLook;
+    const own: ParaStyle = { ...ps, align: ps.align ?? look.align ?? 'center' };
+    if (look.spaceAfter !== undefined) delete own.spaceAfter;
+    if (look.spaceBefore !== undefined) delete own.spaceBefore;
+    this.para([R(`${label || 'Figure'}.`, { bold: true }), ...(body.length ? [R(' '), ...body] : [])], { style: 'Caption', ...own, ...(mark ? { marks: [mark] } : {}) }, where);
   }
 
   private async figure(owner: Owner | null, p: Paragraph, label: string, where: string, align?: Justify, key = ''): Promise<void> {
@@ -597,9 +626,9 @@ class Compiler {
     if (!file || !owner) return;
     // (floating with its caption, at the place chosen for it: Picture Format ▸ Position)
     const place = key ? placementOf(this.p.settings, figureKey(key)) : null;
-    const got = await this.pictureBlock(joinPath(owner.folder, file), { w: TEXT_W, h: FIGURE_MAX_H }, where, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined, align, place && key ? { place, key } : undefined);
+    const got = await this.pictureBlock(joinPath(owner.folder, file), { w: this.textW, h: this.tallest(FIGURE_MAX_H) }, where, widthCm ? Math.min(this.textW, (widthCm / 2.54) * PT) : undefined, align, place && key ? { place, key } : undefined);
     const frame = got && typeof got === 'object' ? got.frame : undefined;
-    this.caption(label || 'Figure', p.runs, where, { align: align ?? 'center', ...(frame ? { frame } : {}) }, { key, kind: 'figure' });
+    this.caption(label || 'Figure', p.runs, where, { align, ...(frame ? { frame } : {}) }, { key, kind: 'figure' });
     if (frame) this.clearAtBlock = true;
   }
 
@@ -619,7 +648,7 @@ class Compiler {
       return false;
     }
     const of = /\.pdf$/i.test(name) ? this.pdfPageCount ?? pics.length : 1;
-    const frame = figure && pics.length === 1 && of === 1 && pics[0] ? figureFrame(figure.place, pics[0].w, TEXT_W) : undefined;
+    const frame = figure && pics.length === 1 && of === 1 && pics[0] ? figureFrame(figure.place, pics[0].w, this.textW) : undefined;
     if (figure && figure.place.position !== 'inline' && !frame) this.notes.push(`${where}: ${name} has more than one page; printed in the line.`);
     for (const pic of pics) {
       if (!pic) continue;
@@ -671,7 +700,7 @@ class Compiler {
       const name = image.slice(image.lastIndexOf('/') + 1);
       if (!bytes) { this.notes.push(`${where}: the picture ${name} in a table cell is no longer in the project; left out.`); continue; }
       const widthCm = Number(cd.image_width) || 0;
-      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? (widthCm / 2.54) * PT : undefined, 1))[0] : pictureObject(name, bytes, { w: TEXT_W, h: FIGURE_MAX_H }, widthCm ? Math.min(TEXT_W, (widthCm / 2.54) * PT) : undefined);
+      const pic = /\.pdf$/i.test(name) ? (await this.pdfPictures(bytes, name, where, { w: this.textW, h: this.tallest(FIGURE_MAX_H) }, widthCm ? (widthCm / 2.54) * PT : undefined, 1))[0] : pictureObject(name, bytes, { w: this.textW, h: this.tallest(FIGURE_MAX_H) }, widthCm ? Math.min(this.textW, (widthCm / 2.54) * PT) : undefined);
       if (!pic) { if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: the picture ${name} in a table cell could not be read; left out.`); continue; }
       pictures.set(`${r}:${k}`, this.b.reserve(pic));
     }
@@ -693,11 +722,11 @@ class Compiler {
     // (below a figure floating above it)
     if (this.clearAtBlock) { this.clearAtBlock = false; this.clearNext = true; }
     // the label and caption above, kept with the table
-    this.caption(label || 'Table', caption, where, { align: align ?? 'center', keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
+    this.caption(label || 'Table', caption, where, { align, keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
     const table: Extract<DocObject, { kind: 'table' }> = {
       kind: 'table',
       table: {
-        cols: Array.from({ length: nCols }, () => Math.round((TEXT_W / nCols) * 100) / 100),
+        cols: Array.from({ length: nCols }, () => Math.round((this.textW / nCols) * 100) / 100),
         rows: cells, head, lines: 'acs', size: 10, width: 'auto', autofit: true,
         align: Array.from({ length: nCols }, (_, k) => (['left', 'center', 'right'].includes(cols[k]) ? cols[k] : 'center') as Justify),
       },
@@ -747,7 +776,7 @@ class Compiler {
   private toc(): void {
     const toc = dict(this.p.settings.toc);
     const title = typeof toc.title === 'string' ? toc.title : 'Table of Contents';
-    const style = this.plainStyle('SITocHeading', 'Contents Heading', { size: 13, bold: true, align: 'left', spaceBefore: 0, spaceAfter: 10, keepNext: true });
+    const style = this.plainStyle('SITocHeading', 'Contents Heading', { ...SI_TOC_HEADING_LOOK, keepNext: true });
     this.b.pendingBreak = true;
     if (title.trim()) this.para([R(title)], { style }, 'Table of contents');
     // (every level: what is listed is chosen heading by heading, Table of contents ▸ Lists)
@@ -808,12 +837,28 @@ class Compiler {
       await this.spectraSection(s, level);
       return;
     }
+    // Layout ▸ Orientation (Chemweave's) turns the section's pages, and Breaks ▸ Next Page (SI
+    // Assistant's page_flow.new_page) starts it on a new page; the pages after it turn back
+    const was = this.landscape;
+    // (a sub-section without its own orientation follows its section's)
+    const landscape = ownOrientation(s) ? ownOrientation(s) === 'landscape' : was;
+    if (landscape !== was) this.orient(landscape ? 'landscape' : 'portrait');
+    else if (startsNewPage(s.data) && (!this.preview || this.whole)) this.b.pendingBreak = true;
+    await this.sectionBody(s, level, landscape);
+    if (this.landscape !== was) this.orient(was ? 'landscape' : 'portrait');
+  }
+
+  private async sectionBody(s: SiSection, level: number, landscape: boolean): Promise<void> {
     if (s.type === 'text') {
       this.sectionHeading(level, s.name);
       await this.richText(this.texts.get(s.id) ?? '', s.name, await this.owner(s.id), level, this.lists.headings ? level + 1 : 0, true, true, sectionSrc(s.id));
     } else if (s.type === 'file') await this.fileSection(s, level);
     else if (s.type === 'xray') await this.xray(s, level, true); else if (s.type === 'data') await this.dataSection(s, level);
-    for (const child of s.children) await this.section(child, level + 1);
+    for (const child of s.children) {
+      // (this section's pages again after a sub-section that turned them: the Spectra section ends upright)
+      if (this.landscape !== landscape) this.orient(landscape ? 'landscape' : 'portrait');
+      await this.section(child, level + 1);
+    }
   }
 
   private async fileSection(s: SiSection, level: number): Promise<void> {
@@ -821,7 +866,7 @@ class Compiler {
     if (heading) this.sectionHeading(level, heading);
     const file = str(s.data.file);
     if (!file) { this.notes.push(`Attachment section “${s.name}” has no file attached.`); return; }
-    const ok = await this.pictureBlock(joinPath(s.folder, file), { w: TEXT_W, h: ATTACHMENT_MAX_H }, `Attachment section “${s.name}”`);
+    const ok = await this.pictureBlock(joinPath(s.folder, file), { w: this.textW, h: this.tallest(ATTACHMENT_MAX_H) }, `Attachment section “${s.name}”`);
     const caption = str(s.data.caption).trim();
     if (ok && caption) this.para([R(caption)], { align: 'center' }, s.name, { size: 10 });
   }
@@ -855,6 +900,8 @@ class Compiler {
   }
 
   private async compoundNow(c: SiCompound, level: number, inScheme: boolean): Promise<void> {
+    // Breaks ▸ Next Page (SI Assistant's page_flow.new_page); not for one compound's page in the Live Preview
+    if (startsNewPage(c.data) && (!this.preview || this.whole)) this.b.pendingBreak = true;
     const id = displayId(this.report, c.id);
     const name = compoundName(c);
     if (this.host.progress && !this.preview) await this.host.progress(++this.progressDone, this.progressTotal, `Compounds: ${Math.min(this.progressDone, this.progressTotal)} of ${this.progressTotal}`);
@@ -894,8 +941,8 @@ class Compiler {
     for (let i = 0; i < figures.length; i++) {
       const f = figures[i];
       const def = fieldsOfCompound(c).find((d) => d.key === f.field);
-      const ok = await this.pictureBlock(joinPath(c.folder, def?.subdir ?? 'files', f.file), { w: TEXT_W, h: 4 * PT }, where);
-      if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, { align: 'center' }, { key: `${c.id}#${i}`, kind: 'figure' });
+      const ok = await this.pictureBlock(joinPath(c.folder, def?.subdir ?? 'files', f.file), { w: this.textW, h: 4 * PT }, where);
+      if (ok) this.caption(this.labels.at(c.id, i) || 'Figure', [R(f.caption)], where, {}, { key: `${c.id}#${i}`, kind: 'figure' });
     }
     if (id === 'ID?') this.notes.push(`“${name || 'A compound'}” has no ID (printed as “ID?”).`);
     // its X-ray structures, right after it and without a heading
@@ -917,7 +964,7 @@ class Compiler {
     if (cif === null) { this.notes.push(`${where}: ${file} is no longer in the project; left out.`); return; }
     const { block, error } = xrayBlock(cif, str(s.data.block));
     if (!block) { this.notes.push(`${where}: ${error}; left out.`); return; }
-    const got = xrayDrawing(block, dict(s.data.view), TEXT_W);
+    const got = xrayDrawing(block, dict(s.data.view), this.textW);
     if ('error' in got) { this.notes.push(`${where}: ${got.error}; left out.`); return; }
     const doc = new Doc();
     doc.edit('Crystal Structure', () => {
@@ -929,7 +976,7 @@ class Compiler {
     const rows = xrayTableRows(s.data, block);
     const ccdc = rows.find(([k]) => k === 'ccdc')?.[2] ?? '';
     const caption = str(s.data.caption).trim() || xrayAutoCaption(got.spec.view, ref, ccdc);
-    this.caption(this.labels.at(s.id, 0) || 'Figure', parseMarkup(caption).flatMap((p) => p.runs), where, { align: 'center', spaceAfter: 10 }, { key: s.id, kind: 'figure' });
+    this.caption(this.labels.at(s.id, 0) || 'Figure', parseMarkup(caption).flatMap((p) => p.runs), where, { spaceAfter: 10 }, { key: s.id, kind: 'figure' });
     if (s.data.table === false) return;
     if (!rows.length) { this.notes.push(`${where}: its crystal data table has no values; left out.`); return; }
     const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
@@ -940,10 +987,10 @@ class Compiler {
       { runs: this.cellRuns(label, where, look), align: 'left' },
       { runs: this.cellRuns(value, where, look), align: 'left' },
     ]);
-    this.caption(this.labels.at(s.id, 1) || 'Table', parseMarkup(xrayTableCaption(s.data, ref)).flatMap((p) => p.runs), where, { align: 'center', keepNext: true, spaceAfter: 4 }, { key: s.id + '#table', kind: 'table' });
+    this.caption(this.labels.at(s.id, 1) || 'Table', parseMarkup(xrayTableCaption(s.data, ref)).flatMap((p) => p.runs), where, { keepNext: true, spaceAfter: 4 }, { key: s.id + '#table', kind: 'table' });
     this.b.table({
       kind: 'table',
-      table: { cols: [TEXT_W * 0.45, TEXT_W * 0.55].map((w) => Math.round(w * share * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: tableW ? { pct: Math.round(share * 100) } : 'auto', autofit: !tableW, align: ['left', 'left'] },
+      table: { cols: [this.textW * 0.45, this.textW * 0.55].map((w) => Math.round(w * share * 100) / 100), rows: cells, head: 0, lines: 'acs', size: 10, width: tableW ? { pct: Math.round(share * 100) } : 'auto', autofit: !tableW, align: ['left', 'left'] },
     }, this.full({ align: 'center', spaceAfter: 12 }));
   }
 
@@ -1012,7 +1059,7 @@ class Compiler {
       const align = (v: unknown) => (v === 'left' || v === 'center' || v === 'right' ? v : undefined);
       steps.push({ top: conditions(st.top), bottom: conditions(st.bottom), topAlign: align(st.top_align), bottomAlign: align(st.bottom_align), products, topStructures: await structures(st.top), bottomStructures: await structures(st.bottom) });
     }
-    const got = drawScheme(starting, steps, lay, TEXT_W, siDrawingStyle(this.p.settings));
+    const got = drawScheme(starting, steps, lay, this.textW, siDrawingStyle(this.p.settings));
     if (!got) {
       this.notes.push(`${where}: it has no structures to draw; left out. Its compounds are printed with their own structures.`);
       drawn.clear();
@@ -1023,7 +1070,7 @@ class Compiler {
     this.b.object({ kind: 'drawing', contents: got.contents, ...(scale !== 1 ? { scale } : {}), alt: name });
     const label = lay.show_label ? this.labels.byId.get(k.id) ?? '' : '';
     this.b.endPara(this.full({ align: 'center', keepNext: !!label, spaceBefore: 6, spaceAfter: label ? 2 : 10 }));
-    if (label) this.caption(label, [R(name)], where, { align: 'center', spaceAfter: 10 }, { key: k.id, kind: 'scheme' });
+    if (label) this.caption(label, [R(name)], where, { spaceAfter: 10 }, { key: k.id, kind: 'scheme' });
     return drawn;
   }
 
@@ -1052,7 +1099,7 @@ class Compiler {
       } else if (mol) this.notes.push(`${where}: its structure could not be drawn; left out.`);
     }
     if (!o) return null;
-    const fl = placedFloat(pl, w, TEXT_W);
+    const fl = placedFloat(pl, w, this.textW);
     if (!fl) return { o, float: false, top: pl.top };
     return { o: { ...o, float: { ...fl, name: `Compound structure ${displayId(this.report, c.id)}` } } as DocObject, float: true, top: pl.top };
   }
@@ -1306,7 +1353,8 @@ class Compiler {
       this.para([R(this.numbered(level) + 'HRMS reports')], { style: this.headingStyle(level, this.lists.hrms), ...(withSection ? {} : { pageBreak: true }) }, 'HRMS reports');
       return true;
     };
-    const room = { w: TEXT_W, h: 7.4 * PT };
+    // (the reports are on upright pages, even after landscape spectra pages)
+    const room = { w: this.uprightW, h: Math.max(PT, Math.min(7.4 * PT, this.uprightH - 0.6 * PT)) };
     for (const c of compounds) {
       const id = displayId(this.report, c.id);
       for (const r of reportItems(c)) {
@@ -1575,13 +1623,45 @@ export interface CompileOptions { flagComments?: boolean }
 
 /** Compile the project (or, with `only`, one page of it for the live preview) into a document. */
 export async function compileSi(p: SiProject, host: CompileHost, only?: SiPreviewTarget, options: CompileOptions = {}): Promise<CompiledSi> {
-  const c = new Compiler(p, host, await leaveWords(p));
+  const styleLooks = await readStyleLooks(p.folder);
+  const c = new Compiler(p, host, await leaveWords(p), styleLooks);
   const doc = await c.build(only);
+  applyStyleLooks(doc.styles, styleLooks);
   // the text typed in the Live Preview where no field is, back in its places (custom-text.ts)
   const whole = !only || only.kind === 'whole';
   const items = only?.kind === 'spectra' ? [] : (await readCustomText(p.folder)).filter((x) => whole || c.blocks.some((b) => b.node === x.node));
   const put = items.length ? placeCustomText(doc, c.sources, c.blocks, items) : { doc, sources: c.sources, blocks: c.blocks, placed: [] };
-  const done = options.flagComments ? addFlagComments(put.doc, put.sources, put.blocks, p) : put.doc;
+  // the formatting done in the Live Preview that the fields can't hold, put back (preview-format.ts)
+  const looks = only?.kind === 'spectra' ? [] : await readPreviewFormats(p.folder);
+  const formatted = looks.length ? applyPreviewFormats(put.doc, put.sources, put.blocks, looks) : put.doc;
+  const done = options.flagComments ? addFlagComments(formatted, put.sources, put.blocks, p) : formatted;
   return { doc: done, notes: [...new Set(c.notes)], targets: c.targets, sources: put.sources, blocks: put.blocks, custom: put.placed, structures: c.structures };
 }
 
+
+/** A section or compound starts on a new page (SI Assistant's "page_flow": {"new_page": true}). */
+export function startsNewPage(data: Json): boolean {
+  // (read as SI Assistant reads it: Python's bool())
+  const v = dict(data.page_flow).new_page;
+  return Array.isArray(v) ? v.length > 0 : v && typeof v === 'object' ? Object.keys(v).length > 0 : !!v;
+}
+
+/** A section's own orientation (Chemweave's "orientation"), or null: it follows its section's (upright at the top). The Spectra section sets its own pages. */
+export function ownOrientation(s: SiSection): 'landscape' | 'portrait' | null {
+  if (s.type === 'spectra') return null;
+  return s.data.orientation === 'landscape' || s.data.orientation === 'portrait' ? s.data.orientation : null;
+}
+
+/** A section's pages are on their side: its own orientation, else its section's (`parentOf` finds that). */
+export function sectionLandscape(s: SiSection, parentOf: (s: SiSection) => SiSection | null): boolean {
+  if (s.type === 'spectra') return false;
+  for (let at: SiSection | null = s; at; at = parentOf(at)) { const o = ownOrientation(at); if (o) return o === 'landscape'; }
+  return false;
+}
+
+/** Start a section or compound on a new page, or not (SI Assistant's "page_flow", its other keys kept). */
+export function setNewPage(data: Json, on: boolean): void {
+  const flow: Json = { ...dict(data.page_flow) };
+  if (on) flow.new_page = true; else delete flow.new_page;
+  if (Object.keys(flow).length) data.page_flow = flow; else delete data.page_flow;
+}

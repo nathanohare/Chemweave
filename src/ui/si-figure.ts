@@ -4,6 +4,7 @@
 // printed size and its label; the ribbon's Figure tab changes its picture (a file, the
 // clipboard, the drawing tools or a compound), its width, or removes it.
 
+import { EDIT_KEY, pictureEditOf } from '../si/picture-edit';
 import type { Json } from '../si/project';
 import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
@@ -60,9 +61,11 @@ export class SiFigureEditor {
   }
 
   /** The figure's file and printed width in cm (0: its own size). */
-  get state(): { file: string; width: number } {
+  get state(): { file: string; width: number; edited: boolean } {
     const e = this.entry;
-    return { file: typeof e.file === 'string' ? e.file : '', width: Math.max(0, Number(e.width ?? e.width_cm ?? 0) || 0) };
+    const file = typeof e.file === 'string' ? e.file : '';
+    const was = pictureEditOf(e);
+    return { file, width: Math.max(0, Number(e.width ?? e.width_cm ?? 0) || 0), edited: !!was && file !== was.original };
   }
 
   /** The figure's label as the compiled SI gives it; `auto`: the numbered one it gets without a typed label (the Label box's placeholder). */
@@ -91,6 +94,9 @@ export class SiFigureEditor {
   private gone = false;
 
   focus(): void { scrollToItem(this.el); this.el.focus(); }
+
+  /** Its picture changed outside the editor (Crop, Rotate): painted again. */
+  refresh(): void { this.paint(); }
 
   private paint(): void {
     for (const u of this.urls) URL.revokeObjectURL(u);
@@ -127,9 +133,11 @@ export class SiFigureEditor {
     let rel: string | null = null;
     if (cmd === 'picture') rel = await this.pics.fromFile('Picture for the figure');
     else if (cmd === 'paste-picture') rel = await this.pics.fromClipboard();
-    else if (cmd === 'draw-structure') rel = await this.pics.draw(this.state.file, 'Figure');
+    // (a cropped or turned picture is drawn again from its original: the new drawing replaces both)
+    else if (cmd === 'draw-structure') rel = await this.pics.draw(pictureEditOf(this.entry)?.original ?? this.state.file, 'Figure');
     else if (cmd === 'compound') rel = (await this.pics.fromCompound())?.rel ?? null;
     else if (cmd === 'remove-figure') { await this.host.remove(this); return; }
-    if (rel) await this.save({ file: rel });
+    // (a new picture: the old one's crop and rotation go with it)
+    if (rel) await this.save({ file: rel, [EDIT_KEY]: undefined });
   }
 }

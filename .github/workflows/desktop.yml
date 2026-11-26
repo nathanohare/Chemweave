@@ -181,6 +181,29 @@ jobs:
           fi
       - name: Build the app and its installers
         run: npm run desktop:build -- ${{ matrix.args }}
+      - name: Notarise the Mac installer
+        # Tauri notarises the app, but the .dmg it comes in is made afterwards and is not sent to
+        # Apple, so a Mac checks it online when it is first opened (and warns when offline).
+        # Sending the .dmg and stapling the ticket to it makes it open without that check. A
+        # failure here warns and leaves the .dmg as before: the app inside is notarised anyway.
+        # (bounded, and never failing the job: a slow Apple queue must not cost the Mac installer)
+        if: matrix.platform == 'macos' && github.ref == 'refs/heads/main' && env.APPLE_API_KEY != ''
+        continue-on-error: true
+        timeout-minutes: 25
+        shell: bash
+        run: |
+          shopt -s nullglob
+          dmgs=(src-tauri/target/*/release/bundle/dmg/*.dmg src-tauri/target/release/bundle/dmg/*.dmg)
+          if [ ${#dmgs[@]} -eq 0 ]; then echo "::warning::No .dmg was made, so none was notarised."; exit 0; fi
+          for dmg in "${dmgs[@]}"; do
+            # (one more try after a refusal; each waits at most 10 minutes for Apple)
+            if node scripts/retry.mjs --waits 30 -- xcrun notarytool submit "$dmg" --key "$APPLE_API_KEY_PATH" --key-id "$APPLE_API_KEY" --issuer "$APPLE_API_ISSUER" --wait --timeout 10m \
+              && node scripts/retry.mjs --waits 30 -- xcrun stapler staple "$dmg"; then
+              xcrun stapler validate "$dmg" || echo "::warning::$dmg was stapled but did not validate."
+            else
+              echo "::warning::$dmg was not notarised; the app inside it still is."
+            fi
+          done
       - name: Show what the Windows signing tool said
         if: failure() && matrix.platform == 'windows'
         shell: bash

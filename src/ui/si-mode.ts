@@ -13,13 +13,22 @@ import { MentionTip } from './si-mention-tip';
 import type { Tab } from '../workspace';
 import type { Contents, Doc } from '../model';
 import type { DocStyle } from '../style';
-import { defaultStyles, type DocText } from '../document/document';
-import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
-import type { SiPreview } from './si-preview';
+import { defaultStyles, defaultWatermark, WATERMARKS, type DocText, type Watermark } from '../document/document';
+import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesBefore, startsNewPage, type SiPreviewTarget } from '../si/compile-doc';
+import type { FlagChange, SiPreview } from './si-preview';
+import { addFlagComments } from '../si/flag-comments';
+import { mentionPicker, threadCard } from './comment-cards';
+import { EDIT_KEY, NO_CROP, editRecord, editedName, isPlain, pictureEditOf, shownWidth, turned, type Crop, type PictureEdit, type Turn } from '../si/picture-edit';
+import { askCrop, editableKind, renderEdited, sourceSize } from './si-crop';
+import { popupHost } from './popup-host';
+import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
+import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
+import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
+import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -71,6 +80,7 @@ import { showContextMenu, type MenuItem } from './context-menu';
 import { buildSelectGalleries } from './select-gallery';
 import { FIGURE_WRAPS, figureKey, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, clearOwnPlacements, kindOfKey, ownPlacement, placementOf, projectPlacement, storeOwnPlacement, storeProjectPlacement, structureKey, type OwnPlacement, type SiWrap } from '../si/placement';
 import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { RIBBON_ICONS } from './ribbon-icons';
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
@@ -211,6 +221,9 @@ const SYNC_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another compound or section opens its page here, a moment after you stop. It never changes page while a field of the page is selected or being typed in.';
 
 /** The ribbon: what each button does is its data-si command. */
+/** Why Home ▸ Paragraph is greyed while typing on the SI page. */
+const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
+
 const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
@@ -235,6 +248,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="insert" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="cover-page" data-ic="cover-page" title="Cover Page: the SI's title, authors, affiliations and date, on the project's page"><span class="rb-icon">▤</span>Cover Page</button>
+      <button class="rb-big" data-si-para="page-break" data-ic="page-break" title="Page Break: the paragraph the cursor is in, in the Live Preview, starts a new page (click again to take it off); kept every time the SI is compiled"><span class="rb-icon">⤓</span>Page Break</button>
     </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
@@ -345,7 +359,12 @@ const RIBBON = `
         <button class="rb-labelled" data-si-place="reset" data-ic="picture-reset" title="Back to the Position and Wrap Text of Project Settings ▸ Layout"><span class="rb-lead"></span>Reset to Project Default</button>
         <button class="rb-labelled" data-si-place="apply-all" data-ic="format-painter" title="Use these Position and Wrap Text for every one of its kind (Project Settings ▸ Layout); those with their own go back to it"><span class="rb-lead"></span><span data-si-place-all>Apply to All Structures</span></button>
       </div>
+      <button class="rb-big" data-si-place="rotate" data-si-place-for="figures" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: rotate the picture 90° right or left, or flip it. Saved as a copy beside the original, so SI Assistant shows the same picture"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
+    <div class="rb-group" data-si-place-for="figures"><div class="rb-row">
+      <button class="rb-big" data-si-place="crop" data-ic="crop" title="Crop: cut the picture's sides. Saved as a copy beside the original, so SI Assistant shows it cropped too"><span class="rb-icon"></span>Crop</button>
+      <button class="rb-big" data-si-place="reset-picture" data-ic="picture-reset" title="Reset Picture: the original picture again, without its crop or rotation"><span class="rb-icon"></span>Reset Picture</button>
+    </div><div class="rb-label">Picture</div></div>
   </div>
   <div class="rb-panel" data-si-panel="figure" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -353,9 +372,11 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si-fig="paste-picture" title="The copied picture or drawing in place of the figure's">Paste Picture</button>
         <button data-si-fig="compound" title="A compound's structure in place of the figure's">Compound…</button>
+        <button class="rb-labelled" data-si-fig="reset-picture" data-ic="picture-reset" title="Reset Picture: the original picture again, without its crop or rotation"><span class="rb-lead"></span>Reset Picture</button>
       </div>
     </div><div class="rb-label">Picture</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-fig="crop" data-ic="crop" title="Crop: cut the picture's sides. Saved as a copy beside the original, so SI Assistant shows it cropped too"><span class="rb-icon"></span>Crop</button>
       <div class="rb-col">
         <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" /> cm</label>
       </div>
@@ -367,6 +388,7 @@ const RIBBON = `
           <option value="square">Square</option>
           <option value="topBottom">Top and Bottom</option>
         </select></div>
+      <button class="rb-big" data-si-fig="rotate" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: rotate the picture 90° right or left, or flip it. Saved as a copy beside the original, so SI Assistant shows the same picture"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
@@ -420,13 +442,37 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="layout" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
+      <div class="rb-col">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Orientation" data-ic="page-orientation" data-pic="orient" title="Orientation: the pages of the selected section upright (portrait) or on their side (landscape); the pages after it turn back"><select data-si-page="orient">
+          <option value="portrait">Portrait</option>
+          <option value="landscape">Landscape</option>
+        </select></div>
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Breaks: start the selected compound or section on a new page (Next Page), or straight after what comes before it (Continuous)"><select data-si-page="break">
+          <option value="nextPage">Section: Next Page</option>
+          <option value="continuous">Section: Continuous</option>
+        </select></div>
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Hyphenation" data-ic="hyphenation" title="Hyphenation: break words at the ends of lines where English allows, in the whole compiled SI (Live Preview, Word document and PDF)"><select data-si-page="hyphen">
+          <option value="none">None</option>
+          <option value="auto">Automatic</option>
+        </select></div>
+      </div>
     </div><div class="rb-label">Page Setup</div></div>
     <div class="rb-group"><div class="rb-row">
+      <div class="rb-fly rb-selgal" data-name="Watermark" data-ic="watermark" data-pic="watermark" data-gal="grid" title="Watermark: words across every page of the compiled SI, behind the text (saved as Word's watermark)"><select data-si-page="watermark">
+        <option value="" hidden>None</option>
+        <option value="0">CONFIDENTIAL</option><option value="1">DRAFT</option><option value="2">DO NOT COPY</option><option value="3">SAMPLE</option><option value="4">PRELIMINARY</option><option value="5">NOT FOR DISTRIBUTION</option><option value="6">ASAP</option><option value="7">URGENT</option>
+        <option value="other" hidden>Custom</option>
+        <option value="custom">Custom Watermark…</option>
+        <option value="remove">Remove Watermark</option>
+      </select></div>
+    </div><div class="rb-label">Page Background</div></div>
+    <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
+        <button data-si="styles" data-ic="style-set" title="Styles: the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions (Project Settings ▸ Styles)">Styles</button>
         <button data-si="heading-numbers" data-ic="numbers-s" title="Heading Numbers: how the headings of the compiled SI are numbered (1, 1.1, S1, A.…), and what goes before and after the number (Project Settings ▸ Headings)">Heading Numbers</button>
         <button data-si="caption-labels" data-ic="insert-caption" title="Caption Labels: the words and numbers of figure, table and scheme captions (Figure S1, Table S2) (Project Settings ▸ Labels)">Caption Labels</button>
       </div>
-    </div><div class="rb-label">Numbering</div></div>
+    </div><div class="rb-label">Styles</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="structure-layout" data-ic="wrap-text" title="Structure Layout: where compounds' structures and figures go by default, and how text wraps around them (Project Settings ▸ Layout)">Structure Layout</button>
@@ -440,6 +486,17 @@ const RIBBON = `
         <button data-si="dictionary" title="Dictionary: the project's own words, and the ones left as written (Project Settings ▸ Dictionary)">Dictionary</button>
       </div>
     </div><div class="rb-label">Proofing</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="new-comment" data-ic="comment" title="New Comment: a note on the words at the cursor in the Live Preview, beside the page. Check Flag for checking to make it a flag: it shows on the SI page's field (or the nearest heading's, for words no field holds) and counts until it is resolved. Type @ and a name to mention someone"><span class="rb-icon">💬</span>New Comment</button>
+      <div class="rb-col">
+        <button data-si="comment-prev" title="Go to the flag or comment before this one in the Live Preview">◀ Previous</button>
+        <button data-si="comment-next" title="Go to the next flag or comment in the Live Preview">Next ▶</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="show-comments" data-ic="show-comments" aria-pressed="true" title="Show the flags and comments beside the Live Preview's pages, or hide them">Show Comments</button>
+        <button data-si="show-resolved" aria-pressed="false" title="Show resolved flags and comments too, grayed (Reopen on a card puts it back)">Show Resolved</button>
+      </div>
+    </div><div class="rb-label">Comments</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
       <button class="rb-big" data-si="manuscript-check" data-ic="si-check" title="Manuscript Check: compare the manuscript (Word or PDF) with the SI: compounds missing from either, and yields, ee and dr that differ"><span class="rb-icon">⇄</span>Manuscript Check</button>
@@ -572,6 +629,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
         <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
+        <button data-si-paint data-ic="format-painter" aria-pressed="false" title="Format Painter: copy the formatting of the words selected in the Live Preview to the words you click or drag over next. Double-click to keep painting until Esc">Format Painter</button>
       </div>
     </div><div class="rb-label">Clipboard</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -586,9 +644,29 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Organize</div></div>
     ${fontGroupHtml('si')}
+    <div class="rb-group si-para-group"><div class="rb-row">
+      <div class="rb-col">
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="left" title="Align Left (the paragraphs selected in the Live Preview)" aria-label="Align Left">${RIBBON_ICONS['doc-align-left']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="center" title="Center (the paragraphs selected in the Live Preview)" aria-label="Center">${RIBBON_ICONS['doc-align-center']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="right" title="Align Right (the paragraphs selected in the Live Preview)" aria-label="Align Right">${RIBBON_ICONS['doc-align-right']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify: both edges straight (the paragraphs selected in the Live Preview)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
+        </div>
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="indent" title="Increase Indent" aria-label="Increase Indent">${RIBBON_ICONS['doc-indent']}</button>
+          <select data-si-para="line" title="Line Spacing (the paragraphs selected in the Live Preview)" aria-label="Line Spacing">
+            <option value="" hidden>Line Spacing</option><option value="1">Single</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">Double</option>
+          </select>
+        </div>
+      </div>
+    </div><div class="rb-label">Paragraph</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="replace" title="Replace (Ctrl+H): found words changed in the fields they come from, one place or all of them (one step of Undo); words Chemweave writes, or a general procedure's, are left">Replace…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
         <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
       </div>
@@ -745,6 +823,7 @@ export class SiMode {
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint]')) el.disabled = true;
     siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
@@ -758,13 +837,17 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para]')) e.preventDefault(); });
+    this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
+      if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
+      const para = t.closest<HTMLButtonElement>('button[data-si-para]');
+      if (para) { void this.paragraph(para.dataset.siPara!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
-      if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
@@ -781,7 +864,12 @@ export class SiMode {
       const da = t.closest<HTMLElement>('button[data-si-dash]');
       if (da) { void this.dashCommand(da.dataset.siDash!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
-      if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
+      if (fig) {
+        const cmd = fig.dataset.siFig!, f = this.activeFigure;
+        if (f && ['crop', 'rotate', 'reset-picture'].includes(cmd)) { this.pictureCommand(f.id, cmd, fig); return; }
+        void f?.command(cmd);
+        return;
+      }
       const pl = t.closest<HTMLElement>('[data-si-place]');
       if (pl) { this.placeCommand(pl.dataset.siPlace!, pl); return; }
       const fp = t.closest<HTMLElement>('[data-si-figplace="position"]');
@@ -790,10 +878,16 @@ export class SiMode {
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const fi = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-si-fmt]');
+      if (fi) { this.format(fi.dataset.siFmt!, fi.value); return; }
+      const ls = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-para]');
+      if (ls) { const v = ls.value; ls.value = ''; void this.paragraph(ls.dataset.siPara!, v); return; }
       const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
       if (fw) { const f = this.activeFigure; if (f) void this.setWrap(figureKey(f.id), fw.value as SiWrap | 'inline').then(() => this.figurePlaceState()); return; }
+      const pg = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-page]');
+      if (pg) { void this.pageLook(pg.dataset.siPage!, pg.value); return; }
       const mf = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-ms]');
       if (mf) { void this.msCommand(mf.dataset.siMs!, mf.value); return; }
       const ds = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-dash]');
@@ -811,8 +905,10 @@ export class SiMode {
       const box = target.closest<HTMLElement>('.si-rich');
       if (box) this.typing = box;
       // (where the ribbon's Clipboard and Editing commands act: the SI page's boxes, or the Live Preview)
+      const was = this.typedIn;
       if (this.preview && target === this.preview.input) this.typedIn = 'preview';
       else if (this.page.contains(target) || this.tree.contains(target)) this.typedIn = 'page';
+      if (this.typedIn !== was) this.fontState();
       const card = target.closest<HTMLElement>('.si-table-card');
       const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
       if (t) this.tableChosen(t);
@@ -860,6 +956,361 @@ export class SiMode {
   private showRibbonTab(name: string): void {
     for (const b of this.ribbon.querySelectorAll<HTMLElement>('[data-si-tab]')) b.setAttribute('aria-selected', String(b.dataset.siTab === name));
     for (const p of this.ribbon.querySelectorAll<HTMLElement>('[data-si-panel]')) p.hidden = p.dataset.siPanel !== name;
+    if (name === 'layout') this.pageLookState();
+  }
+
+  /** Layout ▸ Hyphenation and Watermark show the project's settings. */
+  private pageLookState(): void {
+    const p = this.project;
+    const v = p ? pageSettings(p.settings) : null;
+    const hy = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="hyphen"]');
+    if (hy) hy.value = v?.hyphenation ? 'auto' : 'none';
+    const wm = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="watermark"]');
+    if (wm) { const at = v?.watermark ? WATERMARKS.indexOf(v.watermark.text) : -1; wm.value = !v?.watermark ? '' : at >= 0 ? String(at) : 'other'; }
+    for (const s of [hy, wm]) if (s) s.disabled = !p;
+    const sec = this.currentSection();
+    const or = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="orient"]');
+    if (or) { or.value = sec && this.landscapeOf(sec) ? 'landscape' : 'portrait'; or.disabled = !sec || sec.type === 'spectra'; }
+    const brk = this.ribbon.querySelector<HTMLSelectElement>('select[data-si-page="break"]');
+    const item = this.flowItem();
+    if (brk) { brk.value = item && startsNewPage(item.data) ? 'nextPage' : 'continuous'; brk.disabled = !item; }
+  }
+
+  /** What Breaks sets: the compound picked, else the section picked (not the Spectra section, whose pages are its own). */
+  private flowItem(): SiCompound | SiSection | null {
+    const c = this.currentCompound();
+    if (c) return c;
+    // (a scheme page's own start isn't set here: not its section's either)
+    if (this.pick.kind === 'scheme') return null;
+    const s = this.currentSection();
+    return s && s.type !== 'spectra' ? s : null;
+  }
+
+  /** Review ▸ Show Resolved: resolved flags and comments show as grayed cards too (remembered while Chemweave runs). */
+  static showResolved = false;
+  /** A comment just added in the Live Preview, whose card opens when the preview shows it. */
+  private pendingFlag: string | null = null;
+  /** The field flag button whose popover is open, and what closes it (a second click closes it). */
+  private flagPop: { at: HTMLElement; close: () => void } | null = null;
+
+  /** The cards of a field's flags and comments, under its flag button: reply, resolve or delete there. */
+  private flagPopover(at: HTMLElement, anchors: string[], on: { compound: string; field: string }): void {
+    const p = this.project;
+    if (!p) return;
+    const was = this.flagPop;
+    was?.close();
+    if (was?.at === at) return;
+    const pop = el('div', 'si-flag-pop');
+    pop.setAttribute('role', 'dialog');
+    pop.setAttribute('aria-label', 'Flags and comments');
+    const people = p.people;
+    const close = (): void => { pop.remove(); document.removeEventListener('mousedown', outside, true); document.removeEventListener('keydown', esc, true); if (this.flagPop?.close === close) this.flagPop = null; };
+    const outside = (e: MouseEvent): void => { if (!pop.contains(e.target as Node) && !at.contains(e.target as Node)) close(); };
+    const esc = (e: KeyboardEvent): void => { if (e.key === 'Escape' && !(e.target as HTMLElement).closest?.('.cmt-input')) { close(); at.focus(); } };
+    for (const fl of p.allFlags().filter((x) => anchors.includes(x.anchor))) {
+      const iso = (d: string): string => (d && !Number.isNaN(Date.parse(d)) ? new Date(d).toISOString() : '');
+      const thread: CommentThread = { author: fl.flag.by || 'SI flag', date: iso(fl.flag.at), text: fl.flag.comment, ...(fl.thread.replies.length ? { replies: fl.thread.replies.map((r) => ({ author: r.by || 'SI flag', date: iso(r.at), text: r.text })) } : {}), ...(fl.resolved ? { done: true } : {}) };
+      const run = (change: FlagChange): void => { close(); void this.flagChange(fl.anchor, change).catch((e: unknown) => this.host.flash(e instanceof Error ? e.message : String(e), 8000)); };
+      pop.append(threadCard(thread, {
+        active: true, editing: false, label: fl.isFlag ? 'Flag' : 'Comment', cls: fl.isFlag ? 'si-flag-card' : '', people,
+        actions: {
+          edit: (text, reply) => run({ what: 'edit', reply: reply ?? null, text }),
+          reply: (text) => run({ what: 'reply', text }),
+          removeReply: (i) => run({ what: 'remove-reply', reply: i }),
+          resolve: (done) => run({ what: 'resolve', done }),
+          remove: () => run({ what: 'delete' }),
+          focus: () => { if (this.preview && this.liveOn) this.preview.showFlag(fl.anchor); },
+        },
+      }));
+    }
+    // (another flag or comment on the same field)
+    const more = el('button', 'si-flag-more', 'New Comment…');
+    more.type = 'button';
+    more.title = 'Another flag or comment on this field';
+    more.addEventListener('click', () => {
+      close();
+      void (async () => {
+        const asking = ask('New Comment', [
+          { name: 'text', label: 'Comment', value: '', type: 'textarea' },
+          { name: 'flag', label: 'Flag for checking', value: 'true', type: 'checkbox', help: 'A flag shows on the SI page’s field and is counted until it is resolved; a comment is a note only.' },
+        ], { ok: 'Add Comment' });
+        const box = [...document.querySelectorAll<HTMLTextAreaElement>('dialog.ask textarea')].pop();
+        if (box) mentionPicker(box, people);
+        const got = await asking;
+        if (!got || !got.text.trim() || this.project !== p) return;
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+        await this.act(() => p.addFlagNote(on, got.text.trim(), got.flag === 'true'), true, undefined, undefined, 'New Comment');
+        this.liveSoon(0);
+      })().catch((e: unknown) => this.host.flash(e instanceof Error ? e.message : String(e), 8000));
+    });
+    pop.append(more);
+    popupHost(at).append(pop);
+    const r = at.getBoundingClientRect();
+    pop.style.top = `${Math.min(window.innerHeight - pop.offsetHeight - 8, r.bottom + 4)}px`;
+    pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
+    document.addEventListener('mousedown', outside, true);
+    document.addEventListener('keydown', esc, true);
+    this.flagPop = { at, close };
+    // (into the window, for the keyboard)
+    pop.querySelector<HTMLElement>('button')?.focus({ preventScroll: true });
+  }
+
+  /** Review ▸ Show Comments and Show Resolved show whether they're on. */
+  private commentState(): void {
+    const on = (cmd: string, v: boolean): void => { this.ribbon.querySelector(`[data-si="${cmd}"]`)?.setAttribute('aria-pressed', String(v)); };
+    on('show-comments', this.preview?.comments.shown ?? true);
+    on('show-resolved', SiMode.showResolved);
+  }
+
+  /**
+   * Review ▸ New Comment: on the text at the Live Preview's caret. Its field's text takes it (a
+   * flag there shows on the SI page's field too); any other text, the nearest heading above it.
+   * Flag for Checking (on unless unticked) makes it a flag, counted with the warnings.
+   */
+  private async newComment(): Promise<void> {
+    const p = this.project;
+    const pv = this.preview;
+    if (!p) return;
+    if (!pv || !this.liveOn) { this.host.flash('Turn on View ▸ Live Preview and click in its text: a comment goes on the words it\'s about.'); return; }
+    if (!(await pv.ready())) return;
+    let on = pv.commentTarget();
+    // (text of a compound's that has no field row on the SI page, such as its own typed text: on its name)
+    if (on && 'compound' in on && on.field !== 'name') {
+      const field = on.field;
+      try { if (!fieldsOf(p.compound(on.compound)).some((e) => fieldDef(e)?.key === field)) on = { compound: on.compound, field: 'name' }; } catch { /* (gone: refused below) */ }
+    }
+    if (!on) { this.host.flash('Click in a section’s or a compound’s text first: the cover page and General Information take no comments.'); return; }
+    const where = 'compound' in on ? `${(() => { try { return compoundName(p.compound(on.compound)) || displayId(p.idReport(), on.compound); } catch { return 'the compound'; } })()} ▸ ${fieldDef({ key: on.field })?.label ?? on.field}` : (() => { try { return p.section(on.section).name; } catch { return 'the section'; } })();
+    const asking = ask('New Comment', [
+      { name: 'text', label: 'Comment', value: '', placeholder: 'e.g. @Alex Example, is this yield isolated?', type: 'textarea' },
+      { name: 'flag', label: 'Flag for checking', value: 'true', type: 'checkbox', help: 'A flag shows on the SI page’s field and is counted until it is resolved; a comment is a note only.' },
+    ], { ok: 'Add Comment', note: `On ${where}.` });
+    // (@ and a name's start offers the people to mention, as in a card's reply box)
+    const box = [...document.querySelectorAll<HTMLTextAreaElement>('dialog.ask textarea')].pop();
+    if (box) mentionPicker(box, p.people);
+    const got = await asking;
+    if (!got || !got.text.trim() || this.project !== p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    let anchor = '';
+    await this.act(async () => { anchor = await p.addFlagNote(on, got.text.trim(), got.flag === 'true'); }, true, undefined, undefined, 'New Comment');
+    if (!anchor) return;
+    this.liveSoon(0);
+    // (its card shown once the preview has it)
+    this.pendingFlag = anchor;
+  }
+
+  /** A change from a flag's card (Live Preview): one step of Undo, named for it; the preview and the SI page show it. */
+  private async flagChange(anchor: string, c: FlagChange): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    const label = c.what === 'reply' ? 'Reply to Flag' : c.what === 'edit' ? 'Edit Flag' : c.what === 'remove-reply' ? 'Delete Reply' : c.what === 'resolve' ? (c.done ? 'Resolve Flag' : 'Reopen Flag') : 'Delete Flag';
+    await this.act(async () => {
+      if (c.what === 'reply') await p.replyToFlag(anchor, c.text);
+      else if (c.what === 'edit') await p.editFlagNote(anchor, c.reply, c.text);
+      else if (c.what === 'remove-reply') await p.removeFlagReply(anchor, c.reply);
+      else if (c.what === 'resolve') await p.resolveFlag(anchor, c.done);
+      else await p.deleteFlag(anchor);
+    }, true, undefined, undefined, label);
+    this.liveDirty = true;
+    this.liveSoon(0);
+  }
+
+  /** Picture Format ▸ Crop, Rotate (its menu) or Reset Picture on a figure (by its id). */
+  private pictureCommand(id: string, cmd: string, from: HTMLElement | null): void {
+    const fail = (e: unknown): void => this.host.flash(e instanceof Error ? e.message : String(e), 8000);
+    if (cmd === 'rotate') {
+      const r = (from ?? this.ribbon).getBoundingClientRect();
+      const run = (how: Turn) => () => void this.editPicture(id, how).catch(fail);
+      showContextMenu(r.left, r.bottom, [
+        { label: 'Rotate Right 90°', run: run('right') },
+        { label: 'Rotate Left 90°', run: run('left') },
+        { label: 'Flip Vertical', run: run('flipV') },
+        { label: 'Flip Horizontal', run: run('flipH') },
+      ], { run: () => {} });
+      return;
+    }
+    void this.editPicture(id, cmd === 'crop' ? 'crop' : 'reset').catch(fail);
+  }
+
+  /**
+   * Crop or rotate a figure's picture, or put the original back: the picture is made again from
+   * the original and saved as the figure's copy beside it ("(edited)"), which the figure then uses,
+   * so SI Assistant prints it the same. One step of Undo, named for the command.
+   */
+  private async editPicture(id: string, how: Turn | 'crop' | 'reset'): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    // (what is being typed, a figure's label too, is written first: the figure's entry is read after it)
+    await this.commitAll();
+    const pathOf = (folder: string, rel: string): string => [folder, rel].filter(Boolean).join('/');
+    const stateOf = (entry: Json): { file: string; was: PictureEdit | null; original: string } => {
+      const file = typeof entry.file === 'string' ? entry.file : '';
+      const was = pictureEditOf(entry);
+      return { file, was, original: was?.original ?? file };
+    };
+    const kindName = (rel: string): string => rel.slice(rel.lastIndexOf('.') + 1).toUpperCase();
+    let crop: Crop | null = null;
+    if (how === 'crop') {
+      // (the window shows the picture rotated as it is, uncropped, at a size the window needs)
+      const found = await p.figureOwnerOf(id);
+      if (!found) { this.host.flash('This figure is no longer in the project.'); return; }
+      const st = stateOf(found.entry);
+      if (!st.original) { this.host.flash('This figure has no picture yet.'); return; }
+      if (!editableKind(st.original)) { this.host.flash(`A ${kindName(st.original)} picture can’t be cropped here: crop it before adding it, or paste it as a picture.`); return; }
+      const bytes = await p.folder.readBytes(pathOf(found.folder, st.original));
+      if (!bytes) { this.host.flash(`${st.original.slice(st.original.lastIndexOf('/') + 1)} is no longer in the project.`); return; }
+      const now = st.was ?? { original: st.original, rotate: 0 as const, flip: false, crop: { ...NO_CROP } };
+      const whole = await renderEdited(st.original, bytes, { ...now, crop: { ...NO_CROP } }, 1600);
+      if (!whole) { this.host.flash('This picture could not be read.'); return; }
+      const url = URL.createObjectURL(new Blob([whole.bytes as BlobPart], { type: whole.mime }));
+      try {
+        // (its size read from the file itself: an SVG without a set size has no natural width in an image)
+        const dims = await sourceSize(whole.svg ? 'preview.svg' : 'preview.png', whole.bytes);
+        if (!dims) { this.host.flash('This picture could not be read.'); return; }
+        crop = await askCrop(url, dims.w, dims.h, now.crop);
+      } finally { URL.revokeObjectURL(url); }
+      if (!crop) return;
+    }
+    if (this.project !== p || p.readOnly) return;
+    const LABELS: Record<string, string> = { crop: 'Crop', reset: 'Reset Picture', right: 'Rotate Right 90°', left: 'Rotate Left 90°', flipV: 'Flip Vertical', flipH: 'Flip Horizontal' };
+    // (the figure shown on the SI page is painted again by itself: the page and its selection stay)
+    const shown = this.activeFigure?.id === id ? this.activeFigure : null;
+    let say = '';
+    // (read again in the queue: the change is made to the figure as it is then, one after another)
+    await this.act(async () => {
+      const found = await p.figureOwnerOf(id);
+      if (!found) { say = 'This figure is no longer in the project.'; return; }
+      const { file, was, original } = stateOf(found.entry);
+      if (!original) { say = 'This figure has no picture yet.'; return; }
+      const entry: Json = { ...found.entry };
+      // (the copy's name is kept, so the next edit writes over it rather than making another)
+      const copy = was?.copy ?? (was && file !== original ? file : undefined);
+      const plainOf = (): PictureEdit => ({ original, rotate: 0, flip: false, crop: { ...NO_CROP }, ...(copy ? { copy } : {}) });
+      // (a width set by hand is for the picture as it was: the same scale is kept, so a crop makes it narrower, not bigger)
+      const keepScale = async (folder: string, rel: string, from: PictureEdit, to: PictureEdit, data?: Uint8Array | null): Promise<void> => {
+        const key = Number(entry.width) > 0 ? 'width' : Number(entry.width_cm) > 0 ? 'width_cm' : '';
+        if (!key) return;
+        const src = data ?? await p.folder.readBytes(pathOf(folder, rel));
+        const size = src ? await sourceSize(rel, src) : null;
+        if (!size) return;
+        const a = shownWidth(size.w, size.h, from), b = shownWidth(size.w, size.h, to);
+        if (a > 0 && b > 0 && Math.abs(a - b) > 1e-9) entry[key] = Math.max(0.01, Math.round(Number(entry[key]) * (b / a) * 100) / 100);
+      };
+      if (how === 'reset') {
+        if (!was || file === original) { say = 'This picture is the original already.'; return; }
+        if (!(await p.folder.exists(pathOf(found.folder, original)))) { say = `The original, ${original.slice(original.lastIndexOf('/') + 1)}, is no longer in the project, so the edited picture stays.`; return; }
+        await keepScale(found.folder, original, was, plainOf());
+        entry.file = original;
+        entry[EDIT_KEY] = editRecord(plainOf());
+      } else {
+        if (!editableKind(original)) { say = `A ${kindName(original)} picture can’t be ${how === 'crop' ? 'cropped' : 'rotated'} here: ${how === 'crop' ? 'crop' : 'rotate'} it before adding it, or paste it as a picture.`; return; }
+        const bytes = await p.folder.readBytes(pathOf(found.folder, original));
+        if (!bytes) { say = `${original.slice(original.lastIndexOf('/') + 1)} is no longer in the project.`; return; }
+        const now = was ?? plainOf();
+        const next: PictureEdit = how === 'crop' ? { ...now, crop: crop! } : turned(now, how);
+        await keepScale(found.folder, original, now, next, bytes);
+        if (isPlain(next)) {
+          entry.file = original;
+          entry[EDIT_KEY] = editRecord({ ...plainOf() });
+        } else {
+          const made = await renderEdited(original, bytes, next);
+          if (!made) { say = 'This picture could not be read, so it was left as it was.'; return; }
+          const rel = await p.writeEditedPicture(found.folder, editedName(original, made.mime), made.bytes, copy, original);
+          entry.file = rel;
+          entry[EDIT_KEY] = editRecord({ ...next, copy: rel });
+        }
+      }
+      await p.setFigureEntry(found.owner, id, entry);
+    }, !shown, undefined, undefined, LABELS[how]);
+    if (say) { this.host.flash(say, 6000); return; }
+    shown?.refresh();
+    if (shown && this.activeFigure === shown) this.figureChosen(shown);
+    this.liveSoon(0);
+  }
+
+  /** A section's pages are on their side: its own orientation or its section's. */
+  private landscapeOf(s: SiSection): boolean {
+    const p = this.project;
+    return sectionLandscape(s, (x) => { try { return x.parentId && p ? p.section(x.parentId) : null; } catch { return null; } });
+  }
+
+  /** Layout ▸ Orientation (the section picked) or Breaks (the compound or section picked), in one step of Undo. */
+  private async sectionPageLook(what: 'orient' | 'break', v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (what === 'orient') {
+      const sec = this.currentSection();
+      const on = v === 'landscape';
+      if (!sec || sec.type === 'spectra') { this.host.flash(sec ? 'The Spectra section sets its own pages (each spectrum’s Orientation).' : 'Select a section first.'); this.pageLookState(); return; }
+      if (on === this.landscapeOf(sec)) { this.pageLookState(); return; }
+      const before = sec.data.orientation;
+      // (the same as its section's: it just follows it again; else its own)
+      const parent = ((): SiSection | null => { try { return sec.parentId ? p.section(sec.parentId) : null; } catch { return null; } })();
+      const follows = on === (parent ? this.landscapeOf(parent) : false);
+      await this.act(async () => {
+        if (follows) delete sec.data.orientation; else sec.data.orientation = on ? 'landscape' : 'portrait';
+        try { await p.saveSection(sec); } catch (e) { if (before === undefined) delete sec.data.orientation; else sec.data.orientation = before; throw e; }
+      }, false, undefined, undefined, on ? 'Landscape' : 'Portrait');
+    } else {
+      const item = this.flowItem();
+      const on = v === 'nextPage';
+      if (!item) { this.host.flash('Select a compound or section first.'); this.pageLookState(); return; }
+      if (on === startsNewPage(item.data)) { this.pageLookState(); return; }
+      const before = item.data.page_flow;
+      await this.act(async () => {
+        setNewPage(item.data, on);
+        try { await ('kind' in item ? p.saveCompound(item) : p.saveSection(item)); } catch (e) { if (before === undefined) delete item.data.page_flow; else item.data.page_flow = before; throw e; }
+      }, false, undefined, undefined, on ? 'Section Break' : 'Remove Section Break');
+    }
+    this.pageLookState();
+  }
+
+  /** Layout ▸ Hyphenation or Watermark: the project's page settings, in one step of Undo; the Live Preview shows it. */
+  private async pageLook(what: string, v: string): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.pageLookState(); return; }
+    const was = pageSettings(p.settings);
+    let label = '';
+    let change: (() => void) | null = null;
+    if (what === 'hyphen') {
+      const on = v === 'auto';
+      if (on !== was.hyphenation) { label = 'Hyphenation'; change = () => storeHyphenation(p.settings, on); }
+    } else if (what === 'watermark') {
+      let w: Watermark | null | undefined;
+      if (v === 'remove') w = null;
+      else if (v === 'custom') {
+        const at = was.watermark ?? defaultWatermark();
+        this.pageLookState();
+        const got = await ask('Watermark', [
+          { name: 'text', label: 'Text', value: at.text, suggestions: WATERMARKS },
+          { name: 'font', label: 'Font', value: at.font, suggestions: ['Calibri', 'Arial', 'Times New Roman', 'Inter', 'IBM Plex Sans'] },
+          { name: 'color', label: 'Color', value: at.color, type: 'color' },
+          { name: 'layout', label: 'Layout', value: at.layout, options: [{ value: 'diagonal', label: 'Diagonal' }, { value: 'horizontal', label: 'Horizontal' }] },
+          { name: 'faded', label: 'Semitransparent', value: String(at.faded), type: 'checkbox' },
+        ], { ok: 'Apply', note: 'Words across every page of the compiled SI, behind the text. Saved in the Word document as Word’s own watermark.' });
+        if (!got || this.project !== p) return;
+        // (it may have turned read-only while the box was open)
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+        const text = got.text.trim();
+        w = text ? { text, font: got.font.trim() || 'Calibri', color: got.color || '#c0c0c0', layout: got.layout === 'horizontal' ? 'horizontal' : 'diagonal', faded: got.faded === 'true' } : null;
+      } else if (v !== '' && WATERMARKS[Number(v)] !== undefined) w = { ...(was.watermark ?? defaultWatermark()), text: WATERMARKS[Number(v)] };
+      // (a choice that changes nothing writes nothing)
+      if (w !== undefined && JSON.stringify(w) !== JSON.stringify(was.watermark)) {
+        const to = w;
+        label = to ? 'Watermark' : 'Remove Watermark';
+        change = () => storeWatermark(p.settings, to);
+      }
+    }
+    if (what === 'orient' || what === 'break') { await this.sectionPageLook(what, v); return; }
+    if (!change) { this.pageLookState(); return; }
+    const f = change;
+    const before = p.settings.page;
+    // (a save that fails puts the settings back, so the Live Preview doesn't show what wasn't saved)
+    await this.act(async () => { f(); try { await p.saveSettings(); } catch (e) { p.settings.page = before; if (before === undefined) delete p.settings.page; throw e; } }, false, undefined, undefined, label);
+    this.pageLookState();
   }
 
   /** A table's cell picked (or none): the Table Layout tab shows (or goes), with that table's state. */
@@ -1044,6 +1495,7 @@ export class SiMode {
     if (!key || !p) return;
     if (cmd === 'edit') { const c = p.compounds.find((x) => structureKey(x.id) === key); if (c) this.editStructure(c); return; }
     if (cmd === 'position' && from) { const r = from.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(key), { run: () => {} }); return; }
+    if (['crop', 'rotate', 'reset-picture'].includes(cmd) && key.startsWith('f:')) { this.pictureCommand(key.slice(2), cmd, from); return; }
     if (cmd === 'reset') { void this.placeChange(() => storeOwnPlacement(p.settings, key, null)); return; }
     if (cmd === 'apply-all') {
       const pl = placementOf(p.settings, key), kind = kindOfKey(key);
@@ -1128,6 +1580,9 @@ export class SiMode {
     const w = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="fig-width"]')!;
     const st = f.state;
     w.value = st.width ? String(st.width) : '';
+    // (Reset Picture only does something to a cropped or rotated picture)
+    const reset = this.ribbon.querySelector<HTMLButtonElement>('[data-si-fig="reset-picture"]');
+    if (reset) reset.disabled = !st.edited;
     this.figurePlaceState();
   }
 
@@ -1152,13 +1607,81 @@ export class SiMode {
   }
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
-  private format(cmd: string): void {
+  private format(cmd: string, value?: string): void {
+    // (where the person last typed in the Live Preview: formatted there, kept across compiles)
+    const pv = this.previewTyped;
+    if (pv) { void this.formatPreview(pv, cmd, value); return; }
     if (SI_FONT_OFF.includes(cmd)) { this.host.flash(SI_FONT_REASON, 6000); return; }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
     if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
     if (cmd === 'formula') { this.formulaStyle(); return; }
     if (cmd === 'charges') { this.raiseCharges(); return; }
     document.execCommand(cmd);
+  }
+
+  /** A Font group command on the Live Preview's selection (si-preview.ts format). */
+  private async formatPreview(pv: SiPreview, cmd: string, value?: string): Promise<void> {
+    if (!(await pv.ready())) return;
+    const toggle = (k: 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup'): FormatLook => ({ [k]: !pv.selectionHas(k) });
+    let look: FormatLook | 'clear' | null = null;
+    switch (cmd) {
+      case 'bold': case 'italic': case 'underline': case 'strike': look = toggle(cmd); break;
+      case 'subscript': look = toggle('sub'); break;
+      case 'superscript': look = toggle('sup'); break;
+      case 'clear': look = 'clear'; break;
+      case 'font': look = value?.trim() ? { font: value.trim() } : null; break;
+      case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
+      case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
+      case 'color': look = value ? { color: value } : null; break;
+      case 'small-caps': look = { smallCaps: !pv.selectionHas('smallCaps') }; break;
+      case 'highlight': look = { highlight: pv.selectionHas('highlight') ? '' : '#ffff00' }; break;
+      default:
+        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Small Caps, Highlight, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
+        return;
+    }
+    if (look) await pv.format(look);
+    pv.input.focus();
+  }
+
+  /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
+  private fontState(): void {
+    const on = !!this.previewTyped;
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) el.disabled = !on;
+    const pg = this.ribbon.querySelector<HTMLElement>('.si-para-group');
+    if (pg) { if (on) pg.removeAttribute('title'); else pg.title = SI_PARA_REASON; }
+    const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
+    if (brush) { brush.disabled = !on; if (!on) this.preview?.stopPainting(); }
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
+    if (on) {
+      for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
+        el.disabled = false;
+        (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
+      }
+    } else siFontBoxes(this.ribbon, defaultStyles().Normal);
+  }
+
+  /** Home ▸ Paragraph on the Live Preview's paragraphs (greyed on the SI page, whose text takes the journal style's paragraphs). */
+  private async paragraph(cmd: string, value?: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash(SI_PARA_REASON, 6000); return; }
+    // (what it toggles or steps from is read from the text shown: the last change shown first)
+    if (!(await pv.ready())) return;
+    const INDENT = 36;
+    switch (cmd) {
+      case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
+      case 'indent': case 'outdent': await pv.paraFormat({ indent: Math.max(0, (pv.paraValue('indent') ?? 0) + (cmd === 'indent' ? INDENT : -INDENT)) }); break;
+      case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n }); break; }
+      case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, true); break;
+    }
+    pv.input.focus();
+  }
+
+  /** Format Painter (Home ▸ Clipboard): a click paints once, a double-click keeps painting until Esc; pressed again, it stops. */
+  private formatPainter(keep: boolean): void {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash('Format Painter works in the Live Preview: select the words whose formatting you want to copy there first.', 6000); return; }
+    if (pv.painting && !keep) { pv.stopPainting(); return; }
+    pv.startPainting(keep);
   }
 
   /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
@@ -1732,7 +2255,7 @@ export class SiMode {
   private status(): void {
     const p = this.project;
     if (!p) return;
-    const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
+    const flags = p.allFlags().filter((x) => !x.resolved && x.isFlag).length;
     const warns = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     const s = this.currentSection();
     let lead = p.title;
@@ -1770,6 +2293,8 @@ export class SiMode {
     void this.commitAll(false);
     this.pick = pick;
     this.refresh();
+    // (the preview may have folded itself away on this page)
+    this.fontState();
   }
 
   // ---------------------------------------------------------------- the tree
@@ -1786,7 +2311,8 @@ export class SiMode {
     row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, { title: 'How far along the project is, and every compound’s data at a glance' });
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
-      const flagged = Object.keys(flagsOf(c)).length > 0;
+      // (SI Assistant's flags and the ones left in the Live Preview)
+      const flagged = Object.keys(flagsOf(c)).length > 0 || [...p.openFlagsByPlace()].some(([k, v]) => k.startsWith(`${c.id}/`) && v.some((x) => x.isFlag));
       const active = this.activeWarnings(c);
       const tip = active.map((w) => w.message).join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : active.length ? `<span class="si-st warn" title="${tip}">${svg('warn')}</span>`
@@ -2835,14 +3361,18 @@ export class SiMode {
     const flag = el('button', 'si-flag');
     flag.type = 'button';
     const f = flagsOf(c)[def.key];
+    // (its flags and comments: SI Assistant's flag, and ones left in the Live Preview)
+    const notes = p.openFlagsByPlace().get(`${c.id}/${def.key}`) ?? [];
+    const flagged = notes.some((x) => x.isFlag);
     flag.innerHTML = svg('flag');
-    flag.classList.toggle('on', !!f);
-    flag.title = f ? `Flagged${f.by ? ' by ' + f.by : ''}: ${partText(f.comment) || '(no comment)'}. Click to take the flag off.` : 'Flag this field for checking';
-    flag.setAttribute('aria-pressed', String(!!f));
+    flag.classList.toggle('on', flagged);
+    flag.classList.toggle('noted', !flagged && notes.length > 0);
+    flag.title = notes.length ? `${notes.length === 1 ? (flagged ? `Flagged${f?.by ? ' by ' + f.by : ''}: ${partText(notes[0].flag.comment) || '(no comment)'}` : 'A comment') : `${notes.length} flags and comments`}. Click to see ${notes.length === 1 ? 'it' : 'them'}: reply, resolve or delete.` : 'Flag this field for checking';
+    flag.setAttribute('aria-pressed', String(flagged));
     flag.addEventListener('click', async () => {
-      if (f) { await this.act(() => p.setFlag(c, def.key, false)); return; }
+      if (notes.length) { this.flagPopover(flag, notes.map((x) => x.anchor), { compound: c.id, field: def.key }); return; }
       const got = await ask('Flag for Checking', [{ name: 'comment', label: 'What to check', value: '', placeholder: 'e.g. Rf measured in the wrong eluent' }], { ok: 'Flag' });
-      if (got) await this.act(() => p.setFlag(c, def.key, true, got.comment.trim()));
+      if (got) await this.act(() => p.setFlag(c, def.key, true, got.comment.trim()), true, undefined, undefined, 'Flag Field');
     });
     row.append(lab, body, flag);
     if (def.kind === 'parts') this.partsEditor(body, c, def);
@@ -3469,6 +3999,7 @@ export class SiMode {
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
     this.viewState();
+    this.fontState();
   }
 
   /**
@@ -3585,14 +4116,19 @@ export class SiMode {
       L.host.hidden = blank;
       L.empty.hidden = !blank;
       L.empty.textContent = !blank ? '' : spectra ? 'No spectra yet: add them in each compound’s Spectra field.' : 'Nothing to show yet.';
+      // the flags and comments, as cards beside the pages (Review ▸ Show Comments; resolved ones with Show Resolved)
+      const flags = { anchors: new Map<number, string>(), labels: new Map<number, string>() };
+      if (!spectra && !blank) doc = addFlagComments(doc, got.sources, got.blocks, p, { withResolved: SiMode.showResolved, anchors: flags.anchors, raw: true, labels: flags.labels });
       if (!blank) {
         const pv = await this.livePreview();
         const ro = p.readOnly;
         pv.show({
-          compiled: { ...got, doc }, key, owner: p, editable: !spectra && !ro, gen, keepSpace: spectra,
+          compiled: { ...got, doc }, flags, key, owner: p, editable: !spectra && !ro, gen, keepSpace: spectra,
           why: ro ? 'This SI project is open read-only.' : 'The spectra pages can’t be typed into: choose a page that isn’t a spectrum to type in the preview.',
         });
         pv.setFocus(spectra ? null : this.liveNode(), L.shown !== key && !stay);
+        // (a comment just added: its card opened, once this compile has it)
+        if (this.pendingFlag && [...flags.anchors.values()].includes(this.pendingFlag)) { pv.showFlag(this.pendingFlag); this.pendingFlag = null; }
         if (!spectra) this.wholeLast = pv.lastPageNumber();
         L.shown = key;
         this.showZoom(!!this.tab);
@@ -3673,6 +4209,28 @@ export class SiMode {
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
       },
+      writeFormat: async (fields, change, owner, what = 'Format') => {
+        const p = asProject(owner);
+        let done = false;
+        const save = async (): Promise<void> => {
+          // (everything read first: a file that can't be read, or a field changed since, writes nothing)
+          const items = change ? change(await readPreviewFormatsToChange(p.folder)) : null;
+          const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
+          for (const { a, x } of access) {
+            if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
+            if ((await a.read()) !== x.from) throw new Error(what === 'Replace' ? 'The text changed meanwhile. Find the words again and replace them.' : 'The text changed while it was being formatted. Select it and try again.');
+          }
+          for (const { a, x } of access) await a!.write(x.text);
+          if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
+          done = true;
+        };
+        if (p !== this.project) await this.change(p, what === 'Replace' ? 'Replace in Live Preview' : 'Format in Live Preview', save);
+        else await this.act(save, fields.length > 0);
+        // (the reason was said)
+        if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
+      },
+      flag: (anchor, change) => this.flagChange(anchor, change),
+      people: () => this.project?.people ?? [],
       undo: (redo) => void this.undo(redo),
       refresh: () => this.liveSoon(0),
       structureChosen: (id) => this.structureChosen(id),
@@ -3680,6 +4238,7 @@ export class SiMode {
       editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
     });
     this.live.view = this.preview.view;
+    this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
     this.preview.onScrollSettled = () => this.followPreview();
     // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
     const resized = this.preview.view.onResize;
@@ -4576,7 +5135,7 @@ export class SiMode {
    * after another, each written before the next starts, so two saves of one file can't cross.
    * `only`: the change is to this compound's values alone (the other compounds aren't checked again).
    */
-  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox): Promise<void> {
+  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox, label = 'Edit'): Promise<void> {
     const p = this.project;
     if (!p) return Promise.resolve();
     const k = this.kept(p);
@@ -4586,7 +5145,7 @@ export class SiMode {
       let failed = false;
       try {
         if (p.revision !== rev) throw new SiProjectError(READ_AGAIN);
-        await (j ? j.step('Edit', f) : f());
+        await (j ? j.step(label, f) : f());
       } catch (e) {
         failed = true;
         this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
@@ -4678,9 +5237,9 @@ export class SiMode {
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
     // (Find and Go To from anywhere in the pane; the Live Preview takes its own Ctrl+F first)
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'g')) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && ['f', 'g', 'h'].includes(e.key.toLowerCase())) {
       e.preventDefault();
-      void this.run(e.key.toLowerCase() === 'f' ? 'find' : 'go-to');
+      void this.run(({ f: 'find', g: 'go-to', h: 'replace' } as Record<string, string>)[e.key.toLowerCase()]);
       return;
     }
     // (in a text box or a list, Alt and the arrows are the box's own keys)
@@ -5008,10 +5567,13 @@ export class SiMode {
     if (!p) return;
     if (this.compiling) { this.host.flash('The SI is being compiled already.'); return; }
     // (the SI page's flags go in as Word comments only when asked for, each time: they are notes for the authors)
-    const flags = p.compounds.reduce((n, c) => n + Object.keys(flagsOf(c)).length, 0);
+    const open = p.allFlags().filter((x) => !x.resolved);
+    const flags = open.filter((x) => x.isFlag).length, notes = open.length - flags;
     let flagComments = false;
-    if (flags) {
-      const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI page has ${flags} flag${flags === 1 ? '' : 's'} for checking. Put ${flags === 1 ? 'it' : 'them'} in as comments on the text of ${flags === 1 ? 'its field' : 'their fields'} (who flagged ${flags === 1 ? 'it' : 'them'} and what to check)?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+    if (open.length) {
+      const what = [flags ? `${flags} flag${flags === 1 ? '' : 's'} for checking` : '', notes ? `${notes} comment${notes === 1 ? '' : 's'}` : ''].filter(Boolean).join(' and ');
+      const one = open.length === 1;
+      const pick = await askChoice(pdf ? 'Compile to PDF' : 'Compile', `The SI has ${what}. Put ${one ? 'it' : 'them'} in as Word comments on the text ${one ? 'it is' : 'they are'} about, with ${one ? 'its' : 'their'} replies?`, [{ value: 'with', label: 'Include Comments', primary: true }, { value: 'without', label: 'Leave Out' }, { value: 'cancel', label: 'Cancel' }], 'cancel');
       if (pick === 'cancel') return;
       flagComments = pick === 'with';
     }
@@ -5185,8 +5747,9 @@ export class SiMode {
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
-    'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
-    'heading-numbers', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
+    'paste', 'cut', 'copy', 'find', 'replace', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
+    'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse',
+    'new-comment', 'comment-prev', 'comment-next', 'show-comments', 'show-resolved']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -5272,7 +5835,7 @@ export class SiMode {
   private async command(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
-    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
+    if (p.readOnly && !['reload', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'trash', 'comment-prev', 'comment-next', 'show-comments', 'show-resolved'].includes(cmd)) { this.host.flash('This SI project is open read-only.'); return; }
     await this.commitAll();
     if (this.project !== p) return;
     const s = this.currentSection();
@@ -5478,6 +6041,32 @@ export class SiMode {
       case 'live-preview':
         this.setLive(!this.liveOn);
         return;
+      case 'new-comment': await this.newComment(); return;
+      case 'comment-prev': case 'comment-next': {
+        const pv = this.preview;
+        const list = pv && this.liveOn ? pv.comments.placed() : [];
+        if (!pv || !list.length) { this.host.flash(this.liveOn ? 'No flags or comments in the Live Preview.' : 'Turn on View ▸ Live Preview to go through the flags and comments.'); return; }
+        const at = list.findIndex((x) => x.id === pv.comments.active);
+        const next = cmd === 'comment-next' ? (at + 1) % list.length : (at <= 0 ? list.length : at) - 1;
+        pv.comments.shown = true;
+        pv.comments.goTo(list[next].id);
+        this.commentState();
+        return;
+      }
+      case 'show-comments': {
+        const pv = this.preview;
+        if (!pv) return;
+        pv.comments.shown = !pv.comments.shown;
+        pv.comments.update();
+        pv.view.redraw();
+        this.commentState();
+        return;
+      }
+      case 'show-resolved':
+        SiMode.showResolved = !SiMode.showResolved;
+        this.commentState();
+        this.liveSoon(0);
+        return;
       case 'paste-spectrum':
         if (!c) { this.host.flash('Select a compound first.'); return; }
         await this.pasteSpectrum(c);
@@ -5530,10 +6119,10 @@ export class SiMode {
         return;
       // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
       case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
-      case 'find': {
+      case 'find': case 'replace': {
         const pv = await this.previewShown();
-        if (!pv) { this.host.flash(this.noPreviewWhy('Find looks in the Live Preview')); return; }
-        pv.showFind();
+        if (!pv) { this.host.flash(this.noPreviewWhy(cmd === 'find' ? 'Find looks in the Live Preview' : 'Replace works in the Live Preview')); return; }
+        pv.showFind(cmd === 'replace');
         return;
       }
       case 'go-to': await this.goTo(); return;
@@ -5547,6 +6136,7 @@ export class SiMode {
       case 'insert-citation': await this.citeFromLibrary(c); return;
       case 'page-setup': case 'header': case 'footer': case 'page-number': this.projectSettings('page'); return;
       case 'heading-numbers': this.projectSettings('headings'); return;
+      case 'styles': this.projectSettings('styles'); return;
       case 'caption-labels': this.projectSettings('labels'); return;
       case 'structure-layout': this.projectSettings('layout'); return;
       case 'dictionary': this.projectSettings('dictionary'); return;

@@ -9,18 +9,22 @@
 //     program makes ("calcd for …") can't be typed into: a click goes to its field. Text typed
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
-import { IBEAM } from '../editor/cursors';
+import { BRUSH, IBEAM } from '../editor/cursors';
+import { paraAt } from '../text/paragraphs';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
+import { DocComments } from './doc-comments';
+import type { ThreadActions } from './comment-cards';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
-import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
+import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
+import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -31,8 +35,15 @@ const CUSTOM = '#c27a00';
 /** Said when typing, pasting or cutting while a structure or figure is selected. */
 const PICKED_TYPING = 'Click in the text to type there: a structure or figure is selected.';
 
+/** What a flag's card asks for (flag-threads.ts): its anchor, and the change. */
+export type FlagChange = { what: 'reply'; text: string } | { what: 'edit'; reply: number | null; text: string } | { what: 'remove-reply'; reply: number } | { what: 'resolve'; done: boolean } | { what: 'delete' };
+
 export interface SiPreviewHost {
   flash(message: string, ms?: number): void;
+  /** A change from a flag's card beside the preview (one step of Undo). */
+  flag?(anchor: string, change: FlagChange): Promise<void>;
+  /** Who can be @mentioned in a flag's notes. */
+  people?(): readonly string[];
   /** Choose a page of the list (text clicked in the preview). */
   pick(node: string): void;
   /** Light up (or stop lighting up) the field a stretch of the preview came from. */
@@ -47,6 +58,8 @@ export interface SiPreviewHost {
   write(src: string, text: string, owner: unknown): Promise<void>;
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
+  /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace'): Promise<void>;
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
@@ -71,6 +84,8 @@ export interface ShownSi {
   gen?: number;
   /** Pages whose margins hold what is shown (the spectra's): the white space between them is never hidden. */
   keepSpace?: boolean;
+  /** The flags and comments shown as cards beside the pages: each comment's anchor and its card's label, by comment id. */
+  flags?: { anchors: Map<number, string>; labels: Map<number, string> };
 }
 
 const ctrlKeyOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey || e.altKey;
@@ -82,6 +97,9 @@ const SCROLL_SETTLE = 450;
 /** Where in the window the page being read is taken to be (a third of the way down), and how far either side of it the page chosen still counts as read (hysteresis). */
 const READ_AT = 0.3;
 const READ_BAND = 0.12;
+
+/** How many characters from a paragraph's start keep its own look (Home ▸ Paragraph with the caret in it). */
+const PARA_ANCHOR = 24;
 
 export class SiPreview {
   readonly view: DocView;
@@ -150,6 +168,19 @@ export class SiPreview {
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
     this.view = new DocView(host);
     this.view.overlay = () => this.overlay();
+    // the flags and comments, as cards beside the pages (as Word's comments)
+    this.comments = new DocComments(host, this.view, {
+      file: () => this.file,
+      focus: () => this.ta.focus({ preventScroll: true }),
+      flash: (m, ms) => this.api.flash(m, ms),
+      askName: async () => true,
+      actions: (id) => this.flagActions(id),
+      // (a flag's card has a red edge; a comment's is a comment's)
+      card: (id) => { const label = this.flagCards.labels.get(id); return { label, cls: label?.startsWith('Flag') ? 'si-flag-card' : '', people: this.api.people?.() ?? [], rich: false }; },
+      // (the pane beside the SI page is too narrow for a column of cards beside readable pages)
+      narrow: () => host.clientWidth < 900,
+    });
+    this.view.onMove = () => this.comments.place();
     // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
     this.view.padX = 0;
     this.view.fitSlack = 0;
@@ -168,6 +199,54 @@ export class SiPreview {
     this.wire();
   }
 
+  /** The flags' and comments' cards beside the pages. */
+  readonly comments: DocComments;
+  private flagCards: { anchors: Map<number, string>; labels: Map<number, string> } = { anchors: new Map(), labels: new Map() };
+
+  /** What a flag's card does: each through the SI page's flag (one step of Undo); null for none. */
+  private flagActions(id: number): ThreadActions | null {
+    const anchor = this.flagCards.anchors.get(id);
+    const change = this.api.flag;
+    if (!anchor || !change) return null;
+    const run = (c: FlagChange): void => { void change.call(this.api, anchor, c).catch((e: unknown) => this.api.flash(e instanceof Error ? e.message : String(e), 8000)); };
+    return {
+      edit: (text, reply) => run({ what: 'edit', reply: reply ?? null, text }),
+      reply: (text) => run({ what: 'reply', text }),
+      removeReply: (i) => run({ what: 'remove-reply', reply: i }),
+      resolve: (done) => run({ what: 'resolve', done }),
+      remove: () => run({ what: 'delete' }),
+      focus: () => this.comments.goTo(id),
+    };
+  }
+
+  /** The anchor of the flag whose card is looked at (null: none). */
+  get activeFlag(): string | null { return this.comments.active !== null ? this.flagCards.anchors.get(this.comments.active) ?? null : null; }
+
+  /** Show the card of a flag (its anchor), as after adding it. */
+  showFlag(anchor: string): void {
+    for (const [id, a] of this.flagCards.anchors) if (a === anchor) { this.comments.shown = true; this.comments.goTo(id); return; }
+  }
+
+  /**
+   * Where a comment at the caret goes (Review ▸ New Comment): the compound field whose text it
+   * is in; else the nearest heading of the SI page above it, a section's or a compound's (its
+   * name); null on the cover page and General Information, which have none.
+   */
+  commentTarget(): { compound: string; field: string } | { section: string } | null {
+    const ed = this.file?.ed;
+    if (!ed) return null;
+    const at = Math.min(ed.start, Math.max(0, (this.base?.text.length ?? 1) - 1));
+    const span = spanAt(this.spans, at);
+    const ps = span ? parseSrc(span.src) : null;
+    if (ps?.owner === 'c' && ps.id) return { compound: ps.id, field: ps.field };
+    if (ps?.owner === 's' && ps.id) return { section: ps.id };
+    if (ps?.owner === 'g' && ps.id) return { section: ps.id.split('/')[0] };
+    const b = blockAt(this.blocks.filter((x) => /^(compound|section):/.test(x.node)), at);
+    if (!b) return null;
+    const [kind, id] = [b.node.slice(0, b.node.indexOf(':')), b.node.slice(b.node.indexOf(':') + 1)];
+    return kind === 'compound' ? { compound: id, field: 'name' } : { section: id };
+  }
+
   get focused(): boolean { return document.activeElement === this.ta; }
 
   /** The preview's own text box (where its typing goes). */
@@ -179,6 +258,28 @@ export class SiPreview {
   /** The edits written so far (for a compile to say which typing it has). */
   get generation(): number { return this.writtenGen; }
 
+  /** The newest edit the text shown has (a compile with it shown). */
+  private shownGen = 0;
+  private shownWaiters: (() => void)[] = [];
+
+  /**
+   * Whether the text shown is the stored text: typing written, and the compile after the last
+   * write (typing, formatting, Replace) shown. Commands that read the shown text (Replace, a
+   * toggle, Increase Indent) wait for it, so they never act on words already changed; false
+   * (said) when it doesn't come in time.
+   */
+  async ready(): Promise<boolean> {
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    if (this.shownGen >= this.editGen || !this.file) return true;
+    const ok = await new Promise<boolean>((done) => {
+      const t = window.setTimeout(() => { this.shownWaiters = this.shownWaiters.filter((x) => x !== go); done(false); }, 20000);
+      const go = (): void => { clearTimeout(t); done(true); };
+      this.shownWaiters.push(go);
+    });
+    if (!ok) this.api.flash('The Live Preview is still updating. Try again in a moment.');
+    return ok && !!this.file;
+  }
+
   /**
    * Show a compile. Typing not yet written keeps the text it is in: the compile waits for it. A
    * compile started before the last typing was written is not shown (a newer one follows the
@@ -188,6 +289,7 @@ export class SiPreview {
     if (this.dirty.size || this.fresh.size || this.busy || (this.file && this.file.ed.composing !== null)) { this.waiting = s; return; }
     if (!force && !this.failed && s.gen !== undefined && s.gen < this.editGen && this.file) return;
     this.failed = false;
+    this.shownGen = force || s.gen === undefined ? this.editGen : Math.max(this.shownGen, s.gen);
     const same = s.key === this.key && !!this.file;
     if (!same || s.owner !== this.owner) { clearTimeout(this.settleTimer); this.fromFor = undefined; }
     const v = this.view;
@@ -224,8 +326,15 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    // (the card looked at stays the same flag's: the comments are numbered again by each compile)
+    const looked = this.activeFlag;
+    this.flagCards = s.flags ?? { anchors: new Map(), labels: new Map() };
+    this.comments.active = null;
+    if (looked) for (const [id, a] of this.flagCards.anchors) if (a === looked) this.comments.active = id;
     this.findAgain();
     v.redraw();
+    this.comments.update();
+    if (this.shownGen >= this.editGen && this.shownWaiters.length) { const w = this.shownWaiters; this.shownWaiters = []; for (const go of w) go(); }
   }
 
   /** The number of the last page shown (for the spectra's pages to go on from). */
@@ -479,6 +588,7 @@ export class SiPreview {
       selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
       squiggles: [], picked, found: this.finder?.open ? this.finder.hits : [], framed: null,
+      comments: this.comments.shading(),
       marks,
     };
   }
@@ -871,7 +981,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
+    this.view.scroller.style.cursor = this.brush && (s || this.view.onPage(e.clientX, e.clientY)) ? BRUSH : this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
@@ -897,6 +1007,7 @@ export class SiPreview {
     this.downAt = null;
     if (!d || !this.file) return;
     const still = Math.abs(e.clientX - d.x) < 4 && Math.abs(e.clientY - d.y) < 4;
+    if (this.brush) { this.paintHere(); return; }
     if (!still) return;
     const at = this.file.ed.focus;
     // a click: its page chosen in the list; on words the program makes, its field
@@ -926,6 +1037,7 @@ export class SiPreview {
     const moves: Record<string, Parameters<typeof ed.move>[0]> = { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
     // a structure or figure picked: Escape lets it go, the arrows go on from it; it can't be deleted
     // or typed over here (its page has it), and nothing is typed, pasted or cut at the caret hidden meanwhile
+    if (this.brush && e.key === 'Escape' && !ctrl) return run(() => this.stopPainting());
     if (this.pickedStructure && !e.altKey) {
       const k = e.key.toLowerCase();
       if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
@@ -952,7 +1064,12 @@ export class SiPreview {
       if (k === 'f' && !shift) return run(() => this.showFind());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
-      if (k === 'b' || k === 'i' || k === 'u') return run(() => this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.'));
+      if (k === 'b' || k === 'i' || k === 'u') {
+        const key = k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline';
+        return run(() => void this.format({ [key]: !this.selectionHas(key) }));
+      }
+      if (k === ' ' && !shift) return run(() => void this.format('clear'));
+      if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) })); }
       if (k === 'c' || k === 'x' || k === 'v') { e.stopPropagation(); return; }
     }
   }
@@ -1003,10 +1120,10 @@ export class SiPreview {
 
   // ---------------------------------------------------------------- the ribbon's commands
 
-  /** Find (Ctrl+F): Document mode's Find box over the preview, finding only (a field is changed by typing into it). */
+  /** Find (Ctrl+F) and Replace (Ctrl+H): Document mode's Find box over the preview; replacing writes the fields the words print from. */
   private finder: DocFind | null = null;
 
-  showFind(): void {
+  showFind(replace = false): void {
     if (!this.file) return;
     if (!this.finder) {
       this.finder = new DocFind(this.host, {
@@ -1015,10 +1132,9 @@ export class SiPreview {
         flash: (m, ms) => this.api.flash(m, ms),
         redraw: () => { this.placeInput(); this.view.redraw(); },
         found: () => this.foundShown(),
-        // (replacing would write into many fields at once, past the typing guard: not here)
-      }, { findOnly: true });
+      }, { replace: (ranges, with_) => this.replaceAt(ranges, with_), ready: () => this.ready() });
     }
-    this.finder.show(false);
+    this.finder.show(replace);
   }
 
   /** While the text changes under an open Find box: its places looked for again (nothing is moved into view). */
@@ -1100,4 +1216,283 @@ export class SiPreview {
     this.view.scrollToPage(index);
     this.view.redraw();
   }
+
+  // ---------------------------------------------------------------- formatting (preview-format.ts)
+
+  /** Format Painter: the look being copied, and whether it stays on after one use (double-click). */
+  private brush: { look: RunFormatLook; keep: boolean } | null = null;
+  /** Format Painter turned on or off (the ribbon button shows it). */
+  onPainting: (on: boolean) => void = () => {};
+  get painting(): boolean { return !!this.brush; }
+
+  /**
+   * Format Painter: copy the look of the selection (or of the words at the caret) to the words
+   * clicked or dragged over next; `keep` (a double-click on the button) goes on until Esc.
+   */
+  startPainting(keep: boolean): void {
+    if (!this.file) return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    const look: RunFormatLook = {};
+    for (const k of LOOK_KEYS) {
+      const v = this.selectionValue(k);
+      // (on or off for each look, so the words painted match; a font, size or color only when it has one)
+      // ('' for none: painted words lose a font, size, color or highlight the copied ones don't have)
+      if (k === 'font' || k === 'size' || k === 'color' || k === 'highlight') (look as Record<string, unknown>)[k] = v === undefined ? '' : v;
+      else (look as Record<string, unknown>)[k] = !!v;
+    }
+    this.brush = { look, keep };
+    this.onPainting(true);
+  }
+
+  stopPainting(): void {
+    if (!this.brush) return;
+    this.brush = null;
+    this.view.scroller.style.cursor = '';
+    this.onPainting(false);
+  }
+
+  /** A click or drag with the brush: the words dragged over (or the word clicked) get its look. */
+  private paintHere(): void {
+    const b = this.brush, ed = this.file?.ed;
+    if (!b || !ed) return;
+    if (ed.collapsed) ed.selectWord(ed.start);
+    if (!b.keep) this.stopPainting();
+    if (ed.collapsed) return;
+    // only what differs is changed: words already so get no piece of their own
+    const patch: FormatLook = {};
+    for (const [k, v] of Object.entries(b.look) as [keyof RunFormatLook, RunFormatLook[keyof RunFormatLook]][]) {
+      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : v === '' ? this.selectionAny(k) : this.selectionAny(k, v);
+      if (differs) (patch as Record<string, unknown>)[k] = v;
+    }
+    // (one paint after another: a drag while the last is being written waits for it)
+    if (Object.keys(patch).length) this.paints = this.paints.then(() => this.format(patch)).then(() => {}, () => {});
+  }
+  private paints: Promise<void> = Promise.resolve();
+
+  /**
+   * Replace (Home ▸ Editing): the found places [a, b) of the preview's text become `with_` in the
+   * fields they print from, all in one step of Undo; places in words the program writes (an ID, a
+   * heading, a label) are left, and said so.
+   */
+  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
+    if (!this.file || !ranges.length) return 0;
+    if (!this.editable) { this.api.flash(this.why); return 0; }
+    // (the places were found in the text shown: it must still be the stored text)
+    if (this.dirty.size || this.fresh.size || this.shownGen < this.editGen) { this.api.flash('The Live Preview is still updating. Try again in a moment.'); return 0; }
+    const f = this.file;
+    const owner = this.owner, text = f.ed.text;
+    const spansNow = this.spans.map((x) => ({ ...x }));
+    const printedCache = new Map<string, ReturnType<typeof printedOf>>();
+    const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
+      let x = printedCache.get(src);
+      if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
+      return x;
+    };
+    // each place by the field it is in; a place across two fields, in a general procedure (every
+    // compound using it would change), in text typed in the preview, or in words Chemweave writes, is left
+    const bySrc = new Map<string, [number, number][]>();
+    let left = 0;
+    for (const [a, b] of ranges) {
+      const sp = spansNow.find((x) => x.start <= a && x.end >= b);
+      if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src) || parseSrc(sp.src)?.owner === 'g') { left++; continue; }
+      const at = printedOfSrc(sp.src).at(a);
+      const l = bySrc.get(sp.src);
+      if (l) l.push([at, at + b - a]); else bySrc.set(sp.src, [[at, at + b - a]]);
+    }
+    const fields: { src: string; text: string; from: string }[] = [];
+    let done = 0;
+    for (const [src, places] of bySrc) {
+      const raw = await this.api.read(src, owner);
+      if (raw === null) { left += places.length; continue; }
+      let printed = printedOfSrc(src).printed, out = raw;
+      // (from the last place back, each against the printed text as it is by then)
+      for (const [pa, pb] of [...places].sort((x, y) => y[0] - x[0])) {
+        const next = applyToRaw(out, printed, pa, pb, with_, markupSrc(src));
+        if (next === null) { left++; continue; }
+        out = next;
+        printed = printed.slice(0, pa) + with_ + printed.slice(pb);
+        done++;
+      }
+      if (out !== raw) fields.push({ src, text: out, from: raw });
+    }
+    if (fields.length) {
+      try {
+        await this.api.writeFormat(fields, null, owner, 'Replace');
+      } catch (err) {
+        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
+        return 0;
+      }
+      for (const x of fields) this.written.delete(x.src);
+      this.editGen++; this.writtenGen = this.editGen;
+    }
+    const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
+    const why = 'in a general procedure, typed in the Live Preview, or written by Chemweave (an ID, a heading)';
+    if (!done && left) this.api.flash(`Nothing replaced: ${left === 1 ? 'the place is' : 'the places are'} ${why}. Change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.`, 9000);
+    else if (left) this.api.flash(`Replaced ${what(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
+    else if (done > 1) this.api.flash(`Replaced ${what(done)}. Ctrl+Z restores them.`, 4000);
+    return done;
+  }
+
+  /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */
+  paraValue<K extends keyof ParaLook>(key: K): ParaLook[K] | undefined {
+    const f = this.file;
+    if (!f) return undefined;
+    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)]?.[key] as ParaLook[K] | undefined;
+  }
+
+  /** Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is): kept across compiles as Font's looks are. */
+  async paraFormat(look: ParaLook, one = false): Promise<boolean> {
+    const ed = this.file?.ed;
+    if (!ed) return false;
+    // (one paragraph only: the first selected, as for Page Break)
+    if (one && !ed.collapsed) ed.setCaret(ed.start);
+    if (ed.collapsed) {
+      const t = ed.text, at = ed.start;
+      const a = at === 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
+      if (b <= a) { this.api.flash('Click in a paragraph with words in it first.'); return false; }
+      // (kept by the paragraph's first words only: typing later in it doesn't lose the look)
+      ed.select(a, Math.min(b, a + PARA_ANCHOR));
+      const done = await this.format(look);
+      this.file?.ed.setCaret(Math.min(at, this.file.ed.text.length));
+      if (!done) this.api.flash('This paragraph can’t take formatting of its own: it has no words of a field or of the SI’s own text (a picture alone, or an empty line).');
+      return done;
+    }
+    return this.format(look);
+  }
+
+  /** Whether any character selected has `key` (with a value other than `but`, when given). */
+  private selectionAny(key: keyof RunFormatLook, but?: unknown): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && at < ed.end && run.text && (but === undefined ? !!run[key] : run[key] !== but)) return true;
+      at = end;
+      if (at >= ed.end) break;
+    }
+    return false;
+  }
+
+  /** The first selected character's `key` (its size, for Grow Font), or undefined. */
+  selectionValue<K extends keyof TextRun>(key: K): TextRun[K] | undefined {
+    const ed = this.file?.ed;
+    if (!ed) return undefined;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && run.text) return run[key];
+      at = end;
+    }
+    return undefined;
+  }
+
+  /** Whether every character selected has `key` (Bold pressed again takes it off). */
+  selectionHas(key: keyof RunFormatLook): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    let at = 0, any = false;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && at < ed.end && run.text) { any = true; if (!run[key]) return false; }
+      at = end;
+      if (at >= ed.end) break;
+    }
+    return any;
+  }
+
+  /**
+   * Format the selection (`look`; 'clear': Clear All Formatting). Bold, italic, underline,
+   * subscript and superscript on a field kept as formatted text go into the field (SI Assistant
+   * shows them too); the rest, and any formatting on words the program writes, go in the
+   * formatting file. Either way it is kept across compiles. False when there was nothing to do.
+   */
+  async format(look: FormatLook | 'clear'): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
+    // (typing not yet written goes first: what is formatted is what is stored)
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    const owner = this.owner;
+    const text = f.ed.text;
+    const s = f.ed.start, e = f.ed.end;
+    // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
+    const spansNow = this.spans.map((x) => ({ ...x }));
+    const blocksNow = this.blocks.map((x) => ({ ...x }));
+    // the selection as stretches of the printed text of each source
+    const parts = new Map<string, [number, number]>();
+    const put = (src: string, a: number, b: number): void => {
+      const was = parts.get(src);
+      parts.set(src, was ? [Math.min(was[0], a), Math.max(was[1], b)] : [a, b]);
+    };
+    const printedCache = new Map<string, ReturnType<typeof printedOf>>();
+    const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
+      let x = printedCache.get(src);
+      if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
+      return x;
+    };
+    let pos = s;
+    const spans = spansNow.filter((x) => x.end > s && x.start < e).sort((a, b) => a.start - b.start);
+    const gap = (a: number, b: number): void => {
+      for (let i = a; i < b;) {
+        const k = blockAt(blocksNow, i);
+        if (!k) { i++; continue; }
+        const hi = Math.min(b, k.end);
+        // (paragraph marks and the places of pictures alone aren't formatted)
+        if (text.slice(i, hi).replace(/[\n\uFFFC]/g, '').trim()) put(blockSrc(k.node), i - k.start, Math.max(i + 1, hi) - k.start);
+        i = Math.max(i + 1, hi);
+      }
+    };
+    for (const sp of spans) {
+      const lo = Math.max(s, sp.start), hi = Math.min(e, sp.end);
+      if (lo > pos) gap(pos, lo);
+      if (hi > lo) { const a = printedOfSrc(sp.src).at(lo); put(sp.src, a, a + hi - lo); }
+      pos = Math.max(pos, hi);
+    }
+    if (pos < e) gap(pos, e);
+    if (!parts.size) return false;
+    const fields: { src: string; text: string; from: string }[] = [];
+    const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
+    const sideFile = (src: string, printed: string, a: number, b: number): void => {
+      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
+    };
+    // (every printed text worked out before the fields are read: nothing below depends on what shows by then)
+    const printedNow = new Map<string, string>();
+    for (const src of parts.keys()) printedNow.set(src, src.startsWith('b:') ? printedFor(text, spansNow, blocksNow, src) : printedOfSrc(src).printed);
+    const offKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
+    const onKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
+    for (const [src, [a, b]] of parts) {
+      const printed = printedNow.get(src)!;
+      const inField = markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
+      if (!inField) { sideFile(src, printed, a, b); continue; }
+      const raw = await this.api.read(src, owner);
+      if (raw === null) { sideFile(src, printed, a, b); continue; }
+      const got = markupFormat(raw, printed, a, b, look === 'clear' ? 'clear' : look);
+      if (got.raw !== null && got.raw !== raw) fields.push({ src, text: got.raw, from: raw });
+      if (got.raw === null || look === 'clear' || offKeys.length) {
+        // (taking a look off, and Clear All Formatting, also cover what the program put on: a title's bold, the 1 of ¹H)
+        sideFile(src, printed, a, b);
+        continue;
+      }
+      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
+      // (a look put back in the field: an earlier piece taking it off there goes)
+      if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
+    }
+    if (!fields.length && !later.length) return false;
+    const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
+    try {
+      await this.api.writeFormat(fields, change, owner);
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not save the formatting: ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return false;
+    }
+    // (the fields' stored text has changed: typing next starts from it, and a compile started before isn't shown)
+    for (const x of fields) this.written.delete(x.src);
+    if (fields.length) { this.editGen++; this.writtenGen = this.editGen; }
+    // (the compile that follows the write shows it)
+    return true;
+  }
+
 }

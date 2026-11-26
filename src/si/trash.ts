@@ -361,10 +361,24 @@ async function restoreObject(p: SiProject, e: TrashEntry, folder: string, item: 
     const ext = item.slice(item.lastIndexOf('.'));
     const stem = item.slice(0, item.length - ext.length);
     const others: Record<string, Uint8Array> = {};
-    for (const o of names(e.info, 'companions')) { const b = await p.folder.readBytes(join(folder, o)); if (b) others[o.slice(o.lastIndexOf('.') + 1)] = b; }
+    // (a cropped or rotated picture's original, deleted with it: put back beside it, with how it was edited)
+    const edited = new Set(names(e.info, 'edited_files'));
+    for (const o of names(e.info, 'companions')) { if (edited.has(o)) continue; const b = await p.folder.readBytes(join(folder, o)); if (b) others[o.slice(o.lastIndexOf('.') + 1)] = b; }
     const path = await p.addSectionPicture(s, stem + ext, (await p.folder.readBytes(join(folder, item)))!, others);
+    let editRec: Record<string, unknown> | null = null;
+    const orig = str(e.info.edited_original);
+    if (orig && edited.has(orig) && isObj(e.info.edited)) {
+      const bytes = await p.folder.readBytes(join(folder, orig));
+      if (bytes) {
+        const ost = orig.replace(/\.[^.]+$/, '');
+        const oothers: Record<string, Uint8Array> = {};
+        for (const o of edited) if (o !== orig && o.startsWith(ost + '.')) { const b = await p.folder.readBytes(join(folder, o)); if (b) oothers[o.slice(o.lastIndexOf('.') + 1)] = b; }
+        const opath = await p.addSectionPicture(s, orig, bytes, oothers);
+        editRec = { ...e.info.edited, original: opath, copy: path };
+      }
+    }
     const figs = isObj(s.data.figures) ? s.data.figures : (s.data.figures = {});
-    figs[id] = { file: path, ...(str(e.info.label) ? { label: str(e.info.label) } : {}), ...(e.info.width ? { width: e.info.width } : {}) };
+    figs[id] = { file: path, ...(str(e.info.label) ? { label: str(e.info.label) } : {}), ...(e.info.width ? { width: e.info.width } : {}), ...(editRec ? { chemweave_picture: editRec } : {}) };
     await p.saveSection(s);
   } else {
     const table = await readTrashedJson(p, join(folder, item));

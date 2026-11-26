@@ -5,9 +5,12 @@
      so the whole list of types is here, kept in step with fileAssociations by
      tests/file-icons.test.ts. SI project files (.chemsi) are Chemweave's own type: it is declared
      here (UTExportedTypeDeclarations) with its icon, Resources/chemsi.icns, made by
-     scripts/make-file-icons.mjs. -->
+     scripts/make-file-icons.mjs. NSMicrophoneUsageDescription is what macOS shows when it asks
+     about the microphone for Slide Show > Record; without it the request is refused unasked. -->
 <plist version="1.0">
 <dict>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Chemweave records narration for a slide show (Slide Show > Record) only while you record.</string>
 	<key>CFBundleDocumentTypes</key>
 	<array>
 		<dict>
