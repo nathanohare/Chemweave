@@ -15,7 +15,7 @@ import { onImageReady } from '../render/images';
 import { followLink } from './links-ui';
 import { ShowActions } from './show-actions';
 import { ShowInk, type Stroke } from './show-ink';
-import { askKeepInk, type ShowOptions } from './present';
+import { askKeepInk, systemShortcut, type ShowOptions } from './present';
 
 /** Where the audience's slides went. */
 type Audience = 'other-screen' | 'window' | 'none';
@@ -55,6 +55,8 @@ export class PresenterView {
   private notesSize = 20;
   private els!: { cur: HTMLDivElement; canvas: HTMLCanvasElement; keys: HTMLDivElement; keysLabel: HTMLElement; next: HTMLCanvasElement; nextBox: HTMLDivElement; nextLabel: HTMLElement; notes: HTMLDivElement; count: HTMLElement; timer: HTMLElement; clock: HTMLElement; pause: HTMLButtonElement; where: HTMLElement; blank: HTMLElement };
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  /** What the show asked as it last ended, answered. */
+  private asked: Promise<void> = Promise.resolve();
   private sizer = new ResizeObserver(() => this.layout());
   private wasFullscreen = false;
 
@@ -204,7 +206,13 @@ export class PresenterView {
     this.root = null;
     void this.fullscreen(false);
     this.onEnd(i);
-    if (ink) void askKeepInk().then((keep) => { if (keep) this.onKeepInk(ink); });
+    this.asked = ink ? askKeepInk().then((keep) => { if (keep) this.onKeepInk(ink); }).catch((e: unknown) => console.error('Ending the show:', e)) : Promise.resolve();
+  }
+
+  /** End the show and wait for what it asks as it ends (keep the ink): before quitting. */
+  async finish(): Promise<void> {
+    this.stop();
+    await this.asked;
   }
 
   private closeAudience(): void {
@@ -295,7 +303,7 @@ export class PresenterView {
   }
 
   private onKey(e: KeyboardEvent): void {
-    if (!this.root) return;
+    if (!this.root || systemShortcut(e)) return;
     e.preventDefault();
     e.stopPropagation();
     if (this.ink?.key(e)) return;

@@ -275,6 +275,9 @@ header .sep { height: 18px; margin: 0 3px; }
 /* the window's buttons are pinned to the top right, with room kept for them beside the menu bar */
 body.own-title-bar header { position: relative; padding-right: 138px; user-select: none; }
 body.own-title-bar .win-controls { position: absolute; top: 0; right: 0; height: 32px; margin: 0; }
+/* on a Mac the system's own red, yellow and green buttons sit over the top left of the top row instead */
+body.own-title-bar.mac-lights header { padding-right: 6px; }
+body.own-title-bar.mac-lights .lights-row { padding-left: 78px; }
 header > button, header > select { white-space: nowrap; flex-shrink: 0; }
 .menu button {
   display: flex;

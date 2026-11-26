@@ -424,6 +424,37 @@ fn quit_cancelled() {
     mac_quit::cancelled();
 }
 
+/// View > Window and Colors > Title Bar in Menu Bar on a Mac: the window keeps the system's own
+/// red, yellow and green buttons at the top left, over the menu bar (the page leaves room for them),
+/// and its title is hidden there; off, the system's title bar comes back. (Other systems take the
+/// title bar away and the page draws its own buttons: src/ui/title-bar.ts.)
+#[tauri::command]
+fn mac_title_bar(window: tauri::WebviewWindow, own: bool) -> Result<(), String> {
+    #[cfg(target_os = "macos")]
+    {
+        use tauri::TitleBarStyle;
+        window
+            .set_title_bar_style(if own { TitleBarStyle::Overlay } else { TitleBarStyle::Visible })
+            .map_err(|e| e.to_string())?;
+        // (a raw pointer can't cross threads; AppKit is only touched on the main thread)
+        let ns = window.ns_window().map_err(|e| e.to_string())? as usize;
+        window
+            .run_on_main_thread(move || {
+                // NSWindowTitleVisibility: 0 visible, 1 hidden
+                let visibility: isize = if own { 1 } else { 0 };
+                // SAFETY: the window's own NSWindow, alive while its Tauri window is, on the main thread.
+                unsafe {
+                    let ns = ns as *mut objc2::runtime::AnyObject;
+                    let _: () = objc2::msg_send![ns, setTitleVisibility: visibility];
+                }
+            })
+            .map_err(|e| e.to_string())?;
+    }
+    #[cfg(not(target_os = "macos"))]
+    let _ = (window, own);
+    Ok(())
+}
+
 /// View > Developer Tools > Inspector: the web inspector, built into the Windows and Linux apps
 /// (the "devtools" feature in Cargo.toml). Apple doesn't allow it in App Store apps.
 #[tauri::command]
@@ -500,6 +531,7 @@ pub fn run() {
             selftest_requested,
             open_inspector,
             quit_cancelled,
+            mac_title_bar,
             selftest_report,
             read_text_file,
             write_text_file,
