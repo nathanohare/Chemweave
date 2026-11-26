@@ -1,9 +1,10 @@
-// The window's title bar (desktop app only). By default the system's title bar is taken away and
-// its buttons (minimise, maximise, close) sit at the right end of the menu bar, which also moves
-// the window when dragged by an empty part and maximises it on a double-click, so the program
-// gains a row of height. View > Window and Colours > Title Bar in Menu Row puts the system's title bar back.
+// The window's title bar (desktop app only). With View > Window and Colors > Title Bar in Menu Bar
+// on, the system's title bar is taken away and the menu bar takes its place: its empty parts move
+// the window and a double-click maximizes it, so the program gains a row of height. On Windows and
+// Linux the window's buttons (minimize, maximize, close) are drawn at its right end; on a Mac the
+// system's own red, yellow and green buttons stay at its left (src-tauri/src/lib.rs mac_title_bar).
 
-import { isTauri } from '@tauri-apps/api/core';
+import { invoke, isTauri } from '@tauri-apps/api/core';
 import { availableMonitors, getCurrentWindow } from '@tauri-apps/api/window';
 import { setModalTitleStrip, setOffScreen } from './modal-guard';
 
@@ -19,6 +20,13 @@ const ICONS = {
 };
 
 let controls: HTMLElement | null = null;
+
+/**
+ * The Mac desktop app (not an iPad, whose WebKit also says "Mac"): there the window keeps the
+ * system's own red, yellow and green buttons at the top left, over the menu bar, instead of
+ * drawing Windows-style ones at the right (Nate, 2026-11-26).
+ */
+const macLights = (): boolean => isTauri() && typeof navigator !== 'undefined' && /Mac/.test(navigator.platform) && !(navigator.maxTouchPoints > 1);
 let place: TitleBarPlace = 'system';
 
 /** Show Maximize or Restore Down on every set of window buttons (the menu bar's and each window's). */
@@ -72,6 +80,8 @@ function windowButtons(header: HTMLElement): HTMLElement {
 function modalStrip(): HTMLElement {
   const strip = document.createElement('div');
   strip.setAttribute('data-tauri-drag-region', '');
+  // (on a Mac the system's own buttons stay over everything: the strip only moves the window)
+  if (macLights()) return strip;
   const box = makeWindowButtons();
   // (like the system's title bar, its buttons are for the mouse: Tab stays among the window's own controls)
   for (const b of box.querySelectorAll('button')) b.tabIndex = -1;
@@ -163,6 +173,10 @@ function putButtons(): void {
   const header = document.querySelector('header');
   if (!isTauri() || !controls || !header) return;
   const own = place === 'app';
+  // (the row at the top of the window, which leaves room for a Mac's own buttons at its left)
+  header.classList.toggle('lights-row', own && !buttonsRow);
+  for (const r of document.querySelectorAll('.lights-row')) if (r !== header && r !== buttonsRow) r.classList.remove('lights-row');
+  buttonsRow?.classList.toggle('lights-row', own);
   if (buttonsRow && own) {
     buttonsRow.setAttribute('data-tauri-drag-region', DRAG);
     if (buttonsRow.lastElementChild !== controls) buttonsRow.append(controls);
@@ -180,6 +194,8 @@ export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
   if (!isTauri() || !header) return;
   const own = where === 'app';
   document.body.classList.toggle('own-title-bar', own);
+  const mac = macLights();
+  document.body.classList.toggle('mac-lights', own && mac);
   // the empty parts of the menu bar (and the program's name, and the tabs' row) move the window
   for (const el of [header, header.querySelector('h1.app-name'), document.querySelector('#tabs')]) {
     if (!el) continue;
@@ -191,11 +207,12 @@ export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
     if (own) el.setAttribute('data-tauri-drag-region', 'false');
     else el.removeAttribute('data-tauri-drag-region');
   }
-  windowButtons(header).hidden = !own;
+  windowButtons(header).hidden = !own || mac;
   putButtons();
   setModalTitleStrip(own ? modalStrip : null, own ? stripHeight(header) : 0);
   watchScreen();
-  await getCurrentWindow().setDecorations(!own).catch(() => {});
+  if (mac) await invoke('mac_title_bar', { own }).catch(() => {});
+  else await getCurrentWindow().setDecorations(!own).catch(() => {});
 }
 
 export const titleBarPlace = (): TitleBarPlace => place;

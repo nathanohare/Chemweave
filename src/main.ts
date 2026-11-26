@@ -8308,7 +8308,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
   presenter.onRehearsed = (r) => {
     const d = deckNow();
     if (!d) return;
-    void (async () => {
+    return (async () => {
       if (r.recordings.size) {
         const sounds = new Map<number, { src: string; seconds: number }>();
         for (const [i, blob] of r.recordings) {

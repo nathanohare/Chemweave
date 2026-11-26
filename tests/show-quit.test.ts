@@ -9,14 +9,16 @@ import { describe, it, expect } from 'vitest';
 import { Presenter, systemShortcut } from '../src/ui/present';
 import { PresenterView } from '../src/ui/presenter-view';
 
-const key = (key: string, mods: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey', boolean>> = {}) =>
-  ({ key, metaKey: false, ctrlKey: false, altKey: false, ...mods });
+const key = (key: string, mods: Partial<Record<'metaKey' | 'ctrlKey' | 'altKey', boolean>> = {}, code = /^[a-z]$/i.test(key) ? `Key${key.toUpperCase()}` : '') =>
+  ({ key, code, metaKey: false, ctrlKey: false, altKey: false, ...mods });
 
 describe('keys a slide show lets through', () => {
   it('lets ⌘Q and ⌘H through', () => {
     expect(systemShortcut(key('q', { metaKey: true }))).toBe(true);
     expect(systemShortcut(key('Q', { metaKey: true }))).toBe(true);
     expect(systemShortcut(key('h', { metaKey: true }))).toBe(true);
+    // a Russian layout: the Q key types й, and the Mac's menu still quits
+    expect(systemShortcut(key('й', { metaKey: true }, 'KeyQ'))).toBe(true);
   });
 
   it("keeps the show's own keys, and Ctrl+Q", () => {
@@ -25,6 +27,8 @@ describe('keys a slide show lets through', () => {
     expect(systemShortcut(key('q', { metaKey: true, ctrlKey: true }))).toBe(false);
     // ⌥⌘H (Hide Others) is not the app's own
     expect(systemShortcut(key('h', { metaKey: true, altKey: true }))).toBe(false);
+    // a layout where the Q key types another Latin letter (AZERTY: A): that letter counts, not the place
+    expect(systemShortcut(key('a', { metaKey: true }, 'KeyQ'))).toBe(false);
   });
 });
 

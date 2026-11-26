@@ -206,7 +206,7 @@ export class PresenterView {
     this.root = null;
     void this.fullscreen(false);
     this.onEnd(i);
-    this.asked = ink ? askKeepInk().then((keep) => { if (keep) this.onKeepInk(ink); }).catch(() => {}) : Promise.resolve();
+    this.asked = ink ? askKeepInk().then((keep) => { if (keep) this.onKeepInk(ink); }).catch((e: unknown) => console.error('Ending the show:', e)) : Promise.resolve();
   }
 
   /** End the show and wait for what it asks as it ends (keep the ink): before quitting. */

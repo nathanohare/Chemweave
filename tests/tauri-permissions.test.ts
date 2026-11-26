@@ -41,7 +41,7 @@ const CORE_PARTS = ['app', 'event', 'image', 'menu', 'path', 'resources', 'tray'
 
 /** Commands Tauri routes page functions to by itself (not through @tauri-apps/api). */
 const BUILT_IN: { pattern: RegExp; command: string }[] = [
-  // wry's macOS and Linux webviews have no print of their own; Tauri sends window.print() here
+  // on macOS and iOS Tauri replaces window.print() with this command (crates/tauri/src/webview/plugin.rs, scripts/print.js)
   { pattern: /\bwindow\.print\s*\(/, command: 'plugin:webview|print' },
   // Tauri's drag.js: a mousedown on a data-tauri-drag-region moves the window, a double click maximizes it
   { pattern: /data-tauri-drag-region/, command: 'plugin:window|start_dragging' },
@@ -198,7 +198,11 @@ function permissionFor(cmd: string): string {
   return `${plugin}:allow-${m[2].replace(/_/g, '-')}`;
 }
 
-/** Every permission the capability files grant, with default sets expanded. */
+/**
+ * Every permission the capability files grant to the main window on every desktop platform, with
+ * default sets expanded. A capability for some platforms or other windows only doesn't count: the
+ * code that needs it runs on all of them, from the main window.
+ */
 function allowed(): Set<string> {
   const out = new Set<string>();
   const expand = (id: string) => {
@@ -209,7 +213,9 @@ function allowed(): Set<string> {
   };
   const dir = 'src-tauri/capabilities';
   for (const f of readdirSync(join(ROOT, dir)).filter((f) => f.endsWith('.json'))) {
-    const cap = JSON.parse(read(`${dir}/${f}`)) as { permissions: (string | { identifier: string })[] };
+    const cap = JSON.parse(read(`${dir}/${f}`)) as { windows?: string[]; platforms?: string[]; permissions: (string | { identifier: string })[] };
+    if (cap.windows && !cap.windows.some((w) => w === 'main' || w === '*')) continue;
+    if (cap.platforms && !['linux', 'macOS', 'windows'].every((p) => cap.platforms!.includes(p))) continue;
     for (const p of cap.permissions) expand(typeof p === 'string' ? p : p.identifier);
   }
   return out;
@@ -242,10 +248,11 @@ describe('Tauri permissions', () => {
   });
 
   it('every command the app invokes by name is registered in the desktop app', () => {
-    const rust = sourceFilesRust('src-tauri/src').map(read).join('\n');
+    // (comments and #[cfg(...)] lines inside the list left out)
+    const rust = sourceFilesRust('src-tauri/src').map(read).join('\n').replace(/\/\/.*$/gm, '').replace(/#\[[^\]]*\]/g, '');
     const registered = new Set(
       [...rust.matchAll(/generate_handler!\s*\[([^\]]*)\]/g)].flatMap((m) =>
-        m[1].split(',').map((s) => s.replace(/#\[[^\]]*\]/g, '').trim().split('::').pop()!).filter(Boolean)),
+        m[1].split(',').map((s) => s.trim().split('::').pop()!).filter(Boolean)),
     );
     expect(registered.size).toBeGreaterThan(10);
     const missing = new Set<string>();

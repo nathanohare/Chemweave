@@ -10,7 +10,8 @@ import { describe, it, expect, vi, beforeAll } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 
-vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: async () => undefined }));
+const invoked: [string, unknown][] = [];
+vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: async (cmd: string, args: unknown) => { invoked.push([cmd, args]); } }));
 vi.mock('@tauri-apps/api/window', () => {
   const none = async () => () => {};
   const w = {
@@ -22,7 +23,8 @@ vi.mock('@tauri-apps/api/window', () => {
 });
 
 /**
- * Tauri's own test of whether a mousedown moves the window: isDragRegion in
+ * Tauri's own test (copied as it is there, including its list of interactive roles, which is what
+ * keeps a background file tab, a div with role="tab" and tabindex -1, clickable) of whether a mousedown moves the window: isDragRegion in
  * crates/tauri/src/window/scripts/drag.js at tag tauri-v2.12.3 (the version in Cargo.lock),
  * https://github.com/tauri-apps/tauri/blob/tauri-v2.12.3/crates/tauri/src/window/scripts/drag.js
  */
@@ -55,7 +57,7 @@ beforeAll(async () => {
   document.body.innerHTML = html.slice(html.indexOf('<header'), html.indexOf('</header>') + '</header>'.length);
   header = document.querySelector('header')!;
   // the open files' strip, as main.ts fills #tabs: a strip holding tabs, then its buttons
-  document.querySelector('#tabs')!.innerHTML = '<div class="tab-strip"><div class="tab" role="tab"><span class="tab-name">A</span><span class="tab-close">×</span></div></div><button class="tab-add">+</button>';
+  document.querySelector('#tabs')!.innerHTML = '<div class="tab-strip"><div class="tab" role="tab" tabindex="-1"><span class="tab-name">A</span><span class="tab-close">×</span></div></div><button class="tab-add">+</button>';
   document.querySelector('#quick-bar')!.innerHTML = '<button>Save</button>';
   const { placeTitleBar } = await import('../src/ui/title-bar');
   await placeTitleBar('app');
@@ -88,5 +90,30 @@ describe('Title Bar in Menu Bar: what moves the window', () => {
     await placeTitleBar('system');
     expect(header.querySelectorAll('[data-tauri-drag-region]').length).toBe(0);
     await placeTitleBar('app');
+  });
+});
+
+describe('Title Bar in Menu Bar on a Mac', () => {
+  it("keeps the Mac's own buttons at the left: no drawn buttons, room at the left, the system's title bar styled over the page", async () => {
+    const platform = Object.getOwnPropertyDescriptor(Navigator.prototype, 'platform');
+    Object.defineProperty(navigator, 'platform', { value: 'MacIntel', configurable: true });
+    try {
+      const { placeTitleBar } = await import('../src/ui/title-bar');
+      invoked.length = 0;
+      await placeTitleBar('app');
+      expect(document.body.classList.contains('mac-lights')).toBe(true);
+      expect(header.classList.contains('lights-row')).toBe(true);
+      expect((header.querySelector('.win-controls') as HTMLElement).hidden).toBe(true);
+      expect(invoked).toContainEqual(['mac_title_bar', { own: true }]);
+      // the gaps still move the window
+      expect(movesWindow(header.querySelector('.sep')!)).toBe(true);
+      await placeTitleBar('system');
+      expect(document.body.classList.contains('mac-lights')).toBe(false);
+      expect(header.classList.contains('lights-row')).toBe(false);
+      expect(invoked).toContainEqual(['mac_title_bar', { own: false }]);
+    } finally {
+      delete (navigator as { platform?: string }).platform;
+      if (platform) Object.defineProperty(Navigator.prototype, 'platform', platform);
+    }
   });
 });
