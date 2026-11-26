@@ -1,3 +1,3 @@
 Added: Split Screen: drag any tab down from the tab row into the window to show it beside the tab you are working on, as with Snap in Windows; an outline shows the split while you hold the tab there. Any two kinds of tab can go side by side, and the ribbon, Side Panel and status bar follow the side you click.
-Added: Split Screen: drag the divider to share the width (double-click it for half each), or right-click a tab for Split Screen Left or Right.
+Added: Split Screen: the two tabs sit next to each other in the tab row, and the other side's tab is shaded. Drag the divider to share the width (double-click it for half each), or right-click a tab for Split Screen Left or Right.
 Removed: View ▸ Split View: Canvas Beside, which Split Screen replaces; View ▸ Close Split ends a split. Workspaces saved with a canvas beside a document still open with it beside.

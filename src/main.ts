@@ -12045,7 +12045,6 @@ const splitBody = $<HTMLDivElement>('#split-body');
 const splitSnap = $<HTMLCanvasElement>('#split-snap');
 const splitName = $<HTMLSpanElement>('#split-name');
 const splitInsert = $<HTMLButtonElement>('#split-insert');
-const splitMark = $<HTMLDivElement>('#split-mark');
 const workEl = $<HTMLElement>('#work');
 /** Each split-screen tab as it looked when last left: its side shows this while the other is worked on. */
 const splitPictures = new Map<Tab, HTMLCanvasElement>();
@@ -12127,8 +12126,6 @@ function layoutSplit(): void {
   b.toggle('split-flip', !!st && !st.mainLeft);
   const otherSide = live && splitDrawing && !cellEdit;
   b.toggle('split-drawing', otherSide);
-  // the side being worked on: a line in its kind's color along its top
-  splitMark.hidden = !st || otherSide;
   // the drawing area sits beside, except while a figure or cell structure is drawn (it floats over the pages then)
   const want = live && !cellEdit ? splitBody : workEl;
   if (host.parentElement !== want) {
@@ -12165,8 +12162,9 @@ function splitTabMark(el: HTMLElement): void {
   const t = ws.tabs.find((x) => String(x.id) === el.dataset.tab);
   const sp = ws.split;
   const side = t && sp ? (sp.left === t ? 'left' : sp.right === t ? 'right' : null) : null;
-  el.classList.toggle('tab-split', !!side);
   el.dataset.split = side ?? '';
+  // the tab on the other side of the split showing: shaded, between an active tab and the rest
+  el.classList.toggle('tab-beside', !!t && !!splitState() && ws.besideOf(ws.active) === t);
 }
 
 /** What the picture side shows now, so it is drawn again only when that changes. */

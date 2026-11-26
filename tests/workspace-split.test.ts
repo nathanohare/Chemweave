@@ -100,6 +100,24 @@ describe('split screen of any two tabs', () => {
     expect(ws.pane).toBe(d);
   });
 
+  it('puts the two tabs next to each other in the tab row, left then right', () => {
+    const { ws, host } = workspace();
+    host.edit('draw', () => host.addAtom(0, 0));
+    ws.noteChange();
+    const d = ws.active;
+    const w = ws.newDocument();
+    const s = ws.newSlides();
+    ws.activate(d);
+    const sheet = ws.newSheet();
+    // tabs: canvas, sheet, document, deck (each new one opens after the tab showing)
+    const order = () => ws.tabs.map((t) => t.mode);
+    expect(order()).toEqual(['drawing', 'sheet', 'document', 'slides']);
+    ws.setSplit({ left: s, right: d });
+    expect(order()).toEqual(['slides', 'drawing', 'sheet', 'document']);
+    ws.setSplit({ left: w, right: sheet });
+    expect(order()).toEqual(['slides', 'drawing', 'document', 'sheet']);
+  });
+
   it('refuses a tab beside itself or a tab not open', () => {
     const { ws } = workspace();
     const d = ws.active;

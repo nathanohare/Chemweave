@@ -307,6 +307,12 @@ export class Workspace {
     if (pair && (pair.left === pair.right || !this.tabs.includes(pair.left) || !this.tabs.includes(pair.right))) pair = null;
     this.paneOut();
     this.split = pair;
+    // the two tabs side by side in the tab row too, left then right, where the first of them was (Nate, 2026-11-26)
+    if (pair) {
+      const at = Math.min(this.tabs.indexOf(pair.left), this.tabs.indexOf(pair.right));
+      for (const t of [pair.left, pair.right]) this.tabs.splice(this.tabs.indexOf(t), 1);
+      this.tabs.splice(at, 0, pair.left, pair.right);
+    }
     this.paneIn();
     this.hooks.changed();
   }
