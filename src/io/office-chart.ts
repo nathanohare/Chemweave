@@ -3,11 +3,12 @@
 // Excel workbook embedded beside it, which their Edit Data opens. Reading takes the chart and
 // puts the numbers it cached back into cells.
 
-import { Package, PackageReader, kids } from './ooxml';
+import { Package, PackageReader, kids, NS, REL } from './ooxml';
+import { applyColorMods } from './dml-color';
 import { chartXml, readChartXml, CT_CHART, REL_CHART, CT_CHARTEX, REL_CHARTEX, CX_NS, addChartExStyle } from './xlsx-chart';
 import { writeXlsx, type XlsxPictures } from './xlsx';
 import { ChartBox, boxBook, boxData, boxFromCaches, PX_PER_PT } from '../sheet/chart-box';
-import { newChartId, isChartEx } from '../sheet/chart';
+import { newChartId, isChartEx, type Chart } from '../sheet/chart';
 import { chartPrint, chartPrintXml } from './native-print';
 
 export { CT_CHART, REL_CHART, CX_NS };
@@ -95,7 +96,7 @@ function cachesOf(doc: Document): { ref: string; values: string[] }[] {
  * A chart from a Word or PowerPoint file (shown `w` × `h` points), with its data and its print (to
  * tell whether it is still the chart saved here); null when it has nothing this can show.
  */
-export function readChart(pkg: PackageReader, path: string, w: number, h: number): { box: ChartBox; partial: boolean; print: string } | null {
+export function readChart(pkg: PackageReader, path: string, w: number, h: number, theme?: Record<string, string> | null): { box: ChartBox; partial: boolean; print: string } | null {
   let doc: Document | null;
   try {
     doc = pkg.xml(path);
@@ -105,5 +106,48 @@ export function readChart(pkg: PackageReader, path: string, w: number, h: number
   if (!doc) return null;
   const got = readChartXml(doc, { row: 0, col: 0, dx: 0, dy: 0 }, w * PX_PER_PT, h * PX_PER_PT, newChartId());
   if (!got) return null;
-  return { box: boxFromCaches(got.chart, cachesOf(doc)), partial: got.partial, print: chartPrint(got.chart) };
+  // (the print is of what the file says: the theme's colours below are only for showing it)
+  const print = chartPrint(got.chart);
+  if (theme) themeLook(got.chart, theme);
+  return { box: boxFromCaches(got.chart, cachesOf(doc)), partial: got.partial, print };
+}
+
+/** A theme colour's name as a chart uses it (text and background) to the theme's own (dark 1, light 1…). */
+const CHART_CLR_MAP: Record<string, string> = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk2', bg2: 'lt2' };
+
+/**
+ * A chart from a Word or PowerPoint file shown in that file's theme (`theme`: its colours, hex
+ * without #): series without a colour of their own take its accents, as Office gives them, and a
+ * series in a theme colour (accent2 made darker) shows that colour (office sampler F-V-05). Neither
+ * is saved: the file keeps the theme's colours.
+ */
+export function themeLook(chart: Chart, theme: Record<string, string>): void {
+  const accents = [1, 2, 3, 4, 5, 6].map((i) => theme[`accent${i}`]).filter((c): c is string => !!c);
+  if (accents.length === 6) chart.themePalette = accents.map((c) => `#${c.toLowerCase()}`);
+  for (const s of chart.series) {
+    if (s.color || !s.scheme) continue;
+    const name = /^<a:schemeClr val="([^"]+)"/.exec(s.scheme)?.[1];
+    const hex = name ? theme[CHART_CLR_MAP[name] ?? name] : undefined;
+    if (!hex) continue;
+    // (its changes, as written: <a:lumMod val="75000"/>…)
+    const mods = [...s.scheme.slice(s.scheme.indexOf('>') + 1).matchAll(/<a:(\w+)(?: val="([^"]*)")?\/>/g)]
+      .map((m) => ({ localName: m[1], getAttribute: (a: string) => (a === 'val' ? m[2] ?? null : null) }));
+    s.themeColor = applyColorMods(hex, mods).toLowerCase();
+  }
+}
+
+/** A Word or PowerPoint file's theme colours (accent1…, dk1…, hex without #), from the theme part `from` relates to; null without one. */
+export function themeColorsOf(pkg: PackageReader, from: string): Record<string, string> | null {
+  const path = pkg.relOfType(from, REL.theme);
+  const doc = path ? pkg.xml(path) : null;
+  const scheme = doc ? Array.from(doc.getElementsByTagNameNS(NS.a, 'clrScheme'))[0] : undefined;
+  if (!scheme) return null;
+  const out: Record<string, string> = {};
+  for (const c of kids(scheme)) {
+    const v = kids(c)[0];
+    if (!v) continue;
+    const hex = v.localName === 'sysClr' ? v.getAttribute('lastClr') : v.getAttribute('val');
+    if (hex) out[c.localName] = hex;
+  }
+  return out;
 }

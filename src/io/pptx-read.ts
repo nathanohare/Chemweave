@@ -1436,7 +1436,7 @@ class Reader {
     const path = ref ? this.r.rels(s.path).get(rAttr(ref, 'id') ?? '')?.target : undefined;
     if (!box || !path) return;
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
-    const got = readChart(this.r, path, w, h);
+    const got = readChart(this.r, path, w, h, this.theme.colors);
     if (!got) { this.warnings.add('Some charts could not be read and were left out.'); return; }
     let kept: (ChartBox & { pr?: unknown }) | null = null;
     try {
