@@ -1636,7 +1636,7 @@ class DocxReader {
     // mark on the break's page, so the next page starts with the next paragraph, not an empty line
     const last = ctx.pieces[ctx.pieces.length - 1];
     let popped = false;
-    if (ctx.pieces.length > 1 && last.pageBreak && !last.runs.length && !last.soft && !last.colBreak && !last.xe && !last.ta && !sect
+    if (ctx.pieces.length > 1 && last.pageBreak && !last.runs.length && !last.colBreak && !last.xe && !last.ta && !sect
       && el.nextElementSibling?.localName === 'p' && this.compatMode() >= 15) {
       ctx.pieces.pop();
       popped = true;
@@ -2060,7 +2060,9 @@ class DocxReader {
     if (ctx.cell) return;
     const pc = this.piece(ctx);
     if (!pc.runs.length && !pc.soft) { if (column) pc.colBreak = true; else pc.pageBreak = true; }
-    else ctx.pieces.push({ runs: [], pageBreak: !column, soft: false, colBreak: column || undefined });
+    // (after text: the rest of the paragraph carries on after the break, on the next page, as
+    // after a line break, and is saved back in the same Word paragraph)
+    else ctx.pieces.push({ runs: [], pageBreak: !column, soft: pc.runs.length > 0, colBreak: column || undefined });
   }
 
   private lineBreak(ctx: Ctx): void {

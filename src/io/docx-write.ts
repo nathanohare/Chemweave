@@ -146,12 +146,17 @@ const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20]
 const WORD_LINK_CHAR: Record<string, string> = { Hyperlink: '<w:unhideWhenUsed/>', FollowedHyperlink: '<w:semiHidden/><w:unhideWhenUsed/>' };
 const JC: Record<Justify, string> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
 
-/** What a paragraph looks like apart from what is only its own (its line break above, bookmarks, index entries). */
-const lineless = (p: ParaStyle): ParaStyle => ({ ...p, soft: undefined, cont: undefined, marks: undefined, xe: undefined, ta: undefined });
-/** Whether a paragraph carrying on the one before it after a line break (Shift+Enter) goes in that Word paragraph: they look the same. */
+/**
+ * What a paragraph looks like apart from what is only its own (its line, page or column break
+ * above, bookmarks, index entries).
+ */
+const lineless = (p: ParaStyle): ParaStyle => ({ ...p, soft: undefined, cont: undefined, marks: undefined, xe: undefined, ta: undefined, pageBreak: undefined, colBreak: undefined });
+/**
+ * Whether a paragraph carrying on the one before it after a line break (Shift+Enter), or a page or
+ * column break inside the paragraph (Ctrl+Enter mid-line), goes in that Word paragraph: they look the same.
+ */
 const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
-  !!ps.soft && !!prev && !ps.pageBreak && !ps.colBreak && !ps.section && samePara(lineless(prev), lineless(ps));
-/** A Word paragraph with another's runs added after a line break. */
+  !!ps.soft && !!prev && !ps.section && samePara(lineless(prev), lineless(ps));
 /**
  * What starts the paragraph after it below the figures floating beside it (ParaStyle.clear): a
  * paragraph exactly 1 point high holding a text wrapping break that clears them (ECMA-376 part 1
@@ -159,7 +164,9 @@ const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
  * the next paragraph's `clear` (docx-read.ts isClearPara).
  */
 export const CLEAR_PARA = '<w:p><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>';
-const joinTo = (para: string, body: string): string => `${para.slice(0, -'</w:p>'.length)}<w:r><w:br/></w:r>${body}</w:p>`;
+/** A Word paragraph with another's runs added after a line break (or the page or column break `ps` starts with). */
+const joinTo = (para: string, body: string, ps?: ParaStyle): string =>
+  `${para.slice(0, -'</w:p>'.length)}<w:r><w:br${ps?.pageBreak ? ' w:type="page"' : ps?.colBreak ? ' w:type="column"' : ''}/></w:r>${body}</w:p>`;
 
 /** Save a document as a Word file. */
 const THEME_CT = 'application/vnd.openxmlformats-officedocument.theme+xml';
@@ -596,7 +603,7 @@ class DocxWriter {
         close();
         plain = null;
       } else if (plain?.p === p - 1 && plain.at === out.length - 1 && !sectXml && !endsSection.has(p - 1) && !markRev[p - 1] && !markRev[p] && joins(paras[p - 1], ps)) {
-        out[plain.at] = joinTo(out[plain.at], await this.paragraph(main, ps, runs, listNum, p, '', true));
+        out[plain.at] = joinTo(out[plain.at], await this.paragraph(main, ps, runs, listNum, p, '', true), ps);
         plain = { p, at: plain.at };
       } else {
         out.push(await this.paragraph(main, ps, runs, listNum, p, sectXml));
@@ -1141,7 +1148,7 @@ class DocxWriter {
         });
         // a line after a line break (Shift+Enter) goes in the paragraph before it
         const xmls: string[] = [];
-        ps.forEach((x, i) => { if (i > 0 && joins(paras[i - 1], paras[i])) xmls[xmls.length - 1] = joinTo(xmls[xmls.length - 1], x.body); else xmls.push(x.para); });
+        ps.forEach((x, i) => { if (i > 0 && joins(paras[i - 1], paras[i])) xmls[xmls.length - 1] = joinTo(xmls[xmls.length - 1], x.body, paras[i]); else xmls.push(x.para); });
         out.push(`<w:${tag} w:id="${n}">${xmls.join('')}</w:${tag}>`);
       }
       const name = `${tag}s.xml`;
@@ -1385,7 +1392,7 @@ class DocxWriter {
     const runsOf = this.splitParas(o.runs);
     const ps: string[] = [];
     for (let p = 0; p < n; p++) {
-      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], 0, -1, '', true));
+      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], 0, -1, '', true), paras[p]);
       else ps.push(await this.paragraph(main, paras[p], runsOf[p] ?? [], 0));
     }
     const N = styleOf(this.t, {});
@@ -1778,7 +1785,7 @@ class DocxWriter {
             cellList = this.addNum(key, false, { level: Math.max(0, Math.min(8, cps.level ?? 0)), value: cps.startAt });
           }
           this.shownN = cps.list === 'number' && !cps.cont ? shownHere[i]?.n : undefined;
-          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, cellList, -1, '', true));
+          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, cellList, -1, '', true), cps);
           else paras.push(await this.paragraph(main, cps, pr, cellList));
           lastTable = false;
         }
@@ -1917,7 +1924,7 @@ class DocxWriter {
         continue;
       }
       const joined = p > 0 && out.length && joins(ps[p - 1], ps[p]) && out[out.length - 1].endsWith('</w:p>');
-      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, 0, -1, '', true));
+      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, 0, -1, '', true), ps[p]);
       else out.push(await this.paragraph(part, ps[p], runs, 0));
     }
     const wm = kind === 'header' && t.watermark?.text ? watermarkXml(t.watermark, pg, this.watermarks++) : '';

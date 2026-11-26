@@ -115,3 +115,52 @@ describe('Shift+Enter in a document', () => {
     expect(ed.t.paras[1]?.soft).toBeUndefined();
   });
 });
+
+// (office sampler F-W-015: W-BRK-01)
+describe('a page or column break inside a Word paragraph', () => {
+  const PAGE = '<w:p><w:pPr><w:spacing w:before="120" w:after="240"/></w:pPr><w:r><w:t>before the break</w:t><w:br w:type="page"/><w:t>after it</w:t></w:r></w:p>'
+    + '<w:p><w:r><w:t>next paragraph</w:t></w:r></w:p>';
+
+  it('reads the text after it as carrying on the paragraph on the next page', async () => {
+    const { doc } = await readDocx(wordFile(PAGE));
+    expect(doc.paras[1].pageBreak).toBe(true);
+    expect(doc.paras[1].soft).toBe(true);
+    const laid = laidParas(doc.paras);
+    expect(laid[1].spaceBefore).toBe(0);
+    expect(laid[0].spaceAfter).toBe(0);
+  });
+
+  it('saves it back as a break in the same Word paragraph, not a paragraph with pageBreakBefore', async () => {
+    const { doc } = await readDocx(wordFile(PAGE));
+    const ps = await wordParas(doc);
+    expect(ps).toHaveLength(2);
+    expect(ps[0]).toMatch(/before the break<\/w:t>.*<w:br w:type="page"\/>.*after it/);
+    expect(ps.join('')).not.toContain('pageBreakBefore');
+    // and again, unchanged
+    const again = await readDocx(new Uint8Array(await writeDocx(doc, deps)));
+    expect(await wordParas(again.doc)).toEqual(ps);
+  });
+
+  it('does the same for a column break', async () => {
+    const { doc } = await readDocx(wordFile('<w:p><w:r><w:t>one</w:t><w:br w:type="column"/><w:t>two</w:t></w:r></w:p>'));
+    expect(doc.paras[1].colBreak).toBe(true);
+    const ps = await wordParas(doc);
+    expect(ps).toHaveLength(1);
+    expect(ps[0]).toMatch(/one<\/w:t>.*<w:br w:type="column"\/>.*two/);
+  });
+
+  it('keeps a paragraph that starts with a break as one with the break before it', async () => {
+    const { doc } = await readDocx(wordFile('<w:p><w:r><w:t>first</w:t></w:r></w:p><w:p><w:r><w:br w:type="page"/><w:t>second</w:t></w:r></w:p>'));
+    expect(doc.paras[1].pageBreak).toBe(true);
+    expect(doc.paras[1].soft).toBeUndefined();
+    expect(await wordParas(doc)).toHaveLength(2);
+  });
+
+  it('keeps a line after a line break with a paragraph that has a page break before it', async () => {
+    const { doc } = await readDocx(wordFile('<w:p><w:r><w:t>first</w:t></w:r></w:p><w:p><w:pPr><w:pageBreakBefore/></w:pPr><w:r><w:t>a</w:t><w:br/><w:t>b</w:t></w:r></w:p>'));
+    const ps = await wordParas(doc);
+    expect(ps).toHaveLength(2);
+    expect(ps[1]).toContain('<w:pageBreakBefore/>');
+    expect(ps[1]).toMatch(/a<\/w:t>.*<w:br\/>.*b/);
+  });
+});
