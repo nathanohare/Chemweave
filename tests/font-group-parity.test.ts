@@ -80,8 +80,9 @@ describe('the shared Font group (G5-26)', () => {
     const btns = [...g.querySelectorAll<HTMLButtonElement>('button:not(.rb-launch)')];
     expect(btns.at(-1)!.dataset.si).toBe('symbol');
     expect(btns.at(-1)!.textContent).toBe('Ω');
-    expect(SI_FONT_OFF).toEqual(['font', 'size', 'grow', 'shrink', 'strike', 'color']);
-    for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula', 'charges']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
+    // Small Caps and Highlight work only in the Live Preview, so they grey out on the SI page too.
+    expect(SI_FONT_OFF).toEqual(['font', 'size', 'grow', 'shrink', 'strike', 'color', 'small-caps', 'highlight']);
+    for (const c of ['bold', 'italic', 'underline', 'subscript', 'superscript', 'clear', 'formula', 'charges', 'small-caps', 'highlight']) expect(g.querySelector(`[data-si-fmt="${c}"]`), c).not.toBeNull();
     expect(SI_FONT_REASON).toContain('journal style');
   });
 });
