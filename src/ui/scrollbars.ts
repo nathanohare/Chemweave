@@ -1,9 +1,11 @@
 // Scroll bars along the bottom and right of the drawing, so the endless drawing area has a sense
 // of where you are: the bars cover everything drawn (with room around it) and the part on
 // screen. Drag a thumb to move across, click the track to move a screenful, or use the wheel as
-// before. They sit over the drawing's edges and can be switched off (View > Scroll Bars).
+// before. They sit over the drawing's edges and can be switched off (View > Scroll Bars). They are
+// a thin line until in use: while the view moves or the pointer is near them (scrollbar-fade.ts).
 
 import type { Rect } from '../geom';
+import { InUse, nearBar } from './scrollbar-fade';
 
 /**
  * What scrolls: a drawing's extent, or a slide held `tight` (Presentation): the view stops a band
@@ -140,6 +142,11 @@ export class Scrollbars {
   private frozen: Rect | null = null;
   private range: Rect = { x1: 0, y1: 0, x2: 1, y2: 1 };
   shown = true;
+  /** The view last drawn, to tell a scroll (the bars grow) from the drawing changing. */
+  private viewKey = '';
+  private inside = false;
+  private dragging = false;
+  private use: InUse;
 
   constructor(host: HTMLElement, private r: ScrollView, private content: () => ScrollContent | null, private moved: () => void) {
     const make = (axis: 'h' | 'v') => {
@@ -158,6 +165,23 @@ export class Scrollbars {
     this.drag(this.vThumb, 'v');
     this.page(this.h, 'h');
     this.page(this.v, 'v');
+    this.use = new InUse((on) => { this.h.classList.toggle('sb-full', on); this.v.classList.toggle('sb-full', on); });
+    // (the drawing's box, measured when the pointer comes in and when it changes size, not on every move)
+    let box: DOMRect | null = null;
+    new ResizeObserver(() => { box = null; }).observe(host);
+    host.addEventListener('pointermove', (e) => {
+      this.inside = true;
+      if (e.pointerType === 'touch') return;
+      if (this.dragging) { this.use.poke(); return; }
+      if (e.buttons) return;
+      box ??= host.getBoundingClientRect();
+      if (nearBar(box, e.clientX, e.clientY, !this.v.hidden, !this.h.hidden)) this.use.poke();
+    }, { passive: true });
+    host.addEventListener('pointerenter', () => { this.inside = true; box = null; }, { passive: true });
+    // a finger has no pointer to come near the bars: they grow when it touches the drawing (and stay
+    // full a while, so the thumb is there to grab)
+    host.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') this.use.poke(); }, { capture: true, passive: true });
+    host.addEventListener('pointerleave', () => { this.inside = false; if (!this.dragging) this.use.off(); }, { passive: true });
   }
 
   /** Called every frame: redraws the bars when the view, the window or the drawing changed. */
@@ -166,6 +190,9 @@ export class Scrollbars {
     const key = `${ox}|${oy}|${scale}|${this.r.width}|${this.r.height}|${version}|${this.shown}`;
     if (key === this.key) return;
     this.key = key;
+    // the view moved (a scroll, a pan, a zoom) with the pointer over the drawing: the bars grow for a while
+    const viewKey = `${ox}|${oy}|${scale}`;
+    if (viewKey !== this.viewKey) { if (this.viewKey && this.inside) this.use.poke(); this.viewKey = viewKey; }
     this.h.hidden = this.v.hidden = !this.shown;
     if (!this.shown || !this.r.width || !this.r.height) return;
     const seen = this.seen();
@@ -195,6 +222,9 @@ export class Scrollbars {
       e.stopPropagation();
       thumb.setPointerCapture(e.pointerId);
       this.frozen = this.range;
+      this.dragging = true;
+      this.use.held = true;
+      this.use.poke();
       thumb.classList.add('dragging');
       let last = axis === 'h' ? e.clientX : e.clientY;
       const move = (ev: PointerEvent) => {
@@ -215,6 +245,9 @@ export class Scrollbars {
         thumb.removeEventListener('pointerup', up);
         thumb.removeEventListener('pointercancel', up);
         thumb.classList.remove('dragging');
+        this.dragging = false;
+        this.use.held = false;
+        if (this.inside) this.use.poke(); else this.use.off();
         this.frozen = null;
         this.key = '';
         this.moved();

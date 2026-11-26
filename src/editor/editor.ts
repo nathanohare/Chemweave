@@ -364,6 +364,8 @@ export interface EditorStatus {
 }
 
 interface Drag {
+  /** Something was selected when the button went down (a marquee rewrites the selection as it goes). */
+  hadSel?: boolean;
   start: Vec; // doc coords
   startScreen: Vec;
   hit: Hit;
@@ -1414,6 +1416,7 @@ export class Editor {
       shift: e.shiftKey, alt: e.altKey, ctrl: e.ctrlKey || e.metaKey, mode: handle ? 'handle' : rotating ? 'rotate' : 'none', last: p, path: [p],
       ...(painting ? { paint: true } : {}),
       ...(e.pointerType === 'pen' ? { pen: true } : {}),
+      ...(this.hasSelection() ? { hadSel: true } : {}),
     };
     if (handle) this.drag.handle = handle;
     if (handle?.kind === 'caption') {
@@ -8912,6 +8915,8 @@ export class Editor {
       snapping: this.smartGuides || !!this.moveSnap || this.guidesSnap(),
       asksChain: !!this.askChainLength,
       bondEnd: d?.mode === 'move' && !!d.pivot,
+      // (a marquee's Shift is read as the button goes down: it adds only to what was selected then)
+      selected: d?.mode === 'marquee' ? !!d.hadSel && d.shift : this.hasSelection(),
     };
   }
 

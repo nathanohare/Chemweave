@@ -30,6 +30,7 @@ import {
 } from './io/files';
 import type { FileStamp } from './keep/recovery';
 import { WORKSPACE, workspaceText, parseWorkspace, folderOf, joinPath, relativeTo, resolveIn, freeName, safeFileName, type WorkspaceEntry } from './io/workspace-file';
+import { besideIn, bothLive, type SplitPair } from './ui/split-screen';
 
 /** Design is a deck of one page (a TOC graphic, poster or diagram) with design tools. */
 export type Mode = 'drawing' | 'slides' | 'sheet' | 'document' | 'design' | 'si';
@@ -60,8 +61,6 @@ export interface Tab {
   seen: number;
   /** Slides, sheets and documents: the change count when last saved. */
   savedEdits: number;
-  /** Split view: the drawing shown beside this document, sheet or slide deck. */
-  partner: Tab | null;
   /** View > Document > New Window: the tab whose document this tab shows too (null for the tab that owns its file). */
   windowOf: Tab | null;
   /** When its file on disk last changed and its size, as last opened or saved here (to notice changes made elsewhere). */
@@ -79,6 +78,8 @@ export interface Tab {
 export type SaveHow = 'saved' | 'autosaved';
 
 export interface WorkspaceHooks {
+  /** A canvas in the split screen, beside a document or sheet, was asked for: it gets the keys and menus there. */
+  besideKeys?(tab: Tab): void;
   /** Before another tab shows: finish any typing, remember the view. */
   leave(tab: Tab): void;
   /** After a tab shows. `opened` is true for a file just opened or a new tab. */
@@ -205,12 +206,17 @@ export class Workspace {
   tabs: Tab[] = [];
   active!: Tab;
   /**
-   * Split view beside a document or sheet: the drawing tab whose drawing is in the app's document
-   * while the document or sheet shows (they don't use it), so both can be worked on side by side.
+   * Split screen: the two tabs side by side (View ▸ Close Split ends it). It shows while either of
+   * them is the tab showing; another tab shows on its own, and going back to either brings the split back.
+   */
+  split: SplitPair<Tab> | null = null;
+  /**
+   * Split screen of a drawing beside a document or sheet: the drawing tab whose drawing is in the app's
+   * document while the document or sheet shows (they don't use it), so both can be worked on side by side.
    */
   pane: Tab | null = null;
   /**
-   * While a structure for a cell or figure is drawn in the app's document: the split-view drawing
+   * While a structure for a cell or figure is drawn in the app's document: the split screen's drawing
    * it took the place of (saved, AutoSaved and kept for recovery from here, untouched by the edit).
    */
   aside: Doc | null = null;
@@ -230,7 +236,7 @@ export class Workspace {
   }
 
   private makeTab(mode: Mode, name: string, ref: FileRef = { kind: 'none' }): Tab {
-    return { id: this.nextId++, mode, name, ref, stash: new Doc(), deck: null, book: null, document: null, si: null, view: null, sheetState: null, dirty: false, seen: 0, savedEdits: 0, partner: null, windowOf: null,
+    return { id: this.nextId++, mode, name, ref, stash: new Doc(), deck: null, book: null, document: null, si: null, view: null, sheetState: null, dirty: false, seen: 0, savedEdits: 0, windowOf: null,
       stamp: null, autoSave: null, changes: 0, savedAt: 0, savedHow: null };
   }
 
@@ -247,6 +253,13 @@ export class Workspace {
 
   /** Show another tab. */
   activate(tab: Tab, opened = false): void {
+    // a canvas live beside a document or sheet: the document or sheet shows, with the canvas beside having the keys
+    const beside = this.besideOf(tab);
+    if (!opened && tab.mode === 'drawing' && beside && bothLive(tab.mode, beside.mode) && this.tabs.includes(beside)) {
+      if (beside !== this.active) this.activate(beside);
+      if (this.pane === tab) this.hooks.besideKeys?.(tab);
+      return;
+    }
     if (tab === this.active && !opened) return;
     if (tab !== this.active) {
       this.putAway(this.active);
@@ -267,11 +280,11 @@ export class Workspace {
     else this.host.swap(tab.stash);
   }
 
-  /** A document's or sheet's split-view drawing comes into the app's document. */
+  /** A document's or sheet's split-screen drawing comes into the app's document. */
   private paneIn(): void {
-    const t = this.active, p = t.partner;
-    if (this.pane || !p || (t.mode !== 'document' && t.mode !== 'sheet')) return;
-    if (!this.tabs.includes(p)) { t.partner = null; return; }
+    const t = this.active, p = besideIn(this.split, t);
+    if (this.pane || !p || !bothLive(t.mode, p.mode) || t.mode === 'drawing') return;
+    if (!this.tabs.includes(p)) { this.split = null; return; }
     this.host.swap(p.stash);
     p.seen = this.host.version;
     this.pane = p;
@@ -284,12 +297,22 @@ export class Workspace {
     this.host.swap(p.stash);
   }
 
-  /** Split view: show this drawing beside the document, sheet or slides showing (null: no split). */
-  setPartner(p: Tab | null): void {
-    const t = this.active;
-    if (t.mode === 'drawing') return;
+  /** The tab beside this one in the split screen (null when it is in none). */
+  besideOf(t: Tab): Tab | null {
+    return besideIn(this.split, t);
+  }
+
+  /** Split screen: these two tabs side by side, or none (null). Doesn't change the tab showing. */
+  setSplit(pair: SplitPair<Tab> | null): void {
+    if (pair && (pair.left === pair.right || !this.tabs.includes(pair.left) || !this.tabs.includes(pair.right))) pair = null;
     this.paneOut();
-    t.partner = p;
+    this.split = pair;
+    // the two tabs side by side in the tab row too, left then right, where the first of them was (Nate, 2026-11-26)
+    if (pair) {
+      const at = Math.min(this.tabs.indexOf(pair.left), this.tabs.indexOf(pair.right));
+      for (const t of [pair.left, pair.right]) this.tabs.splice(this.tabs.indexOf(t), 1);
+      this.tabs.splice(at, 0, pair.left, pair.right);
+    }
     this.paneIn();
     this.hooks.changed();
   }
@@ -418,7 +441,7 @@ export class Workspace {
     const next = this.tabs.find((w) => w.windowOf === main);
     if (!next) return null;
     next.windowOf = null;
-    Object.assign(next, { ref: main.ref, name: main.name, stamp: main.stamp, autoSave: main.autoSave, savedAt: main.savedAt, savedHow: main.savedHow, savedEdits: main.savedEdits, dirty: main.dirty, partner: next.partner ?? main.partner });
+    Object.assign(next, { ref: main.ref, name: main.name, stamp: main.stamp, autoSave: main.autoSave, savedAt: main.savedAt, savedHow: main.savedHow, savedEdits: main.savedEdits, dirty: main.dirty });
     for (const w of this.tabs) if (w.windowOf === main) w.windowOf = next;
     return next;
   }
@@ -436,7 +459,6 @@ export class Workspace {
     return t;
   }
 
-  /** A new drawing tab beside the one showing, without showing it (for split view). */
   /** Move a tab to another place in the tab strip (dragged there). */
   moveTab(t: Tab, to: number): void {
     const from = this.tabs.indexOf(t);
@@ -448,6 +470,7 @@ export class Workspace {
     this.hooks.changed();
   }
 
+  /** A new drawing tab beside the one showing, without showing it. */
   addDrawing(): Tab {
     const t = this.makeTab('drawing', this.untitled('drawing'));
     const st = this.hooks.newStyle?.('drawing');
@@ -735,7 +758,13 @@ export class Workspace {
     const old = as.replace;
     if (old && this.tabs.includes(old)) {
       t.autoSave = old.autoSave;
-      for (const o of this.tabs) if (o.partner === old) o.partner = t;
+      // in the split screen in the old tab's place (a canvas beside a document or sheet comes back in beside it)
+      const sp = this.split;
+      if (sp && (sp.left === old || sp.right === old)) {
+        this.paneOut();
+        this.split = { left: sp.left === old ? t : sp.left, right: sp.right === old ? t : sp.right };
+        this.paneIn();
+      }
       // the other windows of the document show the new copy (and save to its file)
       for (const w of this.tabs) {
         if (w.windowOf !== old) continue;
@@ -776,9 +805,9 @@ export class Workspace {
   private drop(tab: Tab): void {
     const i = this.tabs.indexOf(tab);
     if (i < 0) return;
-    // a drawing shown in split view: the split closes
+    // a tab in the split screen: the split closes
     if (tab === this.pane) this.paneOut();
-    for (const t of this.tabs) if (t.partner === tab) t.partner = null;
+    if (this.besideOf(tab)) this.split = null;
     if (tab === this.active) {
       const next = this.tabs[i + 1] ?? this.tabs[i - 1];
       if (next) this.activate(next);
@@ -1004,7 +1033,8 @@ export class Workspace {
     }
     const index = new Map(own.map((t, i) => [t, i]));
     const tabs: WorkspaceEntry[] = own.map((t) => {
-      const p = t.partner && index.has(t.partner) ? index.get(t.partner)! : undefined;
+      // (the split screen: the left tab names the right one)
+      const sp = this.split, p = sp && sp.left === t && index.has(sp.right) ? index.get(sp.right)! : undefined;
       return { file: relativeTo(folder, (t.ref as { path: string }).path), ...(p !== undefined ? { beside: p } : {}) };
     });
     try {
@@ -1051,20 +1081,17 @@ export class Workspace {
       }
       opened.push((await this.openBytes(bytes, baseName(full), { kind: 'path', path: full })) ? this.active : null);
     }
-    // split views, then the tab that was showing
+    // the split screen (the first one listed: workspaces saved before split screen could list one per
+    // document, sheet or deck, each with a canvas on its right), then the tab that was showing
+    const show = opened[list.active] ?? opened.find((t) => t);
+    let pair: SplitPair<Tab> | null = null;
     list.tabs.forEach((e, i) => {
       const t = opened[i], p = e.beside !== undefined ? opened[e.beside] : null;
-      if (t && p && p.mode === 'drawing' && t.mode !== 'drawing') t.partner = p;
+      // (the one with the tab that was showing, if there were several)
+      if (t && p && t !== p && (!pair || ((t === show || p === show) && pair.left !== show && pair.right !== show))) pair = { left: t, right: p };
     });
-    const show = opened[list.active] ?? opened.find((t) => t);
-    if (show) {
-      if (show === this.active && show.partner && (show.mode === 'document' || show.mode === 'sheet')) {
-        // the partner was set after the tab came in: bring its drawing in now
-        const p = show.partner;
-        show.partner = null;
-        this.setPartner(p);
-      } else this.activate(show);
-    }
+    if (pair) this.setSplit(pair);
+    if (show) this.activate(show);
     this.workspacePath = path;
     this.hooks.remember?.(path);
     const n = opened.filter((t) => t).length;

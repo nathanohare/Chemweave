@@ -227,7 +227,7 @@ Every drawing tool in the toolbox works on a slide: draw structures, use the Che
 - choose how structures look on every slide with **Design & Transitions** tab ▸ **Drawing Style…** (a journal's style, or custom). New decks start in **Slides (ACS 1996 × 2)**, the ACS style at twice the size so structures read from the back of a room. To start new decks in another style, pick it in **Drawing Style…** and check **Use this style for new slide decks**;
 - click **Home** tab ▸ **Lock Structures** so clicks pass through structures, which makes text and pictures near them easier to pick. Click it again to edit structures.
 
-To put a canvas beside your slides while you work, see Split View in [Files and sharing](files-and-sharing.md).
+To put a canvas (or any other tab) beside your slides while you work, see Split Screen in [Files and sharing](files-and-sharing.md).
 
 ## Pictures
 

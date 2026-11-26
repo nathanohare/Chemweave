@@ -3,7 +3,7 @@
 // The pieces of Slides mode around the deck: tabs for open files, pictures (their type, size
 // and cropping), pasted drawings fitted to the slide master, and pictures kept in CDX files.
 
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi } from 'vitest';
 import { Doc, Shape } from '../src/model';
 import { Workspace, WorkspaceHooks } from '../src/workspace';
 import { Deck } from '../src/deck/deck';
@@ -259,7 +259,7 @@ describe('tabs for open files', () => {
   });
 });
 
-describe('split view: a drawing beside a document or sheet', () => {
+describe('split screen: a canvas beside a document or sheet', () => {
   it('keeps the drawing in the app document while the document shows, and puts it back after', () => {
     const { host, ws } = workspace();
     host.edit('Draw', () => host.addAtom(0, 0));
@@ -268,7 +268,7 @@ describe('split view: a drawing beside a document or sheet', () => {
     drawing.dirty = false;
     const words = ws.newDocument();
     expect(host.atoms.size).toBe(0);
-    ws.setPartner(drawing);
+    ws.setSplit({ left: words, right: drawing });
     expect(ws.pane).toBe(drawing);
     expect(host.atoms.size).toBe(1);
     expect(ws.docOf(drawing)).toBe(host);
@@ -285,12 +285,15 @@ describe('split view: a drawing beside a document or sheet', () => {
     ws.activate(words);
     expect(ws.pane).toBe(drawing);
     expect(host.atoms.size).toBe(2);
-    // showing the drawing's own tab takes it out of the split
+    // asking for the drawing's own tab keeps it live beside the document, with the keys
+    const keys = vi.fn();
+    ws['hooks'].besideKeys = keys;
     ws.activate(drawing);
-    expect(ws.pane).toBe(null);
+    expect(ws.active).toBe(words);
+    expect(ws.pane).toBe(drawing);
+    expect(keys).toHaveBeenCalledWith(drawing);
     expect(host.atoms.size).toBe(2);
-    ws.activate(words);
-    ws.setPartner(null);
+    ws.setSplit(null);
     expect(ws.pane).toBe(null);
     expect(host.atoms.size).toBe(0);
     expect(drawing.stash.atoms.size).toBe(2);
@@ -301,11 +304,11 @@ describe('split view: a drawing beside a document or sheet', () => {
     const { host, ws } = workspace();
     host.edit('Draw', () => host.addAtom(0, 0));
     const drawing = ws.active;
-    ws.newSheet();
-    ws.setPartner(drawing);
+    const sheet = ws.newSheet();
+    ws.setSplit({ left: sheet, right: drawing });
     expect(ws.pane).toBe(drawing);
     await ws.close(drawing);
     expect(ws.pane).toBe(null);
-    expect(ws.active.partner).toBe(null);
+    expect(ws.split).toBe(null);
   });
 });

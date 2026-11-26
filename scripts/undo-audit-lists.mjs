@@ -27,7 +27,7 @@ export const NOT_UNDOABLE = [
   { names: ['help', 'help-here', 'about', 'send-feedback', 'support-project', 'check-updates'], why: 'help and the program’s own windows' },
   { names: ['dev-tools', 'stress-100', 'stress-500', 'stress-2000', 'stress-5000'], why: 'developer tools: Stress Test replaces the drawing on purpose, to time it' },
   { names: ['undo', 'redo'], why: 'the audit uses these itself' },
-  { names: ['zoom-in', 'zoom-out', 'zoom-fit', 'zoom-selection', 'zoom-actual', 'split-view', 'split-window', 'close-master-view'], why: 'changes only the window around the file (zoom, split panes, leaving Slide Master view)' },
+  { names: ['zoom-in', 'zoom-out', 'zoom-fit', 'zoom-selection', 'zoom-actual', 'close-split', 'split-window', 'close-master-view'], why: 'changes only the window around the file (zoom, split panes, leaving Slide Master view)' },
   { names: ['ui-scale-in', 'ui-scale-out', 'ui-scale-reset', 'ui-scale-80', 'ui-scale-90', 'ui-scale-100', 'ui-scale-110', 'ui-scale-125', 'ui-scale-150'], why: 'View ▸ Interface Size: the size of the program’s own menus and buttons' },
 ];
 

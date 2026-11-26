@@ -9,7 +9,7 @@
 //     program makes ("calcd for …") can't be typed into: a click goes to its field. Text typed
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
-import { DocView, type TextMarks } from './doc-view';
+import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
@@ -65,6 +65,8 @@ export interface ShownSi {
   owner: unknown;
   /** `generation` when the compile started: older than the typing since, it isn't shown (the typing would go). */
   gen?: number;
+  /** Pages whose margins hold what is shown (the spectra's): the white space between them is never hidden. */
+  keepSpace?: boolean;
 }
 
 const ctrlKeyOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey || e.altKey;
@@ -83,6 +85,8 @@ export class SiPreview {
   private readonly ta: HTMLTextAreaElement;
   private key = '';
   private editable = false;
+  /** The spectra's pages shown: their white space is never hidden. */
+  private keepSpace = false;
   private why = '';
   private owner: unknown = null;
   /** The text as compiled, and where its stretches came from then. */
@@ -142,6 +146,11 @@ export class SiPreview {
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
     this.view = new DocView(host);
     this.view.overlay = () => this.overlay();
+    // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
+    this.view.padX = 0;
+    this.view.fitSlack = 0;
+    this.view.stickyFit = true;
+    this.view.hideSpace = !siPreviewPrefs.whiteSpace;
     this.ta = document.createElement('textarea');
     // (not .doc-input: the file keys, Ctrl+S, work from here as from the SI page's boxes)
     this.ta.className = 'text-input si-preview-input';
@@ -189,6 +198,8 @@ export class SiPreview {
     this.file.listener = (kind) => this.changed(kind);
     this.key = s.key;
     this.editable = s.editable;
+    this.keepSpace = !!s.keepSpace;
+    v.hideSpace = !this.keepSpace && !siPreviewPrefs.whiteSpace;
     this.why = s.why ?? 'This preview can’t be typed into.';
     this.owner = s.owner;
     this.base = { text, spans: s.compiled.sources };
@@ -202,7 +213,7 @@ export class SiPreview {
     this.hovered = null;
     v.file = this.file;
     v.resize();
-    if (same) { v.sizeSpace(); v.scroller.scrollTop = top; v.scroller.scrollLeft = left; }
+    if (same) { v.sizeSpace(); v.scroller.scrollTop = top; v.scroller.scrollLeft = left; v.refit(); }
     else { v.fitWidth(); v.scroller.scrollTop = 0; }
     if (keep !== null) {
       const f = this.whereIs(keep), a = anchorKeep !== null ? this.whereIs(anchorKeep) : f;
@@ -236,6 +247,45 @@ export class SiPreview {
       if (s) { const r = this.view.rangeRects(s.start, s.end)[0]; if (r) this.view.reveal(r, 48); }
     }
     this.view.redraw();
+  }
+
+  /** Synchronous Scrolling from the SI page: the page chosen brought to the top (the preview scrolling by itself). */
+  revealFocus(): void {
+    if (!this.focusNode) return;
+    this.selfScroll(() => this.revealNode(this.focusNode!));
+  }
+
+  /**
+   * Synchronous Scrolling from the SI page: the preview scrolled so a field's text (on the page
+   * chosen) is `at` (0 to 1) of the way down the window. False when the field has no text shown.
+   */
+  alignSource(src: string, at: number): boolean {
+    const b = this.focusNode ? this.block(this.focusNode) : null;
+    const s = this.spans.find((x) => this.isOf(x.src, src) && (!b || (x.start >= b.start && x.start < b.end)));
+    if (!s) return false;
+    const r = this.view.rangeRects(s.start, Math.min(s.end, s.start + 1))[0];
+    if (!r) return false;
+    const sc = this.view.scroller;
+    this.selfScroll(() => {
+      let d = this.view.toScreen(r.x1, r.y1).y - sc.clientHeight * at;
+      // (never above the page's start, nor past its end, when the page fits: the page stays in view)
+      if (b) {
+        const top = this.view.rangeRects(b.start, Math.min(b.end, b.start + 1))[0];
+        const end = this.view.rangeRects(Math.max(b.start, b.end - 1), b.end)[0];
+        const lo = top ? this.view.toScreen(top.x1, top.y1).y - 24 : -Infinity;
+        const hi = end ? this.view.toScreen(end.x1, end.y2).y + 24 - sc.clientHeight : Infinity;
+        d = Math.max(lo, Math.min(Math.max(lo, hi), d));
+      }
+      sc.scrollTop += d;
+    });
+    return true;
+  }
+
+  /** The preview scrolled by itself (nothing to follow for Synchronous Scrolling). */
+  private selfScroll(f: () => void): void {
+    this.userScrollAt = -Infinity;
+    clearTimeout(this.settleTimer);
+    f();
   }
 
   /** The page chosen now (as the preview last showed it). */
@@ -302,6 +352,41 @@ export class SiPreview {
     // (held: waits for the button to be let go)
     if (this.pressed) { this.movedWhilePressed = true; return; }
     this.settleTimer = window.setTimeout(() => this.onScrollSettled?.(), SCROLL_SETTLE);
+  }
+
+  /** Preferences ▸ SI Live Preview changed: drawn again in the look chosen (the white space between pages hidden or shown). */
+  applyPrefs(): void {
+    const hide = !this.keepSpace && !siPreviewPrefs.whiteSpace;
+    if (this.view.hideSpace !== hide) this.setHideSpace(hide);
+    this.view.redraw();
+  }
+
+  /**
+   * Hide white space (a double-click between pages, as in Word): each page's top and bottom
+   * margins hidden, or shown again, keeping the text under the pointer where it is. Remembered
+   * with the settings (Preferences ▸ SI Live Preview).
+   */
+  private setHideSpace(hide: boolean, clientY?: number): void {
+    const v = this.view;
+    if (v.hideSpace !== hide) {
+      const r = v.scroller.getBoundingClientRect();
+      const y = clientY ?? r.top + v.scroller.clientHeight / 2;
+      const d = v.toDoc(r.left + v.scroller.clientWidth / 2, y);
+      // (the preview scrolling by itself: Synchronous Scrolling follows no page for it)
+      this.userScrollAt = -Infinity;
+      clearTimeout(this.settleTimer);
+      v.hideSpace = hide;
+      v.sizeSpace();
+      // the same text under the pointer (the preview scrolling by itself: no page followed)
+      const s = v.toScreen(d.x, d.y);
+      v.scroller.scrollTop += s.y - (y - r.top);
+      // (a scrollbar that came or went: Page Width fitted again)
+      v.refit();
+      v.paint();
+      v.onMove();
+      this.placeInput();
+    }
+    if (!this.keepSpace && siPreviewPrefs.whiteSpace === hide) { siPreviewPrefs.whiteSpace = !hide; siPreviewPrefs.save?.(); }
   }
 
   /** Write what was typed now (before Undo, before leaving the project). */
@@ -618,8 +703,15 @@ export class SiPreview {
     scroller.addEventListener('pointerdown', (e) => this.down(e));
     scroller.addEventListener('pointermove', (e) => this.move(e));
     scroller.addEventListener('pointerup', (e) => this.up(e));
-    scroller.addEventListener('pointerleave', () => { if (this.hovered) { this.hovered = null; this.api.hoverSource(null); v.redraw(); } scroller.style.cursor = ''; });
-    scroller.addEventListener('dblclick', (e) => { if (this.structureUnder(e)) return; const at = this.offsetAt(e); if (at !== null) this.file?.ed.selectWord(at); });
+    scroller.addEventListener('pointerleave', () => { if (this.hovered) { this.hovered = null; this.api.hoverSource(null); v.redraw(); } scroller.style.cursor = ''; scroller.title = ''; });
+    scroller.addEventListener('dblclick', (e) => {
+      // between pages: the white space hidden, or shown again (Word's double-click)
+      const space = this.spaceAt(e);
+      if (space) { e.preventDefault(); this.setHideSpace(space === 'hide', e.clientY); this.hoverSpace(e); return; }
+      if (this.structureUnder(e)) return;
+      const at = this.offsetAt(e);
+      if (at !== null) this.file?.ed.selectWord(at);
+    });
     scroller.addEventListener('contextmenu', (e) => this.contextMenu(e));
   }
 
@@ -745,6 +837,8 @@ export class SiPreview {
       this.pickStructure(ref);
       return;
     }
+    // between pages: nothing happens on a click there (a double-click hides or shows the white space)
+    if (this.spaceAt(e)) { e.preventDefault(); return; }
     const at = this.offsetAt(e);
     if (at === null) return;
     e.preventDefault();
@@ -763,11 +857,31 @@ export class SiPreview {
       if (at !== null) this.file.ed.setCaret(at, true);
       return;
     }
+    if (this.hoverSpace(e)) {
+      if (this.hovered) { this.hovered = null; this.api.hoverSource(null); this.view.redraw(); }
+      return;
+    }
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
     this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
+  }
+
+  /** Between pages: what a double-click there does, as the pointer and its tooltip (null: not between pages). */
+  private spaceAt(e: MouseEvent): 'hide' | 'show' | null {
+    return this.keepSpace ? null : this.view.spaceAt(e.clientX, e.clientY);
+  }
+
+  /** The pointer and tooltip for between pages (or neither); whether the pointer is there. */
+  private hoverSpace(e: MouseEvent): boolean {
+    const sc = this.view.scroller;
+    const space = this.spaceAt(e);
+    const tip = space === 'hide' ? 'Double-click to hide white space' : space === 'show' ? 'Double-click to show white space' : '';
+    if (sc.title !== tip) sc.title = tip;
+    if (space) sc.style.cursor = space === 'hide' ? HIDE_SPACE_CURSOR : SHOW_SPACE_CURSOR;
+    else if (sc.style.cursor === HIDE_SPACE_CURSOR || sc.style.cursor === SHOW_SPACE_CURSOR) sc.style.cursor = '';
+    return !!space;
   }
 
   private up(e: PointerEvent): void {

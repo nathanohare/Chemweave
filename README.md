@@ -111,9 +111,9 @@ Chemweave has five modes, plus an **SI Project** tab for putting together a pape
 | ![Document mode with an experimental paragraph and a structure in the text](docs/images/document.png) | ![Design mode with a three-column poster layout and the shape library](docs/images/design.png) |
 | Word's styles and keys, structures in the text, numbered captions, references, tracked changes, comments and equations. Saves as `.docx`. | Posters, TOC graphics and graphical abstracts at the journals' sizes, with templates and a shape library that includes flowcharts and lab glassware. |
 
-**Split View** puts a canvas beside a document, spreadsheet or presentation, so you can draw on one side and insert on the other.
+**Split Screen** shows any two tabs side by side: drag a tab down into the window, as with Snap in Windows. A canvas beside a document, spreadsheet or presentation lets you draw on one side and insert on the other.
 
-![Split View: a document on the left, the scheme it describes on the right](docs/images/split-view.png)
+![Split Screen: a document on the left, the scheme it describes on the right](docs/images/split-view.png)
 
 ### A reference manager in your documents
 
