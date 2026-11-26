@@ -121,6 +121,7 @@ import { SlideTextRibbon } from './ui/slide-text-ribbon';
 import { CaptionEditor, setCaptionTint } from './ui/caption-editor';
 import { LayersPanel } from './ui/layers-panel';
 import { Scrollbars, type ScrollContent } from './ui/scrollbars';
+import { installScrollbarFade } from './ui/scrollbar-fade';
 import type { Presenter, ShowOptions } from './ui/present';
 import { editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
@@ -17103,6 +17104,7 @@ const scrollArea = (): ScrollContent | null => {
   return p ? scrollBox(p, pageExtent(p, bb), bb) : bb;
 };
 const scrollbars = new Scrollbars(host, renderer, scrollArea, () => editor.requestScene());
+installScrollbarFade();
 // the wheel stops where the bars end, at the edge of the drawing, rather than going on for ever
 editor.scrollArea = scrollArea;
 
