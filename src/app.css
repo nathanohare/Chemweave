@@ -5935,3 +5935,14 @@ body.row-tight .rb-tabs .cr-calc-name { display: none; }
 body.row-tight #tabs.tabs-narrow .tab.active .tab-name { max-width: 64px; }
 /* (and the strip's ‹ › go: the ▾ lists every open file, and the strip still scrolls) */
 body.row-tight #tabs > :is(.tab-left, .tab-right) { display: none !important; }
+/* the open file's tab is never wider than the strip it is in: its name shortens instead (so it is never cut off or under the ▾) */
+#tabs .tab.active { max-width: 100%; }
+.rb-tabs > .win-controls { min-height: 28px; }
+/* a narrow window: the ribbon's tabs go onto a second line rather than off the window (with the menu
+   bar; in the one-row look fitOneRow does it), and the status bar drops its slider, hint and Go to
+   Selection, then wraps what is left, so its buttons stay in reach */
+body:not(.one-row) .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+@media (max-width: 600px) {
+  footer { flex-wrap: wrap; row-gap: 0; justify-content: flex-end; }
+  footer > #hint, footer #slide-zoom-range, footer > #go-buttons { display: none; }
+}

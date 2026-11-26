@@ -10,10 +10,32 @@ export const ESSENTIAL = [
   '#tabs .tab-ctl', '#btn-search', '.win-controls > button', '#btn-settings', 'footer button', '.toolbox .tb-head',
 ];
 
-/** The problems in the window as it is now, each starting with `label`. */
+/** What must show in every window, whatever its size (but in Focus View): the open files' list, New Tab, the open file's tab and Search. */
+export const REQUIRED = ['#tabs .tab-list', '#tabs .tab-add', '#tabs .tab.active', '#btn-search'];
+
+/**
+ * The problems in the window as it is now, each starting with `label`. It first watches the window
+ * for a moment: a layout that keeps changing by itself (two looks taking turns) is a problem too.
+ */
 export function essentialProblems(page, label) {
-  return page.evaluate(({ ESSENTIAL, label }) => {
+  return page.evaluate(async ({ ESSENTIAL, REQUIRED, label }) => {
     const out = [];
+    let flips = 0, loops = 0;
+    const mo = new MutationObserver(() => flips++);
+    mo.observe(document.body, { attributes: true, attributeFilter: ['class'] });
+    const onErr = (e) => { if (/ResizeObserver loop/.test(e.message)) loops++; };
+    addEventListener('error', onErr);
+    await new Promise((ok) => setTimeout(ok, 600));
+    mo.disconnect();
+    removeEventListener('error', onErr);
+    if (flips > 2 || loops) out.push(`${label}: the layout keeps changing by itself (${flips} changes${loops ? `, ${loops} ResizeObserver loops` : ''} in 0.6 s)`);
+    if (!document.body.classList.contains('focus-view')) {
+      for (const sel of REQUIRED) {
+        const el = document.querySelector(sel);
+        const r = el?.getBoundingClientRect();
+        if (!el || !r.width || !r.height) out.push(`${label}: ${sel} does not show`);
+      }
+    }
     for (const sel of ESSENTIAL) {
       for (const el of document.querySelectorAll(sel)) {
         const cs = getComputedStyle(el);
@@ -21,14 +43,17 @@ export function essentialProblems(page, label) {
         if (el.closest('[hidden], dialog:not([open]), .menu, .flyout, .popup-menu, #backstage') || cs.display === 'none' || cs.visibility === 'hidden' || !el.getClientRects().length) continue;
         const r = el.getBoundingClientRect();
         const name = `${sel} "${(el.getAttribute('aria-label') || el.title || el.textContent || '').trim().replace(/\s+/g, ' ').slice(0, 24)}"`;
-        if (r.width < 4 || r.height < 4) { out.push(`${label}: ${name} is squeezed to ${Math.round(r.width)} × ${Math.round(r.height)} px`); continue; }
+        if (r.width < 12 || r.height < 12) { out.push(`${label}: ${name} is squeezed to ${Math.round(r.width)} × ${Math.round(r.height)} px`); continue; }
         if (r.left < -0.5 || r.top < -0.5 || r.right > innerWidth + 0.5 || r.bottom > innerHeight + 0.5) { out.push(`${label}: ${name} runs off the window (${Math.round(r.left)}, ${Math.round(r.top)} to ${Math.round(r.right)}, ${Math.round(r.bottom)})`); continue; }
-        const hit = document.elementFromPoint(r.left + r.width / 2, r.top + r.height / 2);
-        if (hit && hit !== el && !el.contains(hit)) out.push(`${label}: ${name} is covered by ${hit.tagName.toLowerCase()}${hit.id ? '#' + hit.id : ''}${typeof hit.className === 'string' && hit.className ? '.' + hit.className.split(' ')[0] : ''}`);
+        // (its middle and both ends: a control half under something is covered too)
+        for (const x of [r.left + 3, r.left + r.width / 2, r.right - 3]) {
+          const hit = document.elementFromPoint(x, r.top + r.height / 2);
+          if (hit && hit !== el && !el.contains(hit)) { out.push(`${label}: ${name} is covered by ${hit.tagName.toLowerCase()}${hit.id ? '#' + hit.id : ''}${typeof hit.className === 'string' && hit.className ? '.' + hit.className.split(' ')[0] : ''}`); break; }
+        }
       }
     }
     return out;
-  }, { ESSENTIAL, label });
+  }, { ESSENTIAL, REQUIRED, label });
 }
 
 /**
@@ -56,7 +81,10 @@ export async function sweepEssentials(page, sizes, label) {
         if (await page.evaluate(() => document.body.classList.contains('menus-in-file')) !== bar) await page.evaluate(() => window.__app.command('menu-bar'));
         await page.waitForTimeout(200);
         const mode = await page.evaluate(() => window.__app.ws.active.mode);
-        out.push(...await essentialProblems(page, `${label}, ${bar ? 'File tab' : 'menu bar'}, ${w} × ${h}, ${mode} tab`));
+        const where = `${label}, ${bar ? 'File tab' : 'menu bar'}, ${w} × ${h}, ${mode} tab`;
+        out.push(...await essentialProblems(page, where));
+        // (a wide window has room for the file tabs on the row: no second line)
+        if (w >= 1366 && await page.evaluate(() => /\b(row-wrap|header-wrap)\b/.test(document.body.className))) out.push(`${where}: the file tabs are on a line of their own in a window this wide`);
       }
     }
   }

@@ -8,7 +8,7 @@
 import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
 import { a11yProblems, compareA11y } from './a11y-check.mjs';
-import { desktopStub, sweepEssentials } from './essentials-check.mjs';
+import { desktopStub, essentialProblems, sweepEssentials } from './essentials-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -278,8 +278,12 @@ try {
   await page.waitForTimeout(300);
 
   step('the controls nobody can do without are never squeezed to nothing, covered or off the window: every tab, menu bar and File tab, web and desktop (scripts/essentials-check.mjs)');
-  const SWEEP = [[1366, 768], [1024, 700], [800, 600]];
+  const SWEEP = [[1366, 768], [1100, 700], [1024, 700], [800, 600], [390, 700]];
   for (const p of await sweepEssentials(page, SWEEP, 'web')) fail(p);
+  // (with Touch Mode's bigger buttons, and at a larger interface size)
+  await page.evaluate(() => window.__app.command('touch-mode-on'));
+  for (const p of await sweepEssentials(page, [[1366, 768], [1024, 700]], 'web, Touch Mode')) fail(p);
+  await page.evaluate(() => window.__app.command('touch-mode-auto'));
   {
     // the desktop app: its own title bar, with the window's buttons (the desktop calls do nothing here)
     const desk = await browser.newPage({ viewport: { width: 1366, height: 768 } });
@@ -287,6 +291,10 @@ try {
     await desk.goto(URL);
     await desk.waitForFunction(() => window.__app?.chem?.ready || window.__app?.chem?.error, null, { timeout: 30000 });
     await desk.evaluate(() => document.querySelector('#welcome-close')?.click());
+    // just started, one tab, the menu bar showing (as the desktop app comes): the file tabs in the menu bar's row
+    await desk.waitForTimeout(600);
+    for (const p of await essentialProblems(desk, 'desktop, just started, 1366 × 768')) fail(p);
+    if (await desk.evaluate(() => /\b(row-wrap|header-wrap)\b/.test(document.body.className))) fail('desktop, just started at 1366 × 768: the file tabs are on a line of their own under the menu bar');
     for (const k of ['new-sheet', 'new-document', 'new-slides', 'new-design', 'new']) {
       await desk.evaluate((k) => window.__app.command(k), k);
       await desk.waitForTimeout(800);

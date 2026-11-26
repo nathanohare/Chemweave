@@ -6371,9 +6371,22 @@ tabAdd.addEventListener('click', () => {
   showContextMenu(x, y, NEW_ITEMS.map((n) => ({ cmd: n.cmd, label: n.label, title: n.blurb })), { run: (cmd) => void command(cmd), key: commandKey });
 });
 tabsEl.replaceChildren(tabLeft, tabStrip, tabRight, tabList, tabAdd);
-new ResizeObserver(() => fitTabs()).observe(tabsEl);
-// (the window narrower or wider: the one row may need its second line, or no longer need it)
-addEventListener('resize', () => fitTabs());
+const FIT_CLASSES = ['row-tight', 'row-wrap', 'header-wrap'];
+
+/** Fit the tabs again at the next frame, once however many things changed (the window, a ribbon's tabs, the interface size…). */
+let fitQueued = 0;
+function fitSoon(): void {
+  if (fitQueued) return;
+  fitQueued = requestAnimationFrame(() => { fitQueued = 0; fitTabs(); });
+}
+/** What changing size means the tabs must be fitted again: the file tabs, the menu bar, and each ribbon's row of tabs and its tabs. */
+const fitWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fitSoon()) : null;
+function watchFit(el: Element | null): void { if (el) fitWatch?.observe(el); }
+// (the window narrower or wider, the menu bar's or a ribbon's tabs wider or narrower, the fonts loaded: fitted again)
+watchFit(tabsEl);
+watchFit(document.querySelector('header'));
+addEventListener('resize', () => fitSoon());
+void document.fonts?.ready.then(() => fitSoon());
 
 /** The file tabs sit in the menu bar beside the menus (to start with), or on a row of their own (View > Window and Colours). */
 let tabsInMenu = true;
@@ -6423,30 +6436,34 @@ function fitTabs(): void {
 }
 
 /**
- * The one row (menus in the File tab): the open files' tabs keep at least the list of them (▾), New
- * Tab (+) and one tab's icon, and nothing in the row runs off the window (the window's buttons in
- * the desktop app, Search…). When the row is too short for that, the file tabs go onto a line of
- * their own under it (Nate, 2026-11-26: essential controls compact, never covered or pushed off).
- * Measured with the row on one line each time, so it settles at once.
+ * The open files' tabs, in the one row (menus in the File tab) or in the menu bar: they keep at least
+ * the list of them (▾), New Tab (+) and the open file's tab, and nothing in the row runs off the
+ * window (the window's buttons in the desktop app, Search…). Short of room, the row's words go
+ * first (row-tight); then the file tabs take a line of their own (row-wrap, header-wrap). Nate,
+ * 2026-11-26: essential controls compact, but are never covered or pushed off the window.
+ * Measured each time with none of those classes on, and without anything that depends on what the
+ * tabs show now (narrow or not, the ‹ › or not), so the same window always gets the same answer
+ * and it settles at once.
  */
 function fitOneRow(): void {
   const row = tabsEl.parentElement;
   const body = document.body;
-  // (the same in the menu bar, when the file tabs are in it: they go onto a line under the menus)
   const cls = row?.matches('.rb-tabs') && body.classList.contains('one-row') ? 'row-wrap' : row?.matches('header') ? 'header-wrap' : '';
-  body.classList.remove('row-wrap', 'header-wrap', 'row-tight');
-  if (!cls || !row?.offsetParent) return;
-  // too tight: the open file's tab (or, at the least, one tab's icon and ×: 48 px) doesn't fit in the
-  // strip, or something runs past the row's end or the window's
-  const tight = () => {
-    const act = tabStrip.querySelector<HTMLElement>('.active');
-    return tabStrip.clientWidth < Math.max(48, act ? act.getBoundingClientRect().width : 0) || row.scrollWidth > row.clientWidth + 1
+  body.classList.remove(...FIT_CLASSES);
+  const want: string[] = [];
+  if (cls && row?.offsetParent) {
+    // (the room for the tabs themselves: the ‹ ›, the open file's icon, a few letters of its name and its ×)
+    const room = () => tabsEl.getBoundingClientRect().width - tabList.offsetWidth - tabAdd.offsetWidth;
+    const short = () => room() < 104 || row.scrollWidth > row.clientWidth + 1
       || [...row.children].some((c) => c.getBoundingClientRect().right > innerWidth + 0.5);
-  };
-  if (!tight()) return;
-  // first the row's words go (Search, Lab Calculator) and the open file's name gets shorter; then the file tabs get a line of their own
-  body.classList.add('row-tight');
-  if (tight()) body.classList.add(cls);
+    if (short()) {
+      want.push('row-tight');
+      body.classList.add('row-tight');
+      if (short()) want.push(cls);
+      body.classList.remove('row-tight');
+    }
+  }
+  body.classList.add(...want);
 }
 
 function showTabArrows(): void {
@@ -11725,6 +11742,9 @@ function placeOneRow(): void {
   } else {
     // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
     const tablist = row.querySelector(':scope > .rb-tablist')!;
+    // (its ribbon's tabs coming and going, an object's own among them, fit the row again)
+    watchFit(row);
+    watchFit(tablist);
     if (qa.previousElementSibling !== tablist) tablist.after(qa);
     if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
   }
@@ -16600,7 +16620,7 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
-  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
+  // (null until changed: QUICK_DEFAULT, Save, Undo and Redo, in every kind of tab and in both apps)
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,

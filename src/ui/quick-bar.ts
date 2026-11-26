@@ -31,8 +31,6 @@ export function withQuick(list: readonly string[], cmd: string, on: boolean, at?
 export interface QuickHooks {
   /** The bar's commands (null: as it comes). */
   get(): string[] | null;
-  /** What the bar has as it comes (QUICK_DEFAULT unless given). */
-  defaults?: readonly string[];
   set(list: string[] | null): void;
   run(cmd: string): void;
   /** A command's name as the menus show it now (Undo Add Bond). */
@@ -79,11 +77,7 @@ export class QuickBar {
 
   /** The commands on the bar now. */
   list(): string[] {
-    return [...(this.hooks.get() ?? this.defaults)];
-  }
-
-  private get defaults(): readonly string[] {
-    return this.hooks.defaults ?? QUICK_DEFAULT;
+    return [...(this.hooks.get() ?? QUICK_DEFAULT)];
   }
 
   has(cmd: string): boolean {
@@ -91,7 +85,7 @@ export class QuickBar {
   }
 
   private put(list: string[]): void {
-    const d = this.defaults;
+    const d = QUICK_DEFAULT;
     const same = list.length === d.length && list.every((c, i) => c === d[i]);
     this.hooks.set(same ? null : list);
     this.render();
