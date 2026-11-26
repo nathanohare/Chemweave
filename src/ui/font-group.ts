@@ -12,7 +12,7 @@
 // and color), so the other controls are greyed there with that reason (SI_FONT_REASON).
 
 /** Why the SI tab's font, size, strikethrough and color controls are greyed. */
-export const SI_FONT_REASON = 'SI text takes its font, size and color from the journal style (Project Settings ▸ Output). It keeps bold, italic, underline, subscript and superscript.';
+export const SI_FONT_REASON = 'Text on the SI page takes its font, size and color from the journal style (Project Settings ▸ Output). To change them for some words, select them in the Live Preview.';
 /** The SI Font group controls SI text cannot hold. */
 export const SI_FONT_OFF: readonly string[] = ['font', 'size', 'grow', 'shrink', 'strike', 'color'];
 

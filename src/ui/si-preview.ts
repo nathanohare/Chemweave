@@ -21,6 +21,7 @@ import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, ty
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
+import { addFormat, blockSrc, clearFormats, markupFormat, markupOnly, printedFor, type FormatLook, type PreviewFormat } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -47,6 +48,8 @@ export interface SiPreviewHost {
   write(src: string, text: string, owner: unknown): Promise<void>;
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
+  /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown): Promise<void>;
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
@@ -952,7 +955,12 @@ export class SiPreview {
       if (k === 'f' && !shift) return run(() => this.showFind());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
-      if (k === 'b' || k === 'i' || k === 'u') return run(() => this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.'));
+      if (k === 'b' || k === 'i' || k === 'u') {
+        const key = k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline';
+        return run(() => void this.format({ [key]: !this.selectionHas(key) }));
+      }
+      if (k === ' ' && !shift) return run(() => void this.format('clear'));
+      if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) })); }
       if (k === 'c' || k === 'x' || k === 'v') { e.stopPropagation(); return; }
     }
   }
@@ -1100,4 +1108,128 @@ export class SiPreview {
     this.view.scrollToPage(index);
     this.view.redraw();
   }
+
+  // ---------------------------------------------------------------- formatting (preview-format.ts)
+
+  /** The first selected character's `key` (its size, for Grow Font), or undefined. */
+  selectionValue<K extends keyof TextRun>(key: K): TextRun[K] | undefined {
+    const ed = this.file?.ed;
+    if (!ed) return undefined;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && run.text) return run[key];
+      at = end;
+    }
+    return undefined;
+  }
+
+  /** Whether every character selected has `key` (Bold pressed again takes it off). */
+  selectionHas(key: keyof FormatLook): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    let at = 0, any = false;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && at < ed.end && run.text) { any = true; if (!run[key]) return false; }
+      at = end;
+      if (at >= ed.end) break;
+    }
+    return any;
+  }
+
+  /**
+   * Format the selection (`look`; 'clear': Clear All Formatting). Bold, italic, underline,
+   * subscript and superscript on a field kept as formatted text go into the field (SI Assistant
+   * shows them too); the rest, and any formatting on words the program writes, go in the
+   * formatting file. Either way it is kept across compiles. False when there was nothing to do.
+   */
+  async format(look: FormatLook | 'clear'): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
+    // (typing not yet written goes first: what is formatted is what is stored)
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    const owner = this.owner;
+    const text = f.ed.text;
+    const s = f.ed.start, e = f.ed.end;
+    // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
+    const spansNow = this.spans.map((x) => ({ ...x }));
+    const blocksNow = this.blocks.map((x) => ({ ...x }));
+    // the selection as stretches of the printed text of each source
+    const parts = new Map<string, [number, number]>();
+    const put = (src: string, a: number, b: number): void => {
+      const was = parts.get(src);
+      parts.set(src, was ? [Math.min(was[0], a), Math.max(was[1], b)] : [a, b]);
+    };
+    const printedCache = new Map<string, ReturnType<typeof printedOf>>();
+    const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
+      let x = printedCache.get(src);
+      if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
+      return x;
+    };
+    let pos = s;
+    const spans = spansNow.filter((x) => x.end > s && x.start < e).sort((a, b) => a.start - b.start);
+    const gap = (a: number, b: number): void => {
+      for (let i = a; i < b;) {
+        const k = blockAt(blocksNow, i);
+        if (!k) { i++; continue; }
+        const hi = Math.min(b, k.end);
+        // (paragraph marks and the places of pictures alone aren't formatted)
+        if (text.slice(i, hi).replace(/[\n\uFFFC]/g, '').trim()) put(blockSrc(k.node), i - k.start, Math.max(i + 1, hi) - k.start);
+        i = Math.max(i + 1, hi);
+      }
+    };
+    for (const sp of spans) {
+      const lo = Math.max(s, sp.start), hi = Math.min(e, sp.end);
+      if (lo > pos) gap(pos, lo);
+      if (hi > lo) { const a = printedOfSrc(sp.src).at(lo); put(sp.src, a, a + hi - lo); }
+      pos = Math.max(pos, hi);
+    }
+    if (pos < e) gap(pos, e);
+    if (!parts.size) return false;
+    const fields: { src: string; text: string; from: string }[] = [];
+    const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
+    const sideFile = (src: string, printed: string, a: number, b: number): void => {
+      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
+    };
+    // (every printed text worked out before the fields are read: nothing below depends on what shows by then)
+    const printedNow = new Map<string, string>();
+    for (const src of parts.keys()) printedNow.set(src, src.startsWith('b:') ? printedFor(text, spansNow, blocksNow, src) : printedOfSrc(src).printed);
+    const offKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
+    const onKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
+    for (const [src, [a, b]] of parts) {
+      const printed = printedNow.get(src)!;
+      const inField = markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
+      if (!inField) { sideFile(src, printed, a, b); continue; }
+      const raw = await this.api.read(src, owner);
+      if (raw === null) { sideFile(src, printed, a, b); continue; }
+      const got = markupFormat(raw, printed, a, b, look === 'clear' ? 'clear' : look);
+      if (got.raw !== null && got.raw !== raw) fields.push({ src, text: got.raw, from: raw });
+      if (got.raw === null || look === 'clear' || offKeys.length) {
+        // (taking a look off, and Clear All Formatting, also cover what the program put on: a title's bold, the 1 of ¹H)
+        sideFile(src, printed, a, b);
+        continue;
+      }
+      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
+      // (a look put back in the field: an earlier piece taking it off there goes)
+      if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
+    }
+    if (!fields.length && !later.length) return false;
+    const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
+    try {
+      await this.api.writeFormat(fields, change, owner);
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not save the formatting: ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return false;
+    }
+    // (the fields' stored text has changed: typing next starts from it, and a compile started before isn't shown)
+    for (const x of fields) this.written.delete(x.src);
+    if (fields.length) { this.editGen++; this.writtenGen = this.editGen; }
+    // (the compile that follows the write shows it)
+    return true;
+  }
+
 }

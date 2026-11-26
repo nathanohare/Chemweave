@@ -20,6 +20,8 @@ import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/pag
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
+import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
+import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -423,10 +425,11 @@ const RIBBON = `
     </div><div class="rb-label">Page Setup</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
+        <button data-si="styles" data-ic="style-set" title="Styles: the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions (Project Settings ▸ Styles)">Styles</button>
         <button data-si="heading-numbers" data-ic="numbers-s" title="Heading Numbers: how the headings of the compiled SI are numbered (1, 1.1, S1, A.…), and what goes before and after the number (Project Settings ▸ Headings)">Heading Numbers</button>
         <button data-si="caption-labels" data-ic="insert-caption" title="Caption Labels: the words and numbers of figure, table and scheme captions (Figure S1, Table S2) (Project Settings ▸ Labels)">Caption Labels</button>
       </div>
-    </div><div class="rb-label">Numbering</div></div>
+    </div><div class="rb-label">Styles</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="structure-layout" data-ic="wrap-text" title="Structure Layout: where compounds' structures and figures go by default, and how text wraps around them (Project Settings ▸ Layout)">Structure Layout</button>
@@ -764,7 +767,7 @@ export class SiMode {
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
-      if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
@@ -790,6 +793,8 @@ export class SiMode {
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const fi = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-si-fmt]');
+      if (fi) { this.format(fi.dataset.siFmt!, fi.value); return; }
       const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
@@ -811,8 +816,10 @@ export class SiMode {
       const box = target.closest<HTMLElement>('.si-rich');
       if (box) this.typing = box;
       // (where the ribbon's Clipboard and Editing commands act: the SI page's boxes, or the Live Preview)
+      const was = this.typedIn;
       if (this.preview && target === this.preview.input) this.typedIn = 'preview';
       else if (this.page.contains(target) || this.tree.contains(target)) this.typedIn = 'page';
+      if (this.typedIn !== was) this.fontState();
       const card = target.closest<HTMLElement>('.si-table-card');
       const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
       if (t) this.tableChosen(t);
@@ -1152,13 +1159,49 @@ export class SiMode {
   }
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
-  private format(cmd: string): void {
+  private format(cmd: string, value?: string): void {
+    // (where the person last typed in the Live Preview: formatted there, kept across compiles)
+    const pv = this.previewTyped;
+    if (pv) { void this.formatPreview(pv, cmd, value); return; }
     if (SI_FONT_OFF.includes(cmd)) { this.host.flash(SI_FONT_REASON, 6000); return; }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
     if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
     if (cmd === 'formula') { this.formulaStyle(); return; }
     if (cmd === 'charges') { this.raiseCharges(); return; }
     document.execCommand(cmd);
+  }
+
+  /** A Font group command on the Live Preview's selection (si-preview.ts format). */
+  private async formatPreview(pv: SiPreview, cmd: string, value?: string): Promise<void> {
+    const toggle = (k: 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup'): FormatLook => ({ [k]: !pv.selectionHas(k) });
+    let look: FormatLook | 'clear' | null = null;
+    switch (cmd) {
+      case 'bold': case 'italic': case 'underline': case 'strike': look = toggle(cmd); break;
+      case 'subscript': look = toggle('sub'); break;
+      case 'superscript': look = toggle('sup'); break;
+      case 'clear': look = 'clear'; break;
+      case 'font': look = value?.trim() ? { font: value.trim() } : null; break;
+      case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
+      case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
+      case 'color': look = value ? { color: value } : null; break;
+      default:
+        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
+        return;
+    }
+    if (look) await pv.format(look);
+    pv.input.focus();
+  }
+
+  /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
+  private fontState(): void {
+    const on = !!this.previewTyped;
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
+    if (on) {
+      for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
+        el.disabled = false;
+        (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
+      }
+    } else siFontBoxes(this.ribbon, defaultStyles().Normal);
   }
 
   /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
@@ -1770,6 +1813,8 @@ export class SiMode {
     void this.commitAll(false);
     this.pick = pick;
     this.refresh();
+    // (the preview may have folded itself away on this page)
+    this.fontState();
   }
 
   // ---------------------------------------------------------------- the tree
@@ -3469,6 +3514,7 @@ export class SiMode {
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
     this.viewState();
+    this.fontState();
   }
 
   /**
@@ -3672,6 +3718,26 @@ export class SiMode {
         const save = async (): Promise<void> => { await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson(f(await readCustomTextToChange(p.folder)))); };
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
+      },
+      writeFormat: async (fields, change, owner) => {
+        const p = asProject(owner);
+        let done = false;
+        const save = async (): Promise<void> => {
+          // (everything read first: a file that can't be read, or a field changed since, writes nothing)
+          const items = change ? change(await readPreviewFormatsToChange(p.folder)) : null;
+          const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
+          for (const { a, x } of access) {
+            if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
+            if ((await a.read()) !== x.from) throw new Error('The text changed while it was being formatted. Select it and try again.');
+          }
+          for (const { a, x } of access) await a!.write(x.text);
+          if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
+          done = true;
+        };
+        if (p !== this.project) await this.change(p, 'Format in Live Preview', save);
+        else await this.act(save, fields.length > 0);
+        // (the reason was said)
+        if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
       },
       undo: (redo) => void this.undo(redo),
       refresh: () => this.liveSoon(0),
@@ -5186,7 +5252,7 @@ export class SiMode {
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
     'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
-    'heading-numbers', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
+    'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -5547,6 +5613,7 @@ export class SiMode {
       case 'insert-citation': await this.citeFromLibrary(c); return;
       case 'page-setup': case 'header': case 'footer': case 'page-number': this.projectSettings('page'); return;
       case 'heading-numbers': this.projectSettings('headings'); return;
+      case 'styles': this.projectSettings('styles'); return;
       case 'caption-labels': this.projectSettings('labels'); return;
       case 'structure-layout': this.projectSettings('layout'); return;
       case 'dictionary': this.projectSettings('dictionary'); return;
