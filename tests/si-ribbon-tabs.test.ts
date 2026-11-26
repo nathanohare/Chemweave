@@ -12,7 +12,7 @@ const RIBBON = siSrc.slice(start, siSrc.indexOf('`;', start));
 describe('SI ribbon tabs', () => {
   it("has Document mode's main tabs, in Word's order", () => {
     const main = [...RIBBON.matchAll(/<button role="tab" data-si-tab="([a-z]+)" aria-selected="(?:true|false)">([^<]+)<\/button>/g)].map((m) => m[2]);
-    expect(main).toEqual(['Home', 'Insert', 'Layout', 'References', 'Review', 'View']);
+    expect(main).toEqual(['Home', 'Project', 'Insert', 'Layout', 'References', 'Review', 'View']);
   });
   it('has a panel for every tab', () => {
     const tabs = [...RIBBON.matchAll(/data-si-tab="([a-z]+)"/g)].map((m) => m[1]);

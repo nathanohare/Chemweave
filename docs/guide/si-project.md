@@ -20,7 +20,7 @@ While a project is open, a lock file beside it tells Chemweave on another comput
 
 - **The list on the left** shows the project (its title, at the top), the **Dashboard**, every section with its compounds and scheme pages under it, and at the bottom **Manuscript Check**, **References** and **Warnings**. A check mark beside a compound means every required field is filled in. Click a row to open its page. Drag rows to reorder them, press **F2** to rename a section, and **Delete** to move a row to the project's Trash. Right-click a row for the same commands, and **Expand All** or **Collapse All**. The arrow beside a section or scheme page folds the rows under it (or double-click the row; the Left and Right keys fold and unfold the picked row). Drag the border between the list and the page to make the list wider or narrower; double-click the border to put it back.
 - **The page in the middle** is what you picked: a compound's data, a section's text, a scheme and so on.
-- **Live Preview**, on the right, shows the whole SI as it will print, about a second after each change, wherever it is made (**Home ▸ Live Preview**, Ctrl+Shift+L). The page picked in the list is brought into view and everything else is washed out, with a bar in the SI color beside it; clicking text in the preview picks its page in the list.
+- **Live Preview**, on the right, shows the whole SI as it will print, about a second after each change, wherever it is made (**View ▸ Live Preview**, Ctrl+Shift+L). The page picked in the list is brought into view and everything else is washed out, with a bar in the SI color beside it; clicking text in the preview picks its page in the list.
   - **Type in it as in Word.** A change goes into the field the text came from (one step of Undo), and the SI page shows it. Hovering a field on the SI page, or typing in one, lights up its text in the preview, with the field's name; hovering text in the preview lights up its field.
   - **Text Chemweave writes is locked** (the words of a sentence, "calcd for" in HRMS): hovering it shows which field makes it, and clicking it goes to that field. Formatting is changed on the SI page, not in the preview.
   - **Custom text**: text typed where no field is stays as it was typed, after the field before it, every time the SI is compiled (it is kept in *chemweave-custom-text.json* in the project folder). It is marked in the preview and listed on the **Warnings** page; if its page is deleted it goes to the end of the SI.
@@ -30,8 +30,9 @@ While a project is open, a lock file beside it tells Chemweave on another comput
   - **Page Width** (at the right end of the status bar) makes the pages fill the preview's width, with no grey beside them, and keeps them so as the preview is made wider or narrower, until you zoom by hand. The bar between the SI page and the preview sets them apart; drag it to change the preview's width. The arrow on it hides the SI page so the preview takes its width (the list stays, to choose pages); click it again to show the page. This is remembered on this computer, and the page shows again while the preview is folded.
   - **Spectra** show on their own pages when the Spectra section or a compound's spectra page is picked, numbered on from the SI's last page, and can't be typed into.
   - On a page with nothing to preview (the Dashboard, Warnings, References, Manuscript Check) it folds to its strip by itself so the page gets the width, and opens again on the next page it can show. **Preferences ▸ SI Live Preview** sets whether the rest is washed out, and how a field's text and custom text are marked.
-- **The ribbon** has **Home**, **Insert**, **Layout**, **References**, **Review** and **View** tabs, with Document mode's names for the same commands. Further tabs appear for what you are working on: **Table Layout**, **Picture Format**, **Scheme**, **Spectrum**, **Crystal Structure**, **Attachment**, **Manuscript Check** and **Dashboard**.
-  - **Home**: **Paste**, **Cut** and **Copy**, and **Find**, **Go To** (a page of the compiled SI by its number, or a compound by its ID) and **Select All**, act where you were last typing: a box on the SI page or the Live Preview. Find lights up every place in the Live Preview and chooses the page of the one selected.
+- **The ribbon** has **Home**, **Project**, **Insert**, **Layout**, **References**, **Review** and **View** tabs, with Document mode's names for the same commands. Further tabs appear for what you are working on: **Table Layout**, **Picture Format**, **Scheme**, **Spectrum**, **Crystal Structure**, **Attachment**, **Manuscript Check** and **Dashboard**.
+  - **Home** holds what is used most: **Paste**, **Cut** and **Copy**, **New Compound** and **New Section**, **Rename**, **Duplicate** and **Delete**, the **Font** group, **Find**, **Go To** and **Select All**, **Edit Structure**, **Paste Structure** and **Structure to Name**, and **Compile to Document** and **Compile to PDF**. **Paste**, **Cut** and **Copy**, and **Find**, **Go To** (a page of the compiled SI by its number, or a compound by its ID) and **Select All**, act where you were last typing: a box on the SI page or the Live Preview. Find lights up every place in the Live Preview and chooses the page of the one selected.
+  - **Project** holds what is used now and then: **Move Up**, **Move Down**, **Move To**, **Trash** and **Apply Section Fields**; the **ID Table** and its commands; the Compound Library, My Library and **Name from PubChem**; and **Project Settings**, **Save Snapshot**, **Save Word Snapshot** and **Reload Project**.
   - **Layout** opens the settings the compiled SI is laid out by: **Page Setup**, **Header**, **Footer** and **Page Number** (Project Settings ▸ Page), **Heading Numbers**, **Caption Labels** and **Structure Layout**.
   - **References**: **Table of Contents** goes to its settings on the project's page; **Insert Citation** cites from My Library in the selected compound's References field; **Manage References** and **Bibliography** open the reference list, and its commands (Add by DOI, Edit Reference…) are here too.
   - **Review**: **Review** (F7) goes to the next misspelled word or chemistry formatting slip on the page; **Dictionary**, **Warnings** and **Manuscript Check**.
@@ -79,7 +80,7 @@ Pick a Data section and click **Home ▸ New Compound** (Ctrl+Shift+N). A compou
 - **NMR peak reports.** Paste the peak report from your NMR software and pick the nucleus. **Insert ▸ NMR Report** adds another one.
 - **HRMS.** Choose the ionization and adduct and type the found m/z. Chemweave calculates the expected m/z from the structure and shows the difference in ppm. For a salt measured as its charged piece, the ion prints as [M−Br]⁺ (the counter-ions taken off the whole salt), or as [M]⁺ if you choose that under **Project Settings ▸ Output ▸ HRMS ion for salts**; type in **Printed as** to print any other label. **Insert ▸ HRMS Report…** adds the instrument's report files; the found m/z is read from them when the Found box is empty, and a value you typed is never changed.
 - **Spectra.** **Insert ▸ Spectra** adds PDFs or pictures, and **Paste Spectrum** takes one copied in Mnova. Give each its type (¹H NMR, ¹³C NMR, HPLC/SFC, IR and so on).
-- **References (known compound).** **Home ▸ Cite from My Library…** cites references from [your reference library](libraries.md).
+- **References (known compound).** **Project ▸ Cite from My Library…** cites references from [your reference library](libraries.md).
 - **Notes** are private and never print.
 - **Store additional files and folders** keeps files with the compound that never print, such as .mnova files, raw data and photos. **Insert ▸ Stored Files…** adds them, or drag files onto the field (or click it and press Ctrl+V to paste files copied in File Explorer or Finder). Copies go in the compound's `private` folder. Give each a note if you like; ✕ moves it to the project's Trash.
 
@@ -91,7 +92,7 @@ The flag button beside a field marks it for checking, with a comment. Flags are 
 
 Each Data section has an **ID table**: row 1 is the first compound's ID, row 2 the second's, and so on. Moving a compound up or down therefore renumbers it, and every `@` mention follows.
 
-- **Home ▸ Fill from Pattern…** fills the table with a series such as 3a, 3b, 3c or S1, S2, S3.
+- **Project ▸ Fill from Pattern…** fills the table with a series such as 3a, 3b, 3c or S1, S2, S3.
 - **Add Pages for IDs** makes a blank compound page for each ID that has none.
 - **Manual ID…** gives one compound an ID of its own. It still uses up its row of the table.
 
@@ -138,7 +139,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 - **Home ▸ Manage ▸ Save Word Snapshot** saves the whole compiled SI as *(project title) (Snapshot).docx* beside the project file, as a backup: if Chemweave or the project can't be opened, you can go on in Word. It is also saved every 5 minutes while the project changes, and when the project closes. It is never a step of Undo, and a copy you changed in Word is never replaced: rename it, and the next snapshot is saved beside it. Each flag on the SI page is a Word comment in it, on the text of its field (who flagged it and what to check); a flag on a field that prints nothing is on the compound's name.
 - **Compile to Document** and **Compile to PDF** ask, when the SI page has flags, whether to put them in as comments too (**Include Comments**) or leave them out.
 
-**Home ▸ Project Settings…** holds the choices for the compiled SI:
+**Project ▸ Project Settings…** holds the choices for the compiled SI:
 
 | Page | What it sets |
 |---|---|
@@ -171,7 +172,7 @@ In a Canvas, right-click a structure and choose **Add to SI Project** to add it 
 
 ## Trash and snapshots
 
-- **Home ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is kept inside the project.
-- **Home ▸ Save Snapshot…** zips the whole project into a *(file name) Snapshots* folder beside the project file. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
+- **Project ▸ Trash…** lists what was deleted from the project, newest first, and puts items back. The Trash is kept inside the project.
+- **Project ▸ Save Snapshot…** zips the whole project into a *(file name) Snapshots* folder beside the project file. Use it at milestones such as the submitted version. The Word snapshot is left out of the zip (it is made again from the project).
 
 Next: [Getting started](getting-started.md) · [Canvas](drawing.md) · [Document](documents.md) · [Libraries](libraries.md) · [Files and sharing](files-and-sharing.md) · [Feedback](feedback.md)

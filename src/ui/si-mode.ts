@@ -110,7 +110,7 @@ export interface SiModeHost {
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
   /** File ▸ New ▸ SI Project: a new project, opened in its tab (null: none made; absent: can't be made here). */
   newSiProject?: (() => Promise<SiProject | null>) | null;
-  /** Home ▸ Reload Project for a project file: open it again from the file. */
+  /** Project ▸ Reload Project for a project file: open it again from the file. */
   reloadFile?: ((p: SiProject) => Promise<void>) | null;
   /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
@@ -215,6 +215,7 @@ const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
       <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-si-tab="project" aria-selected="false">Project</button>
       <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
       <button role="tab" data-si-tab="layout" aria-selected="false">Layout</button>
       <button role="tab" data-si-tab="references" aria-selected="false">References</button>
@@ -378,7 +379,7 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="attach" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-attach="choose" data-ic="insert-object" title="Choose File: the PDF or picture printed as this section (a copy is kept in the project; the one it replaces goes to the Trash). A file can also be dropped on the preview"><span class="rb-icon">▤</span>Choose File</button>
-      <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Home ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
+      <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Project ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
     </div><div class="rb-label">File</div></div>
   </div>
   <div class="rb-panel" data-si-panel="xray" hidden>
@@ -474,7 +475,7 @@ const RIBBON = `
       <button class="rb-big" data-si-ms="ms-add" data-ic="file-open" title="Add the manuscript (PDF or Word .docx) and its ChemDraw files (.cdxml) to the project’s manuscript folder; they are never printed"><span class="rb-icon">＋</span>Add Files…</button>
       <div class="rb-col">
         <button data-si-ms="ms-add-doc" title="Add a document open in Chemweave, saved into the manuscript folder as a Word file as it is now">Add Open Document…</button>
-        <button data-si-ms="ms-remove" data-ic="delete" title="Move the selected file to the project Trash (Home ▸ Trash, or Undo, puts it back)">Remove File</button>
+        <button data-si-ms="ms-remove" data-ic="delete" title="Move the selected file to the project Trash (Project ▸ Trash, or Undo, puts it back)">Remove File</button>
       </div>
     </div><div class="rb-label">Files</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -590,20 +591,14 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the selected Data section, after the selected compound (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections); an Attachment section a PDF or picture; an X-ray structure a crystal structure from its CIF"><span class="rb-icon">▤</span>New Section</button>
-      <div class="rb-col">
-        <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
-        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it.">Trash…</button>
-      </div>
+    </div><div class="rb-label">New</div></div>
+    <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="rename" title="Rename the selected section or scheme page (F2 in the tree)">Rename</button>
         <button data-si="duplicate" title="Copies of the selected compound or scheme page, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
+        <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
       </div>
-      <div class="rb-col">
-        <button data-si="move-up" title="Move the selected compound or section up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
-        <button data-si="move-down" title="Move the selected compound or section down (Alt+↓)">▼ Move Down</button>
-        <button data-si="move-to" title="Move the selected compound to another Data section or into or out of a scheme page, or the selected section into or out of a Custom section">Move To…</button>
-      </div>
-    </div><div class="rb-label">Project</div></div>
+    </div><div class="rb-label">Organize</div></div>
     ${fontGroupHtml('si')}
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -613,6 +608,30 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Editing</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
+      <div class="rb-col">
+        <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
+        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
+      </div>
+    </div><div class="rb-label">Structure</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
+      <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
+    </div><div class="rb-label">Compile</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="project" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="move-up" title="Move the selected compound or section up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
+        <button data-si="move-down" title="Move the selected compound or section down (Alt+↓)">▼ Move Down</button>
+        <button data-si="move-to" title="Move the selected compound to another Data section or into or out of a scheme page, or the selected section into or out of a Custom section">Move To…</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it.">Trash…</button>
+        <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
+      </div>
+    </div><div class="rb-label">Arrange</div></div>
+    <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the selected Data section: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
         <button data-si="fill-pattern" title="Fill the ID table from a pattern: 3a, 3b, 3c… or S1, S2, S3…">Fill from Pattern…</button>
@@ -621,38 +640,25 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Compound IDs</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
-      <div class="rb-col">
-        <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
-        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
-      </div>
       <div class="rb-col">
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
+        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
       </div>
       <div class="rb-col">
         <button data-si="name-pubchem" title="Name from PubChem: look the selected compound up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
-        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
-      <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
-      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
-    </div><div class="rb-label">Compile</div></div>
-    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance"><span class="rb-icon">⚙</span>Project Settings…</button>
       <div class="rb-col">
-        <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
-        <button data-si="reload" data-ic="refresh-all" title="Open the project file again as it was last saved (after a sync brought changes made elsewhere); changes not saved here are dropped, after asking">Reload Project</button>
-      </div>
-      <div class="rb-col">
-        <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
         <button data-si="snapshot" title="Save Snapshot: a zipped copy of the whole project, kept in a “Snapshots” folder beside the project file, for milestones such as the submitted version">Save Snapshot…</button>
         <button data-si="save-snapshot-docx" title="Save Word Snapshot: the whole SI compiled and saved now as “(project title) (Snapshot).docx” beside the project file, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
+        <button data-si="reload" data-ic="refresh-all" title="Open the project file again as it was last saved (after a sync brought changes made elsewhere); changes not saved here are dropped, after asking">Reload Project</button>
       </div>
-
     </div><div class="rb-label">Manage</div></div>
-  </div>`;
+  </div>
+`;
 
 /** Short names for a spectrum's or file's values in its row (their full names are in the tooltip). */
 const ATT_SHORT: Record<string, string> = { title: 'Header', struct_caption: 'Caption', label: 'Label' };
@@ -2250,7 +2256,7 @@ export class SiMode {
       rm.type = 'button';
       rm.title = 'Delete the general procedure (to the Trash; compounds using it keep the choice, with a warning)';
       rm.addEventListener('click', () => void (async () => {
-        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash; Home ▸ Trash can put it back.';
+        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash; Project ▸ Trash can put it back.';
         const go = await askChoice(`Delete ${partText(gp.name) || 'General Procedure'}`, msg, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go === 'go') await this.act(() => p.deleteGeneralProcedure(id));
       })());
@@ -2431,7 +2437,7 @@ export class SiMode {
     const p = this.project!;
     await this.commitAll();
     const what = this.objLabels.get(id) ?? (kind === 'figure' ? 'the figure' : 'the table');
-    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash; Home ▸ Trash can put it back.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash; Project ▸ Trash can put it back.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
     if (go !== 'go') return;
     await this.act(() => p.deleteTextObject(s, kind, id));
   }
@@ -2713,7 +2719,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'Fields of new compounds');
-    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count toward a page being complete. Insert ▸ Field… adds one; Home ▸ Apply Section Fields gives them to the compounds already there.');
+    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count toward a page being complete. Insert ▸ Field… adds one; Project ▸ Apply Section Fields gives them to the compounds already there.');
     card.append(h);
     const entries = defaultFieldsOf(s);
     const list = el('div', 'si-fieldlist');
@@ -4727,7 +4733,7 @@ export class SiMode {
   private async deletePicked(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
+    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Project ▸ Trash can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
     if (pick.kind === 'compound') {
       const c = p.compound(pick.id);
       const k = c.schemeId ? p.scheme(c.schemeId) : null;
@@ -4845,7 +4851,7 @@ export class SiMode {
     await this.act(async () => { const k = await p.convertToScheme(c.id); this.pick = { kind: 'scheme', id: k.id }; });
   }
 
-  /** Home ▸ Move To: a compound or scheme page to another Data section (a compound also into or out of a scheme page); a section into a Custom section, or to the top level. */
+  /** Project ▸ Move To: a compound or scheme page to another Data section (a compound also into or out of a scheme page); a section into a Custom section, or to the top level. */
   private async moveTo(onlySchemes = false): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
@@ -5670,7 +5676,7 @@ export class SiMode {
     this.host.flash(`No compound has the ID “${w}”${pv ? ', and no page is numbered that' : ''}.`);
   }
 
-  /** Home ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
+  /** Project ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
   projectSettings(page?: string): void {
     const p = this.project;
     if (!p) return;

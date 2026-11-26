@@ -1914,7 +1914,7 @@ body.ribbon-collapsed .ribbon > .rb-panel { display: none; }
 body.ribbon-collapsed .ribbon > .rb-tabs [role='tab'][aria-selected='true'] { background: transparent; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-panel:not([hidden]) { display: flex; position: absolute; top: 100%; left: 0; right: 0; z-index: 45; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='true'] { background: var(--panel); color: var(--accent); text-decoration: none; }
-.doc-ribbon .rb-col > button { align-self: flex-start; }
+.doc-ribbon .rb-col > button, .si-ribbon .rb-col > button { align-self: flex-start; }
 .ribbon input.rb-text { font: var(--fs-sm) var(--ui-font); padding: 2px 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); }
 .ribbon input.rb-font { width: 150px; }
 .ribbon input.rb-num { width: 48px; }
