@@ -201,7 +201,7 @@ export class SiFrontPage {
     const extra = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('cover', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Anything else for the cover page (optional)');
     this.boxes.push(extra);
     extra.el.dataset.src = frontSrc('cover');
-    void p.readFrontText('cover').then((t) => extra.set(t));
+    extra.load(p.readFrontText('cover'));
     cover.append(extra.el);
     this.el.append(cover);
 
@@ -259,7 +259,7 @@ export class SiFrontPage {
     const text = new SiRichBox('', { label: this.host.label, mentionable: this.host.mentionable, changed: (v) => void this.track(() => p.writeFrontText('general', v).catch((e: unknown) => this.host.flash(`Not saved: ${String(e)}`))) }, true, 'Materials, instruments and general methods…');
     this.boxes.push(text);
     text.el.dataset.src = frontSrc('general');
-    void p.readFrontText('general').then((t) => text.set(t));
+    text.load(p.readFrontText('general'));
     gi.append(text.el);
     this.el.append(gi);
   }

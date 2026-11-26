@@ -171,6 +171,38 @@ export function applyStyle(runs: TextRun[], start: number, end: number, patch: P
   return normalizeRuns([...sliceRuns(runs, 0, start), ...mid, ...sliceRuns(runs, end, n)]);
 }
 
+/**
+ * applyStyle for many stretches at once, in order (the same runs as applying each in turn): the
+ * runs are cut at every stretch's ends once, so many stretches cost one pass, not one each.
+ */
+export function applyStyles(runs: TextRun[], edits: readonly { start: number; end: number; patch: Partial<RunStyle> }[]): TextRun[] {
+  const todo = edits.filter((e) => e.end > e.start);
+  if (!todo.length) return runs;
+  const cuts = [...new Set(todo.flatMap((e) => [e.start, e.end]))].sort((x, y) => x - y);
+  const segs: TextRun[] = [];
+  const starts: number[] = [];
+  let pos = 0, k = 0;
+  for (const r of runs) {
+    const len = r.text.length;
+    while (k < cuts.length && cuts[k] <= pos) k++;
+    let a = 0;
+    for (let j = k; j < cuts.length && cuts[j] < pos + len; j++) {
+      const c = cuts[j] - pos;
+      for (const piece of sliceRuns([r], a, c)) { starts.push(pos + a); segs.push(piece); }
+      a = c;
+    }
+    for (const piece of sliceRuns([r], a, len)) { starts.push(pos + a); segs.push(piece); }
+    pos += len;
+  }
+  for (const e of todo) {
+    // (the first piece at or after the stretch's start: the cuts make one start there)
+    let lo = 0, hi = starts.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (starts[m] < e.start) lo = m + 1; else hi = m; }
+    for (let i = lo; i < segs.length && starts[i] < e.end; i++) segs[i] = { ...cleanStyle({ ...styleOf(segs[i]), ...e.patch }), text: segs[i].text } as TextRun;
+  }
+  return normalizeRuns(segs);
+}
+
 /** The change a button makes: off if every character already has it, otherwise on. */
 export function togglePatch(current: RunStyle, key: Toggle, base: RunStyle = {}): Partial<RunStyle> {
   const on = !current[key];

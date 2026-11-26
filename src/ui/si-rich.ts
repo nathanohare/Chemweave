@@ -165,6 +165,10 @@ export class SiRichBox {
   private last: string | null;
   private timer: ReturnType<typeof setTimeout> | null = null;
   private menu: HTMLDivElement | null = null;
+  /** A one-line box's stored paragraphs after its first (a value another program wrote on several lines): not shown, kept as they are when the first is saved. */
+  private rest: Paragraph[] = [];
+  /** Its text couldn't be read (load()): locked until set() gives it. */
+  private unread = false;
 
   constructor(text: string, private host: SiRichHost, private multiline = true, placeholder = '') {
     const el = (this.el = document.createElement('div'));
@@ -174,7 +178,7 @@ export class SiRichBox {
     if (placeholder) el.dataset.placeholder = placeholder;
     el.setAttribute('role', 'textbox');
     if (multiline) el.setAttribute('aria-multiline', 'true');
-    render(el, parseMarkup(text), host, multiline);
+    this.show(text);
     // (as the box reads it back, so a file is only saved again when something is typed: leaving
     // a box untouched never rewrites a file another program wrote its own way)
     this.last = this.text;
@@ -209,12 +213,34 @@ export class SiRichBox {
   }
 
   /** The text as stored. */
-  get text(): string { return writeMarkup(read(this.el, this.multiline)); }
+  get text(): string {
+    if (!this.rest.length) return writeMarkup(read(this.el, this.multiline));
+    // (an emptied first line still holds its place, so the lines after it stay lines)
+    const first = read(this.el, this.multiline);
+    return writeMarkup([...(first.length ? first : [{ runs: [] }]), ...this.rest]);
+  }
+
+  private show(text: string): void {
+    const ps = parseMarkup(text);
+    this.rest = this.multiline ? [] : ps.slice(1);
+    render(this.el, ps, this.host, this.multiline);
+  }
+
+  /** Show text still being read: the box can't be typed into until it is there (typing would be replaced by it). */
+  load(text: Promise<string>): void {
+    this.el.contentEditable = 'false';
+    this.el.setAttribute('aria-busy', 'true');
+    const done = (): void => { this.el.contentEditable = 'true'; this.el.removeAttribute('aria-busy'); };
+    // (text that couldn't be read stays locked: typing into the empty box would save over it)
+    void text.then((t) => { done(); this.set(t); }, () => { this.el.removeAttribute('aria-busy'); this.unread = true; this.el.title = 'This text could not be read. Reopen the project to try again.'; });
+  }
 
   /** Show other text (the page was changed elsewhere). */
   set(text: string): void {
+    // (text read after all: the box can be typed into again)
+    if (this.unread) { this.unread = false; this.el.contentEditable = 'true'; this.el.removeAttribute('title'); }
     if (text === this.last) return;
-    render(this.el, parseMarkup(text), this.host, this.multiline);
+    this.show(text);
     this.last = this.text;
     this.empty();
     setTimeout(() => checkSpelling(this.el), 0);
@@ -283,6 +309,8 @@ export class SiRichBox {
 
   /** Save what was typed, if it changed. */
   commit(): void {
+    // (text that couldn't be read isn't saved over)
+    if (this.unread) return;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     const t = this.text;
     if (t === this.last) return;

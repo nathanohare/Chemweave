@@ -21,7 +21,7 @@ import * as rt from '../richtext';
 import type { TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
-import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
+import { applyPrintedChange, applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf, shiftSpans } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
 import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
@@ -132,6 +132,10 @@ export class SiPreview {
   private writtenGen = 0;
   /** Fields being written now: a compile that comes waits. */
   private busy = false;
+  /** A write of the preview's own ended while typing still waited to be written (bumpWritten). */
+  private bumpPending = false;
+  /** The edit the last write that stored something was made at. */
+  private realGen = 0;
   /** Custom text taken out to nothing (and so out of the file): put back where it was if typed again. */
   private gone = new Map<string, CustomText>();
   /** The page chosen in the list. */
@@ -334,7 +338,7 @@ export class SiPreview {
     this.findAgain();
     v.redraw();
     this.comments.update();
-    if (this.shownGen >= this.editGen && this.shownWaiters.length) { const w = this.shownWaiters; this.shownWaiters = []; for (const go of w) go(); }
+    this.releaseShown();
   }
 
   /** The number of the last page shown (for the spectra's pages to go on from). */
@@ -659,19 +663,7 @@ export class SiPreview {
 
   /** The stretches after an edit of [start, end) by `delta` characters: the one edited (`into`) grows or shrinks. */
   private shift(start: number, end: number, delta: number, into: string | null): void {
-    const out: SourceSpan[] = [];
-    for (const s of this.spans) {
-      if (s.end <= start && !(into && s.src === into && s.end === start && !this.spans.some((x) => x.src === into && x.start <= start && start < x.end))) { out.push(s); continue; }
-      if (s.start >= end && !(into && s.src === into && s.start === end && s.end > end && start === end && !this.spans.some((x) => x.src === into && x.end === start))) {
-        out.push({ ...s, start: s.start + delta, end: s.end + delta });
-        continue;
-      }
-      // the stretch edited (or one the edit reaches into)
-      if (into && s.src === into) out.push({ ...s, end: Math.max(s.start, s.end + delta) });
-      else if (s.start >= start) out.push({ ...s, start: s.start + delta, end: s.end + delta });
-      else out.push({ ...s, end: Math.max(s.start, s.end + (s.end >= end ? delta : 0)) });
-    }
-    this.spans = out.filter((s) => s.end > s.start || isCustomSrc(s.src));
+    this.spans = shiftSpans(this.spans, start, end, delta, into);
     // (the pages' stretches and the custom text's places move along too: the wash and new custom text's places use them)
     const put = end - start + delta;
     const move = (x: number, edge: 'start' | 'end'): number => (x < start || (x === start && (edge === 'start' || end > start)) ? x : x >= end ? x + delta : edge === 'start' ? start : start + put);
@@ -696,9 +688,38 @@ export class SiPreview {
     const srcs = [...this.dirty];
     this.dirty.clear();
     this.busy = true;
-    try { await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
+    let wrote = true;
+    try { wrote = await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
     this.writtenGen = Math.max(this.writtenGen, gen);
+    if (this.bumpPending && !this.dirty.size && !this.fresh.size) { this.bumpPending = false; this.writtenGen = this.editGen; }
+    // (nothing to write, as a letter typed and taken out again: no compile follows, and the text
+    // shown is the stored text already, so commands waiting for it go ahead)
+    if (wrote) this.realGen = gen;
+    if (!wrote && gen === this.editGen && !this.dirty.size && !this.fresh.size) {
+      // (unless an earlier write's compile isn't shown yet: it would be dropped as older, so ask for a new one)
+      if (this.shownGen < this.realGen) this.api.refresh();
+      else { this.shownGen = Math.max(this.shownGen, gen); this.releaseShown(); }
+    }
     this.showWaiting();
+  }
+
+  /**
+   * After a write of the preview's own (formatting, Replace) begun at edit `gen0`: one edit more,
+   * and written, unless there was typing while it was saved (that isn't written yet: the
+   * compile after this write doesn't have it, so it isn't shown until the typing is written too).
+   */
+  private bumpWritten(gen0: number): void {
+    const typed = this.editGen !== gen0;
+    this.editGen++;
+    this.realGen = this.editGen;
+    // (typing already written while this one saved: all written; typing still to write: its write says so)
+    if (!typed || (!this.dirty.size && !this.fresh.size && !this.busy)) this.writtenGen = this.editGen;
+    else this.bumpPending = true;
+  }
+
+  /** Commands waiting for the stored text to be shown (ready()) go ahead, once it is. */
+  private releaseShown(): void {
+    if (this.shownGen >= this.editGen && this.shownWaiters.length) { const w = this.shownWaiters; this.shownWaiters = []; for (const go of w) go(); }
   }
 
   /** A compile that came while typing or writing, shown now (when nothing waits to be written). */
@@ -712,21 +733,30 @@ export class SiPreview {
   /** A write failed since the last compile shown: the next shows the stored text, whenever it was started. */
   private failed = false;
 
-  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown): Promise<void> {
+  /** Whether anything was written (or a write failed). */
+  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown): Promise<boolean> {
     const customs: { id: string; text: string }[] = [];
     let failed = false;
+    let wrote = false;
     for (const src of srcs) {
       if (isCustomSrc(src)) {
         customs.push({ id: customIdOf(src), text: spans.filter((s) => s.src === src).map((s) => text.slice(s.start, s.end)).join('') });
         continue;
       }
-      const before = this.written.get(src) ?? { printed: printedOf(this.base.text, this.base.spans, src).printed, raw: (await this.api.read(src, owner)) ?? '' };
+      let before = this.written.get(src);
+      if (!before) {
+        // (a field that can't be read now: said, and the stored text shown again)
+        let raw: string | null;
+        try { raw = await this.api.read(src, owner); } catch (e) {
+          failed = true;
+          this.api.flash(`Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);
+          continue;
+        }
+        before = { printed: printedOf(this.base.text, this.base.spans, src).printed, raw: raw ?? '' };
+      }
       const now = printedOf(text, spans, src).printed;
-      let pre = 0;
-      while (pre < before.printed.length && pre < now.length && before.printed[pre] === now[pre]) pre++;
-      let suf = 0;
-      while (suf < before.printed.length - pre && suf < now.length - pre && before.printed[before.printed.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
-      const next = applyToRaw(before.raw, before.printed, pre, before.printed.length - suf, now.slice(pre, now.length - suf), markupSrc(src));
+      // (each change on its own: two edits far apart in the field leave what is between them as stored)
+      const next = applyPrintedChange(before.raw, before.printed, now, markupSrc(src));
       if (next === null) {
         this.api.flash(`That change touches words Chemweave writes, so it wasn’t saved to ${this.api.labelOf(src)}. Change it on the SI page.`, 8000);
         failed = true;
@@ -734,6 +764,7 @@ export class SiPreview {
       }
       if (next === before.raw) continue;
       try {
+        wrote = true;
         await this.api.write(src, next, owner);
         this.written.set(src, { printed: now, raw: next });
       } catch (e) {
@@ -742,6 +773,7 @@ export class SiPreview {
       }
     }
     if (customs.length) {
+      wrote = true;
       // (the places of the new pieces written now; one typed since waits for its own write)
       const fresh = new Map([...this.fresh].filter(([id]) => customs.some((c) => c.id === id)));
       for (const id of fresh.keys()) this.fresh.delete(id);
@@ -765,6 +797,7 @@ export class SiPreview {
       this.failed = true;
       if (!this.waiting) this.api.refresh();
     }
+    return wrote || failed;
   }
 
   // ---------------------------------------------------------------- keys, pointer
@@ -1281,6 +1314,7 @@ export class SiPreview {
     if (this.dirty.size || this.fresh.size || this.shownGen < this.editGen) { this.api.flash('The Live Preview is still updating. Try again in a moment.'); return 0; }
     const f = this.file;
     const owner = this.owner, text = f.ed.text;
+    const gen0 = this.editGen;
     const spansNow = this.spans.map((x) => ({ ...x }));
     const printedCache = new Map<string, ReturnType<typeof printedOf>>();
     const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
@@ -1322,8 +1356,9 @@ export class SiPreview {
         if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
         return 0;
       }
+      // (the text shown was the stored text when this began, so the next write starts from the compile shown)
       for (const x of fields) this.written.delete(x.src);
-      this.editGen++; this.writtenGen = this.editGen;
+      this.bumpWritten(gen0);
     }
     const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
     const why = 'in a general procedure, typed in the Live Preview, or written by Chemweave (an ID, a heading)';
@@ -1418,6 +1453,7 @@ export class SiPreview {
     const owner = this.owner;
     const text = f.ed.text;
     const s = f.ed.start, e = f.ed.end;
+    const gen0 = this.editGen;
     // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
     const spansNow = this.spans.map((x) => ({ ...x }));
     const blocksNow = this.blocks.map((x) => ({ ...x }));
@@ -1476,9 +1512,10 @@ export class SiPreview {
         sideFile(src, printed, a, b);
         continue;
       }
-      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
-      // (a look put back in the field: an earlier piece taking it off there goes)
+      // (a look put back in the field: an earlier piece taking it off there goes; first, so the
+      // pieces for the words the program writes, put in next, stay)
       if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
+      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
     }
     if (!fields.length && !later.length) return false;
     const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
@@ -1488,9 +1525,10 @@ export class SiPreview {
       if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not save the formatting: ${err instanceof Error ? err.message : String(err)}`, 8000);
       return false;
     }
-    // (the fields' stored text has changed: typing next starts from it, and a compile started before isn't shown)
-    for (const x of fields) this.written.delete(x.src);
-    if (fields.length) { this.editGen++; this.writtenGen = this.editGen; }
+    // (the fields' stored text has changed: typing next starts from it, and a compile started before
+    // isn't shown; the printed text is as it was, as formatting doesn't change the words)
+    for (const x of fields) this.written.set(x.src, { printed: printedNow.get(x.src)!, raw: x.text });
+    if (fields.length) this.bumpWritten(gen0);
     // (the compile that follows the write shows it)
     return true;
   }
