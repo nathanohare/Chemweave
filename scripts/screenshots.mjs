@@ -117,12 +117,12 @@ if (want('modes')) {
   await page.waitForTimeout(600);
   await shot(page, 'document');
 
-  // Split view: the scheme beside the document
-  await page.evaluate(() => window.__app.command('split-view'));
+  // Split screen: the scheme beside the document (as if its tab were dragged down onto the window's right half)
+  await page.evaluate(async () => { const a = window.__app; const d = a.ws.tabs.find((t) => t.mode === 'drawing'); if (d) await a.splitDrop(d, 'right'); });
   await page.waitForTimeout(1200);
   await page.evaluate(() => { window.__app.editor.clearSelection(); window.__app.editor.fit(); });
   await shot(page, 'split-view');
-  await page.evaluate(() => window.__app.command('split-view'));
+  await page.evaluate(() => window.__app.command('close-split'));
   await page.waitForTimeout(600);
 
   // References: the document cites the literature from its own list (References > Manage References)

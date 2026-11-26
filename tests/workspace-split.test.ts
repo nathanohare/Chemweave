@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 //
-// The shell around split view and tabs: a structure drawn for a figure or cell in place of the
-// drawing beside, closing tabs, Reload / Restore Version with other windows open, and the drawing
+// The shell around split screen and tabs: a structure drawn for a figure or cell in place of the
+// canvas beside, closing tabs, Reload / Restore Version with other windows open, and the drawing
 // that takes the last tab's place.
 
 import { describe, it, expect, vi } from 'vitest';
@@ -28,15 +28,15 @@ function workspace(extra: Partial<WorkspaceHooks> = {}) {
 
 const nodes = (data: Uint8Array) => (new TextDecoder().decode(data).match(/<n /g) ?? []).length;
 
-describe('split view while a figure or cell structure is drawn', () => {
+describe('split screen while a figure or cell structure is drawn', () => {
   it('leaves the drawing beside unchanged, unmarked and saved as it was', async () => {
     const { ws, host } = workspace();
     const d = ws.active;
     host.edit('draw', () => { host.addAtom(0, 0); host.addAtom(20, 0); host.addAtom(40, 0); });
     ws.noteChange();
     d.dirty = false;
-    ws.newDocument();
-    ws.setPartner(d);
+    const w = ws.newDocument();
+    ws.setSplit({ left: w, right: d });
     expect(ws.pane).toBe(d);
     // what the app does for Insert > Structure: the figure takes the drawing's place in the app's document
     const saved = new Doc();
@@ -58,14 +58,69 @@ describe('split view while a figure or cell structure is drawn', () => {
   });
 });
 
+describe('split screen of any two tabs', () => {
+  it('keeps a canvas beside a document live, and any other pair as two tabs with no canvas lent', () => {
+    const { ws, host } = workspace();
+    const d = ws.active;
+    // (a canvas with something on it: a new file takes an empty one's place)
+    host.edit('draw', () => host.addAtom(0, 0));
+    ws.noteChange();
+    const w = ws.newDocument();
+    ws.setSplit({ left: d, right: w });
+    expect(ws.besideOf(w)).toBe(d);
+    expect(ws.besideOf(d)).toBe(w);
+    expect(ws.pane).toBe(d);
+    // a deck beside the document: neither uses the other's drawing area
+    const s = ws.newSlides();
+    ws.activate(w);
+    ws.setSplit({ left: s, right: w });
+    expect(ws.pane).toBeNull();
+    expect(ws.besideOf(s)).toBe(w);
+    expect(ws.besideOf(d)).toBeNull();
+    // two canvases
+    const d2 = ws.newDrawing();
+    ws.setSplit({ left: d, right: d2 });
+    expect(ws.pane).toBeNull();
+    expect(ws.besideOf(d2)).toBe(d);
+  });
+
+  it('shows the canvas beside a document again on coming back to the document', () => {
+    const { ws, host } = workspace();
+    const d = ws.active;
+    host.edit('draw', () => host.addAtom(0, 0));
+    ws.noteChange();
+    const w = ws.newDocument();
+    ws.setSplit({ left: w, right: d });
+    const s = ws.newSlides();
+    expect(ws.active).toBe(s);
+    // another tab shows on its own: the canvas is back in its own tab
+    expect(ws.pane).toBeNull();
+    expect(ws.split).not.toBeNull();
+    ws.activate(w);
+    expect(ws.pane).toBe(d);
+  });
+
+  it('refuses a tab beside itself or a tab not open', () => {
+    const { ws } = workspace();
+    const d = ws.active;
+    ws.setSplit({ left: d, right: d });
+    expect(ws.split).toBeNull();
+    const w = ws.newDocument();
+    ws.setSplit({ left: w, right: { ...d, id: 999 } });
+    expect(ws.split).toBeNull();
+  });
+});
+
 describe('closing tabs', () => {
   it('lets the app finish what is being drawn before any tab closes', async () => {
     const closing = vi.fn();
     const { ws } = workspace({ closing });
     const d = ws.active;
-    ws.newDocument();
-    ws.setPartner(d);
+    const w = ws.newDocument();
+    ws.setSplit({ left: w, right: d });
     await ws.close(d);
+    expect(ws.split).toBeNull();
+    expect(ws.pane).toBeNull();
     expect(closing).toHaveBeenCalledWith(d);
   });
 
