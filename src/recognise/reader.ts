@@ -8,6 +8,7 @@ import type { RecogniseRequest, RecogniseResponse } from '../worker/recognise-wo
 import type { ReadGraph, Vocab } from './molscribe';
 import type { Pixels } from './picture';
 import { aiAsk, type AiPrefs } from '../ai/link';
+import { parseDecoded } from './native-read';
 
 /** The release the model pack is published as (.github/workflows/recognition-model.yml). */
 export const PACK = 'recognition-model-1';
@@ -39,13 +40,13 @@ export async function cancelPack(): Promise<void> {
 
 /** One structure read from a picture: the drawing's atoms and bonds, or SMILES (an AI model's answer). */
 export type ReadResult =
-  | { kind: 'graph'; graph: ReadGraph; w: number; h: number; ms: number; /** Of `ms`, the picture's encoder, and where it ran. */ encodeMs?: number; engine?: Engine }
+  | { kind: 'graph'; graph: ReadGraph; w: number; h: number; ms: number; /** Of `ms`, the model's share, and where it ran. */ modelMs?: number; engine?: Engine }
   | { kind: 'smiles'; smiles: string; note: string; ms: number };
 
-/** Where the picture's encoder runs: native ONNX Runtime in the desktop app, or WebAssembly in the worker. */
+/** Where the model runs: native ONNX Runtime in the desktop app, or WebAssembly in the worker. */
 export type Engine = 'native' | 'wasm';
 
-/** The native encoder failed: read again with the WebAssembly one. */
+/** The native reader failed: read again with the WebAssembly one. */
 class NativeFailure extends Error {}
 
 export class LocalReader {
@@ -53,11 +54,11 @@ export class LocalReader {
   private loading: Promise<void> | null = null;
   private nextId = 1;
   private pending = new Map<number, { ok: (r: Extract<RecogniseResponse, { type: 'read' }>) => void; fail: (e: Error) => void }>();
-  /** Whether to try the native encoder (src-tauri/src/recognise_native.rs) before the WebAssembly one. */
+  /** Whether to try the native reader (src-tauri/src/recognise_native.rs) before the WebAssembly one. */
   private tryNative: boolean;
-  /** Where the encoder runs once loaded. */
+  /** Where the model runs once loaded. */
   engine: Engine | null = null;
-  /** Why the native encoder isn't used, when it isn't. */
+  /** Why the native reader isn't used, when it isn't. */
   nativeProblem = '';
 
   constructor(opts: { native?: boolean } = {}) {
@@ -70,8 +71,8 @@ export class LocalReader {
     this.loading = (async () => {
       const native = this.tryNative && (await invoke('recognise_native_ready', { pack: PACK }).then(() => true, (e) => { this.nativeProblem = String(e); return false; }));
       const file = async (name: string) => invoke<ArrayBuffer>('pack_read', { pack: PACK, name });
-      // the encoder is most of the pack (124 MB): not read into the worker when it runs natively
-      const [encoder, step, edges, wasm, vocabBytes] = await Promise.all([native ? null : 'encoder.onnx', 'step.onnx', 'edges.onnx', 'ort-wasm-simd-threaded.wasm', 'vocab.json'].map((n) => (n ? file(n) : null)));
+      // the encoder and decoder are most of the pack (135 MB): not read into the worker when they run natively
+      const [encoder, step, edges, wasm, vocabBytes] = await Promise.all([native ? null : 'encoder.onnx', native ? null : 'step.onnx', 'edges.onnx', 'ort-wasm-simd-threaded.wasm', 'vocab.json'].map((n) => (n ? file(n) : null)));
       const vocab = JSON.parse(new TextDecoder().decode(vocabBytes!)) as Vocab;
       // Vite's development server can only serve workers that use `import` as modules
       const w = import.meta.env.DEV
@@ -85,8 +86,8 @@ export class LocalReader {
           else if (m.type === 'error') reject(new Error(m.message));
         };
         w.onerror = (e) => reject(new Error('The structure reader could not start: ' + (e.message || 'unknown error')));
-        const msg: RecogniseRequest = { type: 'init', encoder, step: step!, edges: edges!, wasm: wasm!, vocab, loader: new URL('ort-wasm-simd-threaded.mjs', document.baseURI).href };
-        w.postMessage(msg, [encoder, step!, edges!, wasm!].filter((b): b is ArrayBuffer => !!b));
+        const msg: RecogniseRequest = { type: 'init', encoder, step, edges: edges!, wasm: wasm!, vocab, loader: new URL('ort-wasm-simd-threaded.mjs', document.baseURI).href };
+        w.postMessage(msg, [encoder, step, edges!, wasm!].filter((b): b is ArrayBuffer => !!b));
       });
       this.engine = native ? 'native' : 'wasm';
     })();
@@ -95,7 +96,7 @@ export class LocalReader {
   }
 
   private receive(w: Worker, m: RecogniseResponse): void {
-    if (m.type === 'encode') { void this.encodeNatively(w, m.req, m.image); return; }
+    if (m.type === 'decode') { void this.decodeNatively(w, m.req, m.rgba); return; }
     if (m.type === 'ready' || m.id === undefined) return;
     const p = this.pending.get(m.id);
     if (!p) return;
@@ -104,23 +105,22 @@ export class LocalReader {
     else p.fail(m.native ? new NativeFailure(m.message) : new Error(m.message));
   }
 
-  /** A picture the worker sent to encode natively: its keys and values go back to it, or why not. */
-  private async encodeNatively(w: Worker, req: number, image: Float32Array): Promise<void> {
+  /** A picture the worker sent to read natively: what the decoder wrote goes back to it, or why not. */
+  private async decodeNatively(w: Worker, req: number, rgba: Uint8ClampedArray): Promise<void> {
     let answer: RecogniseRequest;
     try {
-      const out = new Float32Array(await invoke<ArrayBuffer>('recognise_encode', new Uint8Array(image.buffer, image.byteOffset, image.byteLength), { headers: { pack: PACK } }));
-      const half = out.length / 2;
-      answer = { type: 'encoded', req, ck: out.slice(0, half), cv: out.slice(half) };
+      const d = parseDecoded(await invoke<ArrayBuffer>('recognise_decode', new Uint8Array(rgba.buffer, rgba.byteOffset, rgba.byteLength), { headers: { pack: PACK } }));
+      answer = { type: 'decoded', req, ...d };
     } catch (e) {
-      answer = { type: 'encoded', req, error: String(e) };
+      answer = { type: 'decoded', req, error: e instanceof Error ? e.message : String(e) };
     }
-    w.postMessage(answer, answer.ck && answer.cv ? [answer.ck.buffer, answer.cv.buffer] : []);
+    w.postMessage(answer, answer.seq && answer.scores && answer.hidden ? [answer.seq.buffer, answer.scores.buffer, answer.hidden.buffer] : []);
   }
 
-  /** Give up on the native encoder for this session: the worker starts again with the WebAssembly one. */
+  /** Give up on the native reader for this session: the worker starts again with the WebAssembly one. */
   private useWasm(why: string): void {
     this.tryNative = false;
-    // the native encoder's memory isn't needed any more
+    // the native model's memory isn't needed any more
     void invoke('recognise_native_release').catch(() => {});
     this.nativeProblem = why;
     this.engine = null;
@@ -151,7 +151,7 @@ export class LocalReader {
         const msg: RecogniseRequest = { type: 'read', id, pixels };
         this.worker!.postMessage(msg);
       });
-      return { kind: 'graph', graph: r.graph, w: r.w, h: r.h, ms: r.ms, encodeMs: r.encodeMs, engine };
+      return { kind: 'graph', graph: r.graph, w: r.w, h: r.h, ms: r.ms, modelMs: r.modelMs, engine };
     } catch (e) {
       if (!(e instanceof NativeFailure)) throw e;
       if (this.tryNative) {

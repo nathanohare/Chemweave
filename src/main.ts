@@ -17928,14 +17928,14 @@ async function selfTestReader(): Promise<Record<string, unknown>> {
     for (const native of [true, false]) {
       const reader = new LocalReader({ native });
       try {
-        const runs: { ms: number; encodeMs?: number; smiles: string }[] = [];
+        const runs: { ms: number; modelMs?: number; smiles: string }[] = [];
         let firstMs = 0;
         for (let i = 0; i < 4; i++) {
           const t0 = performance.now();
           const r = await reader.read(pixels);
           // the first picture's whole wait, model loading included
           if (i === 0) firstMs = performance.now() - t0;
-          if (r.kind === 'graph') runs.push({ ms: r.ms, encodeMs: r.encodeMs, smiles: r.graph.smiles });
+          if (r.kind === 'graph') runs.push({ ms: r.ms, modelMs: r.modelMs, smiles: r.graph.smiles });
         }
         const warm = runs.slice(1);
         out[native ? 'native' : 'wasm'] = {
@@ -17943,7 +17943,8 @@ async function selfTestReader(): Promise<Record<string, unknown>> {
           problem: reader.nativeProblem || undefined,
           firstReadWithLoadMs: Math.round(firstMs),
           readMedianMs: stat(warm.map((r) => r.ms)).med,
-          encodeMedianMs: stat(warm.map((r) => r.encodeMs ?? 0)).med,
+          // natively the encoder and decoder; in WebAssembly the encoder only
+          modelMedianMs: stat(warm.map((r) => r.modelMs ?? 0)).med,
           smiles: runs[0]?.smiles,
         };
       } finally {

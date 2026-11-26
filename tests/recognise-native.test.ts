@@ -1,8 +1,8 @@
 // @vitest-environment jsdom
 //
-// The structure reader's picture encoder runs natively in the desktop app when it can
-// (src-tauri/src/recognise_native.rs), and the reader falls back to the WebAssembly encoder when
-// the native one isn't there or fails, without losing the picture being read. The desktop
+// The structure reader's model runs natively in the desktop app when it can
+// (src-tauri/src/recognise_native.rs), and the reader falls back to WebAssembly when the native
+// one isn't there or fails, without losing the picture being read. The desktop
 // commands and the worker are stood in for here.
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
@@ -19,10 +19,15 @@ vi.mock('@tauri-apps/api/core', () => ({
       if (!nativeReady) throw 'This copy of the app has no onnxruntime.dll.';
       return null;
     }
-    if (cmd === 'recognise_encode') {
-      if (nativeEncodeFails) throw 'The encoder failed: out of memory';
-      // keys then values: 2 × (layers 1 × heads 1 × 1 token × dk 2)
-      return new Float32Array([1, 2, 3, 4]).buffer;
+    if (cmd === 'recognise_decode') {
+      if (nativeEncodeFails) throw 'The reader failed: out of memory';
+      // 2 tokens, hidden size 2: tokens, scores, hidden states
+      const b = new DataView(new ArrayBuffer(8 + 8 * 2 + 4 * 4));
+      b.setUint32(0, 2, true); b.setUint32(4, 2, true);
+      b.setInt32(8, 7, true); b.setInt32(12, 2, true);
+      b.setFloat32(16, -0.5, true); b.setFloat32(20, -0.25, true);
+      [1, 2, 3, 4].forEach((x, i) => b.setFloat32(24 + 4 * i, x, true));
+      return b.buffer;
     }
     if (cmd === 'pack_read') {
       const name = (args as { name: string }).name;
@@ -40,19 +45,19 @@ class FakeWorker {
   onerror: ((e: { message: string }) => void) | null = null;
   native = false;
   terminated = false;
-  encodedFromPage: unknown[] = [];
-  private waiting: ((m: { ck?: Float32Array; error?: string }) => void) | null = null;
+  decodedFromPage: unknown[] = [];
+  private waiting: ((m: { seq?: Int32Array; error?: string }) => void) | null = null;
   constructor() { FakeWorker.started.push(this); }
   private send(data: unknown) { setTimeout(() => { if (!this.terminated) this.onmessage?.({ data }); }, 0); }
-  postMessage(m: { type: string; id?: number; encoder?: ArrayBuffer | null; req?: number; ck?: Float32Array; error?: string }) {
-    if (m.type === 'init') { this.native = !m.encoder; this.send({ type: 'ready', ms: 1 }); return; }
-    if (m.type === 'encoded') { this.encodedFromPage.push(m); this.waiting?.(m); return; }
+  postMessage(m: { type: string; id?: number; encoder?: ArrayBuffer | null; step?: ArrayBuffer | null; req?: number; seq?: Int32Array; error?: string }) {
+    if (m.type === 'init') { this.native = !m.encoder && !m.step; this.send({ type: 'ready', ms: 1 }); return; }
+    if (m.type === 'decoded') { this.decodedFromPage.push(m); this.waiting?.(m); return; }
     if (m.type === 'read') {
       const id = m.id!;
-      const done = (smiles: string) => this.send({ type: 'read', id, graph: { smiles, symbols: [], coords: [], edges: [], atomScores: [], confidence: 1 }, w: 10, h: 10, ms: 50, encodeMs: 20 });
+      const done = (smiles: string) => this.send({ type: 'read', id, graph: { smiles, symbols: [], coords: [], edges: [], atomScores: [], confidence: 1 }, w: 10, h: 10, ms: 50, modelMs: 20 });
       if (!this.native) { done('wasm'); return; }
-      this.waiting = (a) => (a.ck ? done('native') : this.send({ type: 'error', id, message: a.error, native: true }));
-      this.send({ type: 'encode', req: 1, image: new Float32Array(3 * 2 * 2) });
+      this.waiting = (a) => (a.seq ? done('native') : this.send({ type: 'error', id, message: a.error, native: true }));
+      this.send({ type: 'decode', req: 1, rgba: new Uint8ClampedArray(2 * 2 * 4) });
     }
   }
   terminate() { this.terminated = true; }
@@ -71,22 +76,25 @@ beforeEach(() => {
   nativeEncodeFails = false;
 });
 
-describe('structure reader: native encoder', () => {
-  it('encodes natively, sending the picture as bytes, and never reads the encoder into the worker', async () => {
+describe('structure reader: native model', () => {
+  it('reads natively, sending the pixels as bytes, and never reads the encoder or decoder into the worker', async () => {
     const r = new LocalReader();
     const got = await r.read(pixels);
-    expect(got).toMatchObject({ kind: 'graph', engine: 'native', encodeMs: 20 });
+    expect(got).toMatchObject({ kind: 'graph', engine: 'native', modelMs: 20 });
     expect(got.kind === 'graph' && got.graph.smiles).toBe('native');
     expect(r.engine).toBe('native');
     expect(readFiles()).not.toContain('encoder.onnx');
-    const enc = asked('recognise_encode')[0];
-    expect(enc.args).toBeInstanceOf(Uint8Array);
-    expect((enc.args as Uint8Array).byteLength).toBe(3 * 2 * 2 * 4);
-    expect(enc.opts).toEqual({ headers: { pack: 'recognition-model-1' } });
-    // keys and values split in half for the worker
-    const back = FakeWorker.started[0].encodedFromPage[0] as { ck: Float32Array; cv: Float32Array };
-    expect([...back.ck]).toEqual([1, 2]);
-    expect([...back.cv]).toEqual([3, 4]);
+    expect(readFiles()).not.toContain('step.onnx');
+    const dec = asked('recognise_decode')[0];
+    expect(dec.args).toBeInstanceOf(Uint8Array);
+    expect((dec.args as Uint8Array).byteLength).toBe(2 * 2 * 4);
+    expect(dec.opts).toEqual({ headers: { pack: 'recognition-model-1' } });
+    // the desktop app's answer, unpacked for the worker
+    const back = FakeWorker.started[0].decodedFromPage[0] as { seq: Int32Array; scores: Float32Array; hidden: Float32Array; dim: number };
+    expect([...back.seq]).toEqual([7, 2]);
+    expect([...back.scores]).toEqual([-0.5, -0.25]);
+    expect([...back.hidden]).toEqual([1, 2, 3, 4]);
+    expect(back.dim).toBe(2);
   });
 
   it('uses the WebAssembly encoder when the native one is not there', async () => {
@@ -97,7 +105,8 @@ describe('structure reader: native encoder', () => {
     expect(r.engine).toBe('wasm');
     expect(r.nativeProblem).toMatch(/no onnxruntime\.dll/);
     expect(readFiles()).toContain('encoder.onnx');
-    expect(asked('recognise_encode')).toHaveLength(0);
+    expect(readFiles()).toContain('step.onnx');
+    expect(asked('recognise_decode')).toHaveLength(0);
   });
 
   it('reads the picture again with the WebAssembly encoder when the native one fails', async () => {
@@ -115,7 +124,7 @@ describe('structure reader: native encoder', () => {
     calls.length = 0;
     const again = await r.read(pixels);
     expect(again.kind === 'graph' && again.graph.smiles).toBe('wasm');
-    expect(asked('recognise_encode')).toHaveLength(0);
+    expect(asked('recognise_decode')).toHaveLength(0);
     expect(asked('recognise_native_ready')).toHaveLength(0);
   });
 
