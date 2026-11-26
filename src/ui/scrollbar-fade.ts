@@ -24,12 +24,14 @@ export function nearBar(r: { left: number; top: number; right: number; bottom: n
 export class InUse {
   private timer: ReturnType<typeof setTimeout> | null = null;
   on = false;
+  /** Held full (a thumb being dragged, even when held still): the wait doesn't turn it thin. */
+  held = false;
   constructor(private set: (on: boolean) => void, private idle = SCROLLBAR_IDLE_MS) {}
 
   /** Something happened: full now, thin `idle` ms after the last one. */
   poke(): void {
     if (this.timer) clearTimeout(this.timer);
-    this.timer = setTimeout(() => this.off(), this.idle);
+    this.timer = setTimeout(() => { if (this.held) this.poke(); else this.off(); }, this.idle);
     if (!this.on) { this.on = true; this.set(true); }
   }
 
@@ -81,7 +83,8 @@ export function installScrollbarFade(doc: Document = document): void {
   // a pane scrolling (the wheel, the keyboard, a drag of its thumb, a jump to an item)
   doc.addEventListener('scroll', (e) => {
     const t = e.target;
-    if (t instanceof Element) mark(t);
+    // (a text box scrolling its text, or a pane scrolled by the program with no bar, has nothing to grow)
+    if (t instanceof Element) { if (!(t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement) && (t.scrollHeight > t.clientHeight + 1 || t.scrollWidth > t.clientWidth + 1)) mark(t); }
     else if (t === doc && doc.scrollingElement) mark(doc.scrollingElement);
   }, { capture: true, passive: true });
   // the pointer near a pane's bar: checked at most once a frame, on the panes round the pointer

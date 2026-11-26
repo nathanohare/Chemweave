@@ -594,11 +594,15 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 .scrollbar-h { left: 0; right: 12px; bottom: 0; height: 12px; border-top: 1px solid transparent; }
 .scrollbar-v { top: 0; bottom: 12px; right: 0; width: 12px; border-left: 1px solid transparent; }
 .scrollbar.sb-full { background: rgba(120, 130, 150, 0.08); border-color: rgba(120, 130, 150, 0.18); }
-.scroll-thumb { position: absolute; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); transition: clip-path var(--m-std) var(--ease-out); }
-.scrollbar-h .scroll-thumb { top: 2px; bottom: 2px; left: 0; clip-path: inset(5px 0 0 0 round 2px); }
-.scrollbar-v .scroll-thumb { left: 2px; right: 2px; top: 0; clip-path: inset(0 0 0 5px round 2px); }
-.scrollbar.sb-full .scroll-thumb { clip-path: inset(0 round var(--r-control)); }
-.scroll-thumb:hover, .scroll-thumb.dragging { background: rgba(70, 80, 100, 0.6); }
+.scroll-thumb { position: absolute; }
+/* (the thin look is drawn by ::before, so the whole thumb stays there to grab while it is thin) */
+.scroll-thumb::before { content: ''; position: absolute; inset: 0; border-radius: var(--r-control); background: rgba(90, 100, 120, 0.38); transition: clip-path var(--m-std) var(--ease-out), background-color var(--m-std) var(--ease-out); }
+.scrollbar-h .scroll-thumb { top: 2px; bottom: 2px; left: 0; }
+.scrollbar-v .scroll-thumb { left: 2px; right: 2px; top: 0; }
+.scrollbar-h .scroll-thumb::before { clip-path: inset(5px 0 0 0 round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar-v .scroll-thumb::before { clip-path: inset(0 0 0 5px round 2px); background: rgba(90, 100, 120, 0.6); }
+.scrollbar.sb-full .scroll-thumb::before { clip-path: inset(0 round var(--r-control)); background: rgba(90, 100, 120, 0.38); }
+.scrollbar .scroll-thumb:hover::before, .scrollbar .scroll-thumb.dragging::before { background: rgba(70, 80, 100, 0.6); }
 
 /* the page's own scroll bars (documents, spreadsheets, SI pages, panels, lists): the same room
    always (nothing moves when a bar grows), a thin thumb drawn inside it until the pane is in use

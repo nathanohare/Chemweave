@@ -27,11 +27,18 @@ describe('scroll bars thin until in use', () => {
     u.poke();
     u.off(); // the pointer left the pane
     expect(seen).toEqual([true, false, true, false]);
+    // a thumb held still while dragged stays full, and goes thin the usual time after it is let go
+    u.poke(); u.held = true;
+    vi.advanceTimersByTime(SCROLLBAR_IDLE_MS * 3);
+    expect(u.on).toBe(true);
+    u.held = false;
+    vi.advanceTimersByTime(SCROLLBAR_IDLE_MS + 10);
+    expect(u.on).toBe(false);
     vi.useRealTimers();
   });
   it('the Canvas bars change thickness at the shared motion timings (none when Animations are Off)', () => {
     const css = readFileSync(join(__dirname, '..', 'src/app.css'), 'utf8');
-    const thumb = css.match(/^\.scroll-thumb \{[^}]*\}/m)![0];
+    const thumb = css.match(/^\.scroll-thumb::before \{[^}]*\}/m)![0];
     expect(thumb).toContain('var(--m-std)');
     expect(thumb).not.toMatch(/\d+m?s\b/);
   });

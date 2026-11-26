@@ -178,6 +178,9 @@ export class Scrollbars {
       if (nearBar(box, e.clientX, e.clientY, !this.v.hidden, !this.h.hidden)) this.use.poke();
     }, { passive: true });
     host.addEventListener('pointerenter', () => { this.inside = true; box = null; }, { passive: true });
+    // a finger has no pointer to come near the bars: they grow when it touches the drawing (and stay
+    // full a while, so the thumb is there to grab)
+    host.addEventListener('pointerdown', (e) => { if (e.pointerType === 'touch') this.use.poke(); }, { capture: true, passive: true });
     host.addEventListener('pointerleave', () => { this.inside = false; if (!this.dragging) this.use.off(); }, { passive: true });
   }
 
@@ -220,6 +223,7 @@ export class Scrollbars {
       thumb.setPointerCapture(e.pointerId);
       this.frozen = this.range;
       this.dragging = true;
+      this.use.held = true;
       this.use.poke();
       thumb.classList.add('dragging');
       let last = axis === 'h' ? e.clientX : e.clientY;
@@ -242,6 +246,7 @@ export class Scrollbars {
         thumb.removeEventListener('pointercancel', up);
         thumb.classList.remove('dragging');
         this.dragging = false;
+        this.use.held = false;
         if (this.inside) this.use.poke(); else this.use.off();
         this.frozen = null;
         this.key = '';
