@@ -2268,6 +2268,29 @@ class DocxReader {
     return false;
   }
 
+  /** Whether a field has text before it in its paragraph (read so far) or after its end there. */
+  private amidText(f: Field, ctx: Ctx, simple?: Element): boolean {
+    if (ctx.pieces.some((pc) => pc.runs.some((r) => r.text.trim()))) return true;
+    const hasText = (el: Element) => Array.from(el.getElementsByTagNameNS('*', 't')).some((t) => t.textContent?.trim());
+    if (simple) {
+      for (let el = simple.nextElementSibling; el; el = el.nextElementSibling) if (hasText(el)) return true;
+      return false;
+    }
+    // (after the field's end, in the same paragraph: plainResult has checked the end is there)
+    const sep = f.sep, own = sep?.parentElement;
+    if (!sep || !own) return false;
+    let ended = false;
+    for (let el: Element | null = own; el; el = el.nextElementSibling) {
+      if (ended) { if (hasText(el)) return true; continue; }
+      const ks = kids(el);
+      for (let i = el === own ? ks.indexOf(sep) + 1 : 0; i < ks.length; i++) {
+        if (ended && ks[i].localName === 't' && ks[i].textContent?.trim()) return true;
+        if (ks[i].localName === 'fldChar' && this.a(ks[i], 'fldCharType') === 'end') ended = true;
+      }
+    }
+    return false;
+  }
+
   /** How a field's result looks: its first run of text after the separator, in the same paragraph. */
   private resultLook(sep: Element, ctx: Ctx): RProps | undefined {
     const own = sep.parentElement;
@@ -2317,6 +2340,14 @@ class DocxReader {
       const pc = this.piece(ctx);
       if (xe) (pc.xe ??= []).push(xe);
       if (ta) (pc.ta ??= []).push(ta);
+      return;
+    }
+    // a list field (contents, figures, an index, authorities) in the middle of a paragraph's text, its
+    // result in that paragraph: kept in its place as Word had it, showing that result, not made a list
+    // of paragraphs of its own (office sampler F-W-016)
+    if (/^(TOC|INDEX|TOA)\b/i.test(ins) && !ctx.cell && !f.inner && this.plainResult(f, simple) && this.amidText(f, ctx, simple)) {
+      const id = this.emitObject(ctx, { kind: 'field', code: 'word', instr: f.instr, text: '' }, f.shown ?? f.props);
+      if (id !== null) { f.kept = id; f.swallow = true; }
       return;
     }
     // an index or a table of authorities: ours again, its lines (Word's last update) left out, as they are worked out here
