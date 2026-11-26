@@ -142,9 +142,11 @@ export class EmbeddedFont {
   scaleFor(text: string, widths: number[], size: number): number {
     let want = 0, own = 0;
     [...text].forEach((ch, i) => {
-      if (/\s/.test(ch)) return;
+      // (not spaces, nor what this font hasn't got: drawn with another)
+      const gid = this.font.glyph(ch.codePointAt(0)!);
+      if (/\s/.test(ch) || !gid) return;
       want += widths[i] ?? 0;
-      own += (this.font.width(this.font.glyph(ch.codePointAt(0)!)) * size) / 1000;
+      own += (this.font.width(gid) * size) / 1000;
     });
     if (own <= 0 || want <= 0) return 1;
     const r = want / own;

@@ -10,6 +10,7 @@ import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
 import { hasKana, type FallbackFile, type PdfFallbackSource } from './pdf-fallback';
 import { visualText } from '../text/bidi';
+import { fontKind } from '../text/font-measure';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -512,6 +513,15 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         const extra = await fallbackFonts(text, own);
         // (letters scaled to the widths the text was laid out with: Tz, kept until changed within the item)
         let tz = 100;
+        // a face drawn in place of the font the text was measured with: not one with published widths
+        // (Arial, Times, Calibri... whose stand-ins have the same), not the font itself, not a fallback
+        // font for characters the face lacks; its letters scaled once for the whole item
+        const ownFace = (f: EmbeddedFont) => own.includes(f);
+        const sameName = (f: EmbeddedFont) => f.font.postScriptName.toLowerCase().replace(/[^a-z0-9]/g, '').startsWith(it.family.toLowerCase().replace(/[^a-z0-9]/g, ''));
+        // (Carlito and Caladea have Calibri's and Cambria's widths)
+        const exact = (f: EmbeddedFont) => /^(calibri|cambria)$/i.test(it.family.trim()) && /^(carlito|caladea)/i.test(f.font.postScriptName);
+        const standIn = (f: EmbeddedFont) => ownFace(f) && fontKind(it.family) === null && !sameName(f) && !exact(f);
+        let itemScale: number | undefined;
         const show = (f: string, dx: number, s: string, scale = 1) => {
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
@@ -524,7 +534,7 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         };
         for (const piece of keptPieces(text, seenText.widths, own, extra)) {
           if (piece.font) {
-            const sc = piece.font.scaleFor(piece.text, piece.widths, it.size);
+            const sc = standIn(piece.font) ? (itemScale ??= piece.font.scaleFor(text, seenText.widths, it.size)) : 1;
             show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size, sc), sc);
           }
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));

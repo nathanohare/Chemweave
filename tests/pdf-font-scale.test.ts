@@ -8,6 +8,7 @@ import { readFileSync } from 'node:fs';
 import { writePdf } from '../src/io/pdf';
 import { TrueType } from '../src/io/pdf-fonts';
 import { woffToSfnt } from '../src/io/font-embed';
+import { publishedAdvances } from '../src/text/font-measure';
 
 const arimo = woffToSfnt(new Uint8Array(readFileSync('node_modules/@fontsource/arimo/files/arimo-latin-400-normal.woff')));
 const tt = new TrueType(arimo);
@@ -47,6 +48,13 @@ describe('a stand-in font in a PDF', () => {
     const j = page(await pdfOf([{ text: 'a b c', widths: w, family: 'Arial' }]));
     expect(j).not.toContain('Tz');
     expect(j).toMatch(/TJ/);
+  });
+
+  it('never scales a font whose stand-in has its widths (Arial: Arimo), kerned pairs moved as before (review)', async () => {
+    for (const word of ['Table', 'AV', 'T.', 'Yes,', '11']) {
+      const c = page(await pdfOf([{ text: word, widths: publishedAdvances(word, 12, 'sans', false, false)!, family: 'Arial' }]));
+      expect(c, word).not.toContain('Tz');
+    }
   });
 
   it('puts the scaling back for the next text', async () => {
