@@ -43,6 +43,9 @@ const CORE_PARTS = ['app', 'event', 'image', 'menu', 'path', 'resources', 'tray'
 const BUILT_IN: { pattern: RegExp; command: string }[] = [
   // wry's macOS and Linux webviews have no print of their own; Tauri sends window.print() here
   { pattern: /\bwindow\.print\s*\(/, command: 'plugin:webview|print' },
+  // Tauri's drag.js: a mousedown on a data-tauri-drag-region moves the window, a double click maximizes it
+  { pattern: /data-tauri-drag-region/, command: 'plugin:window|start_dragging' },
+  { pattern: /data-tauri-drag-region/, command: 'plugin:window|internal_toggle_maximize' },
 ];
 
 type Unit = { invokes: Set<string>; calls: string[][] };

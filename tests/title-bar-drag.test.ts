@@ -1,0 +1,92 @@
+// @vitest-environment jsdom
+//
+// With View ▸ Window and Colors ▸ Title Bar in Menu Bar on, the empty parts of the menu bar move
+// the window. On a Mac (2026-11-26) most gaps did nothing: a bare data-tauri-drag-region works
+// only where that element itself is clicked, and the gaps belong to the groups inside the row (the
+// menus, the Quick Access Toolbar, the open files' strip). The rows now use "deep", and the menus
+// that drop down from the bar opt out.
+
+import { describe, it, expect, vi, beforeAll } from 'vitest';
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+
+vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => true, invoke: async () => undefined }));
+vi.mock('@tauri-apps/api/window', () => {
+  const none = async () => () => {};
+  const w = {
+    setDecorations: async () => {}, isMaximized: async () => false, onResized: none, onMoved: none, onScaleChanged: none,
+    innerPosition: async () => ({ x: 0, y: 0 }), innerSize: async () => ({ width: 0, height: 0 }),
+    minimize: async () => {}, toggleMaximize: async () => {}, close: async () => {},
+  };
+  return { getCurrentWindow: () => w, availableMonitors: async () => [] };
+});
+
+/**
+ * Tauri's own test of whether a mousedown moves the window: isDragRegion in
+ * crates/tauri/src/window/scripts/drag.js at tag tauri-v2.12.3 (the version in Cargo.lock),
+ * https://github.com/tauri-apps/tauri/blob/tauri-v2.12.3/crates/tauri/src/window/scripts/drag.js
+ */
+const CLICKABLE_TAGS = new Set(['A', 'BUTTON', 'INPUT', 'SELECT', 'TEXTAREA', 'LABEL', 'SUMMARY']);
+const INTERACTIVE_ROLES = new Set(['button', 'link', 'menuitem', 'tab', 'checkbox', 'radio', 'switch', 'option']);
+function isClickable(el: HTMLElement): boolean {
+  return CLICKABLE_TAGS.has(el.tagName)
+    || (el.hasAttribute('contenteditable') && el.getAttribute('contenteditable') !== 'false')
+    || (el.hasAttribute('tabindex') && el.getAttribute('tabindex') !== '-1')
+    || INTERACTIVE_ROLES.has(el.getAttribute('role') ?? '');
+}
+function movesWindow(target: Element): boolean {
+  const path: Element[] = [];
+  for (let e: Element | null = target; e; e = e.parentElement) path.push(e);
+  for (const el of path) {
+    if (!(el instanceof HTMLElement)) continue;
+    const attr = el.getAttribute('data-tauri-drag-region');
+    if (isClickable(el) && attr === null) return false;
+    if (attr === null) continue;
+    if (attr === 'false') return false;
+    if (attr === 'deep') return true;
+    if (attr === '' || attr === 'true') return el === path[0];
+  }
+  return false;
+}
+
+let header: HTMLElement;
+beforeAll(async () => {
+  const html = readFileSync(join(__dirname, '..', 'index.html'), 'utf8');
+  document.body.innerHTML = html.slice(html.indexOf('<header'), html.indexOf('</header>') + '</header>'.length);
+  header = document.querySelector('header')!;
+  // the open files' strip, as main.ts fills #tabs: a strip holding tabs, then its buttons
+  document.querySelector('#tabs')!.innerHTML = '<div class="tab-strip"><div class="tab" role="tab"><span class="tab-name">A</span><span class="tab-close">×</span></div></div><button class="tab-add">+</button>';
+  document.querySelector('#quick-bar')!.innerHTML = '<button>Save</button>';
+  const { placeTitleBar } = await import('../src/ui/title-bar');
+  await placeTitleBar('app');
+});
+
+describe('Title Bar in Menu Bar: what moves the window', () => {
+  it('the gaps between the menus, the Quick Access Toolbar and the open files move it', () => {
+    for (const sel of ['.sep', '.menu-wrap', '#quick-bar', '#tabs', '.tab-strip', 'h1.app-name']) {
+      expect(movesWindow(header.querySelector(sel)!), sel).toBe(true);
+    }
+    expect(movesWindow(header)).toBe(true);
+  });
+
+  it('controls do not: menu names, toolbar buttons, the tabs and their close marks, the window buttons', () => {
+    for (const sel of ['#btn-file', '#quick-bar button', '.tab', '.tab-close', '.tab-add', '#btn-search', '.win-controls button']) {
+      const el = header.querySelector(sel);
+      expect(el, sel).not.toBeNull();
+      expect(movesWindow(el!), sel).toBe(false);
+    }
+  });
+
+  it('nor do the gaps and lines inside a menu that drops down from the bar', () => {
+    const menu = header.querySelector('#file-menu')!;
+    expect(movesWindow(menu)).toBe(false);
+    expect(movesWindow(menu.querySelector('hr') ?? menu.querySelector('.submenu')!)).toBe(false);
+  });
+
+  it('turning it off takes all of it away', async () => {
+    const { placeTitleBar } = await import('../src/ui/title-bar');
+    await placeTitleBar('system');
+    expect(header.querySelectorAll('[data-tauri-drag-region]').length).toBe(0);
+    await placeTitleBar('app');
+  });
+});

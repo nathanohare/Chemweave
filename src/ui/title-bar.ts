@@ -146,6 +146,14 @@ function watchScreen(): void {
  * the menu bar. That row then moves the window too, by its empty parts.
  */
 let buttonsRow: HTMLElement | null = null;
+
+/**
+ * How a row moves the window: "deep" makes every part of it that is not a control do so (Tauri
+ * skips buttons, links, fields and elements with an interactive role, such as the open files'
+ * tabs). A bare data-tauri-drag-region works only where the row itself is clicked, not on the
+ * groups inside it, so most of the gaps in the menu bar did nothing (found on a Mac).
+ */
+const DRAG = 'deep';
 export function placeWindowButtons(row: HTMLElement | null): void {
   if (buttonsRow && buttonsRow !== row) buttonsRow.removeAttribute('data-tauri-drag-region');
   buttonsRow = row;
@@ -156,7 +164,7 @@ function putButtons(): void {
   if (!isTauri() || !controls || !header) return;
   const own = place === 'app';
   if (buttonsRow && own) {
-    buttonsRow.setAttribute('data-tauri-drag-region', '');
+    buttonsRow.setAttribute('data-tauri-drag-region', DRAG);
     if (buttonsRow.lastElementChild !== controls) buttonsRow.append(controls);
   } else {
     buttonsRow?.removeAttribute('data-tauri-drag-region');
@@ -175,7 +183,12 @@ export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
   // the empty parts of the menu bar (and the program's name, and the tabs' row) move the window
   for (const el of [header, header.querySelector('h1.app-name'), document.querySelector('#tabs')]) {
     if (!el) continue;
-    if (own) el.setAttribute('data-tauri-drag-region', '');
+    if (own) el.setAttribute('data-tauri-drag-region', DRAG);
+    else el.removeAttribute('data-tauri-drag-region');
+  }
+  // (but not the menus that drop down from it: their gaps and lines are part of the menu)
+  for (const el of header.querySelectorAll('.menu, [role="menu"]')) {
+    if (own) el.setAttribute('data-tauri-drag-region', 'false');
     else el.removeAttribute('data-tauri-drag-region');
   }
   windowButtons(header).hidden = !own;
