@@ -18,12 +18,15 @@ import type { ThreadActions } from './comment-cards';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
-import type { TextRun } from '../model';
+import type { ParaStyle, TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
+import { cleanPastedHtml, pastedLooks } from './si-paste-html';
+import { wordAt } from '../text/layout';
+import { rulerGeometryOf, type RulerGeometry } from './ruler';
 import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
@@ -59,8 +62,10 @@ export interface SiPreviewHost {
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
   /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
-  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace'): Promise<void>;
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace' | 'Change Case'): Promise<void>;
   undo(redo: boolean): void;
+  /** `f`'s changes to the project as one step of Undo (a paste whose text and formatting are written one after the other). */
+  oneStep?(label: string, f: () => Promise<void>): Promise<void>;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
   /** A compound's structure or a figure picked in the preview, by its placement key (si/placement.ts; null: none now): its Picture Format tab shows. */
@@ -180,7 +185,7 @@ export class SiPreview {
       // (the pane beside the SI page is too narrow for a column of cards beside readable pages)
       narrow: () => host.clientWidth < 900,
     });
-    this.view.onMove = () => this.comments.place();
+    this.view.onMove = () => { this.comments.place(); this.onCaret(); };
     // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
     this.view.padX = 0;
     this.view.fitSlack = 0;
@@ -653,6 +658,7 @@ export class SiPreview {
     }
     this.caretOn = true;
     this.placeInput();
+    this.onCaret();
     if (this.finder?.open) { if (kind === 'text') this.findAgain(); else this.finder.showCount(); }
     this.view.redraw();
   }
@@ -783,7 +789,12 @@ export class SiPreview {
       if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
       this.offAnchor();
       const t = e.clipboardData?.getData('text/plain') ?? '';
-      if (t) this.file?.ed.pastePlain(t);
+      const html = e.clipboardData?.getData('text/html') ?? '';
+      // (Ctrl+V keeps the copied bold, italics, underline, sub- and superscripts, as Word's Keep Source Formatting; Ctrl+Shift+V the text only)
+      const plain = this.plainPaste;
+      this.plainPaste = false;
+      if (html && !plain) void this.pasteFormatted(html, t);
+      else if (t) this.file?.ed.pastePlain(t);
     });
     ta.addEventListener('focus', () => { this.startBlink(); v.redraw(); });
     ta.addEventListener('blur', () => { clearInterval(this.blink); v.redraw(); void this.flush(); });
@@ -1070,6 +1081,7 @@ export class SiPreview {
       }
       if (k === ' ' && !shift) return run(() => void this.format('clear'));
       if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) })); }
+      if (k === 'v') this.plainPaste = shift;
       if (k === 'c' || k === 'x' || k === 'v') { e.stopPropagation(); return; }
     }
   }
@@ -1170,7 +1182,38 @@ export class SiPreview {
     return document.execCommand(cut ? 'cut' : 'copy');
   }
 
-  /** Paste plain text at the caret (the ribbon's Paste), as Ctrl+V does. */
+  /** Ctrl+Shift+V pressed: the paste that follows is of the text only. */
+  private plainPaste = false;
+
+  /**
+   * Paste ▸ Keep Source Formatting (and Ctrl+V): the copied text at the caret, with its bold,
+   * italics, underline, sub- and superscripts (si-paste-html.ts) put on it as Home ▸ Font does,
+   * so they are kept across compiles; the text and its formatting are one step of Undo.
+   */
+  async pasteFormatted(html: string, text: string): Promise<void> {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    const got = pastedLooks(cleanPastedHtml(html, true));
+    if (!got.looks.length || !got.text) { this.pasteText(got.text || text); return; }
+    this.ta.focus();
+    const go = async (): Promise<void> => {
+      const before = ed.text, at = ed.start;
+      ed.pastePlain(got.text);
+      // (refused: into words Chemweave writes, said why; or the text came out otherwise than pasted)
+      if (this.file?.ed !== ed || ed.text === before || ed.text.slice(at, at + got.text.length) !== got.text) return;
+      const after = ed.start;
+      for (const l of got.looks) {
+        if (this.file?.ed !== ed) return;
+        ed.select(at + l.a, at + l.b);
+        await this.format(l.look);
+      }
+      if (this.file?.ed === ed) ed.setCaret(Math.min(after, ed.text.length));
+    };
+    await (this.api.oneStep ? this.api.oneStep('Paste', go) : go());
+  }
+
+  /** Paste plain text at the caret (Paste ▸ Keep Text Only, Ctrl+Shift+V). */
   pasteText(text: string): void {
     const ed = this.file?.ed;
     if (!ed) return;
@@ -1274,8 +1317,41 @@ export class SiPreview {
    * fields they print from, all in one step of Undo; places in words the program writes (an ID, a
    * heading, a label) are left, and said so.
    */
-  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
-    if (!this.file || !ranges.length) return 0;
+  replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
+    return this.replaceEach(ranges.map(([a, b]) => ({ a, b, with: with_ })), 'Replace');
+  }
+
+  /**
+   * Change Case (Home ▸ Font ▸ Font box): the selection (or the word at the caret) in another
+   * case, written into the fields the words print from as Replace writes them, in one step of
+   * Undo. Words Chemweave writes (an ID, a heading, a label) keep their case, and it says so.
+   */
+  async changeCase(mode: rt.CaseMode): Promise<void> {
+    const f = this.file;
+    if (!f) return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    const ed = f.ed;
+    let a = ed.start, b = ed.end;
+    if (a === b) [a, b] = wordAt(ed.text, a);
+    if (a === b) { this.api.flash('Select the words to change first.'); return; }
+    const was = f.ed.text, now = rt.plainText(rt.changeCase(f.t.runs, a, b, mode));
+    // each stretch of changed letters, cut where the field it prints from ends
+    const places: { a: number; b: number; with: string }[] = [];
+    for (let i = a; i < b;) {
+      if (now[i] === was[i]) { i++; continue; }
+      const sp = this.spans.find((x) => x.start <= i && i < x.end);
+      let j = i + 1;
+      while (j < b && now[j] !== was[j] && (sp ? j < sp.end : !this.spans.some((x) => x.start <= j && j < x.end))) j++;
+      places.push({ a: i, b: j, with: now.slice(i, j) });
+      i = j;
+    }
+    if (!places.length) { this.api.flash('Nothing to change: the words are in that case already.'); return; }
+    await this.replaceEach(places, 'Change Case');
+  }
+
+  /** Replace or Change Case: each place [a, b) of the preview's text becomes its own `with` in the field it prints from (one step of Undo). */
+  private async replaceEach(items: readonly { a: number; b: number; with: string }[], what: 'Replace' | 'Change Case'): Promise<number> {
+    if (!this.file || !items.length) return 0;
     if (!this.editable) { this.api.flash(this.why); return 0; }
     // (the places were found in the text shown: it must still be the stored text)
     if (this.dirty.size || this.fresh.size || this.shownGen < this.editGen) { this.api.flash('The Live Preview is still updating. Try again in a moment.'); return 0; }
@@ -1290,14 +1366,14 @@ export class SiPreview {
     };
     // each place by the field it is in; a place across two fields, in a general procedure (every
     // compound using it would change), in text typed in the preview, or in words Chemweave writes, is left
-    const bySrc = new Map<string, [number, number][]>();
+    const bySrc = new Map<string, [number, number, string][]>();
     let left = 0;
-    for (const [a, b] of ranges) {
+    for (const { a, b, with: w } of items) {
       const sp = spansNow.find((x) => x.start <= a && x.end >= b);
       if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src) || parseSrc(sp.src)?.owner === 'g') { left++; continue; }
       const at = printedOfSrc(sp.src).at(a);
       const l = bySrc.get(sp.src);
-      if (l) l.push([at, at + b - a]); else bySrc.set(sp.src, [[at, at + b - a]]);
+      if (l) l.push([at, at + b - a, w]); else bySrc.set(sp.src, [[at, at + b - a, w]]);
     }
     const fields: { src: string; text: string; from: string }[] = [];
     let done = 0;
@@ -1306,38 +1382,71 @@ export class SiPreview {
       if (raw === null) { left += places.length; continue; }
       let printed = printedOfSrc(src).printed, out = raw;
       // (from the last place back, each against the printed text as it is by then)
-      for (const [pa, pb] of [...places].sort((x, y) => y[0] - x[0])) {
-        const next = applyToRaw(out, printed, pa, pb, with_, markupSrc(src));
+      for (const [pa, pb, w] of [...places].sort((x, y) => y[0] - x[0])) {
+        const next = applyToRaw(out, printed, pa, pb, w, markupSrc(src));
         if (next === null) { left++; continue; }
         out = next;
-        printed = printed.slice(0, pa) + with_ + printed.slice(pb);
+        printed = printed.slice(0, pa) + w + printed.slice(pb);
         done++;
       }
       if (out !== raw) fields.push({ src, text: out, from: raw });
     }
     if (fields.length) {
       try {
-        await this.api.writeFormat(fields, null, owner, 'Replace');
+        await this.api.writeFormat(fields, null, owner, what);
       } catch (err) {
-        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
+        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not ${what === 'Replace' ? 'replace' : 'change the case'}: ${err instanceof Error ? err.message : String(err)}`, 8000);
         return 0;
       }
       for (const x of fields) this.written.delete(x.src);
       this.editGen++; this.writtenGen = this.editGen;
     }
-    const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
+    if (what === 'Change Case') {
+      const why = 'words Chemweave writes (an ID, a heading, a label), a general procedure’s words and text typed in the Live Preview keep their case here';
+      if (!done && left) this.api.flash(`Nothing changed: ${why}. Change them where they come from.`, 9000);
+      else if (left) this.api.flash(`Changed the case where the words come from a field; ${why}.`, 9000);
+      return done;
+    }
+    const placesSaid = (n: number) => (n === 1 ? 'one place' : `${n} places`);
     const why = 'in a general procedure, typed in the Live Preview, or written by Chemweave (an ID, a heading)';
     if (!done && left) this.api.flash(`Nothing replaced: ${left === 1 ? 'the place is' : 'the places are'} ${why}. Change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.`, 9000);
-    else if (left) this.api.flash(`Replaced ${what(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
-    else if (done > 1) this.api.flash(`Replaced ${what(done)}. Ctrl+Z restores them.`, 4000);
+    else if (left) this.api.flash(`Replaced ${placesSaid(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
+    else if (done > 1) this.api.flash(`Replaced ${placesSaid(done)}. Ctrl+Z restores them.`, 4000);
     return done;
   }
 
   /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */
-  paraValue<K extends keyof ParaLook>(key: K): ParaLook[K] | undefined {
+  paraValue<K extends keyof ParaLook>(key: K): ParaStyle[K] | undefined {
+    return this.currentPara()?.[key];
+  }
+
+  /** The caret moved, or the view scrolled or zoomed (View ▸ Ruler follows it). */
+  onCaret: () => void = () => {};
+
+  /** Where the paragraph the caret is in sits on screen, for View ▸ Ruler (as Document mode's). */
+  rulerGeometry(): RulerGeometry | null {
+    return this.file ? rulerGeometryOf(this.file, this.view) : null;
+  }
+
+  /** The settings of each paragraph selected (the caret's, when nothing is): Bullets and Numbering go by them all. */
+  selectedParas(): ParaStyle[] {
     const f = this.file;
-    if (!f) return undefined;
-    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)]?.[key] as ParaLook[K] | undefined;
+    if (!f) return [];
+    const a = paraAt(f.ed.text, f.ed.start), b = paraAt(f.ed.text, Math.max(f.ed.start, f.ed.end - (f.ed.collapsed ? 0 : 1)));
+    return Array.from({ length: b - a + 1 }, (_, i) => f.t.paras?.[a + i] ?? {});
+  }
+
+  /** How the words selected look (the Font box shows their All Caps and character spacing), or null with no text shown. */
+  fontLook(): rt.RunStyle | null {
+    if (!this.file) return null;
+    return { allCaps: this.selectionValue('allCaps'), spacing: this.selectionValue('spacing'), noKern: this.selectionValue('noKern') };
+  }
+
+  /** The first selected paragraph's settings (the Paragraph box, Tabs and the Ruler show them), or null with no text shown. */
+  currentPara(): ParaStyle | null {
+    const f = this.file;
+    if (!f) return null;
+    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)] ?? {};
   }
 
   /** Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is): kept across compiles as Font's looks are. */

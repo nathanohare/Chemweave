@@ -167,7 +167,7 @@ const MODES: Record<FontMode, ModeFont> = {
       + '<button class="rb-sq rb-hl" data-si-fmt="highlight" title="Highlight: a yellow background behind the words selected in the Live Preview (click again to remove it)" aria-label="Highlight"><span class="hl-ab">ab</span></button>'
       + '<button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing" aria-label="Symbol">Ω</button>',
     ],
-    launcher: { attr: 'data-si-font', value: 'settings', tip: 'Project Settings ▸ Output: the journal style sets the font and size of SI text' },
+    launcher: { attr: 'data-si-font', value: 'settings', tip: 'Font settings for the words selected in the Live Preview: Change Case, All Caps, character spacing and kerning. On the SI page: Project Settings ▸ Output, where the journal style sets the font and size of SI text' },
   },
 };
 

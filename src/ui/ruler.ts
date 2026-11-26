@@ -7,6 +7,8 @@
 
 import type { ParaStyle, TabStop } from '../model';
 import { DEFAULT_TAB } from '../text/layout';
+import type { DocFile } from '../document/doc-file';
+import type { DocView } from './doc-view';
 
 /** Where the paragraph the caret is in sits on screen. */
 export interface RulerGeometry {
@@ -25,6 +27,24 @@ export interface RulerHost {
   /** Change the selected paragraphs (one undo step). */
   setParas(patch: Partial<ParaStyle>, what: string): void;
   focus(): void;
+}
+
+/**
+ * Where the paragraph the caret is in sits on screen in a document's view (Document mode's page,
+ * and the SI's Live Preview), for the ruler.
+ */
+export function rulerGeometryOf(f: DocFile, view: Pick<DocView, 'toScreen' | 'zoom'>): RulerGeometry | null {
+  const lay = f.layout();
+  const c = f.ed.caret();
+  const l = lay.text.lines[c.line];
+  const p = lay.pages.find((pg) => c.line >= pg.first && c.line < pg.end) ?? lay.pages[0];
+  if (!p) return null;
+  const pg = p.setup;
+  const y = l?.y ?? p.top;
+  const sx = (x: number) => view.toScreen(x, y).x;
+  const colL = l?.band?.[0] ?? p.x + pg.left;
+  const colR = l?.band?.[1] ?? p.x + p.w - pg.right;
+  return { colLeft: sx(colL), colRight: sx(colR), pageLeft: sx(p.x), pageRight: sx(p.x + p.w), zoom: view.zoom, para: f.ed.currentPara() };
 }
 
 /** Whether the ruler shows (kept in the settings); `changed` saves it. */

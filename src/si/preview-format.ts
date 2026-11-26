@@ -16,7 +16,7 @@
 // page and SI Assistant show them too.
 
 import type { DocText } from '../document/document';
-import type { Justify, ParaStyle, TextRun } from '../model';
+import type { Justify, ParaStyle, TabStop, TextRun } from '../model';
 import { fitParas, paraCount } from '../text/paragraphs';
 import * as rt from '../richtext';
 import type { SiFolder } from './folder';
@@ -26,15 +26,67 @@ import type { SourceBlock, SourceSpan } from './source-map';
 
 export const PREVIEW_FORMAT_FILE = 'chemweave-preview-format.json';
 
-/** The looks a piece can set. `false` (or '') takes a look off that the text has from elsewhere. */
-export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight'>>;
+/** The looks a piece can set. `false` (or '', or 0 for character spacing) takes a look off that the text has from elsewhere. */
+export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight' | 'allCaps' | 'spacing' | 'noKern'>>;
 export type FormatLook = RunFormatLook & ParaLook;
-/** A paragraph's own look (Home ▸ Paragraph): on every paragraph the words are in. */
-export type ParaLook = Partial<Pick<ParaStyle, 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line' | 'pageBreak'>>;
-export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak'];
+/** The paragraph settings a piece can set (Home ▸ Paragraph, its Paragraph box, Bullets and Numbering, Tabs, the Ruler). */
+type ParaKey = 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line' | 'pageBreak' | 'firstLine' | 'indentRight' | 'linePt' | 'lineRule' | 'keepNext' | 'keepLines' | 'list' | 'level' | 'bullet' | 'scheme' | 'tabs';
+/**
+ * A paragraph's own look: on every paragraph the words are in. '', `false`, 0 or no tab stops
+ * take the paragraph's own setting off, as in a document (text/paragraphs.ts cleanPara), so it
+ * has the style's again (left alignment is set as 'left').
+ */
+export type ParaLook = { [K in ParaKey]?: ParaStyle[K] | '' };
+
+/** A change of paragraph settings as Document mode makes it (undefined takes a setting off) as a look to keep. */
+export function paraLookOf(patch: Partial<ParaStyle>): ParaLook {
+  const out: Record<string, unknown> = {};
+  for (const k of PARA_KEYS) {
+    if (!(k in patch)) continue;
+    const v = patch[k];
+    out[k] = v === undefined ? (k === 'tabs' ? [] : '') : Array.isArray(v) ? v.map((t) => ({ ...t })) : v;
+  }
+  return out as ParaLook;
+}
+export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak', 'firstLine', 'indentRight', 'linePt', 'lineRule', 'keepNext', 'keepLines', 'list', 'level', 'bullet', 'scheme', 'tabs'];
 const ALIGNS: readonly Justify[] = ['left', 'center', 'right', 'justify'];
 
-export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight'];
+export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight', 'allCaps', 'spacing', 'noKern'];
+/** The keys a Chemweave reading only version 1 or 2 of the file doesn't know (it would drop them and write over the file). */
+const V3_KEYS: readonly (keyof FormatLook)[] = ['allCaps', 'spacing', 'noKern', 'firstLine', 'indentRight', 'linePt', 'lineRule', 'keepNext', 'keepLines', 'list', 'level', 'bullet', 'scheme', 'tabs'];
+const V2_KEYS: readonly (keyof FormatLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line', 'pageBreak'];
+const TAB_KINDS: readonly TabStop['kind'][] = ['left', 'center', 'right', 'decimal'];
+const TAB_LEADERS: readonly NonNullable<TabStop['leader']>[] = ['dot', 'hyphen', 'underscore'];
+const num = (v: unknown, lo: number, hi: number): boolean => typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi;
+
+/** A paragraph setting read from the file as it can be used, or undefined (dropped). */
+function paraValueOf(k: keyof ParaLook, v: unknown): unknown {
+  if (v === '' && k !== 'tabs') return v;
+  switch (k) {
+    case 'align': return ALIGNS.includes(v as Justify) ? v : undefined;
+    case 'pageBreak': case 'keepNext': case 'keepLines': return typeof v === 'boolean' ? v : undefined;
+    // (an indent may go into the margin, a first line hang out to the left)
+    case 'indent': case 'firstLine': case 'indentRight': return num(v, -1000, 1000) ? v : undefined;
+    case 'linePt': return num(v, 0, 1584) ? v : undefined;
+    case 'lineRule': return v === 'exact' || v === 'atLeast' || v === '' ? v : undefined;
+    case 'list': return v === 'bullet' || v === 'number' || v === '' ? v : undefined;
+    case 'level': return num(v, 0, 8) && Number.isInteger(v) ? v : undefined;
+    case 'bullet': return typeof v === 'string' && v.length <= 4 ? v : undefined;
+    case 'scheme': return typeof v === 'string' && v.length <= 400 ? v : undefined;
+    case 'tabs': {
+      if (!Array.isArray(v) || v.length > 64) return undefined;
+      const out: TabStop[] = [];
+      for (const t of v as Record<string, unknown>[]) {
+        if (!t || !num(t.pos, 0, 2000) || !TAB_KINDS.includes(t.kind as TabStop['kind'])) continue;
+        const stop: TabStop = { pos: t.pos as number, kind: t.kind as TabStop['kind'] };
+        if (TAB_LEADERS.includes(t.leader as NonNullable<TabStop['leader']>)) stop.leader = t.leader as TabStop['leader'];
+        out.push(stop);
+      }
+      return out;
+    }
+    default: return num(v, 0, 1000) ? v : undefined;
+  }
+}
 
 export interface PreviewFormat {
   id: string;
@@ -81,7 +133,7 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
     const j = JSON.parse(raw) as { items?: unknown; version?: unknown };
     if (!j || !Array.isArray(j.items)) return null;
     // (written by a newer Chemweave: read as far as it goes, but never written over)
-    if (typeof j.version === 'number' && j.version > 2) return null;
+    if (typeof j.version === 'number' && j.version > 3) return null;
     const out: PreviewFormat[] = [];
     for (const x of j.items as Record<string, unknown>[]) {
       if (!x || typeof x.src !== 'string' || typeof x.start !== 'number' || typeof x.end !== 'number' || typeof x.text !== 'string' || !x.look || typeof x.look !== 'object') continue;
@@ -91,8 +143,8 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
         if (typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') (look as Record<string, unknown>)[k] = v;
       }
       for (const k of PARA_KEYS) {
-        const v = (x.look as Record<string, unknown>)[k];
-        if (k === 'align' ? ALIGNS.includes(v as Justify) : k === 'pageBreak' ? typeof v === 'boolean' : typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000) (look as Record<string, unknown>)[k] = v;
+        const v = paraValueOf(k, (x.look as Record<string, unknown>)[k]);
+        if (v !== undefined) (look as Record<string, unknown>)[k] = v;
       }
       const piece: PreviewFormat = { id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
       if (typeof x.before === 'string') piece.before = x.before;
@@ -106,8 +158,10 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
 }
 
 export function previewFormatsJson(items: readonly PreviewFormat[]): string {
-  // (version 2: paragraph looks, which a Chemweave reading only version 1 would drop and write over)
-  const version = items.some((f) => PARA_KEYS.some((k) => f.look[k] !== undefined)) ? 2 : 1;
+  // (version 2: paragraph looks, which a Chemweave reading only version 1 would drop and write over;
+  // version 3: All Caps, character spacing, lists, tab stops and Word's other paragraph settings, which one reading version 2 would)
+  const has = (keys: readonly (keyof FormatLook)[]): boolean => items.some((f) => keys.some((k) => f.look[k] !== undefined));
+  const version = has(V3_KEYS) ? 3 : has(V2_KEYS) ? 2 : 1;
   return JSON.stringify({ version, items }, null, 1) + '\n';
 }
 
@@ -182,7 +236,7 @@ function patchOf(look: FormatLook): Partial<TextRun> {
   for (const k of LOOK_KEYS) {
     const v = look[k];
     if (v === undefined) continue;
-    p[k] = v === false || v === '' ? undefined : v;
+    p[k] = v === false || v === '' || (k === 'spacing' && v === 0) ? undefined : v;
   }
   if (look.sub) p.sup = undefined;
   if (look.sup) p.sub = undefined;
@@ -202,7 +256,10 @@ function paraPatchOf(look: FormatLook): Partial<ParaStyle> | null {
   const keys = PARA_KEYS.filter((k) => look[k] !== undefined);
   if (!keys.length) return null;
   const p: Record<string, unknown> = {};
-  for (const k of keys) p[k] = k === 'align' ? look.align : look[k] || undefined;
+  for (const k of keys) {
+    const v = look[k];
+    p[k] = Array.isArray(v) ? (v.length ? v.map((t) => ({ ...t })) : undefined) : v || undefined;
+  }
   return p as Partial<ParaStyle>;
 }
 

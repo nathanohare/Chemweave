@@ -1,0 +1,5 @@
+Added: SI Project: Paste ▾ in the Live Preview has Word's Keep Source Formatting (bold, italics, underline, subscripts and superscripts kept across compiles, and what Ctrl+V does now), Keep Text Only (Ctrl+Shift+V) and Paste as Picture (a new figure from a copied picture or drawing).
+Added: SI Project: the Font group's corner button opens Document mode's Font box for the words selected in the Live Preview: All Caps, character spacing and kerning, and Change Case, which changes the words in the fields they come from as one step of Undo.
+Added: SI Project: Home ▸ Paragraph has Bullets and Numbering with Document mode's bullet library and number formats, Tabs…, and a corner button for Word's Paragraph settings (indents, first line, spacing, line spacing, Keep with next, Keep lines together); Increase and Decrease Indent move a list item a level.
+Added: SI Project: View ▸ Ruler shows Document mode's ruler over the Live Preview, to drag indents and set tab stops. Everything set in the Live Preview's paragraphs is kept across compiles and goes into the Word file.
+Added: Document: the Paragraph settings have Keep lines together, as Word's.

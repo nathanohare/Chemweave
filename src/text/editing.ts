@@ -9,7 +9,7 @@ import type { Justify, ParaStyle, TextRun } from '../model';
 import type { Rect } from '../geom';
 import * as rt from '../richtext';
 import { caretPos, layoutText, lineOf, offsetAt, offsetInLine, selectionRects, wordAt, type Measure, type TextFrame, type TextLayout } from './layout';
-import { cleanPara, editParas, fitParas, paraAt, paraCount, paraRange, storedParas } from './paragraphs';
+import { cleanPara, editParas, fitParas, indentPatch, listPatch, paraAt, paraCount, paraRange, storedParas } from './paragraphs';
 import type { CharLook, FixEdit } from './chemtext';
 import { trackFormatting, trackedReplace, trackingFormatting } from '../document/revisions';
 import { linkAt, removeLink as removeLinkRuns, setLink as setLinkRuns, type LinkSpan } from '../links';
@@ -29,7 +29,6 @@ export interface RichText {
 
 /** Indent added by each press of Tab in a paragraph that isn't in a list (points). */
 export const INDENT_STEP = 18;
-const MAX_LEVEL = 8;
 
 interface Snap { t: RichText; anchor: number; focus: number }
 
@@ -588,8 +587,7 @@ export class TextEditing {
   list(kind: 'bullet' | 'number'): void {
     const [a, b] = this.selectedParas();
     const paras = fitParas(this.t.paras, paraCount(this.text));
-    const all = paras.slice(a, b + 1).every((p) => p.list === kind && !p.cont);
-    this.setParas(a, b, all ? { list: undefined, level: undefined, cont: undefined } : { list: kind, cont: undefined }, 'list');
+    this.setParas(a, b, listPatch(paras.slice(a, b + 1), kind), 'list');
   }
 
   /** Tab and Shift+Tab: a list item goes a level deeper or back out; other paragraphs indent. */
@@ -597,9 +595,7 @@ export class TextEditing {
     const [a, b] = this.selectedParas();
     const paras = fitParas(this.t.paras, paraCount(this.text)).map((p, i) => {
       if (i < a || i > b) return p;
-      if (p.list) return cleanPara({ ...p, level: Math.max(0, Math.min(MAX_LEVEL, (p.level ?? 0) + delta)) });
-      const cur = p.indent ?? 0;
-      return cleanPara({ ...p, indent: Math.max(Math.min(0, cur), cur + delta * this.indentStep) });
+      return cleanPara({ ...p, ...indentPatch(p, delta, this.indentStep) });
     });
     this.commit('indent', { ...this.t, paras }, this.anchor, this.focus);
   }

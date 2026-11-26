@@ -312,3 +312,22 @@ export function splitParagraphs(runs: TextRun[]): TextRun[][] {
   }
   return out;
 }
+
+/** The deepest list level (0 is the outermost). */
+export const MAX_LIST_LEVEL = 8;
+
+/**
+ * Bullets or Numbering pressed on these paragraphs (Word's): they all become items of that kind,
+ * or, when they all are already, stop being list items.
+ */
+export function listPatch(selected: readonly ParaStyle[], kind: 'bullet' | 'number'): Partial<ParaStyle> {
+  const all = selected.length > 0 && selected.every((p) => p.list === kind && !p.cont);
+  return all ? { list: undefined, level: undefined, cont: undefined } : { list: kind, cont: undefined };
+}
+
+/** Increase or Decrease Indent (Tab, Shift+Tab) on a paragraph: a list item a level deeper or back out, any other paragraph indented by `step` points (never pushed back into the margin past where it is). */
+export function indentPatch(p: ParaStyle, delta: 1 | -1, step: number): Partial<ParaStyle> {
+  if (p.list) return { level: Math.max(0, Math.min(MAX_LIST_LEVEL, (p.level ?? 0) + delta)) };
+  const cur = p.indent ?? 0;
+  return { indent: Math.max(Math.min(0, cur), cur + delta * step) };
+}

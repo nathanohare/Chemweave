@@ -69,3 +69,42 @@ export function cleanPastedHtml(html: string, multiline: boolean): string {
   walk(doc.body, { b: false, i: false, u: false, pos: '' });
   return out.join('').replace(/^(\s|<br>)+|(\s|<br>)+$/g, '');
 }
+
+/** One stretch of pasted text with the looks it keeps (Keep Source Formatting in the Live Preview). */
+export interface PastedLook { a: number; b: number; look: Partial<Record<'bold' | 'italic' | 'underline' | 'sub' | 'sup', true>> }
+
+/**
+ * Cleaned pasted HTML (cleanPastedHtml, with line breaks) as its plain text, and the stretches of
+ * it that are bold, italic, underlined, subscript or superscript (those alike next to each other
+ * joined), for the Live Preview, which takes text and formats it as Home ▸ Font does.
+ */
+export function pastedLooks(clean: string): { text: string; looks: PastedLook[] } {
+  const doc = new DOMParser().parseFromString(`<body>${clean}</body>`, 'text/html');
+  let text = '';
+  const looks: PastedLook[] = [];
+  const walk = (node: Node, look: PastedLook['look']): void => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const t = node.textContent ?? '';
+      if (!t) return;
+      const a = text.length;
+      text += t;
+      if (!Object.keys(look).length) return;
+      const last = looks[looks.length - 1];
+      if (last && last.b === a && JSON.stringify(last.look) === JSON.stringify(look)) last.b = text.length;
+      else looks.push({ a, b: text.length, look: { ...look } });
+      return;
+    }
+    if (!(node instanceof Element)) return;
+    if (node.tagName === 'BR') { text += '\n'; return; }
+    const tag = node.tagName;
+    const next = { ...look };
+    if (tag === 'B') next.bold = true;
+    if (tag === 'I') next.italic = true;
+    if (tag === 'U') next.underline = true;
+    if (tag === 'SUB') { next.sub = true; delete next.sup; }
+    if (tag === 'SUP') { next.sup = true; delete next.sub; }
+    for (const k of node.childNodes) walk(k, next);
+  };
+  walk(doc.body, {});
+  return { text, looks };
+}

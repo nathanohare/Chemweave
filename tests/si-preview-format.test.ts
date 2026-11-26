@@ -133,6 +133,6 @@ describe('finding the words again safely', () => {
     const { readPreviewFormatsToChange } = await import('../src/si/preview-format');
     const busy = { readText: () => Promise.reject(new Error('EBUSY')) } as unknown as Parameters<typeof readPreviewFormatsToChange>[0];
     await expect(readPreviewFormatsToChange(busy)).rejects.toThrow();
-    expect(parsePreviewFormats('{"version":3,"items":[]}')).toBeNull();
+    expect(parsePreviewFormats('{"version":4,"items":[]}')).toBeNull();
   });
 });
