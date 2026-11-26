@@ -329,6 +329,10 @@ describe('a text box in a group whose child coordinates differ from its place', 
     const [x, y, cx, cy] = frameOf(xml, 'Grouped');
     const [gx, gy] = groupShift(xml);
     expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 2000000, 500000]);
+    // (and the same on a second save; the groups written here move nothing)
+    const twice = strFromU8(unzipSync(await saveBytes(deck(group(box, [3000000, 2000000], [3000000, 2000000])), 2))['ppt/slides/slide1.xml']);
+    expect(frameOf(twice, 'Grouped')).toEqual([x, y, cx, cy]);
+    expect(groupShift(twice)).toEqual([0, 0]);
   });
 
   it('takes the group\'s scale too', async () => {

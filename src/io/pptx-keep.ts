@@ -228,14 +228,19 @@ export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
 export function keptFrame(sp: Element, c: Omit<Caption, 'id'>, t?: { sx: number; sy: number; tx: number; ty: number }): string | null {
   const xf = kid(kid(sp, 'spPr'), 'xfrm'), bp = kid(kid(sp, 'txBody'), 'bodyPr');
   if (!xf || !bp || !kid(xf, 'off') || !kid(xf, 'ext')) return null;
-  let xfXml = xmlOf(xf);
+  let frame = xf;
   if (t && (t.sx !== 1 || t.sy !== 1 || t.tx !== 0 || t.ty !== 0)) {
+    // (a copy, its off and ext through the groups: the file's own elements stay as read)
     const EMU = 12700;
-    xfXml = xfXml
-      .replace(/<a:off x="(-?\d+)" y="(-?\d+)"/, (_, x: string, y: string) => `<a:off x="${Math.round(t.tx * EMU + t.sx * Number(x))}" y="${Math.round(t.ty * EMU + t.sy * Number(y))}"`)
-      .replace(/<a:ext cx="(\d+)" cy="(\d+)"/, (_, cx: string, cy: string) => `<a:ext cx="${Math.round(t.sx * Number(cx))}" cy="${Math.round(t.sy * Number(cy))}"`);
+    frame = xf.cloneNode(true) as Element;
+    const off = kid(frame, 'off')!, ext = kid(frame, 'ext')!;
+    const n = (e: Element, a: string) => Number(e.getAttribute(a) ?? 0) || 0;
+    off.setAttribute('x', String(Math.round(t.tx * EMU + t.sx * n(off, 'x'))));
+    off.setAttribute('y', String(Math.round(t.ty * EMU + t.sy * n(off, 'y'))));
+    ext.setAttribute('cx', String(Math.round(t.sx * n(ext, 'cx'))));
+    ext.setAttribute('cy', String(Math.round(t.sy * n(ext, 'cy'))));
   }
-  const k: FrameKept = { xf: xfXml, bp: xmlOf(bp), ...(c.ph ? { ph: c.ph } : {}), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
+  const k: FrameKept = { xf: xmlOf(frame), bp: xmlOf(bp), ...(c.ph ? { ph: c.ph } : {}), x: c.x, y: c.y, wrap: c.wrap ?? null, boxH: c.boxH ?? null, fit: c.fit ?? null, dir: c.dir ?? null, rot: c.rot ?? null, t: textSig(c) };
   return JSON.stringify(k);
 }
 
