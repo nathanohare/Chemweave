@@ -131,15 +131,15 @@ export class DocTablesUI {
 
   // ---------------------------------------------------------------- borders
 
-  /** The Borders menu: which edges of the chosen cells get the pen's line. */
-  bordersMenu(x: number, y: number): void {
+  /** The Borders menu: which edges of the chosen cells get the pen's line (`clearLabel`: what taking the cells' own lines off is called there). */
+  bordersMenu(x: number, y: number, clearLabel = 'Back to the Style\'s Borders'): void {
     const tg = this.host.target();
     const b = this.host.block();
     if (!tg || !b) { this.host.flash('Click in a table first.'); return; }
     popupMenu(x, y, [
       ...BORDER_PICKS.map(([pick, label]): [string, () => void] => [label, () => this.borders(pick)]),
       null,
-      ['Back to the Style\'s Borders', () => { const t = this.host.target(), bl = this.host.block(); if (t && bl) this.host.setTable(t.id, clearBorders(t.t, bl), 'Borders'); }],
+      [clearLabel, () => { const t = this.host.target(), bl = this.host.block(); if (t && bl) this.host.setTable(t.id, clearBorders(t.t, bl), 'Borders'); }],
       [`${this.painting ? '✓ ' : ''}Border Painter`, () => this.setPainting(!this.painting)],
     ]);
   }
@@ -167,34 +167,34 @@ export class DocTablesUI {
 
   // ---------------------------------------------------------------- cell margins
 
-  /** Cell Margins: every cell's (the table's default), and the cell typed into's own. */
-  async cellMarginsDialog(): Promise<void> {
+  /** Cell Margins: every cell's (the table's default), and the cell typed into's own, shown in `unit` (any unit can be typed). */
+  async cellMarginsDialog(unit: 'in' | 'cm' = 'in'): Promise<void> {
     const tg = this.host.target();
     if (!tg) { this.host.flash('Click in a table first.'); return; }
     const f = this.host.file();
     const base = tg.t.pad ?? DEFAULT_MARGINS;
     const own = tg.t.rows[tg.r]?.[tg.c]?.pad;
     const mine = cellMargins(tg.t, tg.r, tg.c);
-    const len = (pt: number) => showLength(pt, 'in');
+    const len = (pt: number) => showLength(pt, unit);
     const inCell = this.host.inCell ? this.host.inCell() : !!f?.box?.cell;
     const got = await ask('Cell Margins', [
-      { name: 'top', label: 'Top', value: len(base.top), unit: 'in' },
-      { name: 'bottom', label: 'Bottom', value: len(base.bottom), unit: 'in' },
-      { name: 'left', label: 'Left', value: len(base.left), unit: 'in' },
-      { name: 'right', label: 'Right', value: len(base.right), unit: 'in' },
+      { name: 'top', label: 'Top', value: len(base.top), unit },
+      { name: 'bottom', label: 'Bottom', value: len(base.bottom), unit },
+      { name: 'left', label: 'Left', value: len(base.left), unit },
+      { name: 'right', label: 'Right', value: len(base.right), unit },
       ...(inCell ? [
         { name: 'own', label: 'This cell has its own margins', type: 'checkbox' as const, value: String(!!own) },
-        { name: 'ctop', label: 'This cell: top', value: len(mine.top), unit: 'in' },
-        { name: 'cbottom', label: 'This cell: bottom', value: len(mine.bottom), unit: 'in' },
-        { name: 'cleft', label: 'This cell: left', value: len(mine.left), unit: 'in' },
-        { name: 'cright', label: 'This cell: right', value: len(mine.right), unit: 'in' },
+        { name: 'ctop', label: 'This cell: top', value: len(mine.top), unit },
+        { name: 'cbottom', label: 'This cell: bottom', value: len(mine.bottom), unit },
+        { name: 'cleft', label: 'This cell: left', value: len(mine.left), unit },
+        { name: 'cright', label: 'This cell: right', value: len(mine.right), unit },
       ] : []),
-    ], { ok: 'OK', note: 'Room between each cell\'s edge and its text, for every cell of the table (Word\'s default cell margins). Any unit can be typed (0.1 in, 2 mm, 4 pt).' });
+    ], { ok: 'OK', note: `Room between each cell's edge and its text, for every cell of the table (Word's default cell margins). Any unit can be typed (${unit === 'cm' ? '0.2 cm' : '0.1 in'}, 2 mm, 4 pt).` });
     this.host.focus();
     if (!got) return;
     const t = this.host.target();
     if (!t || t.id !== tg.id) return;
-    const read = (k: string, was: number) => { const v = parseLength(got[k] ?? '', 'in'); return v === null ? was : Math.max(0, Math.min(72, v)); };
+    const read = (k: string, was: number) => { const v = parseLength(got[k] ?? '', unit); return v === null ? was : Math.max(0, Math.min(72, v)); };
     const pad: CellMargins = { top: read('top', base.top), bottom: read('bottom', base.bottom), left: read('left', base.left), right: read('right', base.right) };
     let table: TableData = { ...t.t, pad };
     if (sameMargins(pad, DEFAULT_MARGINS)) delete table.pad;

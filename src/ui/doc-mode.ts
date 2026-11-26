@@ -80,7 +80,7 @@ import { outgrownFrame } from '../document/figures';
 import { docObjectLook, withObjectLook } from '../document/object-look';
 import type { TableData } from '../model';
 import {
-  canMerge, coveringCell, deleteColumn, deleteRow, emptyTable, evenColumns, fillColumns, shadeCells, valignCells, insertColumn, tableFromCells, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, setColumnAlign, setColumnWidth, setPart, splitCell, spanOf,
+  canMerge, coveringCell, deleteColumn, deleteRow, emptyTable, evenColumns, fillColumns, nearestSide, shadeCells, valignCells, insertColumn, tableFromCells, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, setColumnAlign, setColumnWidth, setPart, splitCell, spanOf,
 } from '../table';
 import { cellMargins, paintEdge, type CellBlock } from '../document/table-styles';
 import { blockOf, canMergeBlock, mergeBlock } from '../document/table-convert';
@@ -108,7 +108,7 @@ import { COVER_ACCENTS } from './doc-insert-ui';
 import { GO_TO_KINDS, goToOffset, similarRanges, type GoToKind } from '../document/goto';
 import { DocIndexUI } from './doc-index-ui';
 import { lookOfTable } from '../document/table-styles';
-import type { BorderSide, TableLook } from '../model';
+import type { TableLook } from '../model';
 import { BREAK_NAMES, changeSection, hasTitlePg, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
   type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
@@ -3311,9 +3311,7 @@ export class DocumentMode {
     const y1 = at.y;
     let y2 = at.y;
     for (let r = cell.r; r < cell.r + rowSpanOf(t, cell.r, cell.c); r++) y2 += tb.hs[r] ?? 0;
-    const sides: [BorderSide, number][] = [['top', p.y - y1], ['bottom', y2 - p.y], ['left', p.x - x1], ['right', x2 - p.x]];
-    sides.sort((a, b) => a[1] - b[1]);
-    const side = sides[0][0];
+    const side = nearestSide(p.x, p.y, x1, y1, x2, y2);
     const key = `${cell.id}:${cell.r}:${cell.c}:${side}`;
     if (done.has(key)) return;
     done.add(key);
@@ -6448,8 +6446,6 @@ function runLooks(runs: TextRun[]): CharLook[] {
   }
   return looks;
 }
-
-/** How many rows a cell reaches down (always one: cells join across, not down). */
 
 /**
  * Columns as wide as their widest cell (text unwrapped, structures at their own size), the

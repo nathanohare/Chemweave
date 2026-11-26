@@ -46,7 +46,7 @@ import { TITLE_SRC, frontSrc, gpSrc, sectionSrc, tag, type SourceBlock, type Sou
 import { placeCustomText, readCustomText, type PlacedCustom } from './custom-text';
 import { addFlagComments } from './flag-comments';
 import { applyPreviewFormats, readPreviewFormats } from './preview-format';
-import { cellFormat, siColumns, tableFormat } from './table-format';
+import { siTableData } from './table-format';
 import { applyStyleLooks, readStyleLooks, SI_COMPOUND_LOOK, SI_TOC_HEADING_LOOK, type StyleLooks } from './si-styles';
 import { figureFrame, figureKey, floatOf as placedFloat, placementOf, structureKey, type Placement } from './placement';
 
@@ -689,7 +689,11 @@ class Compiler {
     const nCols = Math.max(0, ...rows.map((r) => r.length));
     if (!rows.length || !nCols) { this.notes.push(`${where}: a table could not be found or is empty (tables/${id}.json); left out.`); return; }
     const look: RunStyle = { ...this.b.styleLook({}), size: 10 };
-    const cols = list(data.columns).map(String);
+    // the table as the SI tab's commands see it: its cells' spans, alignment and own look, its
+    // header rows, the ACS rules, the columns' widths and the cell margins (table-format.ts)
+    data.rows = rows;
+    if (Array.isArray(data.columns)) data.columns = data.columns.slice(0, nCols);
+    const shape = siTableData(data, this.textW);
     // a cell's picture (Lauren's pictures in table cells, rewritten): above its text, at its own
     // size or the width typed for it (image_width, cm), never wider than the text
     const pictures = new Map<string, number>();
@@ -705,36 +709,22 @@ class Compiler {
       if (!pic) { if (!/\.pdf$/i.test(name)) this.notes.push(`${where}: the picture ${name} in a table cell could not be read; left out.`); continue; }
       pictures.set(`${r}:${k}`, this.b.reserve(pic));
     }
-    const cells: TableCell[][] = rows.map((row, r) => Array.from({ length: nCols }, (_, k) => {
-      const c = row[k];
-      if (c === null || c === undefined) return { runs: [] };
+    // each cell: its text (and picture) into its place in the shape
+    const cells: TableCell[][] = shape.rows.map((row, r) => row.map((cell, k) => {
+      const c = rows[r]?.[k];
+      if (c === null || c === undefined) return cell;
       const cd = typeof c === 'string' ? { text: c } : dict(c);
       const text = this.cellRuns(str(cd.text), where, look, true);
       const picId = pictures.get(`${r}:${k}`);
-      const cell: TableCell = { runs: picId !== undefined ? [{ ...look, obj: picId, text: OBJECT_CHAR }, ...(text.length ? [{ ...look, text: '\n' }, ...text] : [])] : text };
-      const span = Math.round(Number(cd.colspan) || 1), rowSpan = Math.round(Number(cd.rowspan) || 1);
-      if (span > 1) cell.span = span;
-      if (rowSpan > 1) cell.rowSpan = rowSpan;
-      const a = str(cd.align);
-      if (a === 'left' || a === 'center' || a === 'right') cell.align = a;
-      // (its borders, shading, alignment down and margins: Table Design and Table Layout on the SI tab)
-      return { ...cell, ...cellFormat(cd) };
+      return { ...cell, runs: picId !== undefined ? [{ ...look, obj: picId, text: OBJECT_CHAR }, ...(text.length ? [{ ...look, text: '\n' }, ...text] : [])] : text };
     }));
-    const tf = tableFormat(data);
-    const head = Math.max(0, Math.min(rows.length, Math.round(Number(data.header_rows ?? 1)) || 0));
     // (below a figure floating above it)
     if (this.clearAtBlock) { this.clearAtBlock = false; this.clearNext = true; }
     // the label and caption above, kept with the table
     this.caption(label || 'Table', caption, where, { align, keepNext: true, spaceAfter: 4 }, { key: id, kind: 'table' });
     const table: Extract<DocObject, { kind: 'table' }> = {
       kind: 'table',
-      table: {
-        // (SI Assistant's widths typed for the columns, AutoFit to Window; else Word fits them to their text)
-        ...siColumns(data, nCols, this.textW),
-        rows: cells, head, lines: 'acs', size: 10,
-        ...(tf.pad ? { pad: tf.pad } : {}),
-        align: Array.from({ length: nCols }, (_, k) => (['left', 'center', 'right'].includes(cols[k]) ? cols[k] : 'center') as Justify),
-      },
+      table: { ...shape, rows: cells, size: 10 },
     };
     this.b.table(table, this.full({ align: align ?? 'center' }));
     const notes = list(data.footnotes).map(str).filter((n) => n.trim());

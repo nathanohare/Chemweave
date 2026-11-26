@@ -534,6 +534,13 @@ export function mergeDown(t: TableData, r: number, c: number): TableData {
   };
 }
 
+/** The side of a cell (from x1, y1 to x2, y2) nearest a point: the edge Border Painter paints. */
+export function nearestSide(x: number, y: number, x1: number, y1: number, x2: number, y2: number): 'top' | 'bottom' | 'left' | 'right' {
+  const sides: ['top' | 'bottom' | 'left' | 'right', number][] = [['top', y - y1], ['bottom', y2 - y], ['left', x - x1], ['right', x2 - x]];
+  sides.sort((a, b) => a[1] - b[1]);
+  return sides[0][0];
+}
+
 /** A table with each cell changed by a function. */
 export function mapCells(t: TableData, f: (cell: TableCell, r: number, c: number) => TableCell): TableData {
   return { ...t, rows: t.rows.map((row, r) => row.map((cell, c) => f(cell, r, c))) };

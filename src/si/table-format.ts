@@ -1,8 +1,8 @@
-// An SI table's look beyond what SI Assistant stores (Table Design and Table Layout on the SI tab):
-// cell borders, shading, where the text sits up and down in a cell, cell margins and how the
-// table's width is set. SI Assistant's own keys are used where it has them: a column's width
-// typed by hand is its "widths" entry (cm, null = fits its text), and "fit_width" shrinks a table
-// wider than the text. Everything else is kept with the table, under a key of Chemweave's own:
+// An SI table's look (Table Design and Table Layout on the SI tab): cell borders, shading, where
+// the text sits up and down in a cell, cell margins and how the table's width is set. The keys
+// SI projects already have are used where they fit: a column's width typed by hand is its
+// "widths" entry (cm, null = fits its text), and "fit_width" shrinks a table wider than the text.
+// Everything else is kept with the table, under a key of Chemweave's own:
 //
 //   table: "chemweave_format": {"pad": {"top", "bottom", "left", "right"} (pt, every cell's margins),
 //                               "fit": "window" (as wide as the text: AutoFit to Window)}
@@ -10,19 +10,19 @@
 //                               the ACS rules; style "none" takes a rule away),
 //                               "fill": "#rrggbb", "valign": "center" | "bottom", "pad": {...}}
 //
-// Kept on the cell, so it moves with the cell when rows and columns are added, deleted or merged.
-// SI Assistant (core/tables.py) writes back only the keys it knows, so a table saved again there
-// prints with the ACS rules alone. The commands work on the table as Document mode's tables are
+// Kept on the cell, so it moves with the cell when rows and columns are added, deleted or merged
+// (a key inside it this version doesn't know is kept as it is). A table without it prints with the
+// ACS rules alone, as before. The commands work on the table as Document mode's tables are
 // (src/table.ts, document/table-styles.ts): `siTableData` makes one from the stored table and
 // `storeTableData` keeps what a command changed. Nothing here is user interface (tested in
 // tests/si-table-format.test.ts).
 
 import type { BorderLine, CellBorders, CellMargins, Justify, TableCell, TableData } from '../model';
 import type { Json } from './project';
-import { cellAt, colCount, rowsOf, spans } from './tables';
+import { FORMAT_KEY, cellAt, colCount, rowsOf, spans } from './tables';
 import { evenColumns, fillColumns } from '../table';
 
-export const FORMAT_KEY = 'chemweave_format';
+export { FORMAT_KEY };
 
 /** A cell's own look (each part only when set). */
 export interface SiCellFormat {
@@ -38,7 +38,10 @@ export interface SiTableFormat {
   fit?: 'window';
 }
 
-const PT_PER_CM = 72 / 2.54;
+/** Points in a centimeter. */
+export const PT_PER_CM = 72 / 2.54;
+/** The narrowest width kept for a column typed by hand, in cm. */
+const MIN_CM = 0.1;
 const SIDES = ['top', 'bottom', 'left', 'right'] as const;
 const STYLES: BorderLine['style'][] = ['none', 'single', 'double', 'dotted', 'dashed'];
 const isObj = (v: unknown): v is Json => !!v && typeof v === 'object' && !Array.isArray(v);
@@ -95,7 +98,7 @@ export function columnWidthsCm(t: Json, n: number): (number | null)[] {
 }
 
 function storeWidths(t: Json, cm: (number | null)[]): void {
-  if (cm.some((w) => w !== null)) t.widths = cm.map((w) => (w === null ? null : Math.round(w * 100) / 100));
+  if (cm.some((w) => w !== null)) t.widths = cm.map((w) => (w === null ? null : Math.max(MIN_CM, Math.round(w * 100) / 100)));
   else delete t.widths;
 }
 
@@ -114,21 +117,37 @@ export function siColumns(t: Json, n: number, textW: number): Pick<TableData, 'c
   const round = (w: number) => Math.round(w * 100) / 100;
   const cols = typed.map((w) => w ?? share);
   if (tableFormat(t).fit === 'window') return { cols: fillColumns(cols, textW).map(round), width: { pct: 100 }, autofit: false };
-  if (!loose && n) {
-    const k = t.fit_width === true && sum > textW ? textW / sum : 1;
-    return { cols: cols.map((w) => round(w * k)), autofit: false };
-  }
-  return { cols: cols.map(round), width: 'auto', autofit: true };
+  // (SI Assistant's fit_width: a table wider than the text shrunk to it, typed columns and all)
+  const total = cols.reduce((a, b) => a + b, 0);
+  const k = t.fit_width === true && total > textW ? textW / total : 1;
+  if (!loose && n) return { cols: cols.map((w) => round(w * k)), autofit: false };
+  return { cols: cols.map((w) => round(w * k)), width: 'auto', autofit: true };
 }
 
-/** A column's width typed (cm), or (null) back to fitting its text; the table no longer AutoFit to Window. */
-export function setColumnWidthCm(t: Json, c: number, cm: number | null): void {
+/**
+ * A column's width typed (cm), or (null) back to fitting its text. On a table AutoFit to Window
+ * the table stays as wide as the text, as in Word: the other columns share what is left, keeping
+ * their shares (each at least 18 pt), and from then on every width is typed.
+ */
+export function setColumnWidthCm(t: Json, c: number, cm: number | null, textW: number): void {
   const n = colCount(t);
-  const w = columnWidthsCm(t, n);
   if (c < 0 || c >= n) return;
-  w[c] = cm !== null && cm > 0 ? Math.min(999, cm) : null;
+  const typed = cm !== null && cm > 0 ? Math.max(MIN_CM, Math.min(999, cm)) : null;
+  if (tableFormat(t).fit === 'window' && typed !== null) {
+    const cols = siColumns(t, n, textW).cols;
+    const mine = typed * PT_PER_CM;
+    const others = cols.reduce((a, w, k) => a + (k === c ? 0 : w), 0);
+    const room = Math.max(0, textW - mine);
+    const w = cols.map((x, k) => (k === c ? mine : Math.max(18, others > 0 ? (x * room) / others : room / Math.max(1, n - 1))) / PT_PER_CM);
+    storeWidths(t, w);
+    unfit(t);
+    return;
+  }
+  const w = columnWidthsCm(t, n);
+  w[c] = typed;
   storeWidths(t, w);
-  unfit(t);
+  // (clearing a width keeps the table as wide as the text)
+  if (typed !== null) unfit(t);
 }
 
 function unfit(t: Json): void {
@@ -186,17 +205,24 @@ export function siTableData(t: Json, textW: number): TableData {
   };
 }
 
+/** The width of the text tables are set in, in points: the page's less its margins, across a page turned on its side for a landscape section. */
+export function textWidthOf(page: { w: number; h: number; left: number; right: number }, landscape: boolean): number {
+  return Math.max(144, (landscape ? page.h : page.w) - page.left - page.right);
+}
+
 /** Keep the cells' looks and the table's cell margins of a document's table made by `siTableData` (and changed by a command). */
 export function storeTableData(t: Json, td: TableData): void {
   for (const s of spans(t)) {
     const cell = cellAt(t, s.r, s.c);
     const x = td.rows[s.r]?.[s.c];
     if (!cell || !x) continue;
-    const f: SiCellFormat = {};
-    if (x.borders && Object.keys(x.borders).length) f.borders = x.borders;
-    if (x.fill) f.fill = x.fill;
-    if (x.valign) f.valign = x.valign;
-    if (x.pad && Object.keys(x.pad).length) f.pad = x.pad;
+    // (into what the cell has: a key of a later version is kept)
+    const f: Json = isObj(cell[FORMAT_KEY]) ? { ...(cell[FORMAT_KEY] as Json) } : {};
+    const put = (k: keyof SiCellFormat, v: unknown, has: boolean) => { if (has) f[k] = v; else delete f[k]; };
+    put('borders', x.borders, !!x.borders && Object.keys(x.borders).length > 0);
+    put('fill', x.fill, !!x.fill);
+    put('valign', x.valign, !!x.valign);
+    put('pad', x.pad, !!x.pad && Object.keys(x.pad).length > 0);
     putFormat(cell, f);
   }
   const f = isObj(t[FORMAT_KEY]) ? { ...(t[FORMAT_KEY] as Json) } : {};

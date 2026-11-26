@@ -25,6 +25,7 @@ import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageOf, pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
 import { DocTablesUI, showPen, wirePen, type PenControls } from './doc-tables-ui';
+import { PT_PER_CM, textWidthOf } from '../si/table-format';
 import { parseLength } from './doc-panel';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
@@ -324,7 +325,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si-tbl="select-table" title="Select Table: select every cell, so the commands change the whole table">Select Table</button>
-        <button data-si-tbl="gridlines" aria-pressed="true" title="View Gridlines: faint dashed lines on the edges with no border, here and in the Live Preview, to see the cells (they don't print)">View Gridlines</button>
+        <button data-si-tbl="gridlines" aria-pressed="false" title="View Gridlines: faint dotted lines in the Live Preview on table edges with no border, to see the cells (they don't print; the SI page always shows its cells)">View Gridlines</button>
       </div>
     </div><div class="rb-label">Table</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -375,7 +376,7 @@ const RIBBON = `
       </div>
       <div class="rb-col">
         <button data-si-tbl="fit-contents" title="AutoFit Contents: each column as wide as its text needs (no typed widths)">AutoFit Contents</button>
-        <button data-si-tbl="fit-window" aria-pressed="false" title="AutoFit Window: the table as wide as the text, its columns keeping their shares">AutoFit Window</button>
+        <button data-si-tbl="fit-window" title="AutoFit Window: the table as wide as the text, its columns keeping their shares">AutoFit Window</button>
       </div>
     </div><div class="rb-label">Cell Size</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -886,7 +887,15 @@ export class SiMode {
     this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para]')) e.preventDefault(); });
     this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     // Table Design ▸ Borders: the pen, as Document mode's
-    wirePen(this.penControls(), this.tableUI, () => {});
+    wirePen(this.penControls(), this.tableUI, () => this.activeTable?.refocus());
+    // (Esc stops Border Painter wherever the typing is: the cells are drawn again after each edge painted)
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !this.tableUI.painting || !this.pane.isConnected || this.pane.offsetParent === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.tableUI.setPainting(false);
+      this.activeTable?.refocus();
+    }, true);
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
@@ -949,7 +958,7 @@ export class SiMode {
         const v = f.value.trim();
         const pt = v ? parseLength(v, 'cm') : null;
         if (v && (pt === null || pt <= 0)) { this.host.flash('Type a width, such as 2.5 (cm), 1 in or 30 mm; leave it empty for the column to fit its text.'); this.tableState(t); return; }
-        void t.setColumnWidth(pt === null ? null : pt / (72 / 2.54));
+        void t.setColumnWidth(pt === null ? null : pt / PT_PER_CM);
         return;
       }
       if (f.dataset.siField === 'head') void t.setHeaderRows(Number(f.value));
@@ -1395,23 +1404,27 @@ export class SiMode {
     },
     block: () => this.activeTable?.block() ?? null,
     setTable: (_id, td, kind) => { void this.activeTable?.setData(() => td, kind.replace(/\b[a-z]/g, (x) => x.toUpperCase())); },
-    textW: () => this.tableTextWidth(),
+    textW: () => this.activeTable?.textWidth() ?? this.tableTextWidth(null),
     flash: (m, ms) => this.host.flash(m, ms),
-    focus: () => {},
+    focus: () => this.activeTable?.refocus(),
     leaveCell: () => {},
     startCell: () => {},
-    changed: () => { if (this.activeTable) this.tableState(this.activeTable); },
+    changed: () => {
+      // (Border Painter on: the crosshair over every table's cells)
+      for (const x of this.tables) x.showPainting(this.tableUI.painting);
+      if (this.activeTable) this.tableState(this.activeTable);
+    },
     inCell: () => !!this.activeTable?.oneCell,
   });
 
-  /** View Gridlines (Table Layout): on the SI page's tables and in the Live Preview; on until turned off, as in Word. */
-  private gridlines = true;
+  /** View Gridlines (Table Layout): faint lines in the Live Preview on table edges with no border; off at first, as in Document mode. */
+  private gridlines = false;
 
-  /** The width of the text on an upright page (Project Settings ▸ Page), in points. */
-  private tableTextWidth(): number {
+  /** The width of the text a section's tables are set in (Project Settings ▸ Page), in points: across the page turned on its side when the section is landscape, as the compiled SI has it. */
+  private tableTextWidth(s: SiSection | null): number {
     const p = this.project;
     const page = pageOf(p?.settings ?? {}, { w: 612, h: 792, top: 72, bottom: 72, left: 72, right: 72, header: 36, footer: 36 });
-    return Math.max(144, page.w - page.left - page.right);
+    return textWidthOf(page, !!s && this.landscapeOf(s));
   }
 
   private tableCommand(cmd: string, b: HTMLElement): void {
@@ -1420,12 +1433,12 @@ export class SiMode {
     if (this.project?.readOnly && cmd !== 'gridlines' && cmd !== 'select-table') { this.host.flash('This SI project is open read-only.'); return; }
     const r = b.getBoundingClientRect();
     switch (cmd) {
-      case 'borders': this.tableUI.bordersMenu(r.left, r.bottom + 2); return;
+      case 'borders': this.tableUI.bordersMenu(r.left, r.bottom + 2, 'ACS Rules Only'); return;
       case 'painter': this.tableUI.setPainting(!this.tableUI.painting); return;
-      case 'cell-margins': void this.tableUI.cellMarginsDialog(); return;
+      // (in cm, as the Width box)
+      case 'cell-margins': void this.tableUI.cellMarginsDialog('cm'); return;
       case 'gridlines':
         this.gridlines = !this.gridlines;
-        for (const x of this.tables) x.showLines();
         if (this.preview) { this.preview.view.gridlines = this.gridlines; this.preview.view.redraw(); }
         this.tableState(t);
         return;
@@ -1722,7 +1735,6 @@ export class SiMode {
     if (shade !== active) shade.value = st.fill ?? '#ffffff';
     const press = (cmd: string, on: boolean) => { for (const b of this.ribbon.querySelectorAll<HTMLElement>(`[data-si-tbl="${cmd}"]`)) b.setAttribute('aria-pressed', String(on)); };
     for (const v of ['top', 'center', 'bottom']) press(`valign-${v}`, st.valign === v);
-    press('fit-window', st.fit);
     press('painter', this.tableUI.painting);
     press('gridlines', this.gridlines);
     showPen(this.penControls(), this.tableUI.pen);
@@ -2991,8 +3003,7 @@ export class SiMode {
       contentsOf: (m) => this.host.contentsOf(m),
       selectionChanged: (t) => this.tableState(t),
       remove: (t) => this.removeObject(s, 'table', t.id),
-      textWidth: () => this.tableTextWidth(),
-      gridlines: () => this.gridlines,
+      textWidth: () => this.tableTextWidth(s),
       painter: () => (this.tableUI.painting ? this.tableUI.pen : null),
       stopPainting: () => this.tableUI.setPainting(false),
       step: (label, f) => this.change(p, label, f),

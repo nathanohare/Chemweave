@@ -12,9 +12,9 @@ import { SiRichBox } from './si-rich';
 import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
 import { scrollToItem } from './motion';
-import type { BorderLine, BorderSide, TableData } from '../model';
-import { resolveTable, paintEdge, type CellBlock, type Edge } from '../document/table-styles';
-import { fillColumns, shadeCells, valignCells } from '../table';
+import type { BorderLine, TableData } from '../model';
+import { cellMargins, resolveTable, paintEdge, type CellBlock, type Edge, type ResolvedTable } from '../document/table-styles';
+import { nearestSide, shadeCells, valignCells } from '../table';
 import { autoFitContents, autoFitWindow, columnWidthsCm, distributeColumns, setColumnWidthCm, siTableData, storeTableData } from '../si/table-format';
 
 export interface SiTableHost extends SiPictureHost {
@@ -26,14 +26,15 @@ export interface SiTableHost extends SiPictureHost {
   remove(t: SiTableEditor): Promise<void>;
   /** The width of the text, in points (what AutoFit to Window and Distribute Columns fit in). */
   textWidth(): number;
-  /** View Gridlines: faint lines on the edges with no border (on screen only). */
-  gridlines(): boolean;
   /** The pen while Border Painter is on (a click on a cell's edge gives it the line), else null. */
   painter(): BorderLine | null;
   stopPainting(): void;
   /** A change to the table's file as one named step of Undo. */
   step(label: string, f: () => Promise<void>): Promise<void>;
 }
+
+/** CSS pixels in a point. */
+const PX = 96 / 72;
 
 const el = <K extends keyof HTMLElementTagNameMap>(tag: K, cls = '', text = ''): HTMLElementTagNameMap[K] => {
   const e = document.createElement(tag);
@@ -74,6 +75,7 @@ export class SiTableEditor {
     if (!t) { this.el.append(el('p', 'muted si-note', `This table’s file (tables/${this.id}.json) is missing or could not be read.`)); return; }
     this.t = t;
     squareUp(t);
+    this.cache = null;
     this.el.append(this.grid, this.bottom());
     this.grid.addEventListener('paste', (e) => this.pasteEvent(e), true);
     this.grid.addEventListener('keydown', (e) => { if (e.key === 'Escape' && this.host.painter()) { e.preventDefault(); e.stopPropagation(); this.host.stopPainting(); } });
@@ -153,6 +155,7 @@ export class SiTableEditor {
         return this.setData((t) => valignCells(t, (rr, cc) => this.inBlock(rr, cc), v), 'Cell Alignment');
       }
       case 'fit-contents': return this.change(() => autoFitContents(this.t!), true, 'AutoFit Contents');
+      // (not a toggle, as in Word: AutoFit Contents or a typed width ends it)
       case 'fit-window': return this.change(() => autoFitWindow(this.t!), true, 'AutoFit Window');
       case 'distribute': return this.change(() => distributeColumns(this.t!, this.host.textWidth()), true, 'Distribute Columns');
       case 'select-table': {
@@ -167,8 +170,21 @@ export class SiTableEditor {
 
   // ------------------------------------------------------------------ the look (Table Design, Cell Size)
 
-  /** The table as a document's table (its cells' looks, no text), for the shared table commands; null before it is read. */
-  tableData(): TableData | null { return this.t ? siTableData(this.t, this.host.textWidth()) : null; }
+  /** The table as a document's table (its cells' looks, no text), for the shared table commands; null before it is read. Made again after each change. */
+  tableData(): TableData | null {
+    if (!this.t) return null;
+    const w = this.host.textWidth();
+    if (!this.cache || this.cache.w !== w) this.cache = { w, td: siTableData(this.t, w), res: null };
+    return this.cache.td;
+  }
+
+  /** Its lines and shading worked out (made again after each change). */
+  private resolved(): ResolvedTable | null {
+    const td = this.tableData();
+    if (!td || !this.cache) return null;
+    return (this.cache.res ??= resolveTable(td));
+  }
+  private cache: { w: number; td: TableData; res: ResolvedTable | null } | null = null;
 
   /** The selected cells, as rows and columns. */
   block(): CellBlock {
@@ -207,11 +223,11 @@ export class SiTableEditor {
   /** The selected cells' columns typed a width (cm), or (null) fitting their text again. */
   setColumnWidth(cm: number | null): Promise<void> {
     const s = this.sel;
-    return this.change(() => { for (let c = s.c; c < s.c + s.cols; c++) setColumnWidthCm(this.t!, c, cm); }, true, 'Column Width');
+    return this.change(() => { for (let c = s.c; c < s.c + s.cols; c++) setColumnWidthCm(this.t!, c, cm, this.host.textWidth()); }, true, 'Column Width');
   }
 
   /** What the ribbon shows for the selected cells: the header rows, and the picture's width (null: no picture). */
-  get state(): { headRows: number; rows: number; width: number | null; colWidth: number | null; fill: string | null; valign: 'top' | 'center' | 'bottom'; fit: boolean } {
+  get state(): { headRows: number; rows: number; width: number | null; colWidth: number | null; fill: string | null; valign: 'top' | 'center' | 'bottom' } {
     const cell = this.selected();
     const td = this.tableData();
     const own = td?.rows[this.sel.r]?.[this.sel.c];
@@ -222,7 +238,6 @@ export class SiTableEditor {
       colWidth: this.t ? columnWidthsCm(this.t, colCount(this.t))[this.sel.c] ?? null : null,
       fill: own?.fill ?? null,
       valign: own?.valign ?? 'top',
-      fit: td?.width !== undefined && typeof td.width === 'object',
     };
   }
 
@@ -291,13 +306,13 @@ export class SiTableEditor {
           mentionable: this.host.mentionable,
           changed: (v) => { const c = cellAt(this.t!, s.r, s.c); if (c) { c.text = v; void this.save(); } },
         }, true);
-        box.el.addEventListener('focus', () => { if (!this.shift) this.pick(s.r, s.c, false); });
+        box.el.addEventListener('focus', () => { if (!this.shift && !this.refocusing) this.pick(s.r, s.c, false); });
         td.addEventListener('mousedown', (e) => {
           // Border Painter: the edge of the cell nearest the click gets the pen's line (drag along several)
-          if (this.host.painter() && e.button === 0) { e.preventDefault(); this.painted.clear(); this.paintAt(td, s.r, s.c, e); return; }
+          if (this.host.painter() && e.button === 0) { e.preventDefault(); this.startPainting(); this.paintAt(td, s.r, s.c, e); return; }
           this.shift = e.shiftKey; if (e.shiftKey) { e.preventDefault(); this.pick(s.r, s.c, true); }
         });
-        td.addEventListener('mousemove', (e) => { if (this.host.painter() && e.buttons === 1) this.paintAt(td, s.r, s.c, e); });
+        td.addEventListener('mousemove', (e) => { if (this.drag && e.buttons === 1) this.paintAt(td, s.r, s.c, e); });
         td.addEventListener('mouseup', () => { this.shift = false; });
         this.boxes.push(box);
         td.append(box.el);
@@ -311,17 +326,16 @@ export class SiTableEditor {
   }
 
   /**
-   * The table's lines as they print (the ACS rules and the cells' own borders), its shading and
-   * each cell's alignment down; with View Gridlines, faint dashed lines on the edges with none.
+   * The table's lines as they print (the ACS rules and the cells' own borders), its shading, each
+   * cell's alignment down and margins, and the columns' widths; the edges with no line show as
+   * faint dashed lines, to see the cells. `td`: a look not kept yet (a Border Painter drag).
    */
-  showLines(): void {
-    const td = this.tableData();
+  showLines(td: TableData | null = this.tableData()): void {
     if (!td) return;
-    const res = resolveTable(td);
-    const grid = this.host.gridlines();
+    const res = td === this.cache?.td ? this.resolved()! : resolveTable(td);
     const css = (e: Edge | null | undefined): string => {
-      if (!e) return grid ? '1px dashed var(--line)' : '1px solid transparent';
-      const px = Math.max(1, Math.round(e.w * (96 / 72) * 2) / 2);
+      if (!e) return '1px dashed var(--line)';
+      const px = Math.max(1, Math.round(e.w * PX * 2) / 2);
       const color = e.color === '#000000' ? 'var(--text)' : e.color;
       return `${e.style === 'double' ? Math.max(3, px * 3) : px}px ${e.style === 'single' ? 'solid' : e.style} ${color}`;
     };
@@ -335,33 +349,72 @@ export class SiTableEditor {
       td0.style.borderRight = css(res.v[r]?.[c + cols]);
       td0.dataset.fill = res.fill[r]?.[c] ?? '';
       td0.style.verticalAlign = cell?.valign === 'center' ? 'middle' : cell?.valign ?? 'top';
+      const m = cellMargins(td, r, c);
+      td0.style.padding = `${m.top * PX}px ${m.right * PX}px ${m.bottom * PX}px ${m.left * PX}px`;
     }
-    // (a column's width as it prints, in proportion, so a typed or fitted width shows here too)
-    const total = td.cols.reduce((a, b) => a + b, 0);
-    const typed = !td.autofit;
-    this.grid.style.width = typed && total ? `${Math.round((total / this.host.textWidth()) * 100)}%` : '';
-    this.grid.style.tableLayout = typed ? 'fixed' : '';
-    const widths = typed ? fillColumns(td.cols, 100) : [];
+    this.showSel(false);
+    // the columns' widths, as shares of the text's width (the page here is as wide as the card):
+    // every column with its width, or only those typed, the others fitting their text
+    const textW = this.host.textWidth();
+    const n = td.cols.length;
+    const typed = this.t ? columnWidthsCm(this.t, n) : [];
+    const fixed = !td.autofit;
+    const total = td.cols.reduce((x, y) => x + y, 0);
+    const some = typed.some((w) => w !== null);
+    this.grid.style.width = fixed && total ? `${Math.min(100, Math.round((total / textW) * 1000) / 10)}%` : '';
+    this.grid.style.tableLayout = fixed ? 'fixed' : '';
     let colgroup = this.grid.querySelector('colgroup');
-    if (!typed) { colgroup?.remove(); return; }
+    if (!fixed && !some) { colgroup?.remove(); return; }
     if (!colgroup) { colgroup = el('colgroup'); this.grid.prepend(colgroup); }
-    colgroup.replaceChildren(...widths.map((w) => { const col = el('col'); col.style.width = `${w}%`; return col; }));
+    colgroup.replaceChildren(...td.cols.map((w, k) => {
+      const col = el('col');
+      if (fixed) col.style.width = `${Math.round((w / total) * 1000) / 10}%`;
+      else if (typed[k] !== null) col.style.width = `${Math.round(w * PX)}px`;
+      return col;
+    }));
   }
   private shift = false;
-  /** The edges painted in this drag of Border Painter (each once). */
-  private painted = new Set<string>();
+  /** A focus put back by the editor itself (it doesn't pick the cell again). */
+  private refocusing = false;
+  /** A Border Painter drag: the table with the edges painted so far (kept as one step of Undo when the button is let go). */
+  private drag: { td: TableData; done: Set<string> } | null = null;
+
+  private startPainting(): void {
+    const td = this.tableData();
+    if (!td) return;
+    this.drag = { td, done: new Set() };
+    document.addEventListener('mouseup', () => {
+      const d = this.drag;
+      this.drag = null;
+      if (d?.done.size) void this.setData(() => d.td, 'Border Painter');
+    }, { once: true });
+  }
 
   private paintAt(td: HTMLElement, r: number, c: number, e: MouseEvent): void {
     const pen = this.host.painter();
-    if (!pen) return;
+    const d = this.drag;
+    if (!pen || !d) return;
     const b = td.getBoundingClientRect();
-    const sides: [BorderSide, number][] = [['top', e.clientY - b.top], ['bottom', b.bottom - e.clientY], ['left', e.clientX - b.left], ['right', b.right - e.clientX]];
-    sides.sort((x, y) => x[1] - y[1]);
-    const side = sides[0][0];
+    const side = nearestSide(e.clientX, e.clientY, b.left, b.top, b.right, b.bottom);
     const key = `${r}:${c}:${side}`;
-    if (this.painted.has(key)) return;
-    this.painted.add(key);
-    void this.setData((t) => paintEdge(t, r, c, side, pen), 'Border Painter');
+    if (d.done.has(key)) return;
+    d.done.add(key);
+    d.td = paintEdge(d.td, r, c, side, pen);
+    this.showLines(d.td);
+  }
+
+  /** The width of the text this table is set in, in points. */
+  textWidth(): number { return this.host.textWidth(); }
+
+  /** Border Painter is on (the crosshair over the cells) or off. */
+  showPainting(on: boolean): void { this.grid.classList.toggle('si-painting', on); }
+
+  /** Put the typing back in the selected cell (after a command from the ribbon), the cells selected staying selected. */
+  refocus(): void {
+    const box = this.grid.querySelector<HTMLElement>(`td[data-r="${this.sel.r}"][data-c="${this.sel.c}"] .si-rich`);
+    if (!box) return;
+    this.refocusing = true;
+    try { box.focus({ preventScroll: true }); } finally { this.refocusing = false; }
   }
 
   private picture(cell: Json): HTMLElement {
@@ -377,7 +430,7 @@ export class SiTableEditor {
     this.showSel();
   }
 
-  private showSel(): void {
+  private showSel(tell = true): void {
     const s = this.sel;
     for (const td of this.grid.querySelectorAll<HTMLElement>('td')) {
       const r = Number(td.dataset.r), c = Number(td.dataset.c);
@@ -386,7 +439,7 @@ export class SiTableEditor {
       // (the cell's shading, under the selection's color while selected)
       td.style.background = inSel ? '' : td.dataset.fill ?? '';
     }
-    this.host.selectionChanged(this);
+    if (tell) this.host.selectionChanged(this);
   }
 
   private selected(): Json | null { return this.t ? cellAt(this.t, this.sel.r, this.sel.c) : null; }
@@ -400,17 +453,32 @@ export class SiTableEditor {
     return this.pending;
   }
 
-  /** Change the table, save it, and (`repaint`) show it again with the selection kept where it can be. */
+  /**
+   * Change the table, save it, and (`repaint`) show it again with the selection kept where it can
+   * be. With a `label` (a Table Design or Cell Size command) it is one step of Undo, named for it:
+   * what was typed is saved first, as its own step, and a change the project refuses (it was read
+   * again meanwhile) is said and leaves the table as it was.
+   */
   private async change(f: () => void, repaint = true, label = ''): Promise<void> {
     if (!this.t) return;
     for (const b of this.boxes) b.commit();
-    f();
-    squareUp(this.t);
-    // (a Table Design or Cell Size command: one step of Undo, named for it)
-    if (label) await this.host.step(label, () => this.save()); else await this.save();
-    if (!repaint) return;
+    const apply = () => { f(); squareUp(this.t!); this.cache = null; };
+    if (label) {
+      await this.pending;
+      try {
+        await this.host.step(label, async () => { apply(); await this.save(); });
+      } catch (e) {
+        this.host.flash(e instanceof Error ? e.message : String(e));
+        return;
+      }
+    } else {
+      apply();
+      await this.save();
+    }
+    if (!repaint || this.gone) return;
     const rows = rowsOf(this.t).length, n = colCount(this.t);
     const was = this.sel;
+    const typing = this.grid.contains(document.activeElement) || document.activeElement === document.body;
     const r = Math.min(was.r, rows - 1), c = Math.min(was.c, n - 1);
     this.paint();
     this.pick(r, c, false);
@@ -419,6 +487,8 @@ export class SiTableEditor {
       this.sel = blockAround(this.t, was.r, was.c, was.r + was.rows - 1, was.c + was.cols - 1);
       this.showSel();
     }
+    // (the cells drawn again: the typing goes back to the cell it was in, not to the page)
+    if (typing) this.refocus();
   }
 
   private align(a: Align): Promise<void> {

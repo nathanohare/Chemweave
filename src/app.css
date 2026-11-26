@@ -5448,6 +5448,7 @@ dialog.si-import .ask-buttons { margin: 0; }
 .si-tgrid tr.si-thead td { font-weight: 600; }
 .si-tgrid td:focus-within { outline: 1.5px solid var(--accent); outline-offset: -1px; }
 .si-tgrid td.si-tsel { background: var(--accent-soft); }
+.si-tgrid.si-painting td, .si-tgrid.si-painting .si-rich { cursor: crosshair; }
 .si-tgrid .si-rich { min-height: 18px; border: 0; padding: 0; background: transparent; }
 .si-tpic { text-align: center; }
 .si-tpic img { max-width: 220px; max-height: 140px; }

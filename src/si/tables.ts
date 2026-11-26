@@ -11,6 +11,21 @@ import type { Paragraph, Run } from './markup';
 import { writeMarkup } from './markup';
 
 export type Align = 'left' | 'center' | 'right';
+/** A cell's and a table's look of Chemweave's own (borders, shading…: table-format.ts). */
+export const FORMAT_KEY = 'chemweave_format';
+type Side = 'top' | 'bottom' | 'left' | 'right';
+
+/** A cell's look (`FORMAT_KEY`) with only the borders on `sides` (a part of a merged cell keeps the lines of the edges it is on). */
+function formatOn(cell: Json, sides: Side[]): Json | null {
+  const f = dict(cell[FORMAT_KEY]);
+  if (!Object.keys(f).length) return null;
+  const out: Json = { ...f };
+  const b = dict(f.borders);
+  const kept: Json = {};
+  for (const s of sides) if (b[s] !== undefined) kept[s] = b[s];
+  if (Object.keys(kept).length) out.borders = kept; else delete out.borders;
+  return Object.keys(out).length ? out : null;
+}
 /** A cell's span: where it starts, and how many rows and columns it covers. */
 export interface Span { r: number; c: number; rows: number; cols: number }
 
@@ -182,6 +197,16 @@ export function merge(t: Json, b: Span): void {
     if (!picture && typeof cell.image === 'string' && cell.image) picture = cell;
   }
   const first = cellAt(t, b.r, b.c) ?? {};
+  // (its look is the first cell's, with the lines of the block's bottom and right edges from the cells there)
+  const bottom = cellAt(t, b.r + b.rows - 1, b.c), right = cellAt(t, b.r, b.c + b.cols - 1);
+  const look = formatOn(first, ['top', 'left']) ?? {};
+  const edges: Json = { ...dict(look.borders) };
+  for (const [side, from] of [['bottom', b.rows > 1 ? bottom : first], ['right', b.cols > 1 ? right : first]] as const) {
+    const x = from ? dict(dict(from[FORMAT_KEY]).borders)[side] : undefined;
+    if (x !== undefined) edges[side] = x;
+  }
+  if (Object.keys(edges).length) look.borders = edges; else delete look.borders;
+  if (Object.keys(look).length) first[FORMAT_KEY] = look; else delete first[FORMAT_KEY];
   first.text = texts.join(' ');
   if (picture && picture !== first) {
     first.image = picture.image;
@@ -200,7 +225,22 @@ export function split(t: Json, r: number, c: number): void {
   const cell = cellAt(t, s.r, s.c)!;
   delete cell.rowspan;
   delete cell.colspan;
-  for (let i = s.r; i < s.r + s.rows; i++) for (let k = s.c; k < s.c + s.cols; k++) if (i !== s.r || k !== s.c) rows[i][k] = { text: '' };
+  // (each new cell takes the merged cell's alignment, text size and look, and the lines of the edges it is on)
+  const edgesOf = (i: number, k: number): Side[] => [
+    ...(i === s.r ? ['top' as const] : []), ...(i === s.r + s.rows - 1 ? ['bottom' as const] : []),
+    ...(k === s.c ? ['left' as const] : []), ...(k === s.c + s.cols - 1 ? ['right' as const] : []),
+  ];
+  const whole = { ...cell };
+  for (let i = s.r; i < s.r + s.rows; i++) for (let k = s.c; k < s.c + s.cols; k++) {
+    const look = formatOn(whole, edgesOf(i, k));
+    const part: Json = i === s.r && k === s.c ? cell : { text: '' };
+    if (part !== cell) {
+      if (whole.align !== undefined) part.align = whole.align;
+      if (whole.size !== undefined) part.size = whole.size;
+    }
+    if (look) part[FORMAT_KEY] = look; else delete part[FORMAT_KEY];
+    rows[i][k] = part;
+  }
 }
 
 /** A cell's picture: its file (from the owner's folder) and a typed width in cm (0 = its own size). */
