@@ -55,6 +55,9 @@ export async function recordingToWav(blob: Blob): Promise<{ bytes: Uint8Array; s
   }
 }
 
+/** A pause this soon after a piece starts (ms) starts the piece again after the pause instead. */
+export const JUST_STARTED_MS = 1000;
+
 /** Records the microphone in pieces: one for each slide, started and finished as the slides change. */
 export class Recorder {
   private rec: MediaRecorder | null = null;
@@ -72,13 +75,34 @@ export class Recorder {
     }
   }
 
-  get paused(): boolean { return this.rec?.state === 'paused'; }
+  /** A piece asked for while paused: its recorder starts when the pause ends. */
+  private waiting = false;
 
-  /** Start a new piece. */
-  start(): void {
+  get paused(): boolean { return this.waiting || this.rec?.state === 'paused'; }
+
+  /** When the recorder of this piece started (performance.now). */
+  private begunAt = 0;
+
+  /**
+   * Start a new piece, or with `paused` get one ready that starts recording when the pause ends.
+   * (WebKit on macOS 12 keeps only about 3 seconds of a recording that is paused right after it
+   * starts, however long it then records, so a recorder is never started only to be paused at once:
+   * found on a Mac, 2026-11-26.)
+   */
+  start(paused = false): void {
     if (!this.stream) return;
     this.chunks = [];
-    const rec = (this.rec = new MediaRecorder(this.stream));
+    this.rec = null;
+    this.waiting = paused;
+    if (!paused) this.begin();
+  }
+
+  private begin(): void {
+    const stream = this.stream;
+    if (!stream) return;
+    this.waiting = false;
+    this.begunAt = performance.now();
+    const rec = (this.rec = new MediaRecorder(stream));
     rec.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
     rec.onstop = () => {
       const blob = this.chunks.length ? new Blob(this.chunks, { type: rec.mimeType }) : null;
@@ -89,7 +113,20 @@ export class Recorder {
   }
 
   pause(on: boolean): void {
+    if (!on && this.waiting) { this.begin(); return; }
     if (!this.rec) return;
+    // paused just after it started (the 3, 2, 1 before the first slide): nothing worth keeping was
+    // said, so this recorder goes and a new one starts when the pause ends
+    if (on && this.rec.state === 'recording' && performance.now() - this.begunAt < JUST_STARTED_MS) {
+      const old = this.rec;
+      old.ondataavailable = null;
+      old.onstop = null;
+      old.stop();
+      this.rec = null;
+      this.chunks = [];
+      this.waiting = true;
+      return;
+    }
     if (on && this.rec.state === 'recording') this.rec.pause();
     else if (!on && this.rec.state === 'paused') this.rec.resume();
   }
@@ -98,6 +135,7 @@ export class Recorder {
   finish(): Promise<Blob | null> {
     const rec = this.rec;
     this.rec = null;
+    this.waiting = false;
     if (!rec || rec.state === 'inactive') return Promise.resolve(null);
     return new Promise((resolve) => { this.resolveStop = resolve; rec.stop(); });
   }

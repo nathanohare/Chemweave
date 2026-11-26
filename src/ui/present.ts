@@ -376,7 +376,7 @@ export class Presenter {
     r.i = i;
     r.t0 = performance.now();
     if (r.paused !== null) r.paused = r.t0;
-    if (r.rec) { r.rec.start(); if (r.paused !== null) r.rec.pause(true); }
+    if (r.rec) r.rec.start(r.paused !== null);
     this.fillNotes();
   }
 
@@ -405,7 +405,7 @@ export class Presenter {
     if (!r) return;
     r.t0 = performance.now();
     if (r.paused !== null) r.paused = r.t0;
-    if (r.rec) { void r.rec.finish(); r.rec.start(); if (r.paused !== null) r.rec.pause(true); }
+    if (r.rec) { void r.rec.finish(); r.rec.start(r.paused !== null); }
     this.updateRehearsal();
   }
 
