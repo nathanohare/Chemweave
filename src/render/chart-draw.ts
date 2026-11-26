@@ -358,7 +358,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   let top = pad, bottom = h - pad, left = pad, right = w - pad;
 
   if (chart.title) {
-    const ts = fs * 1.4;
+    const ts = chart.titleSize ?? fs * 1.4;
     // each paragraph of the title on a line of its own, as Excel draws it
     const lines = titleLines(titleRunsOf(chart.title, chart.titleRuns));
     if (!lines) text(ctx, chart.title, w / 2, top + ts * 0.9, opt(ts, { align: 'center' }));

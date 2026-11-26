@@ -131,6 +131,8 @@ export interface Chart {
   title?: string;
   /** The title's looks as a file had them: italic, bold, more than one paragraph (see titleRunsOf). */
   titleRuns?: TitleRun[];
+  /** The title's text size (in the chart's units, as fontSize), as a file gave it; unset: 1.4 times the chart's. */
+  titleSize?: number;
   /**
    * Excel's automatic title, made from the series' names ("Chart Title" for more than one), on as
    * an Excel file had it, for a chart with no title of its own: 'title' with its title element
