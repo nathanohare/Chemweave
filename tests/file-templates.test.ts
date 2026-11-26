@@ -10,7 +10,7 @@ import { STARTER_DECKS } from '../src/deck/starters';
 import { Deck } from '../src/deck/deck';
 import { Doc } from '../src/model';
 import { showTemplateWindow, type TemplateCard } from '../src/ui/template-window';
-import { documentCategories } from '../src/ui/file-templates';
+import { BLANK_CARD, BLANK_CATEGORY, documentCategories, sheetCategories, slideCategories } from '../src/ui/file-templates';
 import { checkDocument } from '../src/accessibility';
 import { keyOf } from '../src/sheet/refs';
 import { writeXlsx, readXlsx } from '../src/io/xlsx';
@@ -190,10 +190,47 @@ describe('the template window', () => {
     expect(await w2.closed).toBe(false);
   });
 
-  it('offers every document template, by category', async () => {
+  it('offers the blank document first, then every document template, by category', async () => {
     const cats = documentCategories(() => {});
-    expect(cats.map((c) => c.name)).toEqual(DOC_CATEGORIES.map((c) => c.name));
-    const n = (await Promise.all(cats.map((c) => c.cards()))).flat().length;
-    expect(n).toBe(DOC_TEMPLATES.length);
+    expect(cats.map((c) => c.name)).toEqual(['Blank', ...DOC_CATEGORIES.map((c) => c.name)]);
+    const cards = await Promise.all(cats.map((c) => c.cards()));
+    expect(cards[0].map((c) => [c.id, c.name])).toEqual([[BLANK_CARD, 'Blank Document']]);
+    expect(cards.slice(1).flat().length).toBe(DOC_TEMPLATES.length);
+  });
+
+  it('puts the blank spreadsheet and the blank presentation first too', async () => {
+    const sheets = sheetCategories(() => {});
+    expect(sheets.map((c) => c.id)).toEqual([BLANK_CATEGORY, ...SHEET_CATEGORIES.map((c) => c.id)]);
+    expect((await sheets[0].cards()).map((c) => c.name)).toEqual(['Blank Spreadsheet']);
+    const deck = Deck.blank(new Doc());
+    const slides = slideCategories({ master: deck.master, size: deck.size, mine: [], useTheme: () => {}, useStarter: () => {}, paint: () => {} });
+    expect(slides[0].id).toBe(BLANK_CATEGORY);
+    expect((await slides[0].cards()).map((c) => c.name)).toEqual(['Blank Presentation']);
+  });
+
+  it('opens on the blank file, marked and focused so Enter keeps it; the arrows through the categories stay in the list', async () => {
+    const picked: string[] = [];
+    const w = showTemplateWindow({
+      mode: 'document', title: 'New Document', initial: 'blank', initialCard: 'b1',
+      categories: [{ id: 'blank', name: 'Blank', cards: () => [card('b1', picked)] }, { id: 'a', name: 'A', cards: () => [card('one', picked)] }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const root = document.querySelector('.template-window') as HTMLElement;
+    const blank = root.querySelector('.tw-card') as HTMLButtonElement;
+    expect(blank.dataset.id).toBe('b1');
+    expect(blank.classList.contains('tw-default')).toBe(true);
+    expect(document.activeElement).toBe(blank);
+    // down to the next category and back up: the focus stays on the category list
+    const [tabBlank, tabA] = [...root.querySelectorAll<HTMLButtonElement>('.tw-cat')];
+    tabBlank.focus();
+    tabBlank.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    tabA.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(tabBlank);
+    expect(root.querySelector('.tw-card')!.classList.contains('tw-default')).toBe(true);
+    (root.querySelector('.tw-card') as HTMLButtonElement).click();
+    expect(await w.closed).toBe(true);
+    expect(picked).toEqual(['b1']);
   });
 });

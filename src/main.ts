@@ -323,7 +323,7 @@ import { AccessibilityPane, askAltText } from './ui/accessibility-pane';
 import type { PreflightPane } from './ui/preflight-pane';
 import { shapeBox } from './objects';
 import { SlideComparePane } from './ui/slide-compare';
-import { documentCategories, sheetCategories, slideCategories, templateChem } from './ui/file-templates';
+import { BLANK_CARD, BLANK_CATEGORY, documentCategories, sheetCategories, slideCategories, templateChem } from './ui/file-templates';
 import { unitPrefs } from './sheet/template-units';
 import { smilesPrefs } from './sheet/smiles-cells';
 import { showTemplateWindow, closeTemplateWindow } from './ui/template-window';
@@ -10739,12 +10739,12 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
   };
   const note = 'Choose a template, or click outside this window to keep the blank file. Type over the text in [brackets].';
   if (kind === 'document') {
-    showTemplateWindow({ mode: 'document', title: 'New Document', note, remember: 'newDocCategory', showPref, categories: documentCategories((t) => {
+    showTemplateWindow({ mode: 'document', title: 'New Document', note, showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: documentCategories((t) => {
       ws.newDocument(t.make(), blank);
       flash(`Started from the ${t.name} template: type over the text in [brackets].`);
     }) });
   } else if (kind === 'sheet') {
-    showTemplateWindow({ mode: 'sheet', title: 'New Spreadsheet', note, remember: 'newSheetCategory', showPref, categories: sheetCategories((t) => {
+    showTemplateWindow({ mode: 'sheet', title: 'New Spreadsheet', note, showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: sheetCategories((t) => {
       ws.newSheet(t.make(unitPrefs.place), blank);
       flash(`Started from the ${t.name} template: type over the text in [brackets].`);
     }) });
@@ -10752,7 +10752,7 @@ function offerTemplates(kind: 'document' | 'sheet' | 'slides', always = false): 
     const d = blank.deck;
     if (!d) return;
     const fresh = () => ws.active === blank && d.edits === 0;
-    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Choose a theme or a starter deck, or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', remember: 'newSlidesCategory', showPref, categories: slideCategories({
+    showTemplateWindow({ mode: 'slides', title: 'New Presentation', note: 'Choose a theme or a starter deck, or click outside this window to keep the blank presentation. Design ▸ Templates changes the theme later.', showPref, initial: BLANK_CATEGORY, initialCard: BLANK_CARD, categories: slideCategories({
       master: d.master, size: d.size, mine: slideThemes,
       paint: (c, m, size, w, h, stacked) => { void import('./ui/slide-templates').then((x) => x.paintTemplate(c, m, size, w, h, stacked)); },
       useTheme: (t) => {

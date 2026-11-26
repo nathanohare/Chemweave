@@ -3,6 +3,7 @@
 // column headings), the slide themes (a title slide over a content slide) and starter decks.
 
 import { DOC_CATEGORIES, DOC_TEMPLATES, type DocTemplate } from '../document/templates';
+import { newDocument } from '../document/document';
 import { SHEET_CATEGORIES, SHEET_TEMPLATES, type SheetTemplate } from '../sheet/templates';
 import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from '../deck/templates';
 import { STARTER_DECKS, type StarterDeck } from '../deck/starters';
@@ -136,12 +137,38 @@ const sheetCard = (t: SheetTemplate, use: (t: SheetTemplate) => void): TemplateC
   };
 };
 
-export function documentCategories(use: (t: DocTemplate) => void): TemplateCategory[] {
-  return DOC_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DOC_TEMPLATES.filter((t) => t.category === c.id).map((t) => docCard(t, use)) }));
+/** The category and card of the blank file, first in each window and chosen when it opens. */
+export const BLANK_CATEGORY = 'blank';
+export const BLANK_CARD = 'blank';
+
+/** An empty page, the blank document's picture until the drawing code loads. */
+function emptyPage(): HTMLElement {
+  const page = document.createElement('div');
+  page.className = 'ft-page';
+  page.setAttribute('aria-hidden', 'true');
+  return page;
 }
 
+/** The blank file already open behind the window: picking it keeps that file as it is. */
+const blankCategory = (card: Omit<TemplateCard, 'id' | 'pick'>): TemplateCategory => ({
+  id: BLANK_CATEGORY, name: 'Blank', cards: () => [{ ...card, id: BLANK_CARD, pick: () => {} }],
+});
+
+export function documentCategories(use: (t: DocTemplate) => void): TemplateCategory[] {
+  return [
+    blankCategory({ name: 'Blank Document', tip: 'An empty document.', preview: (host) => realPicture(host, emptyPage, (m) => m.docPage(newDocument())) }),
+    ...DOC_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DOC_TEMPLATES.filter((t) => t.category === c.id).map((t) => docCard(t, use)) })),
+  ];
+}
+
+/** An empty grid, the Blank Spreadsheet card's icon. */
+const BLANK_SHEET_ICON = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><rect x="3" y="4" width="18" height="16" rx="1.5"/><path d="M3 9h18M3 14.5h18M9 4v16M15 4v16"/></svg>';
+
 export function sheetCategories(use: (t: SheetTemplate) => void): TemplateCategory[] {
-  return SHEET_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => SHEET_TEMPLATES.filter((t) => t.category === c.id).map((t) => sheetCard(t, use)) }));
+  return [
+    blankCategory({ name: 'Blank Spreadsheet', about: 'An empty spreadsheet.', icon: BLANK_SHEET_ICON, preview: () => {} }),
+    ...SHEET_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => SHEET_TEMPLATES.filter((t) => t.category === c.id).map((t) => sheetCard(t, use)) })),
+  ];
 }
 
 export interface SlideChoices {
@@ -157,23 +184,29 @@ export interface SlideChoices {
 
 /** Slide themes by group, your own first, then the starter decks. */
 export function slideCategories(o: SlideChoices): TemplateCategory[] {
+  /** A look's title slide over a content slide. */
+  const paintLook = (host: HTMLElement, m: Master) => {
+    const c = document.createElement('canvas');
+    o.paint(c, m, o.size, 96, 54, true);
+    host.replaceChildren(c);
+    // the fonts that come with the app load when first used: draw again once they have, with the
+    // widths measured in the stand-in font forgotten (else a centered title sits off center)
+    if (typeof document.fonts?.load === 'function') {
+      void Promise.allSettled([m.titleFont, m.bodyFont].flatMap((f) => [document.fonts.load(`12px "${f}"`), document.fonts.load(`bold 12px "${f}"`)]))
+        .then(() => { if (!c.isConnected) return; forgetTextWidths(); o.paint(c, m, o.size, 96, 54, true); });
+    }
+  };
   const themeCard = (t: SlideTemplate): TemplateCard => ({
     id: `theme-${t.id}`, name: t.name, detail: t.titleFont === t.bodyFont ? t.titleFont : `${t.titleFont} and ${t.bodyFont}`,
-    preview: (host) => {
-      const c = document.createElement('canvas');
-      o.paint(c, applyTemplate(o.master, t), o.size, 96, 54, true);
-      host.replaceChildren(c);
-      // the fonts that come with the app load when first used: draw again once they have, with the
-      // widths measured in the stand-in font forgotten (else a centered title sits off center)
-      if (typeof document.fonts?.load === 'function') {
-        void Promise.allSettled([t.titleFont, t.bodyFont].flatMap((f) => [document.fonts.load(`12px "${f}"`), document.fonts.load(`bold 12px "${f}"`)]))
-          .then(() => { if (!c.isConnected) return; forgetTextWidths(); o.paint(c, applyTemplate(o.master, t), o.size, 96, 54, true); });
-      }
-    },
+    preview: (host) => paintLook(host, applyTemplate(o.master, t)),
     pick: () => o.useTheme(t),
   });
   const groups = ['Mine', 'Light', 'Dark title slide', 'Bright', 'Minimal', 'Bold', 'Classic', 'Chemistry'] as const;
-  const out: TemplateCategory[] = [];
+  const out: TemplateCategory[] = [blankCategory({
+    // the new presentation as it is, in the look new presentations start with
+    name: 'Blank Presentation', detail: o.master.titleFont === o.master.bodyFont ? o.master.titleFont : `${o.master.titleFont} and ${o.master.bodyFont}`,
+    preview: (host) => paintLook(host, o.master),
+  })];
   for (const g of groups) {
     const list = g === 'Mine' ? o.mine : SLIDE_TEMPLATES.filter((t) => t.group === g);
     if (list.length) out.push({ id: `themes-${g.toLowerCase().replace(/ /g, '-')}`, name: g === 'Mine' ? 'Your themes' : g, cards: () => list.map(themeCard) });

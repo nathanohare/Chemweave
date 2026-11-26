@@ -44,6 +44,8 @@ export interface TemplateWindowOptions {
   all?: boolean;
   /** The category shown first (else the one last used, else the first). */
   initial?: string;
+  /** The card chosen when the window opens (the blank file): marked, and focused so Enter picks it. */
+  initialCard?: string;
   /** Where the category last used is kept (a localStorage key). */
   remember?: string;
   /** The "Show templates when creating new …" checkbox. */
@@ -295,7 +297,7 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   }
   const tabs = new Map<string, HTMLButtonElement>();
   let showing = '';
-  const show = async (id: string, focus = false) => {
+  const show = async (id: string, focus = false, opening = false) => {
     showing = id;
     for (const [k, b] of tabs) { b.setAttribute('aria-selected', String(k === id)); b.tabIndex = k === id ? 0 : -1; }
     if (focus) tabs.get(id)?.focus();
@@ -307,6 +309,12 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     // another category's templates fade in (Nate's note on Motion Choices)
     enter(grid, 'fade');
     grid.scrollTop = 0;
+    // the default choice (the blank file) stands out, and takes the keyboard when the window opens
+    const chosen = o.initialCard ? [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')].find((b) => b.dataset.id === o.initialCard) : undefined;
+    if (chosen) {
+      chosen.classList.add('tw-default');
+      if (opening) chosen.focus();
+    }
   };
   for (const c of cats) {
     const b = document.createElement('button');
@@ -350,9 +358,13 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   let first = o.initial ?? '';
   if (!first && o.remember) try { first = localStorage.getItem(o.remember) ?? ''; } catch { /* the first */ }
   if (!tabs.has(first)) first = cats[0]?.id ?? '';
-  if (first) void show(first, true);
-  // the new file's own view takes the keyboard as it opens: take it back, so the arrow keys and Esc work at once
-  const refocus = () => { if (isOpen && !root.contains(document.activeElement)) (tabs.get(showing) ?? root).focus(); };
+  if (first) void show(first, true, true);
+  // the new file's own view takes the keyboard as it opens: take it back (to the blank file's card when
+  // it is showing), so Enter, the arrow keys and Esc work at once
+  const refocus = () => {
+    if (!isOpen || root.contains(document.activeElement)) return;
+    (grid.querySelector<HTMLButtonElement>('.tw-card.tw-default') ?? tabs.get(showing) ?? root).focus();
+  };
   setTimeout(refocus, 0);
   setTimeout(refocus, 250);
   return win;
