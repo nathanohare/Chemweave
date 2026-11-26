@@ -210,6 +210,7 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    this.findAgain();
     v.redraw();
   }
 
@@ -454,6 +455,7 @@ export class SiPreview {
     }
     this.caretOn = true;
     this.placeInput();
+    if (this.finder?.open) { if (kind === 'text') this.findAgain(); else this.finder.showCount(); }
     this.view.redraw();
   }
 
@@ -894,18 +896,24 @@ export class SiPreview {
         focus: () => this.ta.focus(),
         flash: (m, ms) => this.api.flash(m, ms),
         redraw: () => this.foundShown(),
-      });
-      // (replacing would write into many fields at once, past the typing guard: not here)
-      this.finder.el.classList.add('df-find-only');
-      for (const b of this.finder.el.querySelectorAll<HTMLElement>('.df-toggle')) b.hidden = true;
+        // (replacing would write into many fields at once, past the typing guard: not here)
+      }, { findOnly: true });
     }
     this.finder.show(false);
+  }
+
+  /** While the text changes under an open Find box: its places looked for again, nothing moved into view. */
+  private findingAgain = false;
+  private findAgain(): void {
+    if (!this.finder?.open) return;
+    this.findingAgain = true;
+    try { this.finder.refresh(); } finally { this.findingAgain = false; }
   }
 
   /** The place found and selected: in view, and its page chosen in the list. */
   private foundShown(): void {
     const ed = this.file?.ed;
-    if (ed && !ed.collapsed && this.finder?.open) {
+    if (ed && !ed.collapsed && this.finder?.open && !this.findingAgain) {
       const r = this.view.rangeRects(ed.start, ed.end)[0];
       if (r) this.view.reveal(r, 60);
       const b = blockAt(this.blocks, ed.start);

@@ -417,8 +417,8 @@ const RIBBON = `
     </div><div class="rb-label">Add</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="ref-edit" title="Edit the selected reference (double-click it does the same): every value can be changed">Edit Reference…</button>
-        <button data-si="ref-delete" data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
+        <button data-si="ref-edit" disabled title="Edit the selected reference (double-click it does the same): every value can be changed">Edit Reference…</button>
+        <button data-si="ref-delete" disabled data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
   </div>
@@ -603,7 +603,7 @@ const RIBBON = `
     ${fontGroupHtml('si')}
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="find" data-ic="find" title="Find (Ctrl+F in the Live Preview): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
         <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
         <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
       </div>
@@ -3290,6 +3290,7 @@ export class SiMode {
     for (const b of this.ribbon.querySelectorAll('[data-si="live-preview"]')) b.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
+    this.viewState();
   }
 
   /**
@@ -3504,6 +3505,7 @@ export class SiMode {
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
     siPreviewPrefs.changed = () => this.preview?.view.redraw();
     this.wirePageLinks();
+    this.viewState();
     return this.preview;
   }
 
@@ -4491,6 +4493,12 @@ export class SiMode {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
+    // (Find and Go To from anywhere in the pane; the Live Preview takes its own Ctrl+F first)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'g')) {
+      e.preventDefault();
+      void this.run(e.key.toLowerCase() === 'f' ? 'find' : 'go-to');
+      return;
+    }
     // (in a text box or a list, Alt and the arrows are the box's own keys)
     if (inText) return;
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
@@ -5344,7 +5352,11 @@ export class SiMode {
       }
       case 'go-to': await this.goTo(); return;
       case 'cover-page': this.go({ kind: 'project' }); return;
-      case 'toc': this.go({ kind: 'project' }); this.page.querySelector<HTMLElement>('[data-si-toc]')?.scrollIntoView({ block: 'start' }); return;
+      case 'toc':
+        this.go({ kind: 'project' });
+        // (after the page is drawn)
+        requestAnimationFrame(() => this.page.querySelector<HTMLElement>('[data-si-toc]')?.scrollIntoView({ block: 'start' }));
+        return;
       case 'manage-references': case 'bibliography': this.go({ kind: 'references' }); return;
       case 'insert-citation': await this.citeFromLibrary(c); return;
       case 'page-setup': case 'header': case 'footer': case 'page-number': this.projectSettings('page'); return;
@@ -5362,7 +5374,7 @@ export class SiMode {
       }
       case 'nav-pane':
         this.pane.classList.toggle('si-tree-off');
-        this.live.view?.resize();
+        requestAnimationFrame(() => this.live.view?.resize());
         this.viewState();
         return;
     }
@@ -5374,6 +5386,11 @@ export class SiMode {
     set('show-marks', !!this.preview?.showMarks);
     set('view-multiple', !!this.preview?.multiplePages);
     set('nav-pane', !this.pane.classList.contains('si-tree-off'));
+    // (these change the Live Preview: not while it is off)
+    for (const cmd of ['show-marks', 'view-multiple']) {
+      const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-si="${cmd}"]`);
+      if (b) b.disabled = !this.liveOn;
+    }
   }
 
   /** Paste, Cut, Copy and Select All: where the person was typing, on the SI page or in the Live Preview. */
@@ -5419,6 +5436,7 @@ export class SiMode {
       pv.goToPage(n);
       return;
     }
+    if (!pv && Number.isInteger(n) && n >= 1) { this.host.flash('Pages are counted in the Live Preview: turn it on to go to a page (View ▸ Live Preview).'); return; }
     this.host.flash(`No compound has the ID “${w}”${pv ? ', and it is not a page number' : ''}.`);
   }
 

@@ -43,7 +43,11 @@ export class DocFind {
   private replaceEl: HTMLElement;
   private toggleEl: HTMLButtonElement;
 
-  constructor(parent: HTMLElement, private host: DocFindHost) {
+  /** Finding only: no Replace row, and Ctrl+H does nothing (SI mode's Live Preview). */
+  private findOnly: boolean;
+
+  constructor(parent: HTMLElement, private host: DocFindHost, opts: { findOnly?: boolean } = {}) {
+    this.findOnly = !!opts.findOnly;
     const el = document.createElement('div');
     el.className = 'doc-find';
     el.setAttribute('role', 'search');
@@ -80,6 +84,7 @@ export class DocFind {
     this.countEl = el.querySelector('.df-count')!;
     this.replaceEl = el.querySelector('.df-replace')!;
     this.toggleEl = el.querySelector('.df-toggle')!;
+    if (this.findOnly) { this.toggleEl.remove(); this.replaceEl.remove(); }
 
     this.findBox.addEventListener('input', () => { this.refresh(); this.go(0); });
     for (const c of el.querySelectorAll<HTMLInputElement>('input[type=checkbox]')) c.addEventListener('change', () => { this.refresh(); this.go(0); });
@@ -129,6 +134,7 @@ export class DocFind {
   }
 
   private showReplace(on: boolean): void {
+    if (this.findOnly) return;
     this.replaceEl.hidden = !on;
     this.toggleEl.setAttribute('aria-expanded', String(on));
     this.toggleEl.textContent = on ? '⌄' : '›';
@@ -186,6 +192,7 @@ export class DocFind {
 
   /** Replace the selected place, then go to the next. */
   private replaceOne(): void {
+    if (this.findOnly) return;
     const f = this.host.file();
     if (!f) return;
     const i = this.current();
@@ -215,6 +222,7 @@ export class DocFind {
   }
 
   private replaceAll(): void {
+    if (this.findOnly) return;
     const f = this.host.file();
     if (!f || !this.hits.length) { this.host.flash('Nothing to replace: the words were not found.'); return; }
     const n = this.hits.length;
@@ -239,7 +247,7 @@ export class DocFind {
     if (ctrl && k === 'h') { e.preventDefault(); this.showReplace(true); return; }
     if (e.key !== 'Enter' || !(e.target instanceof HTMLInputElement) || e.target.type === 'checkbox') return;
     e.preventDefault();
-    if (e.target === this.withBox) {
+    if (e.target === this.withBox && !this.findOnly) {
       if (ctrl) this.replaceAll();
       else this.replaceOne();
     } else this.go(e.shiftKey ? -1 : 1);
