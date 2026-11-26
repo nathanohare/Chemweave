@@ -20,6 +20,7 @@ import { addFlagComments } from '../si/flag-comments';
 import { mentionPicker, threadCard } from './comment-cards';
 import { EDIT_KEY, NO_CROP, editRecord, editedName, isPlain, pictureEditOf, turned, type PictureEdit, type Turn } from '../si/picture-edit';
 import { askCrop, editableKind, renderEdited } from './si-crop';
+import { popupHost } from './popup-host';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
@@ -1043,7 +1044,7 @@ export class SiMode {
       })().catch((e: unknown) => this.host.flash(e instanceof Error ? e.message : String(e), 8000));
     });
     pop.append(more);
-    document.body.append(pop);
+    popupHost(at).append(pop);
     const r = at.getBoundingClientRect();
     pop.style.top = `${Math.min(window.innerHeight - pop.offsetHeight - 8, r.bottom + 4)}px`;
     pop.style.left = `${Math.max(8, Math.min(window.innerWidth - pop.offsetWidth - 8, r.right - pop.offsetWidth))}px`;
