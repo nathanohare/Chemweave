@@ -16,8 +16,9 @@ import type { DocStyle } from '../style';
 import { defaultStyles, type DocText } from '../document/document';
 import { compileSi, objectLabelSets, spectraPagesBefore, type SiPreviewTarget } from '../si/compile-doc';
 import type { SiPreview } from './si-preview';
+import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { siPreviewPrefs } from './mode-prefs';
-import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
+import { compoundSrc, gpSrc, parseSrc, readingLine, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -652,6 +653,7 @@ export class SiMode {
     this.tree.setAttribute('aria-label', 'Sections and compounds');
     this.page = el('div', 'si-page');
     this.live = this.livePane();
+    this.wirePageScroll();
     this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
     // a compound's ID in the text shows its structure when the mouse rests on it
@@ -1735,6 +1737,9 @@ export class SiMode {
     const total = p.compounds.reduce((n, c) => n + this.activeWarnings(c).length, 0) + this.projectWarningsNow.length;
     row(1, svg('warn', 15), `Warnings (${total})`, { kind: 'warnings' }, { cls: total > 0 ? 'si-has-warn' : '', title: 'Every automatic warning in the project, by compound' });
 
+    // (the SI's own pages in order, for scrolling from one to the next on the SI page)
+    this.pageOrder = specs.filter((x) => ['project', 'section', 'scheme', 'compound', 'spectra'].includes(x.sel.kind))
+      .map((x) => ({ sel: x.sel, label: x.sel.kind === 'project' ? 'the cover page' : x.cid !== undefined ? `${x.cid} ${x.text}` : x.text }));
     // sections and scheme pages with rows under them fold (▸) and unfold (▾); the row picked is never hidden
     const shut = this.collapsedOf(p);
     const keyOf = (x: RowSpec): string => JSON.stringify(x.sel);
@@ -3098,6 +3103,131 @@ export class SiMode {
     this.pickFromPreview(node);
   }
 
+  // ---------------------------------------------------------------- Synchronous Scrolling on the SI page
+
+  /** The SI's own pages in the list's order (the cover, sections, scheme pages, compounds, spectra pages), with what the barrier's hint calls them. */
+  private pageOrder: { sel: Pick; label: string }[] = [];
+  private barrier = freshBarrier();
+  private barrierHint: HTMLElement | null = null;
+  private barrierHide = 0;
+  /** When the person last scrolled the SI page (wheel, touch, keys, its scrollbar held), told from it scrolling by itself. */
+  private pageUserAt = -Infinity;
+  private pagePressed = false;
+  private pageAlignQueued = false;
+  private touchY: number | null = null;
+
+  /**
+   * Synchronous Scrolling on the SI page: scrolling it keeps the preview on the same field, and
+   * scrolling on past its end (or above its start) meets a soft barrier; pushing through opens the
+   * next (or previous) page, each page staying its own.
+   */
+  private wirePageScroll(): void {
+    const pg = this.page;
+    const user = (): void => { this.pageUserAt = performance.now(); };
+    pg.addEventListener('wheel', (e) => {
+      if (e.ctrlKey || e.metaKey) return;
+      user();
+      if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;
+      this.pageEdgeScroll(wheelPixels(e.deltaY, e.deltaMode, pg.clientHeight), e.target);
+    }, { passive: true });
+    pg.addEventListener('touchstart', (e) => { user(); this.touchY = e.touches.length === 1 ? e.touches[0].clientY : null; }, { passive: true });
+    pg.addEventListener('touchmove', (e) => {
+      user();
+      if (this.touchY === null || e.touches.length !== 1) return;
+      const y = e.touches[0].clientY;
+      // (the finger moving up scrolls down)
+      this.pageEdgeScroll(this.touchY - y, e.target);
+      this.touchY = y;
+    }, { passive: true });
+    pg.addEventListener('touchend', () => { this.touchY = null; }, { passive: true });
+    pg.addEventListener('keydown', (e) => { if (['PageUp', 'PageDown', 'ArrowUp', 'ArrowDown', 'Home', 'End', ' '].includes(e.key)) user(); });
+    pg.addEventListener('pointerdown', (e) => { if (e.button === 0) { this.pagePressed = true; user(); } });
+    const up = (): void => { this.pagePressed = false; };
+    window.addEventListener('pointerup', up);
+    window.addEventListener('pointercancel', up);
+    pg.addEventListener('scroll', () => {
+      const now = performance.now();
+      if (!this.pagePressed && now - this.pageUserAt > 300) return;
+      this.pageUserAt = now;
+      if (this.pageAlignQueued) return;
+      this.pageAlignQueued = true;
+      requestAnimationFrame(() => { this.pageAlignQueued = false; this.alignPreviewToPage(); });
+    }, { passive: true });
+  }
+
+  /** Whether an element inside the SI page (a text box, a list) between `t` and the page can still scroll `dy`'s way itself. */
+  private innerScrolls(t: EventTarget | null, dy: number): boolean {
+    for (let e = t instanceof Element ? t : null; e && e !== this.page; e = e.parentElement) {
+      if (!(e instanceof HTMLElement) || e.scrollHeight <= e.clientHeight + 1) continue;
+      const oy = getComputedStyle(e).overflowY;
+      if (oy !== 'auto' && oy !== 'scroll') continue;
+      if (dy > 0 ? e.scrollTop + e.clientHeight < e.scrollHeight - 1 : e.scrollTop > 0) return true;
+    }
+    return false;
+  }
+
+  /** A scroll of the SI page (`dy` pixels, + down): at its edge, the soft barrier to the next page. */
+  private pageEdgeScroll(dy: number, target: EventTarget | null): void {
+    const pg = this.page;
+    const on = this.syncScroll && !!this.project && !this.innerScrolls(target, dy);
+    const dir: 1 | -1 = dy > 0 ? 1 : -1;
+    const atEdge = dir > 0 ? pg.scrollTop + pg.clientHeight >= pg.scrollHeight - 1 : pg.scrollTop <= 0;
+    const next = on ? neighbourPage(this.pageOrder, (x) => JSON.stringify(x.sel), JSON.stringify(this.pick), dir) : null;
+    const step = pushBarrier(this.barrier, dy, performance.now(), on && atEdge, !!next);
+    if (!step || !next || step.shut) { this.showBarrier(null); return; }
+    if (!step.through) { this.showBarrier({ dir, label: next.label, progress: step.progress }); return; }
+    this.showBarrier(null);
+    this.go(next.sel);
+    // (the new page from its top going down, from its end going up)
+    pg.scrollTop = dir > 0 ? 0 : pg.scrollHeight;
+  }
+
+  /** The barrier's hint at the SI page's bottom (or top): where pushing on goes, and how far through (null: hidden). */
+  private showBarrier(h: { dir: 1 | -1; label: string; progress: number } | null): void {
+    clearTimeout(this.barrierHide);
+    if (!h) { if (this.barrierHint) this.barrierHint.hidden = true; return; }
+    let b = this.barrierHint;
+    if (!b) {
+      b = this.barrierHint = el('div', 'si-barrier');
+      b.setAttribute('role', 'status');
+      b.append(el('span', 'si-barrier-text'), el('span', 'si-barrier-fill'));
+      this.pane.append(b);
+    }
+    const pg = this.page;
+    b.hidden = false;
+    b.classList.toggle('up', h.dir < 0);
+    b.style.left = `${pg.offsetLeft}px`;
+    b.style.width = `${pg.clientWidth}px`;
+    b.style.top = h.dir > 0 ? `${pg.offsetTop + pg.clientHeight - b.offsetHeight}px` : `${pg.offsetTop}px`;
+    b.querySelector('.si-barrier-text')!.textContent = `${h.dir > 0 ? '↓ Keep scrolling for the next page' : '↑ Keep scrolling for the page before'}: ${h.label}`;
+    (b.querySelector('.si-barrier-fill') as HTMLElement).style.width = `${Math.round(Math.min(1, h.progress) * 100)}%`;
+    // (scrolling stopped short: the barrier closes again)
+    this.barrierHide = window.setTimeout(() => { this.barrier = freshBarrier(); if (this.barrierHint) this.barrierHint.hidden = true; }, 900);
+  }
+
+  /**
+   * The SI page scrolled by the person: with Synchronous Scrolling on, the preview is scrolled so
+   * the field at the page's reading line is at the same height in it (the page's top: the page's
+   * own top in the preview).
+   */
+  private alignPreviewToPage(): void {
+    const pv = this.preview;
+    if (!this.syncScroll || !pv || !this.liveOn || this.liveTarget()?.kind !== 'whole') return;
+    if (pv.focusedNode !== this.liveNode()) return;
+    const pg = this.page;
+    const k = readingLine(pg.scrollTop, pg.scrollHeight - pg.clientHeight, pg.clientHeight, 0.3);
+    if (pg.scrollTop <= 0) { pv.revealFocus(); return; }
+    const r = pg.getBoundingClientRect();
+    const line = r.top + pg.clientHeight * k;
+    const fields = [...pg.querySelectorAll<HTMLElement>('.si-field[data-key], [data-src]')];
+    const start = fields.findIndex((f) => f.getBoundingClientRect().bottom >= line);
+    if (start < 0) return;
+    for (const f of fields.slice(start)) {
+      const src = this.sourceOfElement(f);
+      if (src && pv.alignSource(src, k)) return;
+    }
+  }
+
   /** Whether a page of the whole SI is still in the project (the preview can be a compile behind). */
   private nodeExists(node: string): boolean {
     const p = this.project;
@@ -3424,7 +3554,7 @@ export class SiMode {
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
-    siPreviewPrefs.changed = () => this.preview?.view.redraw();
+    siPreviewPrefs.changed = () => this.preview?.applyPrefs();
     this.wirePageLinks();
     return this.preview;
   }

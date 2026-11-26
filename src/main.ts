@@ -10207,6 +10207,7 @@ setTimeout(() => {
 docBoxPrefs.changed = () => storeSettings();
 docRulerPrefs.changed = () => storeSettings();
 docPagePrefs.changed = () => storeSettings();
+siPreviewPrefs.save = () => storeSettings();
 formulaBarPrefs.changed = () => storeSettings();
 // documents measure fonts they have no published widths for on the screen
 setScreenMeasure(measureText);
@@ -13095,6 +13096,8 @@ async function personalPreferences(): Promise<void> {
     { name: 'siCustom', label: 'Mark text no field holds with', value: siPreviewPrefs.custom, short: true, options: [
       { value: 'underline', label: 'An amber dotted underline and a flag' }, { value: 'fill', label: 'An amber fill and a bar' }],
       help: 'Text typed in the preview where no field is: it is kept and prints where it was typed, and is listed on the Warnings page.' },
+    { name: 'siWhiteSpace', label: 'Show white space between pages', type: 'checkbox', value: String(siPreviewPrefs.whiteSpace),
+      help: 'Off, each page\'s top and bottom margins (with its header and footer) are hidden, the pages joined by a line, so more of the SI fits in the preview. Double-clicking between pages in the preview does the same.' },
     { name: 'iconsHeading', label: 'Interface', type: 'heading', value: '' },
     { name: 'animations', label: 'Animations', value: motionLevel(), short: true, options: [
       { value: 'off', label: 'Off' }, { value: 'fast', label: 'Fast' }, { value: 'normal', label: 'Normal' }],
@@ -13122,6 +13125,7 @@ async function personalPreferences(): Promise<void> {
   siPreviewPrefs.dim = r.siDim === 'true';
   siPreviewPrefs.link = r.siLink === 'bracket' ? 'bracket' : 'tint';
   siPreviewPrefs.custom = r.siCustom === 'fill' ? 'fill' : 'underline';
+  siPreviewPrefs.whiteSpace = r.siWhiteSpace === 'true';
   siPreviewPrefs.changed?.();
   Object.assign(focalPrefs, parseFocalPrefs({ ...focalPrefs, look: r.focalLook, dflt: r.focalDefault }));
   editor.focalLook = focalPrefs.look;
@@ -13323,7 +13327,7 @@ function currentSettings(): Settings {
     docRuler: docRulerPrefs.shown,
     docCropMarks: docPagePrefs.cropMarks,
     docWhiteSpace: docPagePrefs.whiteSpace,
-    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom },
+    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom, whiteSpace: siPreviewPrefs.whiteSpace },
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },
