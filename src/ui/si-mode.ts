@@ -937,31 +937,43 @@ export class SiMode {
     const p = this.project;
     if (!p) return;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); this.pageLookState(); return; }
+    const was = pageSettings(p.settings);
+    let label = '';
     let change: (() => void) | null = null;
-    if (what === 'hyphen') change = () => storeHyphenation(p.settings, v === 'auto');
-    else if (what === 'watermark') {
-      if (v === 'remove') change = () => storeWatermark(p.settings, null);
+    if (what === 'hyphen') {
+      const on = v === 'auto';
+      if (on !== was.hyphenation) { label = 'Hyphenation'; change = () => storeHyphenation(p.settings, on); }
+    } else if (what === 'watermark') {
+      let w: Watermark | null | undefined;
+      if (v === 'remove') w = null;
       else if (v === 'custom') {
-        const w: Watermark = pageSettings(p.settings).watermark ?? defaultWatermark();
+        const at = was.watermark ?? defaultWatermark();
         this.pageLookState();
         const got = await ask('Watermark', [
-          { name: 'text', label: 'Text', value: w.text, suggestions: WATERMARKS },
-          { name: 'font', label: 'Font', value: w.font, suggestions: ['Calibri', 'Arial', 'Times New Roman', 'Inter', 'IBM Plex Sans'] },
-          { name: 'color', label: 'Color', value: w.color, type: 'color' },
-          { name: 'layout', label: 'Layout', value: w.layout, options: [{ value: 'diagonal', label: 'Diagonal' }, { value: 'horizontal', label: 'Horizontal' }] },
-          { name: 'faded', label: 'Semitransparent', value: String(w.faded), type: 'checkbox' },
+          { name: 'text', label: 'Text', value: at.text, suggestions: WATERMARKS },
+          { name: 'font', label: 'Font', value: at.font, suggestions: ['Calibri', 'Arial', 'Times New Roman', 'Inter', 'IBM Plex Sans'] },
+          { name: 'color', label: 'Color', value: at.color, type: 'color' },
+          { name: 'layout', label: 'Layout', value: at.layout, options: [{ value: 'diagonal', label: 'Diagonal' }, { value: 'horizontal', label: 'Horizontal' }] },
+          { name: 'faded', label: 'Semitransparent', value: String(at.faded), type: 'checkbox' },
         ], { ok: 'Apply', note: 'Words across every page of the compiled SI, behind the text. Saved in the Word document as Word’s own watermark.' });
         if (!got || this.project !== p) return;
+        // (it may have turned read-only while the box was open)
+        if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
         const text = got.text.trim();
-        change = () => storeWatermark(p.settings, text ? { text, font: got.font.trim() || 'Calibri', color: got.color || '#c0c0c0', layout: got.layout === 'horizontal' ? 'horizontal' : 'diagonal', faded: got.faded === 'true' } : null);
-      } else if (WATERMARKS[Number(v)] !== undefined && v !== '') {
-        const was = pageSettings(p.settings).watermark;
-        change = () => storeWatermark(p.settings, { ...(was ?? defaultWatermark()), text: WATERMARKS[Number(v)] });
+        w = text ? { text, font: got.font.trim() || 'Calibri', color: got.color || '#c0c0c0', layout: got.layout === 'horizontal' ? 'horizontal' : 'diagonal', faded: got.faded === 'true' } : null;
+      } else if (v !== '' && WATERMARKS[Number(v)] !== undefined) w = { ...(was.watermark ?? defaultWatermark()), text: WATERMARKS[Number(v)] };
+      // (a choice that changes nothing writes nothing)
+      if (w !== undefined && JSON.stringify(w) !== JSON.stringify(was.watermark)) {
+        const to = w;
+        label = to ? 'Watermark' : 'Remove Watermark';
+        change = () => storeWatermark(p.settings, to);
       }
     }
     if (!change) { this.pageLookState(); return; }
     const f = change;
-    await this.act(async () => { f(); await p.saveSettings(); }, false);
+    const before = p.settings.page;
+    // (a save that fails puts the settings back, so the Live Preview doesn't show what wasn't saved)
+    await this.act(async () => { f(); try { await p.saveSettings(); } catch (e) { p.settings.page = before; if (before === undefined) delete p.settings.page; throw e; } }, false, undefined, undefined, label);
     this.pageLookState();
   }
 
@@ -4771,7 +4783,7 @@ export class SiMode {
    * after another, each written before the next starts, so two saves of one file can't cross.
    * `only`: the change is to this compound's values alone (the other compounds aren't checked again).
    */
-  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox): Promise<void> {
+  private act(f: () => Promise<unknown>, redraw = true, only?: SiCompound, typed?: () => SiRichBox, label = 'Edit'): Promise<void> {
     const p = this.project;
     if (!p) return Promise.resolve();
     const k = this.kept(p);
@@ -4781,7 +4793,7 @@ export class SiMode {
       let failed = false;
       try {
         if (p.revision !== rev) throw new SiProjectError(READ_AGAIN);
-        await (j ? j.step('Edit', f) : f());
+        await (j ? j.step(label, f) : f());
       } catch (e) {
         failed = true;
         this.host.flash(e instanceof SiProjectError ? e.message : `Could not save the change: ${e instanceof Error ? e.message : String(e)}`, 8000);

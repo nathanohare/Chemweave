@@ -79,7 +79,7 @@ const HEX = /^#[0-9a-f]{6}$/i;
 function watermarkOf(raw: unknown): Watermark | null {
   if (!isObj(raw) || typeof raw.text !== 'string' || !raw.text.trim()) return null;
   return {
-    text: raw.text.trim().slice(0, 200),
+    text: raw.text.trim(),
     font: typeof raw.font === 'string' && raw.font.trim() ? raw.font.trim() : 'Calibri',
     color: typeof raw.color === 'string' && HEX.test(raw.color) ? raw.color : '#c0c0c0',
     layout: raw.layout === 'horizontal' ? 'horizontal' : 'diagonal',

@@ -144,3 +144,14 @@ describe('compound titles', () => {
     expect(doc.runs[i]).toMatchObject({ italic: true, bold: true });
   });
 });
+
+describe('watermark and hyphenation (Layout tab)', () => {
+  it('go on the compiled SI, and are gone when not set', async () => {
+    const f = folder();
+    expect((await compile(f)).watermark).toBeUndefined();
+    put(f, 'project.json', { ...json(f, 'project.json'), page: { watermark: { text: 'DRAFT', layout: 'horizontal' }, hyphenation: true } });
+    const t = await compile(f);
+    expect(t.watermark).toEqual({ text: 'DRAFT', font: 'Calibri', color: '#c0c0c0', layout: 'horizontal', faded: true });
+    expect(t.hyphen?.auto).toBe(true);
+  });
+});
