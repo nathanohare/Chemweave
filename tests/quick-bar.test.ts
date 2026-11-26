@@ -1,7 +1,7 @@
 // The quick bar beside the menus (Quick Access Toolbar): what it keeps in the settings.
 
 import { describe, expect, it } from 'vitest';
-import { parseQuick, withQuick, QUICK_DEFAULT } from '../src/ui/quick-bar';
+import { parseQuick, withQuick, QUICK_DEFAULT, QUICK_WEB } from '../src/ui/quick-bar';
 
 describe('quick bar', () => {
   it('starts with only Save, Undo and Redo, the same in every kind of tab and in both apps (Nate, 2026-11-26)', () => {
@@ -14,6 +14,10 @@ describe('quick bar', () => {
     const { readFileSync } = await import('node:fs');
     // main.ts gives the bar no other starting list (a "defaults" hook per app or per mode)
     expect(readFileSync('src/main.ts', 'utf8')).not.toMatch(/\bdefaults:\s/);
+  });
+
+  it('starts with only Save, Undo and Redo in the web app (Nate, 2026-11-25)', () => {
+    expect(QUICK_WEB).toEqual(['save', 'undo', 'redo']);
   });
 
   it('reads its list from the settings, keeping only command names, once each', () => {
