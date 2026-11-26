@@ -23,7 +23,6 @@ const KNOWN_PAGE_LEVEL = new Set([
   'doc-compare-card.ts',
   'doc-mode.ts',
   'doc-original-notes.ts',
-  'doc-tables-ui.ts',
   'float-box.ts',
   'guide-window.ts',
   'keep-ui.ts',
