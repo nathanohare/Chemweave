@@ -356,6 +356,7 @@ import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, p
 import { checkRead, placeRead } from './recognise/check';
 import { Diagnostics, catchErrors, errorReport, formatEntry, stamp, type LogEntry, type UnexpectedClose } from './diagnostics';
 import { keepStore, getText, putText } from './keep/store';
+import type { RestartHooks } from './keep/restart';
 import { Library, storePlace, folderPlace, readPlaceChoice, writePlaceChoice, LIBRARY_FILE } from './library/library-store';
 import { compoundBySmiles, newId, noteMentions, type LibCompound, type LibSpectrum } from './library/library';
 import { fetchPubmed, type ZoteroLink } from './library/online';
@@ -12834,14 +12835,54 @@ async function openWorkspace(): Promise<void> {
 let updateCheck = true;
 let updateChannel: UpdateChannel = 'latest';
 let skipVersion: string | null = null;
+/** What the restart after an update needs from the app: the view on screen, and SI projects' files and working copies. */
+const restartHooks: RestartHooks = {
+  liveView: () => ({ view: { ...renderer.view }, fitted: editor.stillFitted }),
+  siOf: (t) => {
+    const st = t.si ? siFileStates.get(t.si) : undefined;
+    if (!t.si || !st) return null;
+    // (a working copy with unsaved changes stays as the app closes: it reopens from there, with them)
+    return { file: t.si.file, stamp: st.stamp, title: t.si.title, ...(st.counter.dirty && !st.discarded ? { working: { working: st.working.working, root: st.working.root } } : {}) };
+  },
+  openSi: async (si) => {
+    const p = si.working
+      ? await openSiWorking(si.working, si.file && !ws.tabs.some((t) => t.si?.file && samePath(t.si.file, si.file!)) ? si.file : null, { unsaved: true, recovered: true, stamp: si.stamp, suggest: si.file ? baseName(si.file) : undefined })
+      : si.file ? await openSiProject(false, si.file) : null;
+    return p ? siTabOf(p) ?? null : null;
+  },
+};
+
+/** The first start after an update: the tabs that were open come back as they were. */
+async function reopenTabsAfterUpdate(): Promise<void> {
+  const { reopenAfterRestart } = await import('./keep/restart');
+  const r = await reopenAfterRestart(ws, keepStore(), restartHooks).catch(() => null);
+  if (!r) return;
+  const notes = [
+    r.missing.length ? ` Not found: ${r.missing.map((m) => baseName(m)).join(', ')}.` : '',
+    r.failed.length ? ` Couldn’t reopen the unsaved changes to ${r.failed.join(', ')}; they are tried again at the next start.` : '',
+  ].join('');
+  if (r.opened || notes) flash(`Reopened ${r.opened} tab${r.opened === 1 ? '' : 's'} as ${r.opened === 1 ? 'it was' : 'they were'} before the update.${notes}`, notes ? 15000 : 5000);
+}
+
 const updates = new UpdateUI({
-  unsaved: () => ws.tabs.filter((t) => t.dirty).map((t) => t.name),
+  // (an SI project held in memory only has no file or working copy to come back from)
+  unkept: () => ws.tabs.filter((t) => t.dirty && t.si && !siFileStates.has(t.si)).map((t) => t.name),
   skipped: () => skipVersion,
   skip: (v) => { skipVersion = v; storeSettings(); },
   channel: () => updateChannel,
   openPage: (url) => openWebPage(url),
   // as when the window closes: the recovery copies and lock files aren't needed
-  closing: async () => { await siSavedAll(); await keeper.end(); await diagnostics.end(); await releaseSiProjects(); },
+  closing: async () => {
+    finishTab();
+    await siSavedAll();
+    // every tab, unsaved changes and all, is kept for the start after the update; the files on disk aren't touched
+    const { keepForRestart } = await import('./keep/restart');
+    const agreed = new Set(updates.unkeptAgreed);
+    const lost = (await keepForRestart(ws, keepStore(), restartHooks)).filter((n) => !agreed.has(n));
+    if (lost.length) throw new Error(`the unsaved changes to ${lost.join(', ')} couldn’t be kept for the restart. Save ${lost.length === 1 ? 'it' : 'them'}, then install again`);
+    await keeper.end(); await diagnostics.end(); await releaseSiProjects();
+  },
+  notInstalled: () => { void import('./keep/restart').then(({ forgetRestart }) => forgetRestart(keepStore())).catch(() => {}); },
 });
 /** The desktop app's version when it last ran (for What's New after an update). */
 let lastVersion: string | null = null;
@@ -13036,6 +13077,8 @@ async function openOutsideFiles(): Promise<void> {
   const { listen } = await import('@tauri-apps/api/event');
   // listening first, so no file is missed between asking and listening
   await listen<string[]>('open-files', (e) => { for (const p of e.payload) void openRecent(p); });
+  // the tabs open before an update, first (a file double-clicked to start the app then opens beside them)
+  await reopenTabsAfterUpdate().catch(() => {});
   for (const p of await invoke<string[]>('launch_files').catch(() => [])) await openRecent(p);
   // SI projects left unsaved by a crash: offered back
   void recoverSiCopies().catch(() => {});

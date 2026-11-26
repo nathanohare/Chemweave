@@ -1,13 +1,15 @@
 // Checking for a newer version (desktop app only): a quiet check a few seconds after the app
 // starts, which shows a small notice in the corner if there is one, and File > Check for Updates…,
-// which always says what it found. Installing asks first when some tabs aren't saved.
+// which always says what it found. Installing keeps every open tab, unsaved changes and all, and
+// the app opens them again after the restart (src/keep/restart.ts); it asks first only about a tab
+// that can't be kept.
 
 import { appVersion, findRelease, notesSince, newestNotes, noteLine, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
 import { ask } from './ask';
 
 export interface UpdateHost {
-  /** Names of the open tabs with changes that aren't saved. */
-  unsaved(): string[];
+  /** Names of the open tabs with unsaved changes that can't be kept over the restart (an SI project held in memory only). */
+  unkept(): string[];
   /** The version the user chose not to hear about again, if any. */
   skipped(): string | null;
   skip(version: string | null): void;
@@ -16,15 +18,20 @@ export interface UpdateHost {
   /** Open a web page in the computer's browser. */
   openPage(url: string): void;
   /**
-   * The app is about to close for the installer, the user having agreed to lose what isn't
-   * saved: tidy up as a normal close does, so the next start doesn't offer those tabs back.
+   * The app is about to close for the installer: keep the open tabs for the next start (throws,
+   * stopping the update, when one with unsaved changes couldn't be kept), then tidy up as a normal
+   * close does, so the next start doesn't also offer those tabs as unsaved work to recover.
    */
   closing(): Promise<void>;
+  /** The update didn't install after closing began: the tabs kept for the restart aren't needed. */
+  notInstalled?(): void;
 }
 
 export class UpdateUI {
   private box: HTMLElement | null = null;
   private busy = false;
+  /** Tabs the person agreed to lose unsaved changes to (Install Anyway): not kept, and not a reason to stop. */
+  unkeptAgreed: string[] = [];
 
   constructor(private host: UpdateHost) {}
 
@@ -180,23 +187,26 @@ export class UpdateUI {
 
   private async install(r: Release, bar: HTMLElement, row: HTMLElement): Promise<void> {
     if (this.busy) return;
-    const open = this.host.unsaved();
+    const open = this.host.unkept();
     if (open.length) {
       const ok = await ask('Install the Update?', [], {
         ok: 'Install Anyway',
-        note: `The app restarts to install version ${r.version}. These tabs have changes that aren’t saved and will lose them: ${open.join(', ')}. Choose Cancel to save them first.`,
+        note: `The app restarts to install version ${r.version}. Other tabs reopen as they are, but these can’t be kept and will lose their unsaved changes: ${open.join(', ')}. Choose Cancel to save them first.`,
       });
       if (!ok) return;
     }
+    this.unkeptAgreed = open;
     this.busy = true;
     row.hidden = true;
     bar.hidden = false;
     bar.textContent = 'Downloading…';
+    let closed = false;
     try {
       await r.install((done) => {
         bar.textContent = done === null ? 'Downloading…' : done >= 1 ? 'Installing…' : `Downloading… ${Math.round(done * 100)}%`;
-      }, () => this.host.closing());
+      }, async () => { closed = true; await this.host.closing(); });
     } catch (e) {
+      if (closed) this.host.notInstalled?.();
       bar.textContent = `The update didn’t install: ${String(e)}`;
       row.hidden = false;
     } finally {

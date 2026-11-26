@@ -317,6 +317,12 @@ export class Workspace {
     this.hooks.changed();
   }
 
+  /** Show the tab showing again as if coming back to it (its kept zoom and scroll), after the restart reopened it. */
+  reshow(): void {
+    this.hooks.enter(this.active, false);
+    this.hooks.changed();
+  }
+
   /** The tab after (or before) the one showing, round the end. */
   cycle(step: 1 | -1): void {
     if (this.tabs.length < 2) return;
