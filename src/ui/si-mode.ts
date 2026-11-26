@@ -716,6 +716,8 @@ export class SiMode {
     this.pane.id = 'si-pane';
     this.pane.className = 'si-only';
     this.pane.hidden = true;
+    // (View ▸ Navigation Pane, as last left)
+    try { if (localStorage.getItem('si.navPane') === 'off') this.pane.classList.add('si-tree-off'); } catch { /* (shown) */ }
     this.tree = el('div', 'si-tree');
     this.tree.setAttribute('role', 'tree');
     this.tree.setAttribute('aria-label', 'Sections and compounds');
@@ -740,6 +742,7 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    this.viewState();
     // (Wrap Text's gallery, as Document mode's: made here, the SI ribbon coming after the others were)
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
@@ -811,7 +814,7 @@ export class SiMode {
       if (box) this.typing = box;
       // (where the ribbon's Clipboard and Editing commands act: the SI page's boxes, or the Live Preview)
       if (this.preview && target === this.preview.input) this.typedIn = 'preview';
-      else if (this.page.contains(target)) this.typedIn = 'page';
+      else if (this.page.contains(target) || this.tree.contains(target)) this.typedIn = 'page';
       const card = target.closest<HTMLElement>('.si-table-card');
       const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
       if (t) this.tableChosen(t);
@@ -831,7 +834,17 @@ export class SiMode {
   /** Where the person last typed or clicked to type: a box on the SI page, or the Live Preview. */
   private typedIn: 'page' | 'preview' = 'page';
   /** The Live Preview when it was the last place typed in and is still shown. */
-  private get previewTyped(): SiPreview | null { return this.typedIn === 'preview' && this.liveOn && this.preview ? this.preview : null; }
+  private get previewTyped(): SiPreview | null { return this.typedIn === 'preview' && this.liveOn && !this.pane.classList.contains('si-live-off') && this.preview ? this.preview : null; }
+
+  /** The Live Preview, when it is on and shown on this page (it folds itself away on the Dashboard and the lists). */
+  private async previewShown(): Promise<SiPreview | null> {
+    return this.liveOn && !this.pane.classList.contains('si-live-off') ? this.livePreview() : null;
+  }
+
+  /** Why a command for the Live Preview can't be done now. */
+  private noPreviewWhy(what: string): string {
+    return this.liveOn ? `${what}, which this page doesn’t show: choose the project, a section or a compound first.` : `${what}: turn it on first (View ▸ Live Preview).`;
+  }
 
   /** The table whose cell was last picked (the Table Layout tab acts on it). */
   private activeTable: SiTableEditor | null = null;
@@ -5345,8 +5358,8 @@ export class SiMode {
       // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
       case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
       case 'find': {
-        const pv = this.liveOn ? await this.livePreview() : null;
-        if (!pv) { this.host.flash('Find looks in the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        const pv = await this.previewShown();
+        if (!pv) { this.host.flash(this.noPreviewWhy('Find looks in the Live Preview')); return; }
         pv.showFind();
         return;
       }
@@ -5374,6 +5387,7 @@ export class SiMode {
       }
       case 'nav-pane':
         this.pane.classList.toggle('si-tree-off');
+        try { localStorage.setItem('si.navPane', this.pane.classList.contains('si-tree-off') ? 'off' : 'on'); } catch { /* (not kept) */ }
         requestAnimationFrame(() => this.live.view?.resize());
         this.viewState();
         return;
@@ -5406,8 +5420,35 @@ export class SiMode {
     if (!this.restoreTyping()) { this.host.flash('Click in a text box on the SI page, or in the Live Preview, first.'); return; }
     if (cmd === 'select-all') { document.execCommand('selectAll'); return; }
     if (cmd !== 'paste') { if (!document.execCommand(cmd)) this.host.flash(`Press Ctrl+${cmd === 'cut' ? 'X' : 'C'} to ${cmd}: this window may not use the clipboard from a button.`); return; }
-    const t = await this.clipboardText();
-    if (t !== null && this.restoreTyping()) document.execCommand('insertText', false, t);
+    // (as Ctrl+V: a box that keeps bold, italics, sub- and superscripts gets the copied formatting too)
+    const got = await this.clipboardRich();
+    if (!got || !this.restoreTyping()) return;
+    const at = document.activeElement;
+    if (got.html && at) {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', got.plain);
+      dt.setData('text/html', got.html);
+      const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+      at.dispatchEvent(ev);
+      if (ev.defaultPrevented) return;
+    }
+    document.execCommand('insertText', false, got.plain);
+  }
+
+  /** The copied text, with its HTML when there is some; null (said why) when the clipboard can't be read from a button. */
+  private async clipboardRich(): Promise<{ plain: string; html: string } | null> {
+    try {
+      const items = await navigator.clipboard.read();
+      let plain = '', html = '';
+      for (const it of items) {
+        if (!html && it.types.includes('text/html')) html = await (await it.getType('text/html')).text();
+        if (!plain && it.types.includes('text/plain')) plain = await (await it.getType('text/plain')).text();
+      }
+      return { plain, html };
+    } catch {
+      const t = await this.clipboardText();
+      return t === null ? null : { plain: t, html: '' };
+    }
   }
 
   /** The copied text, or null (said why) when the clipboard can't be read from a button. */
@@ -5423,21 +5464,23 @@ export class SiMode {
   /** Home ▸ Go To: a page of the compiled SI (by its number) or a compound (by its ID). */
   private async goTo(): Promise<void> {
     const p = this.project!;
-    const got = await ask('Go To', [{ name: 'where', label: 'Page number or compound ID', value: '', placeholder: 'e.g. 12, or 3a' }], { ok: 'Go To' });
+    const got = await ask('Go To', [{ name: 'where', label: 'Page number or compound ID', value: '', placeholder: 'e.g. S12, or 3a' }], { ok: 'Go To' });
     const w = got?.where.trim();
     if (!w) return;
     const c = p.compounds.find((x) => this.idOf(x).toLowerCase() === w.toLowerCase());
-    if (c) { this.go({ kind: 'compound', id: c.id }); return; }
-    const pv = this.liveOn ? await this.livePreview() : null;
-    const n = Number(w.replace(/^S/i, ''));
-    if (pv && Number.isInteger(n) && n >= 1) {
-      const last = pv.pageCount;
-      if (n > last) { this.host.flash(`The SI has ${last} page${last === 1 ? '' : 's'}.`); return; }
-      pv.goToPage(n);
+    const pv = await this.previewShown();
+    const page = pv ? pv.pageIndexOf(w) : -1;
+    if (c && page >= 0) {
+      // (both: "3" is compound 3 and page 3)
+      const which = await askChoice('Go To', `“${w}” is a compound’s ID and a page number.`, [{ value: 'compound', label: `Compound ${w}` }, { value: 'page', label: `Page ${w}`, primary: true }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+      if (which === 'page') pv!.goToPage(page);
+      else if (which === 'compound') this.go({ kind: 'compound', id: c.id });
       return;
     }
-    if (!pv && Number.isInteger(n) && n >= 1) { this.host.flash('Pages are counted in the Live Preview: turn it on to go to a page (View ▸ Live Preview).'); return; }
-    this.host.flash(`No compound has the ID “${w}”${pv ? ', and it is not a page number' : ''}.`);
+    if (c) { this.go({ kind: 'compound', id: c.id }); return; }
+    if (pv && page >= 0) { pv.goToPage(page); return; }
+    if (!pv && /^S?\d+$/i.test(w)) { this.host.flash(this.noPreviewWhy('Pages are counted in the Live Preview')); return; }
+    this.host.flash(`No compound has the ID “${w}”${pv ? ', and no page is numbered that' : ''}.`);
   }
 
   /** Home ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
@@ -5660,7 +5703,7 @@ export class SiMode {
         await p.setValue(c, 'references', { ...v, refs: [...refs, ...ids.filter((i) => !refs.includes(i))] });
       }
     });
-    if (!c) this.host.flash(`Added to the project’s references: ${picked.length}.`);
+    if (!c) this.host.flash(`No compound is selected, so ${picked.length === 1 ? 'it was' : `${picked.length} were`} added to the project’s reference list only.`);
   }
 }
 

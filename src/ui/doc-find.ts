@@ -16,6 +16,8 @@ export interface DocFindHost {
   flash(msg: string, ms?: number): void;
   /** The found places changed (draw them). */
   redraw(): void;
+  /** A found place was just selected (Enter, ↑ or ↓, or typing what to find): bring it into view, if the host doesn't by itself. */
+  found?(): void;
 }
 
 const LOOKS: { key: keyof ReplaceLook; label: string; title: string }[] = [
@@ -181,6 +183,7 @@ export class DocFind {
     else { const j = h.map(([, b]) => b <= ed.start).lastIndexOf(true); i = j >= 0 ? j : n - 1; }
     ed.select(h[i][0], h[i][1]);
     this.showCount();
+    this.host.found?.();
   }
 
   private toggleLook(key: keyof ReplaceLook): void {

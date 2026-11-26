@@ -895,29 +895,27 @@ export class SiPreview {
         file: () => this.file,
         focus: () => this.ta.focus(),
         flash: (m, ms) => this.api.flash(m, ms),
-        redraw: () => this.foundShown(),
+        redraw: () => { this.placeInput(); this.view.redraw(); },
+        found: () => this.foundShown(),
         // (replacing would write into many fields at once, past the typing guard: not here)
       }, { findOnly: true });
     }
     this.finder.show(false);
   }
 
-  /** While the text changes under an open Find box: its places looked for again, nothing moved into view. */
-  private findingAgain = false;
+  /** While the text changes under an open Find box: its places looked for again (nothing is moved into view). */
   private findAgain(): void {
-    if (!this.finder?.open) return;
-    this.findingAgain = true;
-    try { this.finder.refresh(); } finally { this.findingAgain = false; }
+    if (this.finder?.open) this.finder.refresh();
   }
 
   /** The place found and selected: in view, and its page chosen in the list. */
   private foundShown(): void {
     const ed = this.file?.ed;
-    if (ed && !ed.collapsed && this.finder?.open && !this.findingAgain) {
+    if (ed && !ed.collapsed && this.finder?.open) {
       const r = this.view.rangeRects(ed.start, ed.end)[0];
       if (r) this.view.reveal(r, 60);
       const b = blockAt(this.blocks, ed.start);
-      if (b) this.api.pick(b.node);
+      if (b && b.node !== this.focusNode) this.api.pick(b.node);
     }
     this.placeInput();
     this.view.redraw();
@@ -966,10 +964,22 @@ export class SiPreview {
   /** The number of pages shown. */
   get pageCount(): number { return this.file?.layout().pages.length ?? 0; }
 
-  /** Go To a page (from 1). */
-  goToPage(n: number): void {
+  /** The page whose printed number is `label` ("12", "iv"; an "S" before it is left out), from 0; -1 for none. */
+  pageIndexOf(label: string): number {
+    const pages = this.file?.layout().pages ?? [];
+    const want = label.trim().replace(/^S(?=\d)/i, '').toLowerCase();
+    if (!want) return -1;
+    const i = pages.findIndex((p) => (p.num ?? (p.n !== undefined ? String(p.n) : '')).toLowerCase() === want);
+    if (i >= 0) return i;
+    // (pages without printed numbers: counted from the first)
+    const n = Number(want);
+    return pages.every((p) => p.n === undefined && !p.num) && Number.isInteger(n) && n >= 1 && n <= pages.length ? n - 1 : -1;
+  }
+
+  /** Go To the page at `index` (from 0). */
+  goToPage(index: number): void {
     this.userScrolled();
-    this.view.scrollToPage(n - 1);
+    this.view.scrollToPage(index);
     this.view.redraw();
   }
 }
