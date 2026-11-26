@@ -9,7 +9,7 @@
 // window, with changes not yet applied asks whether to apply them or throw them away.
 
 import { hostNextDialog, setPreviewSlot } from './dialog-host';
-import { enter } from './motion';
+import { fadeContent } from './motion';
 
 export interface SettingsPage {
   id: string;
@@ -331,8 +331,6 @@ export class SettingsWindow {
     this.submit = null;
     this.start = null;
     this.pane.replaceChildren();
-    // the new page fades in
-    enter(this.pane, 'fade');
     this.aside.replaceChildren();
     this.aside.hidden = true;
     this.d!.classList.remove('with-preview');
@@ -341,7 +339,11 @@ export class SettingsWindow {
     hostNextDialog(this.pane);
     setPreviewSlot(this.aside);
     this.refreshBar();
-    this.running = Promise.resolve(p.open()).then(() => {
+    const opening = p.open();
+    // the new page fades in, once it is built (before it is first drawn)
+    const pane = this.pane;
+    requestAnimationFrame(() => { if (this.page === p.id) fadeContent(pane); });
+    this.running = Promise.resolve(opening).then(() => {
       const done = this.pending;
       this.pending = null;
       if (done && this.host) this.host.applied(p.id, done.mode, done.before);

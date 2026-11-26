@@ -39,7 +39,7 @@ export class SiFigureEditor {
     const h = el('h3', 'si-sub');
     h.append(this.title);
     this.title.textContent = title;
-    addInfo(h, 'The figure as it prints, about its printed size; its caption is the line under it in the text. Click it for the Figure tab on the ribbon: change the picture, draw it again, or set its width.');
+    addInfo(h, 'The figure as it prints, about its printed size; its caption is the line under it in the text. Double-click it to draw it again; click it for the Figure tab on the ribbon to change the picture or set its width.');
     const lab = el('label', 'si-part');
     this.labelBox.placeholder = 'Automatic';
     this.labelBox.addEventListener('change', () => void this.save({ label: this.labelBox.value.trim() }));
@@ -99,7 +99,7 @@ export class SiFigureEditor {
     if (this.gone) return;
     const st = this.state;
     this.labelBox.value = String(this.entry.label ?? '');
-    this.pic.replaceChildren(st.file ? this.pics.preview(st.file, this.urls, { w: 620, h: 420 }, st.width) : el('p', 'muted si-note', 'No picture yet: use the Figure tab’s Picture, Paste Picture or Draw Structure.'));
+    this.pic.replaceChildren(st.file ? this.pics.preview(st.file, this.urls, { w: 620, h: 420 }, st.width) : el('p', 'muted si-note', 'No picture yet: double-click to draw one, or use the Figure tab’s Change Picture or Paste Picture.'));
   }
 
   /** Change the figure's entry in section.json (a value of undefined takes it out). */

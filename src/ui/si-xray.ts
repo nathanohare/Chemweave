@@ -66,7 +66,7 @@ export class SiXrayPage {
     const p = this.host.project;
     const fig = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'X-ray structure');
-    addInfo(h, 'The structure as it prints, with its figure caption. Crystal Structure ▸ Edit Structure (or double-click it) rotates it, changes its style, labels and what is shown; Choose CIF uses another file (the one it replaces goes to the Trash).');
+    addInfo(h, 'The structure as it prints, with its figure caption. Double-click it to rotate it, changes its style, labels and what is shown; Choose CIF uses another file (the one it replaces goes to the Trash).');
     fig.append(h);
     this.el.append(fig);
     // the file, the structure in it, the compound it shows
@@ -91,7 +91,7 @@ export class SiXrayPage {
     fig.append(row);
     if (!file) { fig.append(el('p', 'muted si-note', 'No CIF file yet: Crystal Structure ▸ Choose CIF on the ribbon.')); return; }
     const pic = el('div', 'si-xray-pic');
-    pic.title = 'Double-click to rotate it or change its style (Crystal Structure ▸ Edit Structure)';
+    pic.title = 'Double-click to rotate it or change its style';
     pic.addEventListener('dblclick', () => void this.command('edit'));
     fig.append(pic);
     const capRow = el('div', 'si-xray-caprow');

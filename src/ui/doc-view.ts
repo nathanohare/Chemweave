@@ -368,6 +368,29 @@ export class DocView {
     return { x: vx - pos.x, y: vy - pos.y + best.top };
   }
 
+  /**
+   * Whether a point on screen (client coordinates) is on a page drawn (or, in the views without
+   * pages, on the white sheet), not on the grey round the pages: the I-beam is shown only there,
+   * since off the page it can vanish into the grey (Windows draws it by inverting what is under
+   * it, and a mid grey inverted is the same grey).
+   */
+  onPage(clientX: number, clientY: number): boolean {
+    const lay = this.layout;
+    if (!lay) return false;
+    if (this.endless) return true;
+    const r = this.scroller.getBoundingClientRect();
+    const vx = (clientX - r.left + this.scroller.scrollLeft - this.ox) / this.zoom;
+    const vy = (clientY - r.top + this.scroller.scrollTop - this.oy) / this.zoom;
+    for (const p of lay.pages) {
+      if (!this.pageShown(p.index)) continue;
+      const pos = this.place(p, lay);
+      // hidden white space: only the page's text area shows (as paint() clips it)
+      const top = pos.y + (this.hiding ? p.setup.top : 0), bottom = pos.y + p.h - (this.hiding ? p.setup.bottom : 0);
+      if (vx >= pos.x + p.x && vx <= pos.x + p.x + p.w && vy >= top && vy <= bottom) return true;
+    }
+    return false;
+  }
+
   /** The pages and the room beside them are wider than the view. */
   overflows(): boolean {
     const lay = this.layout;

@@ -4,7 +4,7 @@
 import { describe, it, expect } from 'vitest';
 import { lockAxis } from '../src/geom';
 import { resizeBox, dragShapeHandle } from '../src/objects';
-import { pointerFor, handleCursor, MARQUEE, ERASER, BEND, type PointerState } from '../src/editor/cursors';
+import { pointerFor, handleCursor, MARQUEE, ERASER, BEND, IBEAM, type PointerState } from '../src/editor/cursors';
 import type { Shape } from '../src/model';
 
 describe('a drag with Shift held', () => {
@@ -69,7 +69,16 @@ describe('the pointer', () => {
   it('keeps the usual arrow in Slides, as in PowerPoint', () => {
     expect(at({ slides: true })).toBe('');
     expect(at({ slides: true, over: 'object' })).toBe('move');
-    expect(at({ slides: true, over: 'object', typing: true })).toBe('text');
+    // (the outlined I-beam: the slide's text may sit over the grey round the slide)
+    expect(at({ slides: true, over: 'object', typing: true })).toBe(IBEAM);
+  });
+  it('outlines the text tool\'s I-beam in Slides and Design, where it can be over the grey round the slide', () => {
+    expect(at({ tool: 'text', slides: true })).toBe(IBEAM);
+    // a black I-beam over a wider white one, with the system I-beam to fall back on
+    expect(IBEAM).toMatch(/^url\("data:image\/svg\+xml,.*"\) 12 12, text$/);
+    const svg = decodeURIComponent(IBEAM.slice(IBEAM.indexOf(',') + 1, IBEAM.indexOf('")')));
+    expect(svg).toMatch(/stroke="#fff" stroke-width="4"/);
+    expect(svg).toMatch(/stroke="#000" stroke-width="1.5"/);
   });
   it('fits the tool', () => {
     expect(at({ tool: 'bond' })).toBe('crosshair');

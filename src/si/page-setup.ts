@@ -3,13 +3,15 @@
 //
 //   "page": {"header": {"left", "center", "right"}, "footer": {…} (absent: the journal style's),
 //            "number_prefix": "S", "number_style": "1" | "i" | "I", "number_size": 0 (the text's),
-//            "number_bold": false, "number_on_cover": false}
+//            "number_bold": false, "number_on_cover": false,
+//            "paper": "letter" | "a4" (Chemweave's; absent: Letter), "margins": {"top", "bottom", "left",
+//            "right"} in inches (Chemweave's; absent: 1 inch each)}
 //
 // Texts may hold {page}, {pages}, {title}, {authors} and {date}; {page} and {pages} become page
 // fields of the compiled document, the others are filled in when it is compiled.
 
 import type { TextRun } from '../model';
-import type { HeaderFooter, PageNumFormat } from '../document/document';
+import { A4, LETTER, type HeaderFooter, type PageNumFormat, type PageSetup } from '../document/document';
 import type { Json } from './project';
 
 export interface PageSettings {
@@ -22,7 +24,16 @@ export interface PageSettings {
   number_size: number;
   number_bold: boolean;
   number_on_cover: boolean;
+  paper: 'letter' | 'a4';
+  /** Inches. */
+  margins: { top: number; bottom: number; left: number; right: number };
 }
+
+export const PAPER_SIZES: Record<PageSettings['paper'], string> = { letter: 'Letter (8.5 × 11 in)', a4: 'A4 (210 × 297 mm)' };
+const MARGIN_SIDES = ['top', 'bottom', 'left', 'right'] as const;
+/** A margin as read: from half an inch (the header and footer sit half an inch from the edge) to three inches (else the 1 inch default). */
+export const MARGIN_MIN = 0.5, MARGIN_MAX = 3;
+const margin = (v: unknown): number => { const n = Number(v); return Number.isFinite(n) && n >= MARGIN_MIN && n <= MARGIN_MAX ? n : 1; };
 
 const POSITIONS = ['left', 'center', 'right'] as const;
 const STYLE_FOOTERS: Record<string, [string, string, string]> = { ACS: ['', '{page}', ''], Wiley: ['', '', '{page}'], RSC: ['', '{page}', ''] };
@@ -50,15 +61,30 @@ export function pageSettings(settings: Json): PageSettings {
     number_size: Number.isFinite(size) && size > 0 ? size : 0,
     number_bold: !!raw.number_bold,
     number_on_cover: !!raw.number_on_cover,
+    paper: raw.paper === 'a4' ? 'a4' : 'letter',
+    margins: Object.fromEntries(MARGIN_SIDES.map((k) => [k, margin(isObj(raw.margins) ? raw.margins[k] : undefined)])) as PageSettings['margins'],
   };
 }
 
+/** The compiled SI's page: its paper and margins, the header and footer half an inch from the edge (as the default page). */
+export function pageOf(settings: Json, base: PageSetup): PageSetup {
+  const v = pageSettings(settings);
+  const size = v.paper === 'a4' ? A4 : LETTER;
+  const inch = 72;
+  return { ...base, w: size.w, h: size.h, top: v.margins.top * inch, bottom: v.margins.bottom * inch, left: v.margins.left * inch, right: v.margins.right * inch };
+}
+
 /** Keep page settings as SI Assistant keeps them (a footer equal to the journal style's isn't stored, so it follows the style). */
-export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerIsStyle'>): void {
+export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerIsStyle' | 'paper' | 'margins'> & Partial<Pick<PageSettings, 'paper' | 'margins'>>): void {
+  const was = pageSettings(settings);
+  const paper = v.paper ?? was.paper, margins = v.margins ?? was.margins;
   const page: Json = {
     header: Object.fromEntries(POSITIONS.map((p, i) => [p, v.header[i]])),
     number_prefix: v.number_prefix, number_style: v.number_style, number_size: v.number_size, number_bold: v.number_bold, number_on_cover: v.number_on_cover,
   };
+  // (the defaults aren't stored: a project made before keeps reading as it did)
+  if (paper !== 'letter') page.paper = paper;
+  if (MARGIN_SIDES.some((k) => margins[k] !== 1)) page.margins = { ...margins };
   if (v.footer.join('\u0000') !== styleFooter(String(settings.journal_style ?? 'ACS')).join('\u0000')) page.footer = Object.fromEntries(POSITIONS.map((p, i) => [p, v.footer[i]]));
   settings.page = page;
 }

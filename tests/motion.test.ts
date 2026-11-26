@@ -29,7 +29,7 @@ describe('motion', () => {
   it('every timed transition and animation in the style sheet uses the shared timings (S94)', () => {
     const bad = [...declarations('transition'), ...declarations('animation')]
       // a repeating animation (a busy stripe, a jiggle) keeps its own period
-      .filter(({ value }) => !/\binfinite\b/.test(value) && !/^(none|initial|inherit|unset)$/.test(value))
+      .filter(({ value }) => !/\binfinite\b/.test(value) && !/^(none|initial|inherit|unset)( !important)?$/.test(value))
       .filter(({ value }) => /\d(m?s)\b/.test(value) || !/var\(--m-/.test(value))
       .map(({ line, value }) => `app.css:${line}: ${value}`);
     expect(bad, 'use var(--m-short|--m-toggle|--m-std|--m-large|--m-hi)').toEqual([]);

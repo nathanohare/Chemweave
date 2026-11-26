@@ -1,4 +1,4 @@
-// Home ▸ Save Snapshot in the SI Project tab: the whole project zipped, as Chem SI Assistant saves
+// Project ▸ Save Snapshot in the SI Project tab: the whole project zipped, as Chem SI Assistant saves
 // snapshots, for milestones such as "submitted version": snapshots/<date>_<time>_<label>.zip
 // inside the project, holding the project folder (by its own name) without build/, snapshots/,
 // the .lock or other hidden files, or the Word snapshot (snapshot-docx.ts: it is made again from

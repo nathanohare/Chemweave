@@ -82,7 +82,7 @@ export class SiAttachmentPage {
     this.host.redraw();
   }
 
-  /** Attachment ▸ Remove File: the file goes to the Trash (Home ▸ Trash puts it back). */
+  /** Attachment ▸ Remove File: the file goes to the Trash (Project ▸ Trash puts it back). */
   async remove(): Promise<void> {
     const p = this.host.project;
     const file = str(this.s.data.file);

@@ -6,7 +6,7 @@
 // Shared by Document, Spreadsheet, Presentation and Design; each mode supplies its own cards.
 
 import { foldIntoInfo } from './info-tip';
-import { enter } from './motion';
+import { fadeContent } from './motion';
 
 /** One template: a small picture, a name, and what picking it does. */
 export interface TemplateCard {
@@ -332,6 +332,7 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     if (focus) tabs.get(id)?.focus();
     const cat = cats.find((c) => c.id === id)!;
     grid.setAttribute('aria-label', cat.name);
+    const another = grid.childElementCount > 0;
     const parts = cat.sections ? await cat.sections() : [{ name: '', cards: await cat.cards() }];
     if (showing !== id || !isOpen) return;
     io?.disconnect();
@@ -340,8 +341,8 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     const all = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
     const stop = all.find((b) => b.dataset.id === o.initialCard) ?? all[0];
     for (const b of all) b.tabIndex = b === stop ? 0 : -1;
-    // another category's templates fade in (Nate's note on Motion Choices)
-    enter(grid, 'fade');
+    // another category's templates fade in (Nate's note on Motion Choices); the first ones come with the window's own fade
+    if (another) fadeContent(grid);
     grid.scrollTop = 0;
     // the default choice (the blank file) stands out, and takes the keyboard when the window opens
     const chosen = o.initialCard ? [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')].find((b) => b.dataset.id === o.initialCard) : undefined;

@@ -20,6 +20,8 @@ import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/pag
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
+import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
+import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
 import { defaultsJson, captionText, headerParts, reportItems, sectionDefaults, spectrumItems, type SpectrumLayout } from '../si/spectra';
@@ -110,7 +112,7 @@ export interface SiModeHost {
   pickFiles(label: string, exts: string[]): Promise<{ name: string; bytes: Uint8Array }[]>;
   /** File ▸ New ▸ SI Project: a new project, opened in its tab (null: none made; absent: can't be made here). */
   newSiProject?: (() => Promise<SiProject | null>) | null;
-  /** Home ▸ Reload Project for a project file: open it again from the file. */
+  /** Project ▸ Reload Project for a project file: open it again from the file. */
   reloadFile?: ((p: SiProject) => Promise<void>) | null;
   /** What the checks need from structures (molfiles): formula, pieces, distinct carbons, H counts. */
   siFacts(mols: string[]): Promise<(MolFacts | null)[]>;
@@ -215,13 +217,17 @@ const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
       <button role="tab" data-si-tab="home" aria-selected="true">Home</button>
+      <button role="tab" data-si-tab="project" aria-selected="false">Project</button>
       <button role="tab" data-si-tab="insert" aria-selected="false">Insert</button>
+      <button role="tab" data-si-tab="layout" aria-selected="false">Layout</button>
+      <button role="tab" data-si-tab="references" aria-selected="false">References</button>
+      <button role="tab" data-si-tab="review" aria-selected="false">Review</button>
+      <button role="tab" data-si-tab="view" aria-selected="false">View</button>
       <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
       <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
       <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure or a figure is selected in the Live Preview">Picture Format</button>
       <button role="tab" data-si-tab="xray" aria-selected="false" class="rb-context" hidden title="Shown on an X-ray structure's page">Crystal Structure</button>
       <button role="tab" data-si-tab="attach" aria-selected="false" class="rb-context" hidden title="Shown on an Attachment section's page">Attachment</button>
-      <button role="tab" data-si-tab="refs" aria-selected="false" class="rb-context" hidden title="Shown on the References page">References</button>
       <button role="tab" data-si-tab="ms" aria-selected="false" class="rb-context" hidden title="Shown on the Manuscript Check page">Manuscript Check</button>
       <button role="tab" data-si-tab="dash" aria-selected="false" class="rb-context" hidden title="Shown on the Dashboard and on a Data section's page">Dashboard</button>
       <button role="tab" data-si-tab="scheme" aria-selected="false" class="rb-context" hidden title="Shown on a scheme page">Scheme</button>
@@ -229,6 +235,9 @@ const RIBBON = `
     </div>
   </div>
   <div class="rb-panel" data-si-panel="insert" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="cover-page" data-ic="cover-page" title="Cover Page: the SI's title, authors, affiliations and date, on the project's page"><span class="rb-icon">▤</span>Cover Page</button>
+    </div><div class="rb-label">Pages</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="import-si" data-ic="get-data" title="Import SI: read a Supporting Information (Word or PDF) and import its general procedures, compounds, sections, figures, tables and references, after checking them in a review window. One step of Undo"><span class="rb-icon">⇩</span>Import SI…</button>
     </div><div class="rb-label">Import</div></div>
@@ -325,9 +334,6 @@ const RIBBON = `
     </div><div class="rb-label">Cell Picture</div></div>
   </div>
   <div class="rb-panel" data-si-panel="place" hidden>
-    <div class="rb-group" data-si-place-for="structures"><div class="rb-row">
-      <button class="rb-big" data-si-place="edit" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
-    </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-place="position" data-ic="position" aria-haspopup="true" title="Position: in the line, or at the left, center or right with the text wrapping around it"><span class="rb-icon"></span>Position ▾</button>
       <div class="rb-fly rb-selgal" data-name="Wrap Text" data-ic="wrap-text" data-pic="wrap" title="How the text wraps around it"><select data-si-place-wrap>
@@ -346,7 +352,6 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="figure" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="picture" data-ic="picture" title="Change Picture: a picture file (PNG, JPG, SVG or PDF) in place of the figure's"><span class="rb-icon">▣</span>Change Picture</button>
-      <button class="rb-big" data-si-fig="draw-structure" data-ic="structure" title="Draw the figure with the drawing tools (a picture made here is drawn again; double-click the figure does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
       <div class="rb-col">
         <button data-si-fig="paste-picture" title="The copied picture or drawing in place of the figure's">Paste Picture</button>
         <button data-si-fig="compound" title="A compound's structure in place of the figure's">Compound…</button>
@@ -372,13 +377,12 @@ const RIBBON = `
   <div class="rb-panel" data-si-panel="attach" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-attach="choose" data-ic="insert-object" title="Choose File: the PDF or picture printed as this section (a copy is kept in the project; the one it replaces goes to the Trash). A file can also be dropped on the preview"><span class="rb-icon">▤</span>Choose File</button>
-      <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Home ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
+      <button class="rb-big" data-si-attach="remove" data-ic="delete" title="Remove File: the file goes to the project's Trash (Project ▸ Trash puts it back)"><span class="rb-icon">✕</span>Remove File</button>
     </div><div class="rb-label">File</div></div>
   </div>
   <div class="rb-panel" data-si-panel="xray" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-xray="choose-cif" data-ic="insert-object" title="Choose CIF: the structure's CIF file (a copy is kept in the project; the one it replaces goes to the Trash)"><span class="rb-icon">▤</span>Choose CIF</button>
-      <button class="rb-big" data-si-xray="edit" data-ic="structure" title="Edit Structure: rotate it, change its style (ORTEP, ball-and-stick…), its labels and what is shown, in the crystal structure window (double-click the structure does the same)"><span class="rb-icon">⌬</span>Edit Structure</button>
     </div><div class="rb-label">Structure</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
@@ -391,7 +395,16 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Copy and Save</div></div>
   </div>
-  <div class="rb-panel" data-si-panel="refs" hidden>
+  <div class="rb-panel" data-si-panel="references" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="toc" data-ic="insert-toc" title="Table of Contents: its title, the headings it lists and whether its lines link to them, on the project's page (the compiled SI makes it)"><span class="rb-icon">☰</span>Table of Contents</button>
+    </div><div class="rb-label">Table of Contents</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="insert-citation" data-ic="insert-citation" title="Insert Citation: cite references from My Library in the selected compound's References field (they join the project's reference list)"><span class="rb-icon">❝</span>Insert Citation</button>
+      <div class="rb-col">
+        <button data-si="manage-references" data-ic="manage-references" title="Manage References: the project's reference list, to add, edit or delete references">Manage References</button>
+      </div>
+    </div><div class="rb-label">Citations</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="ref-doi" data-ic="insert-citation" title="Add by DOI: filled in from Crossref (needs the internet); one already on the list is not added twice"><span class="rb-icon">＋</span>Add by DOI</button>
       <div class="rb-col">
@@ -402,17 +415,58 @@ const RIBBON = `
     </div><div class="rb-label">Add</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si="ref-edit" title="Edit the selected reference (double-click it does the same): every value can be changed">Edit Reference…</button>
-        <button data-si="ref-delete" data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
+        <button data-si="ref-delete" disabled data-ic="delete" title="Take the selected reference off the list; its citations stay in the text with a warning">Delete Reference</button>
       </div>
     </div><div class="rb-label">Reference</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="layout" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
+    </div><div class="rb-label">Page Setup</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="styles" data-ic="style-set" title="Styles: the font, size, color, alignment and spacing of the compiled SI's Normal text, headings, compound titles and captions (Project Settings ▸ Styles)">Styles</button>
+        <button data-si="heading-numbers" data-ic="numbers-s" title="Heading Numbers: how the headings of the compiled SI are numbered (1, 1.1, S1, A.…), and what goes before and after the number (Project Settings ▸ Headings)">Heading Numbers</button>
+        <button data-si="caption-labels" data-ic="insert-caption" title="Caption Labels: the words and numbers of figure, table and scheme captions (Figure S1, Table S2) (Project Settings ▸ Labels)">Caption Labels</button>
+      </div>
+    </div><div class="rb-label">Styles</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="structure-layout" data-ic="wrap-text" title="Structure Layout: where compounds' structures and figures go by default, and how text wraps around them (Project Settings ▸ Layout)">Structure Layout</button>
+      </div>
+    </div><div class="rb-label">Arrange</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="review" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Review (F7): go to the next misspelled word or chemistry formatting slip on this page (a formula without subscripts, a solvent written plainly), with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Review</button>
+      <div class="rb-col">
+        <button data-si="dictionary" title="Dictionary: the project's own words, and the ones left as written (Project Settings ▸ Dictionary)">Dictionary</button>
+      </div>
+    </div><div class="rb-label">Proofing</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
+      <button class="rb-big" data-si="manuscript-check" data-ic="si-check" title="Manuscript Check: compare the manuscript (Word or PDF) with the SI: compounds missing from either, and yields, ee and dr that differ"><span class="rb-icon">⇄</span>Manuscript Check</button>
+    </div><div class="rb-label">Checks</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="view" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
+      <div class="rb-col">
+        <button data-si="view-multiple" aria-pressed="false" title="Multiple Pages: the Live Preview's pages two side by side in each row (click again for one)">Multiple Pages</button>
+        <button data-si="show-marks" aria-pressed="false" title="Show/Hide ¶: paragraph marks, spaces and tabs in the Live Preview. They show on screen only, never in print">Show/Hide ¶</button>
+        <button data-si="nav-pane" data-ic="nav-pane" aria-pressed="true" title="Navigation Pane: the list of sections and compounds at the left (hide it for more room)">Navigation Pane</button>
+      </div>
+      <div class="rb-col">
+        <button data-si="page-collapse" aria-pressed="false" title="Hide SI Page: the Live Preview fills the width, for working in it (click again, or the arrow on the divider, to show the page)">Hide SI Page</button>
+      </div>
+    </div><div class="rb-label">Show</div></div>
   </div>
   <div class="rb-panel" data-si-panel="ms" hidden>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-ms="ms-add" data-ic="file-open" title="Add the manuscript (PDF or Word .docx) and its ChemDraw files (.cdxml) to the project’s manuscript folder; they are never printed"><span class="rb-icon">＋</span>Add Files…</button>
       <div class="rb-col">
         <button data-si-ms="ms-add-doc" title="Add a document open in Chemweave, saved into the manuscript folder as a Word file as it is now">Add Open Document…</button>
-        <button data-si-ms="ms-remove" data-ic="delete" title="Move the selected file to the project Trash (Home ▸ Trash, or Undo, puts it back)">Remove File</button>
+        <button data-si-ms="ms-remove" data-ic="delete" title="Move the selected file to the project Trash (Project ▸ Trash, or Undo, puts it back)">Remove File</button>
       </div>
     </div><div class="rb-label">Files</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -426,7 +480,6 @@ const RIBBON = `
     </div><div class="rb-label">Check</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
-        <button data-si-ms="ms-open" title="Open the compound of the selected result at the field concerned (double-click a result does the same)">Open Compound</button>
         <button data-si-ms="ms-dismiss" title="Hide the selected result, with a reason: it comes back if the values it is about change">Dismiss…</button>
         <button data-si-ms="ms-restore" title="Bring back the selected dismissed result">Restore</button>
       </div>
@@ -472,7 +525,6 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="scheme" hidden>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si-scheme="draw" data-ic="structure" title="Draw the selected box's structure with the drawing tools (double-click a box does the same)"><span class="rb-icon">⌬</span>Draw Structure</button>
       <div class="rb-col">
         <button data-si-scheme="paste" data-ic="paste" title="The copied structure (from ChemDraw or Chemweave) in the selected box">Paste Structure</button>
       </div>
@@ -519,23 +571,54 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="paste" data-ic="paste" title="Paste (Ctrl+V): the copied text where you are typing, on the SI page or in the Live Preview"><span class="rb-icon">📋</span>Paste</button>
+      <div class="rb-col">
+        <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
+        <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
+      </div>
+    </div><div class="rb-label">Clipboard</div></div>
+    <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="new-compound" data-ic="compound" title="A new compound page in the selected Data section, after the selected compound (Ctrl+Shift+N)"><span class="rb-icon">⬡</span>New Compound</button>
       <button class="rb-big" data-si="new-section" data-ic="section" title="A new section: a Data section holds compounds; a Custom section holds text (and sub-sections); an Attachment section a PDF or picture; an X-ray structure a crystal structure from its CIF"><span class="rb-icon">▤</span>New Section</button>
-      <div class="rb-col">
-        <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
-        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it.">Trash…</button>
-      </div>
+    </div><div class="rb-label">New</div></div>
+    <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="rename" title="Rename the selected section or scheme page (F2 in the tree)">Rename</button>
         <button data-si="duplicate" title="Copies of the selected compound or scheme page, with the fields you choose (never its spectra, files, manual ID or flags): to start analogs">Duplicate…</button>
+        <button data-si="delete" data-ic="delete" title="Move the selected compound, scheme page or section to the project's Trash (Delete key in the tree); Trash puts it back">Delete</button>
       </div>
+    </div><div class="rb-label">Organize</div></div>
+    ${fontGroupHtml('si')}
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
+        <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
+      </div>
+    </div><div class="rb-label">Editing</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
+        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
+      </div>
+    </div><div class="rb-label">Structure</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
+      <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
+    </div><div class="rb-label">Compile</div></div>
+  </div>
+  <div class="rb-panel" data-si-panel="project" hidden>
+    <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="move-up" title="Move the selected compound or section up (Alt+↑): compound IDs follow the order. Rows can also be dragged in the tree">▲ Move Up</button>
         <button data-si="move-down" title="Move the selected compound or section down (Alt+↓)">▼ Move Down</button>
         <button data-si="move-to" title="Move the selected compound to another Data section or into or out of a scheme page, or the selected section into or out of a Custom section">Move To…</button>
       </div>
-    </div><div class="rb-label">Project</div></div>
-    ${fontGroupHtml('si')}
+      <div class="rb-col">
+        <button data-si="trash" title="The project's Trash: put deleted sections, compounds, scheme pages and files back, or empty it.">Trash…</button>
+        <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
+      </div>
+    </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="id-table" data-ic="compound-number" title="The ID table of the selected Data section: compound IDs follow the compounds' order"><span class="rb-icon">#</span>ID Table</button>
       <div class="rb-col">
@@ -545,42 +628,24 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Compound IDs</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="edit-structure" data-ic="structure" title="Draw or change the compound's structure with the drawing tools"><span class="rb-icon">⌬</span>Edit Structure</button>
-      <div class="rb-col">
-        <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
-        <button data-si="cite-library" data-ic="insert-citation" title="Cite references from My Library in the compound's References field (they join the project's references)">Cite from My Library…</button>
-      </div>
       <div class="rb-col">
         <button data-si="from-library" title="A new compound page with a compound from your Compound Library (its structure and name)">From Compound Library…</button>
         <button data-si="to-library" title="Keep the structures of this section's compounds in your Compound Library, with their SI IDs and this project as where they appear">Add to Compound Library</button>
       </div>
       <div class="rb-col">
         <button data-si="name-pubchem" title="Name from PubChem: look the selected compound up in PubChem (by its InChIKey, which is all that is sent, and only when you click) and fill in its IUPAC name, which stays editable. Needs the internet; finds only compounds already in PubChem">Name from PubChem</button>
-        <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Library</div></div>
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="warnings" data-ic="check-structure" title="Every automatic warning in the project (HRMS, NMR, yields, spectra, IDs), by compound: dismiss or restore them"><span class="rb-icon">⚠</span>Warnings</button>
-      <button class="rb-big" data-si="spelling" data-ic="spelling" title="Spelling (F7): go to the next misspelled word on this page, with its corrections. Chemistry words, abbreviations (MeOH, CDCl₃) and systematic names count as spelled right; right-click an underlined word for the same menu"><span class="rb-icon">✓</span>Spelling</button>
-    </div><div class="rb-label">Checks</div></div>
-    <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="compile-doc" data-ic="cover-page" title="Make the Supporting Information as a document you can edit: cover, contents, sections, procedures and compound data. The project itself is not changed."><span class="rb-icon">▤</span>Compile to Document</button>
-      <button class="rb-big" data-si="compile-pdf" data-ic="export-pdf" title="Compile the Supporting Information and save it as a PDF (it also opens as a document)"><span class="rb-icon">⎙</span>Compile to PDF</button>
-      <button class="rb-big" data-si="live-preview" data-ic="print-preview" aria-pressed="true" title="Live Preview (Ctrl+Shift+L): the whole SI as it prints, beside the page, with the selected page in view; type in it to change the fields"><span class="rb-icon">◧</span>Live Preview</button>
-    </div><div class="rb-label">Compile</div></div>
-    <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance"><span class="rb-icon">⚙</span>Project Settings…</button>
       <div class="rb-col">
-        <button data-si="apply-fields" title="Give every compound of the section the section's fields, in the section's order">Apply Section Fields</button>
-        <button data-si="reload" data-ic="refresh-all" title="Open the project file again as it was last saved (after a sync brought changes made elsewhere); changes not saved here are dropped, after asking">Reload Project</button>
-      </div>
-      <div class="rb-col">
-        <button data-si="project-settings" title="The project's title and journal style, and the HRMS tolerance">Project Settings…</button>
         <button data-si="snapshot" title="Save Snapshot: a zipped copy of the whole project, kept in a “Snapshots” folder beside the project file, for milestones such as the submitted version">Save Snapshot…</button>
         <button data-si="save-snapshot-docx" title="Save Word Snapshot: the whole SI compiled and saved now as “(project title) (Snapshot).docx” beside the project file, a backup you can open in Word if the project can't be opened. It is also saved every 5 minutes while the project changes, and when the project closes">Save Word Snapshot</button>
+        <button data-si="reload" data-ic="refresh-all" title="Open the project file again as it was last saved (after a sync brought changes made elsewhere); changes not saved here are dropped, after asking">Reload Project</button>
       </div>
-
     </div><div class="rb-label">Manage</div></div>
-  </div>`;
+  </div>
+`;
 
 /** Short names for a spectrum's or file's values in its row (their full names are in the tooltip). */
 const ATT_SHORT: Record<string, string> = { title: 'Header', struct_caption: 'Caption', label: 'Label' };
@@ -648,6 +713,8 @@ export class SiMode {
     this.pane.id = 'si-pane';
     this.pane.className = 'si-only';
     this.pane.hidden = true;
+    // (View ▸ Navigation Pane, as last left)
+    try { if (localStorage.getItem('si.navPane') === 'off') this.pane.classList.add('si-tree-off'); } catch { /* (shown) */ }
     this.tree = el('div', 'si-tree');
     this.tree.setAttribute('role', 'tree');
     this.tree.setAttribute('aria-label', 'Sections and compounds');
@@ -676,6 +743,7 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    this.viewState();
     // (Wrap Text's gallery, as Document mode's: made here, the SI ribbon coming after the others were)
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
@@ -689,17 +757,17 @@ export class SiMode {
         if (['bold', 'italic', 'underline', 'subscript', 'superscript'].includes(c)) b.setAttribute('aria-pressed', String(document.queryCommandState(c)));
       }
     });
-    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(this.liveOn));
+    for (const b of this.ribbon.querySelectorAll('[data-si="live-preview"]')) b.setAttribute('aria-pressed', String(this.liveOn));
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"]')) e.preventDefault(); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
-      if (fmt) { this.format(fmt.dataset.siFmt!); return; }
+      if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
@@ -725,6 +793,8 @@ export class SiMode {
       if (b) void this.run(b.dataset.si!);
     });
     this.ribbon.addEventListener('change', (e) => {
+      const fi = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-si-fmt]');
+      if (fi) { this.format(fi.dataset.siFmt!, fi.value); return; }
       const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
@@ -745,6 +815,11 @@ export class SiMode {
       const target = e.target as HTMLElement;
       const box = target.closest<HTMLElement>('.si-rich');
       if (box) this.typing = box;
+      // (where the ribbon's Clipboard and Editing commands act: the SI page's boxes, or the Live Preview)
+      const was = this.typedIn;
+      if (this.preview && target === this.preview.input) this.typedIn = 'preview';
+      else if (this.page.contains(target) || this.tree.contains(target)) this.typedIn = 'page';
+      if (this.typedIn !== was) this.fontState();
       const card = target.closest<HTMLElement>('.si-table-card');
       const t = card ? this.tables.find((x) => x.el === card) ?? null : null;
       if (t) this.tableChosen(t);
@@ -760,6 +835,21 @@ export class SiMode {
   }
 
   get project(): SiProject | null { return this.tab?.si ?? null; }
+
+  /** Where the person last typed or clicked to type: a box on the SI page, or the Live Preview. */
+  private typedIn: 'page' | 'preview' = 'page';
+  /** The Live Preview when it was the last place typed in and is still shown. */
+  private get previewTyped(): SiPreview | null { return this.typedIn === 'preview' && this.liveOn && !this.pane.classList.contains('si-live-off') && this.preview ? this.preview : null; }
+
+  /** The Live Preview, when it is on and shown on this page (it folds itself away on the Dashboard and the lists). */
+  private async previewShown(): Promise<SiPreview | null> {
+    return this.liveOn && !this.pane.classList.contains('si-live-off') ? this.livePreview() : null;
+  }
+
+  /** Why a command for the Live Preview can't be done now. */
+  private noPreviewWhy(what: string): string {
+    return this.liveOn ? `${what}, which this page doesn’t show: choose the project, a section or a compound first.` : `${what}: turn it on first (View ▸ Live Preview).`;
+  }
 
   /** The table whose cell was last picked (the Table Layout tab acts on it). */
   private activeTable: SiTableEditor | null = null;
@@ -1069,13 +1159,49 @@ export class SiMode {
   }
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
-  private format(cmd: string): void {
+  private format(cmd: string, value?: string): void {
+    // (where the person last typed in the Live Preview: formatted there, kept across compiles)
+    const pv = this.previewTyped;
+    if (pv) { void this.formatPreview(pv, cmd, value); return; }
     if (SI_FONT_OFF.includes(cmd)) { this.host.flash(SI_FONT_REASON, 6000); return; }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box first (a procedure, a report, a section’s text or a table’s cell).'); return; }
     if (cmd === 'clear') { document.execCommand('removeFormat'); return; }
     if (cmd === 'formula') { this.formulaStyle(); return; }
     if (cmd === 'charges') { this.raiseCharges(); return; }
     document.execCommand(cmd);
+  }
+
+  /** A Font group command on the Live Preview's selection (si-preview.ts format). */
+  private async formatPreview(pv: SiPreview, cmd: string, value?: string): Promise<void> {
+    const toggle = (k: 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup'): FormatLook => ({ [k]: !pv.selectionHas(k) });
+    let look: FormatLook | 'clear' | null = null;
+    switch (cmd) {
+      case 'bold': case 'italic': case 'underline': case 'strike': look = toggle(cmd); break;
+      case 'subscript': look = toggle('sub'); break;
+      case 'superscript': look = toggle('sup'); break;
+      case 'clear': look = 'clear'; break;
+      case 'font': look = value?.trim() ? { font: value.trim() } : null; break;
+      case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
+      case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
+      case 'color': look = value ? { color: value } : null; break;
+      default:
+        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
+        return;
+    }
+    if (look) await pv.format(look);
+    pv.input.focus();
+  }
+
+  /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
+  private fontState(): void {
+    const on = !!this.previewTyped;
+    paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
+    if (on) {
+      for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
+        el.disabled = false;
+        (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
+      }
+    } else siFontBoxes(this.ribbon, defaultStyles().Normal);
   }
 
   /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
@@ -1687,6 +1813,8 @@ export class SiMode {
     void this.commitAll(false);
     this.pick = pick;
     this.refresh();
+    // (the preview may have folded itself away on this page)
+    this.fontState();
   }
 
   // ---------------------------------------------------------------- the tree
@@ -1887,7 +2015,8 @@ export class SiMode {
     this.schemeShown(null);
     this.spectraShown(null);
     this.front = null;
-    this.ribbon.querySelector<HTMLElement>('[data-si-tab="refs"]')!.hidden = this.pick.kind !== 'references';
+    // (the reference list's Edit and Delete act on the reference picked on the References page)
+    for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si="ref-edit"], [data-si="ref-delete"]')) b.disabled = this.pick.kind !== 'references';
     this.msShown(null);
     this.dashRedraw = null;
     const p = this.project!;
@@ -2156,7 +2285,7 @@ export class SiMode {
       rm.type = 'button';
       rm.title = 'Delete the general procedure (to the Trash; compounds using it keep the choice, with a warning)';
       rm.addEventListener('click', () => void (async () => {
-        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash; Home ▸ Trash can put it back.';
+        const msg = users.length ? `${users.length} compound${users.length === 1 ? ' uses' : 's use'} it (${users.map((c) => this.idOf(c)).join(', ')}); they keep the choice and get a warning until you choose another.` : 'It goes to the project’s Trash; Project ▸ Trash can put it back.';
         const go = await askChoice(`Delete ${partText(gp.name) || 'General Procedure'}`, msg, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
         if (go === 'go') await this.act(() => p.deleteGeneralProcedure(id));
       })());
@@ -2337,7 +2466,7 @@ export class SiMode {
     const p = this.project!;
     await this.commitAll();
     const what = this.objLabels.get(id) ?? (kind === 'figure' ? 'the figure' : 'the table');
-    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash; Home ▸ Trash can put it back.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
+    const go = await askChoice(`Delete ${kind === 'figure' ? 'Figure' : 'Table'}`, `Delete ${what} and its caption? ${kind === 'figure' ? 'Its picture goes' : 'It goes'} to the project’s Trash; Project ▸ Trash can put it back.`, [{ value: 'go', label: 'Delete', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
     if (go !== 'go') return;
     await this.act(() => p.deleteTextObject(s, kind, id));
   }
@@ -2619,7 +2748,7 @@ export class SiMode {
     const p = this.project!;
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'Fields of new compounds');
-    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count toward a page being complete. Insert ▸ Field… adds one; Home ▸ Apply Section Fields gives them to the compounds already there.');
+    addInfo(h, 'The fields a new compound page of this section gets, in this order. Required fields count toward a page being complete. Insert ▸ Field… adds one; Project ▸ Apply Section Fields gives them to the compounds already there.');
     card.append(h);
     const entries = defaultFieldsOf(s);
     const list = el('div', 'si-fieldlist');
@@ -2662,7 +2791,7 @@ export class SiMode {
     const head = el('div', 'si-card si-cpd-head');
     const pic = el('button', 'si-struct');
     pic.type = 'button';
-    pic.title = 'Edit Structure: draw it with the drawing tools';
+    pic.title = 'Click to draw or change the structure';
     pic.addEventListener('click', () => this.editStructure(c));
     pic.addEventListener('paste', (e) => { e.preventDefault(); void this.pasteStructure(c, e); });
     const info = el('div', 'si-cpd-info');
@@ -3095,6 +3224,7 @@ export class SiMode {
     this.pageCollapsed = on;
     if (persist) try { localStorage.setItem('si.pageCollapsed', on ? 'on' : 'off'); } catch { /* (not kept) */ }
     this.pane.classList.toggle('si-page-off', on);
+    if (this.ribbon) this.viewState();
     // (nothing to drag with the page hidden)
     const grip = this.live.el.querySelector<HTMLElement>('.si-live-grip');
     if (grip) grip.title = on ? '' : 'Drag to change the preview’s width';
@@ -3380,9 +3510,11 @@ export class SiMode {
     this.pane.classList.toggle('si-live-off', !on);
     // (shown by hand: it stays open on this page, even one it has nothing to show for)
     this.liveAsked = on;
-    this.ribbon.querySelector('[data-si="live-preview"]')?.setAttribute('aria-pressed', String(on));
+    for (const b of this.ribbon.querySelectorAll('[data-si="live-preview"]')) b.setAttribute('aria-pressed', String(on));
     if (on) { this.live.shown = ''; this.liveSoon(0); }
     this.showZoom(!!this.tab);
+    this.viewState();
+    this.fontState();
   }
 
   /**
@@ -3587,10 +3719,31 @@ export class SiMode {
         if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
         await this.act(save, false);
       },
+      writeFormat: async (fields, change, owner) => {
+        const p = asProject(owner);
+        let done = false;
+        const save = async (): Promise<void> => {
+          // (everything read first: a file that can't be read, or a field changed since, writes nothing)
+          const items = change ? change(await readPreviewFormatsToChange(p.folder)) : null;
+          const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
+          for (const { a, x } of access) {
+            if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
+            if ((await a.read()) !== x.from) throw new Error('The text changed while it was being formatted. Select it and try again.');
+          }
+          for (const { a, x } of access) await a!.write(x.text);
+          if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
+          done = true;
+        };
+        if (p !== this.project) await this.change(p, 'Format in Live Preview', save);
+        else await this.act(save, fields.length > 0);
+        // (the reason was said)
+        if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
+      },
       undo: (redo) => void this.undo(redo),
       refresh: () => this.liveSoon(0),
       structureChosen: (id) => this.structureChosen(id),
       structureMenu: (id, x, y) => this.structureMenu(id, x, y),
+      editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
     });
     this.live.view = this.preview.view;
     this.preview.onScrollSettled = () => this.followPreview();
@@ -3600,6 +3753,7 @@ export class SiMode {
     // (Preferences ▸ SI Live Preview: drawn again in the look chosen)
     siPreviewPrefs.changed = () => this.preview?.applyPrefs();
     this.wirePageLinks();
+    this.viewState();
     return this.preview;
   }
 
@@ -4589,6 +4743,12 @@ export class SiMode {
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'n') { e.preventDefault(); void this.run('new-compound'); return; }
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
+    // (Find and Go To from anywhere in the pane; the Live Preview takes its own Ctrl+F first)
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'g')) {
+      e.preventDefault();
+      void this.run(e.key.toLowerCase() === 'f' ? 'find' : 'go-to');
+      return;
+    }
     // (in a text box or a list, Alt and the arrows are the box's own keys)
     if (inText) return;
     if (e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown')) { e.preventDefault(); void this.run(e.key === 'ArrowUp' ? 'move-up' : 'move-down'); return; }
@@ -4624,7 +4784,7 @@ export class SiMode {
   private async deletePicked(): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
-    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Home ▸ Trash can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
+    const yes = (title: string, text: string): Promise<boolean> => askChoice(title, `${text} Project ▸ Trash can put it back.`, [{ value: 'keep', label: 'Cancel' }, { value: 'delete', label: 'Delete', primary: true }], 'keep').then((x) => x === 'delete');
     if (pick.kind === 'compound') {
       const c = p.compound(pick.id);
       const k = c.schemeId ? p.scheme(c.schemeId) : null;
@@ -4742,7 +4902,7 @@ export class SiMode {
     await this.act(async () => { const k = await p.convertToScheme(c.id); this.pick = { kind: 'scheme', id: k.id }; });
   }
 
-  /** Home ▸ Move To: a compound or scheme page to another Data section (a compound also into or out of a scheme page); a section into a Custom section, or to the top level. */
+  /** Project ▸ Move To: a compound or scheme page to another Data section (a compound also into or out of a scheme page); a section into a Custom section, or to the top level. */
   private async moveTo(onlySchemes = false): Promise<void> {
     const p = this.project!;
     const pick = this.pick;
@@ -5090,7 +5250,9 @@ export class SiMode {
   }
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
-  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx']);
+  private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
+    'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
+    'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
   async run(cmd: string): Promise<void> {
@@ -5432,10 +5594,141 @@ export class SiMode {
       case 'project-settings':
         this.projectSettings();
         return;
+      // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
+      case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
+      case 'find': {
+        const pv = await this.previewShown();
+        if (!pv) { this.host.flash(this.noPreviewWhy('Find looks in the Live Preview')); return; }
+        pv.showFind();
+        return;
+      }
+      case 'go-to': await this.goTo(); return;
+      case 'cover-page': this.go({ kind: 'project' }); return;
+      case 'toc':
+        this.go({ kind: 'project' });
+        // (after the page is drawn)
+        requestAnimationFrame(() => this.page.querySelector<HTMLElement>('[data-si-toc]')?.scrollIntoView({ block: 'start' }));
+        return;
+      case 'manage-references': case 'bibliography': this.go({ kind: 'references' }); return;
+      case 'insert-citation': await this.citeFromLibrary(c); return;
+      case 'page-setup': case 'header': case 'footer': case 'page-number': this.projectSettings('page'); return;
+      case 'heading-numbers': this.projectSettings('headings'); return;
+      case 'styles': this.projectSettings('styles'); return;
+      case 'caption-labels': this.projectSettings('labels'); return;
+      case 'structure-layout': this.projectSettings('layout'); return;
+      case 'dictionary': this.projectSettings('dictionary'); return;
+      case 'manuscript-check': this.go({ kind: 'manuscript' }); return;
+      case 'show-marks': case 'view-multiple': {
+        const pv = this.liveOn ? await this.livePreview() : null;
+        if (!pv) { this.host.flash('This changes the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        if (cmd === 'show-marks') pv.showMarks = !pv.showMarks; else pv.multiplePages = !pv.multiplePages;
+        this.viewState();
+        return;
+      }
+      case 'page-collapse':
+        if (!this.liveOn) { this.host.flash('The SI page is hidden for the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        this.setPageCollapsed(!this.pageCollapsed);
+        return;
+      case 'nav-pane':
+        this.pane.classList.toggle('si-tree-off');
+        try { localStorage.setItem('si.navPane', this.pane.classList.contains('si-tree-off') ? 'off' : 'on'); } catch { /* (not kept) */ }
+        requestAnimationFrame(() => this.live.view?.resize());
+        this.viewState();
+        return;
     }
   }
 
-  /** Home ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
+  /** The View tab's buttons pressed or not (Show/Hide ¶, Multiple Pages, Navigation Pane). */
+  private viewState(): void {
+    const set = (cmd: string, on: boolean): void => { this.ribbon.querySelector(`[data-si="${cmd}"]`)?.setAttribute('aria-pressed', String(on)); };
+    set('show-marks', !!this.preview?.showMarks);
+    set('view-multiple', !!this.preview?.multiplePages);
+    set('nav-pane', !this.pane.classList.contains('si-tree-off'));
+    set('page-collapse', this.pageCollapsed);
+    // (these change the Live Preview: not while it is off)
+    for (const cmd of ['show-marks', 'view-multiple']) {
+      const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-si="${cmd}"]`);
+      if (b) b.disabled = !this.liveOn;
+    }
+  }
+
+  /** Paste, Cut, Copy and Select All: where the person was typing, on the SI page or in the Live Preview. */
+  private async clipboardCommand(cmd: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (pv) {
+      if (cmd === 'select-all') { pv.selectAll(); return; }
+      if (cmd !== 'paste') { if (!pv.copyOut(cmd === 'cut')) this.host.flash(`Select some text in the Live Preview first, then ${cmd === 'cut' ? 'Cut' : 'Copy'}.`); return; }
+      const t = await this.clipboardText();
+      if (t !== null) pv.pasteText(t);
+      return;
+    }
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box on the SI page, or in the Live Preview, first.'); return; }
+    if (cmd === 'select-all') { document.execCommand('selectAll'); return; }
+    if (cmd !== 'paste') { if (!document.execCommand(cmd)) this.host.flash(`Press Ctrl+${cmd === 'cut' ? 'X' : 'C'} to ${cmd}: this window may not use the clipboard from a button.`); return; }
+    // (as Ctrl+V: a box that keeps bold, italics, sub- and superscripts gets the copied formatting too)
+    const got = await this.clipboardRich();
+    if (!got || !this.restoreTyping()) return;
+    const at = document.activeElement;
+    if (got.html && at) {
+      const dt = new DataTransfer();
+      dt.setData('text/plain', got.plain);
+      dt.setData('text/html', got.html);
+      const ev = new ClipboardEvent('paste', { clipboardData: dt, bubbles: true, cancelable: true });
+      at.dispatchEvent(ev);
+      if (ev.defaultPrevented) return;
+    }
+    document.execCommand('insertText', false, got.plain);
+  }
+
+  /** The copied text, with its HTML when there is some; null (said why) when the clipboard can't be read from a button. */
+  private async clipboardRich(): Promise<{ plain: string; html: string } | null> {
+    try {
+      const items = await navigator.clipboard.read();
+      let plain = '', html = '';
+      for (const it of items) {
+        if (!html && it.types.includes('text/html')) html = await (await it.getType('text/html')).text();
+        if (!plain && it.types.includes('text/plain')) plain = await (await it.getType('text/plain')).text();
+      }
+      return { plain, html };
+    } catch {
+      const t = await this.clipboardText();
+      return t === null ? null : { plain: t, html: '' };
+    }
+  }
+
+  /** The copied text, or null (said why) when the clipboard can't be read from a button. */
+  private async clipboardText(): Promise<string | null> {
+    try {
+      return await navigator.clipboard.readText();
+    } catch {
+      this.host.flash('Press Ctrl+V to paste: this window may not read the clipboard from a button.');
+      return null;
+    }
+  }
+
+  /** Home ▸ Go To: a page of the compiled SI (by its number) or a compound (by its ID). */
+  private async goTo(): Promise<void> {
+    const p = this.project!;
+    const got = await ask('Go To', [{ name: 'where', label: 'Page number or compound ID', value: '', placeholder: 'e.g. S12, or 3a' }], { ok: 'Go To' });
+    const w = got?.where.trim();
+    if (!w) return;
+    const c = p.compounds.find((x) => this.idOf(x).toLowerCase() === w.toLowerCase());
+    const pv = await this.previewShown();
+    const page = pv ? pv.pageIndexOf(w) : -1;
+    if (c && page >= 0) {
+      // (both: "3" is compound 3 and page 3)
+      const which = await askChoice('Go To', `“${w}” is a compound’s ID and a page number.`, [{ value: 'compound', label: `Compound ${w}` }, { value: 'page', label: `Page ${w}`, primary: true }, { value: 'cancel', label: 'Cancel' }], 'cancel');
+      if (which === 'page') pv!.goToPage(page);
+      else if (which === 'compound') this.go({ kind: 'compound', id: c.id });
+      return;
+    }
+    if (c) { this.go({ kind: 'compound', id: c.id }); return; }
+    if (pv && page >= 0) { pv.goToPage(page); return; }
+    if (!pv && /^S?\d+$/i.test(w)) { this.host.flash(this.noPreviewWhy('Pages are counted in the Live Preview')); return; }
+    this.host.flash(`No compound has the ID “${w}”${pv ? ', and no page is numbered that' : ''}.`);
+  }
+
+  /** Project ▸ Project Settings: the project's settings window (at a page: output, headings, page, labels, structures, schemes). */
   projectSettings(page?: string): void {
     const p = this.project;
     if (!p) return;
@@ -5655,7 +5948,7 @@ export class SiMode {
         await p.setValue(c, 'references', { ...v, refs: [...refs, ...ids.filter((i) => !refs.includes(i))] });
       }
     });
-    if (!c) this.host.flash(`Added to the project’s references: ${picked.length}.`);
+    if (!c) this.host.flash(`No compound is selected, so ${picked.length === 1 ? 'it was' : `${picked.length} were`} added to the project’s reference list only.`);
   }
 }
 

@@ -9,7 +9,9 @@
 //     program makes ("calcd for …") can't be typed into: a click goes to its field. Text typed
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
+import { IBEAM } from '../editor/cursors';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
+import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
@@ -19,6 +21,7 @@ import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, ty
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
+import { addFormat, blockSrc, clearFormats, markupFormat, markupOnly, printedFor, type FormatLook, type PreviewFormat } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -45,6 +48,8 @@ export interface SiPreviewHost {
   write(src: string, text: string, owner: unknown): Promise<void>;
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
+  /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown): Promise<void>;
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
@@ -52,6 +57,8 @@ export interface SiPreviewHost {
   structureChosen(key: string | null): void;
   /** Right-click on a compound's structure or a figure (picked first): its menu at the pointer. */
   structureMenu(key: string, x: number, y: number): void;
+  /** Double-click on a compound's structure: the drawing tools open on it. */
+  editStructure(key: string): void;
 }
 
 /** What is being shown: the whole SI (which can be typed into), or the Spectra section's pages. */
@@ -220,6 +227,7 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    this.findAgain();
     v.redraw();
   }
 
@@ -473,7 +481,7 @@ export class SiPreview {
     return {
       selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
-      squiggles: [], picked, found: [], framed: null,
+      squiggles: [], picked, found: this.finder?.open ? this.finder.hits : [], framed: null,
       marks,
     };
   }
@@ -538,6 +546,7 @@ export class SiPreview {
     }
     this.caretOn = true;
     this.placeInput();
+    if (this.finder?.open) { if (kind === 'text') this.findAgain(); else this.finder.showCount(); }
     this.view.redraw();
   }
 
@@ -708,7 +717,8 @@ export class SiPreview {
       // between pages: the white space hidden, or shown again (Word's double-click)
       const space = this.spaceAt(e);
       if (space) { e.preventDefault(); this.setHideSpace(space === 'hide', e.clientY); this.hoverSpace(e); return; }
-      if (this.structureUnder(e)) return;
+      const ref = this.structureUnder(e);
+      if (ref) { e.preventDefault(); this.api.editStructure(ref.key); return; }
       const at = this.offsetAt(e);
       if (at !== null) this.file?.ed.selectWord(at);
     });
@@ -864,7 +874,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
+    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
@@ -922,7 +932,7 @@ export class SiPreview {
     if (this.pickedStructure && !e.altKey) {
       const k = e.key.toLowerCase();
       if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
-      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'A compound’s structure is changed on its page (Home ▸ Edit Structure); here you can change where it goes (Picture Format).'));
+      if (e.key === 'Delete' || e.key === 'Backspace') return run(() => this.api.flash(this.pickedStructure?.startsWith('f:') ? 'A figure is changed or deleted on its page (click it there for Picture Format); here you can change where it goes (Picture Format).' : 'Double-click a compound’s structure to change it; here you can also change where it goes (Picture Format).'));
       if (e.key === 'Enter' || (ctrl && (k === 'v' || k === 'x'))) return run(() => this.api.flash(PICKED_TYPING));
       if (moves[e.key]) return run(() => { const at = this.pickedAt(); this.unpickStructure(); if (at !== null) ed.setCaret(at); ed.move(moves[e.key], shift); });
       if (ctrl && k === 'a') this.unpickStructure();
@@ -942,9 +952,15 @@ export class SiPreview {
       if (k === 'z' && !shift) return run(() => void this.flush().then(() => this.api.undo(false)));
       if (k === 'y' || (k === 'z' && shift)) return run(() => void this.flush().then(() => this.api.undo(true)));
       if (k === 'a') return run(() => ed.selectAll());
+      if (k === 'f' && !shift) return run(() => this.showFind());
       if (k === 'backspace') return run(() => ed.backspace(true));
       if (k === 'delete') return run(() => ed.deleteForward(true));
-      if (k === 'b' || k === 'i' || k === 'u') return run(() => this.api.flash('Change formatting on the SI page: the Live Preview takes typing only.'));
+      if (k === 'b' || k === 'i' || k === 'u') {
+        const key = k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline';
+        return run(() => void this.format({ [key]: !this.selectionHas(key) }));
+      }
+      if (k === ' ' && !shift) return run(() => void this.format('clear'));
+      if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) })); }
       if (k === 'c' || k === 'x' || k === 'v') { e.stopPropagation(); return; }
     }
   }
@@ -992,4 +1008,228 @@ export class SiPreview {
     if (this.ta.value !== sel) this.ta.value = sel;
     this.ta.setSelectionRange(0, sel.length);
   }
+
+  // ---------------------------------------------------------------- the ribbon's commands
+
+  /** Find (Ctrl+F): Document mode's Find box over the preview, finding only (a field is changed by typing into it). */
+  private finder: DocFind | null = null;
+
+  showFind(): void {
+    if (!this.file) return;
+    if (!this.finder) {
+      this.finder = new DocFind(this.host, {
+        file: () => this.file,
+        focus: () => this.ta.focus(),
+        flash: (m, ms) => this.api.flash(m, ms),
+        redraw: () => { this.placeInput(); this.view.redraw(); },
+        found: () => this.foundShown(),
+        // (replacing would write into many fields at once, past the typing guard: not here)
+      }, { findOnly: true });
+    }
+    this.finder.show(false);
+  }
+
+  /** While the text changes under an open Find box: its places looked for again (nothing is moved into view). */
+  private findAgain(): void {
+    if (this.finder?.open) this.finder.refresh();
+  }
+
+  /** The place found and selected: in view, and its page chosen in the list. */
+  private foundShown(): void {
+    const ed = this.file?.ed;
+    if (ed && !ed.collapsed && this.finder?.open) {
+      const r = this.view.rangeRects(ed.start, ed.end)[0];
+      if (r) this.view.reveal(r, 60);
+      const b = blockAt(this.blocks, ed.start);
+      if (b && b.node !== this.focusNode) this.api.pick(b.node);
+    }
+    this.placeInput();
+    this.view.redraw();
+  }
+
+  /** Select All in the preview. */
+  selectAll(): void {
+    this.file?.ed.selectAll();
+    this.ta.focus();
+  }
+
+  /** Copy or cut the selection (the ribbon's Copy and Cut): as Ctrl+C and Ctrl+X do. */
+  copyOut(cut: boolean): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    this.ta.focus();
+    this.syncInput();
+    return document.execCommand(cut ? 'cut' : 'copy');
+  }
+
+  /** Paste plain text at the caret (the ribbon's Paste), as Ctrl+V does. */
+  pasteText(text: string): void {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    this.ta.focus();
+    ed.pastePlain(text);
+  }
+
+  /** Show/Hide ¶ in the preview. */
+  get showMarks(): boolean { return this.view.showMarks; }
+  set showMarks(on: boolean) { this.view.showMarks = on; this.view.redraw(); }
+
+  /** Multiple Pages: two pages in each row (or one). */
+  get multiplePages(): boolean { return this.view.perRow > 1; }
+  set multiplePages(on: boolean) {
+    const v = this.view;
+    const page = v.currentPage();
+    v.perRow = on ? 2 : 1;
+    v.sizeSpace();
+    if (on) v.fitPages(); else v.fitWidth();
+    v.scrollToPage(page);
+    v.redraw();
+  }
+
+  /** The number of pages shown. */
+  get pageCount(): number { return this.file?.layout().pages.length ?? 0; }
+
+  /** The page whose printed number is `label` ("12", "iv"; an "S" before it is left out), from 0; -1 for none. */
+  pageIndexOf(label: string): number {
+    const pages = this.file?.layout().pages ?? [];
+    const want = label.trim().replace(/^S(?=\d)/i, '').toLowerCase();
+    if (!want) return -1;
+    const i = pages.findIndex((p) => (p.num ?? (p.n !== undefined ? String(p.n) : '')).toLowerCase() === want);
+    if (i >= 0) return i;
+    // (pages without printed numbers: counted from the first)
+    const n = Number(want);
+    return pages.every((p) => p.n === undefined && !p.num) && Number.isInteger(n) && n >= 1 && n <= pages.length ? n - 1 : -1;
+  }
+
+  /** Go To the page at `index` (from 0). */
+  goToPage(index: number): void {
+    this.userScrolled();
+    this.view.scrollToPage(index);
+    this.view.redraw();
+  }
+
+  // ---------------------------------------------------------------- formatting (preview-format.ts)
+
+  /** The first selected character's `key` (its size, for Grow Font), or undefined. */
+  selectionValue<K extends keyof TextRun>(key: K): TextRun[K] | undefined {
+    const ed = this.file?.ed;
+    if (!ed) return undefined;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && run.text) return run[key];
+      at = end;
+    }
+    return undefined;
+  }
+
+  /** Whether every character selected has `key` (Bold pressed again takes it off). */
+  selectionHas(key: keyof FormatLook): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    let at = 0, any = false;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && at < ed.end && run.text) { any = true; if (!run[key]) return false; }
+      at = end;
+      if (at >= ed.end) break;
+    }
+    return any;
+  }
+
+  /**
+   * Format the selection (`look`; 'clear': Clear All Formatting). Bold, italic, underline,
+   * subscript and superscript on a field kept as formatted text go into the field (SI Assistant
+   * shows them too); the rest, and any formatting on words the program writes, go in the
+   * formatting file. Either way it is kept across compiles. False when there was nothing to do.
+   */
+  async format(look: FormatLook | 'clear'): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
+    // (typing not yet written goes first: what is formatted is what is stored)
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    const owner = this.owner;
+    const text = f.ed.text;
+    const s = f.ed.start, e = f.ed.end;
+    // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
+    const spansNow = this.spans.map((x) => ({ ...x }));
+    const blocksNow = this.blocks.map((x) => ({ ...x }));
+    // the selection as stretches of the printed text of each source
+    const parts = new Map<string, [number, number]>();
+    const put = (src: string, a: number, b: number): void => {
+      const was = parts.get(src);
+      parts.set(src, was ? [Math.min(was[0], a), Math.max(was[1], b)] : [a, b]);
+    };
+    const printedCache = new Map<string, ReturnType<typeof printedOf>>();
+    const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
+      let x = printedCache.get(src);
+      if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
+      return x;
+    };
+    let pos = s;
+    const spans = spansNow.filter((x) => x.end > s && x.start < e).sort((a, b) => a.start - b.start);
+    const gap = (a: number, b: number): void => {
+      for (let i = a; i < b;) {
+        const k = blockAt(blocksNow, i);
+        if (!k) { i++; continue; }
+        const hi = Math.min(b, k.end);
+        // (paragraph marks and the places of pictures alone aren't formatted)
+        if (text.slice(i, hi).replace(/[\n\uFFFC]/g, '').trim()) put(blockSrc(k.node), i - k.start, Math.max(i + 1, hi) - k.start);
+        i = Math.max(i + 1, hi);
+      }
+    };
+    for (const sp of spans) {
+      const lo = Math.max(s, sp.start), hi = Math.min(e, sp.end);
+      if (lo > pos) gap(pos, lo);
+      if (hi > lo) { const a = printedOfSrc(sp.src).at(lo); put(sp.src, a, a + hi - lo); }
+      pos = Math.max(pos, hi);
+    }
+    if (pos < e) gap(pos, e);
+    if (!parts.size) return false;
+    const fields: { src: string; text: string; from: string }[] = [];
+    const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
+    const sideFile = (src: string, printed: string, a: number, b: number): void => {
+      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
+    };
+    // (every printed text worked out before the fields are read: nothing below depends on what shows by then)
+    const printedNow = new Map<string, string>();
+    for (const src of parts.keys()) printedNow.set(src, src.startsWith('b:') ? printedFor(text, spansNow, blocksNow, src) : printedOfSrc(src).printed);
+    const offKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
+    const onKeys = look === 'clear' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
+    for (const [src, [a, b]] of parts) {
+      const printed = printedNow.get(src)!;
+      const inField = markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
+      if (!inField) { sideFile(src, printed, a, b); continue; }
+      const raw = await this.api.read(src, owner);
+      if (raw === null) { sideFile(src, printed, a, b); continue; }
+      const got = markupFormat(raw, printed, a, b, look === 'clear' ? 'clear' : look);
+      if (got.raw !== null && got.raw !== raw) fields.push({ src, text: got.raw, from: raw });
+      if (got.raw === null || look === 'clear' || offKeys.length) {
+        // (taking a look off, and Clear All Formatting, also cover what the program put on: a title's bold, the 1 of ¹H)
+        sideFile(src, printed, a, b);
+        continue;
+      }
+      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
+      // (a look put back in the field: an earlier piece taking it off there goes)
+      if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
+    }
+    if (!fields.length && !later.length) return false;
+    const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
+    try {
+      await this.api.writeFormat(fields, change, owner);
+    } catch (err) {
+      if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not save the formatting: ${err instanceof Error ? err.message : String(err)}`, 8000);
+      return false;
+    }
+    // (the fields' stored text has changed: typing next starts from it, and a compile started before isn't shown)
+    for (const x of fields) this.written.delete(x.src);
+    if (fields.length) { this.editGen++; this.writtenGen = this.editGen; }
+    // (the compile that follows the write shows it)
+    return true;
+  }
+
 }
