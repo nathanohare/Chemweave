@@ -12,9 +12,14 @@ const css = readFileSync(join(SRC, 'app.css'), 'utf8').replace(/\/\*[\s\S]*?\*\/
 /** Every `transition` and `animation` declaration in the style sheet, with its line. */
 function declarations(prop: 'transition' | 'animation'): { line: number; value: string }[] {
   const out: { line: number; value: string }[] = [];
-  const re = new RegExp(`(?:^|[;{\\s])${prop}(?:-duration)?\\s*:\\s*([^;}]+)`, 'g');
+  const re = prop === 'transition' ? /(?:^|[;{\s])transition(?:-duration)?\s*:\s*([^;}]+)/g : /(?:^|[;{\s])animation(?:-duration)?\s*:\s*([^;}]+)/g;
   for (const m of css.matchAll(re)) out.push({ line: css.slice(0, m.index).split('\n').length, value: m[1].trim() });
   return out;
+}
+
+/** The `--m-…` values set in a rule's body, by name. */
+function timings(body: string): Record<string, string> {
+  return Object.fromEntries([...body.matchAll(/--m-([\w-]+)\s*:\s*([^;]+)/g)].map((m) => [m[1], m[2].trim()]));
 }
 
 /** Properties that make the page lay out again on every frame (S92). */
@@ -48,7 +53,7 @@ describe('motion', () => {
 
   it('Off makes every timing zero and keeps highlights, without a fade', () => {
     const off = css.match(/:root\[data-motion=['"]?off['"]?\]\s*\{([^}]*)\}/)?.[1] ?? '';
-    for (const t of ['short', 'toggle', 'std', 'large']) expect(off).toMatch(new RegExp(`--m-${t}\\s*:\\s*0m?s`));
+    for (const t of ['short', 'toggle', 'std', 'large']) expect(['0ms', '0s', '0'], t).toContain(timings(off)[t]);
     expect(off).toMatch(/--ease-hi\s*:\s*steps\(1/);
     for (const t of ['short', 'toggle', 'std', 'large'] as const) expect(motionMs(t, 'off')).toBe(0);
   });
@@ -56,12 +61,12 @@ describe('motion', () => {
   it('the style sheet and the scripts agree on the timings', () => {
     const root = css.match(/:root\s*\{([^}]*--m-short[^}]*)\}/)?.[1] ?? '';
     for (const [t, ms] of Object.entries(FAST_MS)) {
-      expect(root).toMatch(new RegExp(`--m-${t}\\s*:\\s*${ms}ms`));
+      expect(timings(root)[t], t).toBe(`${ms}ms`);
       expect(motionMs(t as keyof typeof FAST_MS, 'fast')).toBe(ms);
       expect(motionMs(t as keyof typeof FAST_MS, 'normal')).toBe(Math.round(ms * NORMAL_SCALE));
     }
     const normal = css.match(/:root\[data-motion=['"]?normal['"]?\]\s*\{([^}]*)\}/)?.[1] ?? '';
-    for (const [t, ms] of Object.entries(FAST_MS)) expect(normal).toMatch(new RegExp(`--m-${t}\\s*:\\s*${Math.round(ms * NORMAL_SCALE)}ms`));
+    for (const [t, ms] of Object.entries(FAST_MS)) expect(timings(normal)[t], t).toBe(`${Math.round(ms * NORMAL_SCALE)}ms`);
   });
 
   it('starts on Fast in the desktop app, Off on the web, and Off when the system asks for less motion', () => {
