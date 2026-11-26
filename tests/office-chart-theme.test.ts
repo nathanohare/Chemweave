@@ -10,7 +10,7 @@ import { describe, it, expect } from 'vitest';
 import { Workbook } from '../src/sheet/workbook';
 import { chartFromRange, chartData, chartPalette, type Chart } from '../src/sheet/chart';
 import { readChartXml, chartXml } from '../src/io/xlsx-chart';
-import { themeLook } from '../src/io/office-chart';
+import { themeLook, rethemed } from '../src/io/office-chart';
 import { applyColorMods } from '../src/io/dml-color';
 
 const parse = (s: string) => new DOMParser().parseFromString(s, 'application/xml');
@@ -60,6 +60,29 @@ describe('a chart in its file\'s theme', () => {
     const c = chartOf((x) => x);
     themeLook(c, { accent1: '1B7F79' });
     expect(c.themePalette).toBeUndefined();
+    // (a theme colour that isn't six hex digits: none)
+    themeLook(c, { ...THEME, accent3: 'black' });
+    expect(c.themePalette).toBeUndefined();
+  });
+
+  it('saves a series without a colour as its theme accent, so it follows the theme (review)', () => {
+    const c = chartOf((x) => x.replace(/<c:ser>([\s\S]*?)<c:spPr>[\s\S]*?<\/c:spPr>/g, '<c:ser>$1'));
+    expect(c.series.every((s) => !s.color && !s.scheme)).toBe(true);
+    themeLook(c, THEME);
+    const xml = chartXml(c, chartData(new Workbook(), new Workbook().sheet, c));
+    expect(xml).toContain('<a:schemeClr val="accent1"/>');
+    expect(xml).toContain('<a:schemeClr val="accent2"/>');
+    expect(xml).not.toContain('1B7F79');
+  });
+
+  it('works out a kept copy\'s colours again in the file\'s theme now, and leaves a chart made here as it is (review)', () => {
+    const c = chartOf((x) => x);
+    themeLook(c, THEME);
+    rethemed(c, { ...THEME, accent1: '112233' });
+    expect(c.themePalette?.[0]).toBe('#112233');
+    const own = chartOf((x) => x);
+    rethemed(own, THEME);
+    expect(own.themePalette).toBeUndefined();
   });
 });
 

@@ -161,7 +161,7 @@ export class SheetCharts {
     const c = this.chart;
     if (!c) return;
     popupMenu(x, y, [
-      ...Object.entries(CHART_PALETTES).map(([k, p]) => [`${(c.palette ?? 'office') === k ? '✓ ' : ''}${p.name}`, () => this.patch((x2) => ({ ...x2, palette: k === 'office' ? undefined : k, series: x2.series.map((s) => ({ ...s, color: undefined })) }), 'Chart colors')] as MenuItem),
+      ...Object.entries(CHART_PALETTES).map(([k, p]) => [`${(c.palette ?? (c.themePalette ? '' : 'office')) === k ? '✓ ' : ''}${p.name}`, () => this.patch((x2) => ({ ...x2, palette: k === 'office' ? undefined : k, themePalette: undefined, series: x2.series.map((s) => ({ ...s, color: undefined, scheme: undefined, themeColor: undefined })) }), 'Chart colors')] as MenuItem),
       null,
       ['Each Series Its Own Color…', () => this.focusPanel()],
     ]);
@@ -417,7 +417,7 @@ export class SheetCharts {
     out.push(row('Type', select(KINDS.map((k) => [k, CHART_NAMES[k]]), c.kind, (v) => this.setKind(v as ChartKind))));
     out.push(row('Title', text(c.title ?? '', (v) => this.patch((x) => clean({ ...x, title: v || undefined }), 'Chart title'), 'none')));
     out.push(row('Legend', select([['right', 'Right'], ['bottom', 'Bottom'], ['top', 'Top'], ['none', 'None']], c.legend, (v) => this.patch((x) => ({ ...x, legend: v as Chart['legend'] }), 'Legend'))));
-    out.push(row('Colors', select(Object.entries(CHART_PALETTES).map(([k, p]) => [k, p.name]), c.palette ?? 'office', (v) => this.patch((x) => clean({ ...x, palette: v === 'office' ? undefined : v }), 'Chart colors'))));
+    out.push(row('Colors', select([...(c.themePalette && !c.palette ? [['theme', "The file's theme"]] : []), ...Object.entries(CHART_PALETTES).map(([k, p]) => [k, p.name])] as [string, string][], c.palette ?? (c.themePalette ? 'theme' : 'office'), (v) => v !== 'theme' && this.patch((x) => clean({ ...x, palette: v === 'office' ? undefined : v, themePalette: undefined, series: x.series.map((s) => ({ ...s, scheme: undefined, themeColor: undefined })) }), 'Chart colors'))));
     if (c.kind === 'column' || c.kind === 'bar' || c.kind === 'area') out.push(row('Stacked', check(!!c.stacked, (v) => this.patch((x) => clean({ ...x, stacked: v || undefined }), 'Stacked'))));
     if (c.kind === 'radar') out.push(row('Filled', check(!!c.filled, (v) => this.patch((x) => clean({ ...x, filled: v || undefined }), 'Filled radar'), 'Shapes filled in')));
     if (c.kind === 'histogram') {
@@ -438,7 +438,7 @@ export class SheetCharts {
       out.push(row('Quartiles', select([['exclusive', 'Exclusive median (Excel\'s default)'], ['inclusive', 'Inclusive median']], o.quartiles ?? 'exclusive', (v) => setO({ quartiles: v === 'inclusive' ? 'inclusive' : undefined }))));
     }
     out.push(row('Font', text(c.font ?? '', (v) => this.patch((x) => clean({ ...x, font: v || undefined }), 'Chart font'), 'Arial')));
-    out.push(row('Font size', numberBox(c.fontSize, (v) => this.patch((x) => clean({ ...x, fontSize: v }), 'Chart font size'), '12', 'px')));
+    out.push(row('Font size', numberBox(c.fontSize, (v) => this.patch((x) => clean({ ...x, fontSize: v, titleSize: undefined }), 'Chart font size'), '12', 'px')));
     if (!this.ownData) out.push(row('Size', numberBox(c.w, (v) => v && this.patch((x) => ({ ...x, w: Math.max(80, v) }), 'Resize chart'), '', '×'), numberBox(c.h, (v) => v && this.patch((x) => ({ ...x, h: Math.max(80, v) }), 'Resize chart'), '', 'px')));
     out.push(row('Background', colour(c.background && c.background !== 'none' ? c.background : '#ffffff', (v) => this.patch((x) => ({ ...x, background: v === '#ffffff' ? undefined : v }), 'Chart background')),
       check(c.background === 'none', (v) => this.patch((x) => clean({ ...x, background: v ? 'none' : undefined }), 'Chart background'), 'No Fill (transparent)')));

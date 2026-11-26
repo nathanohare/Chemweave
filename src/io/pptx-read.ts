@@ -60,7 +60,7 @@ import { readShowPr, readCustShows } from '../deck/show-setup';
 import { NARRATION_NAME } from '../deck/narration';
 import { readTransition, readTiming, readMediaTiming, type Transition, type Anim, type AnimTarget } from '../deck/animation';
 import { mediaMime } from '../deck/media';
-import { readChart } from './office-chart';
+import { readChart, rethemed } from './office-chart';
 import { freshBox, sameBoxData, sizedBox, type ChartBox } from '../sheet/chart-box';
 import { cleanLook, type RunLook } from '../sheet/rich-text';
 import { NOTE_BULLET, notesLookOf, type NotesLook } from '../deck/notes-look';
@@ -1447,6 +1447,8 @@ class Reader {
     if (kept) delete kept.pr;
     const ours = kept?.chart && Array.isArray(kept.cells) && sameBoxData(kept, got.box) && (typeof pr !== 'string' || pr === got.print);
     const chosen = sizedBox(ours ? freshBox(kept!) : got.box, w, h);
+    // (a kept copy in the theme the file has now: PowerPoint may have changed it, review)
+    if (ours) rethemed(chosen.chart, this.theme.colors);
     if (chosen === got.box && got.partial) this.warnings.add('Some charts mix chart types (a line over columns, a second axis): they show as one type.');
     const alt = kid(el, 'nvGraphicFramePr', 'cNvPr')?.getAttribute('descr')?.trim();
     doc.addShape({ kind: 'picture', x1: box.x1, y1: box.y1, x2: box.x2, y2: box.y2, src: chartBoxPng(chosen, w, h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(alt ? { alt } : {}) });

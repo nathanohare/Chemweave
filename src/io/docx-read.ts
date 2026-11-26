@@ -58,7 +58,7 @@ import { linkFromTarget } from '../links';
 import { mathText, ommlToTex } from '../document/math';
 import { CITE_PRESETS, cleanOptions } from '../document/cite-styles';
 import { listIndent, ownStyleXml, tableText } from './docx-write';
-import { readChart, themeColorsOf } from './office-chart';
+import { readChart, rethemed, themeColorsOf } from './office-chart';
 import { freshBox, sameBoxData, sizedBox } from '../sheet/chart-box';
 import { chartBoxPng } from '../render/chart-box-paint';
 import { contentsAlt } from '../accessibility';
@@ -2713,6 +2713,7 @@ class DocxReader {
       // (and, in files with its print, still the same type with the same look: not changed in Word)
       const print = mine ? this.model?.chartPrints?.[Number(mine[1])] : undefined;
       const chosen = sizedBox(kept && sameBoxData(kept, got.box) && (typeof print !== 'string' || print === got.print) ? freshBox(kept) : got.box, shown.w, shown.h);
+      if (chosen !== got.box) rethemed(chosen.chart, (this.chartTheme ??= themeColorsOf(this.pkg, this.main)));
       if (chosen === got.box && got.partial) this.warn('chartParts');
       const float = box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null;
       this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...wordPr, ...alt }, r);

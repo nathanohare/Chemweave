@@ -117,13 +117,16 @@ const CHART_CLR_MAP: Record<string, string> = { tx1: 'dk1', bg1: 'lt1', tx2: 'dk
 
 /**
  * A chart from a Word or PowerPoint file shown in that file's theme (`theme`: its colours, hex
- * without #): series without a colour of their own take its accents, as Office gives them, and a
- * series in a theme colour (accent2 made darker) shows that colour (office sampler F-V-05). Neither
- * is saved: the file keeps the theme's colours.
+ * without #; text and background as tx1 and bg1 on dark 1 and light 1, not a master's own
+ * mapping): series without a colour of their own take its accents, as Office gives them, and a
+ * series in a theme colour (accent2 made darker) shows that colour (office sampler F-V-05). Those
+ * are saved as the theme's colours (schemeClr), so the file still follows its theme.
  */
 export function themeLook(chart: Chart, theme: Record<string, string>): void {
-  const accents = [1, 2, 3, 4, 5, 6].map((i) => theme[`accent${i}`]).filter((c): c is string => !!c);
+  const accents = [1, 2, 3, 4, 5, 6].map((i) => theme[`accent${i}`]).filter((c): c is string => !!c && /^[0-9a-f]{6}$/i.test(c));
   if (accents.length === 6) chart.themePalette = accents.map((c) => `#${c.toLowerCase()}`);
+  // (an automatic series of the first six: the accent Office gives it, saved as that accent; not a pie's, whose slices take them)
+  if (chart.themePalette && chart.kind !== 'pie') chart.series.forEach((s, i) => { if (!s.color && !s.scheme && i < 6) s.scheme = `<a:schemeClr val="accent${i + 1}"/>`; });
   for (const s of chart.series) {
     if (s.color || !s.scheme) continue;
     const name = /^<a:schemeClr val="([^"]+)"/.exec(s.scheme)?.[1];
@@ -136,6 +139,18 @@ export function themeLook(chart: Chart, theme: Record<string, string>): void {
   }
 }
 
+/**
+ * A chart kept as saved here, read back into a file whose theme may have changed (or copied into
+ * another): its theme colours worked out again from `theme`, if it had any (a chart made here,
+ * in its own palette, is left as it is).
+ */
+export function rethemed(chart: Chart, theme: Record<string, string> | null | undefined): void {
+  if (!chart.themePalette && !chart.series.some((s) => s.themeColor)) return;
+  delete chart.themePalette;
+  for (const s of chart.series) delete s.themeColor;
+  if (theme) themeLook(chart, theme);
+}
+
 /** A Word or PowerPoint file's theme colours (accent1…, dk1…, hex without #), from the theme part `from` relates to; null without one. */
 export function themeColorsOf(pkg: PackageReader, from: string): Record<string, string> | null {
   const path = pkg.relOfType(from, REL.theme);
@@ -146,8 +161,8 @@ export function themeColorsOf(pkg: PackageReader, from: string): Record<string, 
   for (const c of kids(scheme)) {
     const v = kids(c)[0];
     if (!v) continue;
-    const hex = v.localName === 'sysClr' ? v.getAttribute('lastClr') : v.getAttribute('val');
-    if (hex) out[c.localName] = hex;
+    const hex = v.localName === 'sysClr' ? v.getAttribute('lastClr') : v.localName === 'srgbClr' ? v.getAttribute('val') : null;
+    if (hex && /^[0-9a-f]{6}$/i.test(hex)) out[c.localName] = hex;
   }
   return out;
 }
