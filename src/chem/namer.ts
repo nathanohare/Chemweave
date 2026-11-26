@@ -6,6 +6,7 @@
 import type { NamerRequest, NamerResponse } from '../worker/namer-worker';
 import type { NamerGraph } from './namer-graph';
 import type { TextRun } from '../model';
+import { guardedAt, notAfter } from '../regex-behind';
 
 export class StructureNamer {
   private worker: Worker | null = null;
@@ -136,13 +137,13 @@ export function nameRuns(name: string): TextRun[] {
       mark(start + i, start + i + 1);
     }
   }
-  const words = /(?<![A-Za-z])(cis|trans|rel|tert|sec)(?=-)/g;
+  const words = notAfter(/(cis|trans|rel|tert|sec)(?=-)/g, /[A-Za-z]/);
   while ((m = words.exec(name))) mark(m.index, m.index + m[1].length);
   // element-symbol locants: N-methyl, N,N-diethyl, N′-, O-acetyl, S-benzyl, N1-
-  const atomLocants = /(?<![A-Za-z])(N|O|S|P|Se|Te|B|Si|As)(?=\d*[′″']*[,\-])/g;
+  const atomLocants = notAfter(/(N|O|S|P|Se|Te|B|Si|As)(?=\d*[′″']*[,\-])/g, /[A-Za-z]/);
   while ((m = atomLocants.exec(name))) mark(m.index, m.index + m[1].length);
   // indicated hydrogen: 1H-, 2H,4H-, 4aH-
-  const hydrogen = /(?<=\d[a-z]?)H(?=[,\-\]])/g;
+  const hydrogen = guardedAt(/H(?=[,\-\]])/g, (at, s) => /\d[a-z]?$/.test(s.slice(Math.max(0, at - 2), at)));
   while ((m = hydrogen.exec(name))) mark(m.index, m.index + 1);
   // fusion locants: the letters inside [b], [2,3-c], [1,2-a:4,5-a′]
   const fusion = /\[([0-9,′″'\-:a-z]+)\]/g;

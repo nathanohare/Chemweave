@@ -7,6 +7,7 @@
 
 import { parseFormula, tokenize, untokenize, type Node, type Token } from './formula';
 import { liftedArgs } from './evaluate';
+import { notAfter } from '../regex-behind';
 
 /** Functions that only work in Excel with dynamic arrays. */
 const DYNAMIC_FUNCTIONS = new Set(['FILTER', 'SORT', 'SORTBY', 'UNIQUE', 'SEQUENCE', 'RANDARRAY', 'LET', 'LAMBDA', 'MAP', 'REDUCE', 'SCAN',
@@ -181,6 +182,6 @@ export function readFileFormula(text: string): string {
     let f = part.replace(/_xlfn\.|_xlws\.|_xlpm\./g, '');
     f = f.replace(/\bANCHORARRAY\(\s*((?:'(?:[^']|'')+'|[A-Za-z0-9_.]+)?!?\$?[A-Za-z]{1,3}\$?\d+)\s*\)/gi, '$1#');
     // (SINGLE itself, not a name ending in it: A.SINGLE(1) stays)
-    return f.replace(/(?<![\w.])SINGLE\(/gi, '@(');
+    return f.replace(notAfter(/SINGLE\(/gi, /[\w.]/), '@(');
   }).join('');
 }

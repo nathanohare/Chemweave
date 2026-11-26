@@ -234,7 +234,7 @@ export function pageRender(w: number, h: number): { scale: number; gap: number }
 export async function pdfDrawings(bytes: Uint8Array, pick: (pages: number) => Promise<[number, number] | null>, progress: (msg: string) => void): Promise<{ found: FoundPicture[]; pages: PagePreview[] } | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   const task = pdfjs.getDocument({ data: bytes.slice() });
   try {

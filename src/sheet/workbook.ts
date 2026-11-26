@@ -40,6 +40,7 @@ import type { WorkbookTheme } from './themes';
 import { type CompoundCard, fieldValue } from './compound';
 import type { Query } from './query';
 import type { HammettResult } from '../chem/hammett-match';
+import { notAfter } from '../regex-behind';
 
 export type BorderStyle = 'thin' | 'medium' | 'thick' | 'double' | 'dashed' | 'dotted';
 export interface Border { style: BorderStyle; color?: string }
@@ -2359,7 +2360,7 @@ export class Workbook {
 
   /** Does a formula use a defined name whose formula is worked out again after every change (TODAY, INDIRECT…)? */
   private usesVolatileName(text: string): boolean {
-    for (const n of this.names) if (VOLATILE.test(n.formula) && new RegExp(`(?<![\\w.\\\\?])${n.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.\\\\?])`, 'i').test(text)) return true;
+    for (const n of this.names) if (VOLATILE.test(n.formula) && notAfter(new RegExp(`${n.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}(?![\\w.\\\\?])`, 'i'), /[\w.\\?]/).test(text)) return true;
     return false;
   }
 

@@ -12,6 +12,7 @@ import { nameRuns } from '../chem/namer';
 import type { Compound } from '../chem/pubchem';
 import { readDensity, readTemperature, readPressure, readRefractiveIndex, labCalc, calcName, type LabCalc } from '../chem/bench';
 import { DEFAULT_ANALYSIS, ROW_NAMES, SECTION_ROWS, DESC_NAMES, DESC_LABELS, analysisPrefs, calcOf, defaultDescriptors, tempText, pressureText, type AnalysisPrefs } from '../chem/analysis-prefs';
+import { after, guardedAt } from '../regex-behind';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
@@ -88,7 +89,7 @@ function deg(k: number | null): string {
  * (data-insert="hrms:i" and so on), which the app wires up.
  */
 /** A ligand's name with the digits of a written formula lowered (PPh3 as PPh₃). */
-const ligandHtml = (name: string) => esc(name).replace(/(?<=[A-Za-z)\]])(\d+)/g, '<sub>$1</sub>');
+const ligandHtml = (name: string) => esc(name).replace(after(/(\d+)/g, /[A-Za-z)\]]/), '<sub>$1</sub>');
 
 /**
  * The electron count of each metal: oxidation state, dⁿ and electrons on the first line, then
@@ -176,7 +177,7 @@ export type NameState =
 /** An ion's label as plain text with its charge raised in Unicode ([M+H]⁺, [M+2H]²⁺, [M−H]⁻), for the ion list. */
 export function adductText(label: string): string {
   const up: Record<string, string> = { '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴', '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹', '+': '⁺', '-': '⁻' };
-  return label.replace(/\](\d*[+-])$/, (_, c: string) => ']' + [...c].map((ch) => up[ch]).join('')).replace(/(?<=\[[^\]]*)-/g, '−');
+  return label.replace(/\](\d*[+-])$/, (_, c: string) => ']' + [...c].map((ch) => up[ch]).join('')).replace(guardedAt(/-/g, (at, s) => s.lastIndexOf('[', at) > s.lastIndexOf(']', at)), '−');
 }
 
 /** The ion list that stands in for the m/z row's label: "m/z" and a short drop-down of the common ions. */
@@ -472,7 +473,7 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
 
 /** Joback groups as the Properties tooltip lists them ("5 × -CH₂- (ring)"): the table's keys, with real subscripts. */
 export function jobackGroupList(groups: Record<string, number>): string {
-  return Object.entries(groups).map(([g, n]) => `${n} × ${g.replace(/(?<=[A-Za-z])\d+/g, (d) => sub(Number(d)))}`).join(', ');
+  return Object.entries(groups).map(([g, n]) => `${n} × ${g.replace(after(/\d+/g, /[A-Za-z]/), (d) => sub(Number(d)))}`).join(', ');
 }
 
 /** The Properties section: Crippen, Lipinski, Joback, ESOL and pKa estimates. */

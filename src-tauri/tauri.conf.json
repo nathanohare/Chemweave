@@ -54,7 +54,7 @@
     "licenseFile": "../LICENSE",
     "macOS": {
       "signingIdentity": "-",
-      "minimumSystemVersion": "11.0"
+      "minimumSystemVersion": "12.3"
     },
     "linux": {
       "deb": {

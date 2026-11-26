@@ -21,6 +21,7 @@
 
 import { unzipSync, Inflate } from 'fflate';
 import type { Peak } from './chem';
+import { guarded, notAfter } from '../regex-behind';
 
 export const HRMS_DIR = 'hrms';
 export const REPORTS_KEY = 'reports';
@@ -784,13 +785,14 @@ export function readNetcdf(content: Uint8Array): ReportData {
 
 // ---------------------------------------------------------------- text reports
 
-const MZ_TEXT = /(?<![\w.,:/+-])(\d{2,4}\.\d{3,7})(?!\d|\.\d|\s*%)/g;
-const CALC_WORDS = String.raw`(?<![A-Za-z])(?:calc(?:ulated|d)?\.?|theor(?:etical|\.)?|theo\.?|expected|exact\s+mass|required|requires|target)(?![A-Za-z])`;
-const FOUND_WORDS = String.raw`(?<![A-Za-z])(?:found|meas(?:ured|\.)?|observed|obsd\.?|obs\.?|experimental|exptl\.?|detected|accurate\s+mass)(?![A-Za-z])`;
-const KEYWORD = new RegExp(`(?<calc>${CALC_WORDS})|(?<found>${FOUND_WORDS})`, 'gi');
-const HEADER_MASS = new RegExp(
+const MZ_TEXT = notAfter(/(\d{2,4}\.\d{3,7})(?!\d|\.\d|\s*%)/g, /[\w.,:/+-]/);
+const CALC_WORDS = String.raw`(?:calc(?:ulated|d)?\.?|theor(?:etical|\.)?|theo\.?|expected|exact\s+mass|required|requires|target)(?![A-Za-z])`;
+const FOUND_WORDS = String.raw`(?:found|meas(?:ured|\.)?|observed|obsd\.?|obs\.?|experimental|exptl\.?|detected|accurate\s+mass)(?![A-Za-z])`;
+// (a keyword does not start inside a word, nor "m/z" or "mass" after a slash)
+const KEYWORD = notAfter(new RegExp(`(?<calc>${CALC_WORDS})|(?<found>${FOUND_WORDS})`, 'gi'), /[A-Za-z]/);
+const HEADER_MASS = guarded(new RegExp(
   `(?<calc>${CALC_WORDS}\\s*(?:ion\\s+)?(?:m/z|mass|m\\.z\\.)?)|(?<meas>${FOUND_WORDS}\\s*(?:ion\\s+)?(?:m/z|mass)?)|` +
-  String.raw`(?<plain>(?<![\w/])(?:m/z|mass|m\.z\.)(?![\w/])(?!\s*(?:error|accuracy|diff|defect|range|spectr|tolerance|window|resolution|shift|delta)))`, 'gi');
+  String.raw`(?<plain>(?:m/z|mass|m\.z\.)(?![\w/])(?!\s*(?:error|accuracy|diff|defect|range|spectr|tolerance|window|resolution|shift|delta)))`, 'gi'), (m, s) => m.index === 0 || !(m.groups!.plain === undefined ? /[A-Za-z]/ : /[\w/]/).test(s[m.index - 1]));
 const COLUMN_WORDS = /abund|intens|\bint\.?\b|formula|ppm|mda|\bdiff|error|\berr\b|\bdbe\b|\brdb|score|composition|\bion\b|height|area|delta|i-fit|relative|\brel\b|%|\bres\b|charge|adduct|species|\bz\b/i;
 
 const inRange = (v: number): boolean => v >= MZ_RANGE[0] && v <= MZ_RANGE[1];

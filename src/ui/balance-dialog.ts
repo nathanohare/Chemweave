@@ -5,6 +5,7 @@
 import { checkBalance, type BalanceSpecies } from '../chem/balance';
 import { chargeText } from '../chem/formula';
 import { showDialog } from './dialog-host';
+import { after } from '../regex-behind';
 
 export interface BalanceInput {
   starting: BalanceSpecies[];
@@ -15,7 +16,7 @@ export interface BalanceInput {
 }
 
 /** Subscript the digits of a formula for showing (C7H6O2 → C₇H₆O₂). */
-const sub = (f: string) => f.replace(/(?<=[A-Za-z)])(\d+)/g, (d) => [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[Number(c)]).join(''));
+const sub = (f: string) => f.replace(after(/(\d+)/g, /[A-Za-z)]/), (d) => [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[Number(c)]).join(''));
 
 export function showBalance(input: BalanceInput, reagentsCount = true): Promise<void> {
   return new Promise((resolve) => {

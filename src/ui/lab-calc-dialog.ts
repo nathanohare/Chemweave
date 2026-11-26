@@ -5,6 +5,7 @@
 import { amounts, dilution, show, solutionMass, type Given } from '../chem/lab-calc';
 import { showDialog } from './dialog-host';
 import { addInfo } from './info-tip';
+import { after } from '../regex-behind';
 
 export interface CalcStart {
   /** The compound's name or formula, shown as a heading. */
@@ -89,7 +90,7 @@ export function showLabCalculator(start: CalcStart = {}): Promise<void> {
     // ---- Amounts: one compound, any one quantity typed, the rest follow
     const a = page('Amounts');
     // (formula digits lowered: C7H6O2 → C₇H₆O₂)
-    if (start.label) a.append(el('p', 'calc-compound', start.label.replace(/(?<=[A-Za-z)])(\d+)/g, (d) => [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[Number(c)]).join(''))));
+    if (start.label) a.append(el('p', 'calc-compound', start.label.replace(after(/(\d+)/g, /[A-Za-z)]/), (d) => [...d].map((c) => '₀₁₂₃₄₅₆₇₈₉'[Number(c)]).join(''))));
     const mw = box('Mol. wt.', 'g/mol');
     const density = box('Density', 'g/mL', 'For the volume of the neat liquid');
     const molarity = box('Solution', CONC, 'The concentration of a solution of it, for the volume of solution (n-BuLi in hexanes, say)');

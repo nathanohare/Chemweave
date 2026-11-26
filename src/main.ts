@@ -4,6 +4,7 @@
 
 // every modal window keeps the title bar usable and opens on the screen, before any window opens
 import './ui/modal-guard';
+import './old-webkit';
 // the menus made from the command list, before anything looks for their items
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
 import { infoTipsOnOpen } from './ui/info-tip';
@@ -13697,7 +13698,11 @@ if (isTauri()) {
     finishTab();
     // (an SI project saves as it is typed in: what was typed last is written before the window goes)
     await siSavedAll();
-    if (!(await ws.closeAll())) e.preventDefault();
+    if (!(await ws.closeAll())) {
+      e.preventDefault();
+      // (a Mac quit that is waiting for this answer is called off)
+      void invoke('quit_cancelled').catch(() => {});
+    }
     // closing normally: the recovery copies and lock files aren't needed
     else {
       await keeper.end();
@@ -17065,6 +17070,8 @@ let defaultPage: Settings['page'] = { name: 'letter', w: 540, h: 720, grow: true
 /** The welcome card has been closed for good. */
 let welcomed = false;
 const welcomeCard = $('#welcome');
+// its key names are written for Windows: a Mac shows ⌥ and ⌘, as the menus and hints do
+if (isMac) for (const k of welcomeCard.querySelectorAll('kbd')) k.textContent = k.textContent!.replace(/^Alt$/, '⌥').replace(/^Ctrl$/, '⌘');
 /** While the welcome card shows: looks, on each change, for drawing having started. */
 let welcomeWatch: (() => void) | null = null;
 /** Show the start view (after the welcome card has been seen): new tabs, recent files. It goes when anything is picked or drawn. */

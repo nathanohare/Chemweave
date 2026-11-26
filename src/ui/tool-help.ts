@@ -4,6 +4,7 @@
 
 import type { Tool, EditorStatus } from '../editor/editor';
 import type { Arrow } from '../model';
+import { after } from '../regex-behind';
 
 export interface ToolHelp {
   /** What the tool does, in a sentence or two (the status bar's whole hint). */
@@ -338,7 +339,7 @@ export function withoutKeys(text: string): string {
     .replace(/\s*\((?:hold )?(?:Alt|Shift|Ctrl)[^)]*\)/g, '')
     .replace(/;\s*(?:Alt|Shift|Ctrl)[^);]*(?=\))/g, '')
     .replace(/;?\s*hold (?:Alt|Shift|Ctrl)[^.;]*/g, '')
-    .split(/(?<=\.)\s+/)
+    .split(after(/\s+/, /\./))
     .filter((s) => !/^(Alt|Shift|Ctrl)\+/.test(s))
     .join(' ')
     .replace(/\.\s*$/, '')

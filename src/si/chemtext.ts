@@ -3,6 +3,9 @@
 // (DMSO-d6), the nucleus before "NMR" (1H NMR) and number ranges (7.36-7.29). The compiled SI
 // formats the same words SI Assistant does, so the two programs print a project alike.
 
+import { ALKYL_MARKS, MARKS, PIN_MARK, markFormulaLetters } from '../text/formula-marks';
+import { guarded, notAfter, reflag } from '../regex-behind';
+
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn '
   + 'Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce '
   + 'Hf Ta W Re Os Ir Pt Au Hg Tl Pb Bi D T').split(' ');
@@ -18,11 +21,12 @@ const alternatives = (words: string[]): string => [...words].sort((a, b) => b.le
 /** The same words matched whatever their capitals (Python's (?i:…)). */
 const anyCase = (alts: string): string => alts.replace(/[A-Za-z]/g, (c) => `[${c.toLowerCase()}${c.toUpperCase()}]`);
 
-const UNIT = `(?:(?<![A-Za-z])[inst]-?(?:Pr|Bu)|(?<=O)[int](?:Pr|Bu)|${alternatives([...ELEMENTS, ...GROUPS])})`;
-const INNER = `(?:${alternatives(LIGANDS)}|${UNIT})`;
+// (the i, n, s or t that counts is marked first: see formula-marks.ts)
+const UNIT = `(?:[${ALKYL_MARKS}]-?(?:Pr|Bu)|${alternatives([...ELEMENTS, ...GROUPS])})`;
+const INNER = `(?:${alternatives(LIGANDS).replace(/\bpin\b/, `[p${PIN_MARK}]in`)}|${UNIT})`;
 const PAREN = `\\((?:${INNER}\\d*)+\\)\\d*`;
 const BRACKET = `\\[(?:${INNER}\\d*|${PAREN})+\\]\\d*`;
-const ITEM = `(?:${UNIT}\\d*|(?:(?<=B)|(?<=B\\d))(?:${alternatives(BARE_LIGANDS)})\\d*|${PAREN}|${BRACKET})`;
+const ITEM = `(?:${UNIT}\\d*|(?:${alternatives(BARE_LIGANDS).replace('p', PIN_MARK)})\\d*|${PAREN}|${BRACKET})`;
 
 // Words that look like formulas but are not (SN2, TS1, IC50, OD600, CDK2, HCT116…).
 const FORMULA_EXCEPTIONS = 'S[NE][12]|TS\\d+|IC\\d+|CC\\d+|[IL]D\\d+|PS[12]|OD\\d+|SI\\d+|NIH3T3|'
@@ -40,29 +44,30 @@ const MOLECULE_AFTER = new Set(('gas atmosphere atmospheres balloon atm bar psi 
   + 'inlet purge uptake evolution sparging bubbling manifold').split(' '));
 const MOLECULE_HYPHEN = new Set('filled free saturated purged flushed atmosphere sparged'.split(' '));
 
-const FORMULA = new RegExp(
-  '(?<![A-Za-z0-9])(?=\\S{1,100}(?!\\S))'
-  + `(?!(?:${FORMULA_EXCEPTIONS})(?![A-Za-z0-9]))`
-  + `(?:(?=[A-Za-z()\\[\\]-]*\\d)(?:${ITEM}{2,}`
+const FORMULA = notAfter(new RegExp(
+  '(?=\\S{1,100}(?!\\S))'
+  + `(?!(?:${FORMULA_EXCEPTIONS})(?![A-Za-z0-9${MARKS}]))`
+  + `(?:(?=[A-Za-z${MARKS}()\\[\\]-]*\\d)(?:${ITEM}{2,}`
   + `|\\[(?:${INNER}\\d*|${PAREN}){2,}\\]\\d*${ITEM}*)`
   + `|(?:${SINGLE_ELEMENT.join('|')}))`
-  + '(?![A-Za-z0-9])', 'g');
+  + `(?![A-Za-z0-9${MARKS}])`, 'g'), /[A-Za-z0-9\uFDD0-\uFDD4]/);
 
 const DEUTERATED_NAMES = anyCase('DMSO|DMF|acetone|THF|toluene|benzene|methanol|MeOH|MeOD|MeCN|'
   + 'acetonitrile|pyridine|DCM|dichloromethane|chloroform|dioxane|cyclohexane|nitromethane');
 /** "DMSO-d6", "chloroform-d": group 1 the name, group 2 the digits ('' for chloroform-d). */
-export const DEUTERATED = new RegExp(`\\b(${DEUTERATED_NAMES})-d(\\d+|(?<=${anyCase('chloroform')}-d))(?![A-Za-z0-9])`, 'g');
+export const DEUTERATED = guarded(new RegExp(`\\b(${DEUTERATED_NAMES})-d(\\d+|)(?![A-Za-z0-9])`, 'g'),
+  (m) => m[2] !== '' || /[cC][hH][lL][oO][rR][oO][fF][oO][rR][mM]-d$/.test(m[0]));
 /** "d6-DMSO": group 1 the digits. */
-export const DEUTERATED_PREFIX = new RegExp(`(?<![A-Za-z0-9])d(\\d+)-(?=(?:${DEUTERATED_NAMES})\\b)`, 'g');
+export const DEUTERATED_PREFIX = notAfter(new RegExp(`d(\\d+)-(?=(?:${DEUTERATED_NAMES})\\b)`, 'g'), /[A-Za-z0-9]/);
 /** A nucleus only before "NMR" or a decoupling brace, so "(m, 2H)" is left alone. */
-export const NUCLEUS = /(?<![A-Za-z0-9])(\d{1,3})(H|C|F|P|B|N|Si|Se|Sn|Pt|Li|O|Al)(?=\s*NMR\b|\{|\})/g;
+export const NUCLEUS = notAfter(/(\d{1,3})(H|C|F|P|B|N|Si|Se|Sn|Pt|Li|O|Al)(?=\s*NMR\b|\{|\})/g, /[A-Za-z0-9]/);
 
 /** A match: where it is in the text, and its groups (0 the whole). */
 export interface Found { start: number; end: number; groups: string[] }
 
 export function allMatches(re: RegExp, text: string): Found[] {
   const out: Found[] = [];
-  const g = new RegExp(re.source, re.flags.includes('g') ? re.flags : re.flags + 'g');
+  const g = reflag(re, re.flags.includes('g') ? re.flags : re.flags + 'g');
   for (const m of text.matchAll(g)) out.push({ start: m.index!, end: m.index! + m[0].length, groups: [...m].map((x) => x ?? '') });
   return out;
 }
@@ -95,8 +100,10 @@ function molecule(text: string, start: number, end: number): boolean {
 /** The formulas in `text`, in order, with the context rules applied; words in `leave` (lower case) are skipped. */
 export function formulaMatches(text: string, leave: ReadonlySet<string> = new Set()): Found[] {
   const out: Found[] = [];
-  for (const m of allMatches(FORMULA, text)) {
-    const word = m.groups[0];
+  for (const found of allMatches(FORMULA, markFormulaLetters(text, false))) {
+    // (the word as written, not with its marked letters)
+    const word = text.slice(found.start, found.end);
+    const m = { ...found, groups: [word, ...found.groups.slice(1)] };
     if (leave.size && leave.has(word.toLowerCase())) continue;
     if (/[DT]\d{3}/.test(word)) continue;   // OD600, HCT116
     if (SINGLE_ELEMENT.includes(word) && !molecule(text, m.start, m.end)) continue;

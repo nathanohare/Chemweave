@@ -71,6 +71,8 @@ jobs:
       - run: npm run typecheck:strict
       - run: npm run typecheck:tests
       - run: npx vite build
+      # the built scripts must be readable by the oldest engine the app runs on (docs/developers.md)
+      - run: node scripts/check-old-webkit.mjs
       # Playwright's headless Chromium is all the smoke test needs (not the full browser)
       - run: npx playwright install --with-deps --only-shell chromium
       - run: npm run smoke

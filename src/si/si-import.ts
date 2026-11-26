@@ -18,6 +18,7 @@ import { PURIFICATION_START, purificationTextOf } from './procedures';
 import { boldShare, cleanSpace, mergeRuns, newPara, paraMarkup, paraText, R, runsMarkup, type DocObject, type Para } from './si-import-read';
 import { outline } from './si-import-text';
 import { finditer, fullmatch, isAlnum, isLower, isUpper, lstrip, match, matchingBlocks, rstrip, rx, search, split, strip, sub } from './py';
+import { charBefore } from '../regex-behind';
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 export type Values = Record<string, any>;
@@ -188,18 +189,25 @@ function stripLeading(runs: Run[], chars: string): Run[] {
 
 // ---------------------------------------------------------------------- data values
 
-export const NMR_HEAD = rx('(?<![\\w{])(?:(?P<mass>\\d{1,3})\\s*(?P<el>[A-Z][a-z]?)|(?P<el2>[A-Z][a-z]?)-(?P<mass2>\\d{1,3}))(?:\\s*\\{\\s*\\d{1,3}\\s*[A-Z][a-z]?\\s*\\})?\\s*-?\\s*NMR\\b');
+// What a pattern may not follow (Python's lookbehinds), checked in code: old WebKit has none.
+const notFollowing = (chars: RegExp) => (m: RegExpExecArray, t: string): boolean => m.index === 0 || !chars.test(charBefore(t, m.index));
+// (\w as rx() reads it: Unicode letters and digits)
+const WORD = /[\p{L}\p{N}_]/u, WORD_POINT = /[\p{L}\p{N}_.]/u;
+
+export const NMR_HEAD = rx('(?:(?P<mass>\\d{1,3})\\s*(?P<el>[A-Z][a-z]?)|(?P<el2>[A-Z][a-z]?)-(?P<mass2>\\d{1,3}))(?:\\s*\\{\\s*\\d{1,3}\\s*[A-Z][a-z]?\\s*\\})?\\s*-?\\s*NMR\\b', '', notFollowing(/[\p{L}\p{N}_{]/u));
 export const KEYS: [string, RegExp][] = [
   ['nmr', NMR_HEAD],
   ['hrms', rx('\\b(?:HRMS|HR-?MS|HR\\s?-?(?:ESI|EI|APCI|CI|FAB|MALDI)\\s?-?(?:TOF\\s?-?)?MS|(?:ESI|EI|APCI)-?HRMS)\\b')],
   ['ir', rx('\\b(?:FT-?)?IR\\b(?=\\s*[(:ν=]|\\s*\\(|\\s+\\d|\\s*ν)')],
   ['rf', rx('\\bR\\s?f\\b(?=\\s*[=:(]|\\s+\\d|\\s*\\()')],
-  ['mp', rx('(?<![\\w.])(?:m\\.\\s?p\\.|mp|Mp|M\\.p\\.|[Mm]elting\\s+point)(?=\\s*[=:(]|\\s+\\d|\\s*[–-])')],
+  ['mp', rx('(?:m\\.\\s?p\\.|mp|Mp|M\\.p\\.|[Mm]elting\\s+point)(?=\\s*[=:(]|\\s+\\d|\\s*[–-])', '', notFollowing(WORD_POINT))],
   ['rotation', rx('\\[\\s*[αa]\\s*\\]')],
   ['ea', rx('\\b(?:Anal\\.|Elemental\\s+analysis|Anal\\s+[Cc]alcd)')],
-  ['ee', rx('\\b[Ee]nantiomeric\\s+(?:[Ee]xcess|[Rr]atio)\\b|\\b(?:HPLC|SFC|chiral\\s+GC|GC)\\b(?=\\s*[(:]|\\s+analysis)|(?<![\\w.])\\d+(?:\\.\\d+)?\\s*%\\s*ee\\b|\\b(?:ee|er|e\\.r\\.)\\s*[=:]')],
+  ['ee', rx('\\b[Ee]nantiomeric\\s+(?:[Ee]xcess|[Rr]atio)\\b|\\b(?:HPLC|SFC|chiral\\s+GC|GC)\\b(?=\\s*[(:]|\\s+analysis)|\\d+(?:\\.\\d+)?\\s*%\\s*ee\\b|\\b(?:ee|er|e\\.r\\.)\\s*[=:]', '',
+    // (a percentage ee does not go on from a word or a point)
+    (m, t) => !/^\d/.test(m[0]) || notFollowing(WORD_POINT)(m, t), false)],
   ['yield', rx('\\b(?:[Ii]solated\\s+)?[Yy]ield\\s*:')],
-  ['dr', rx('(?<![\\w])(?:d\\.\\s?r\\.|dr)(?=\\s*[=:>]|\\s+\\d|\\s*\\()')],
+  ['dr', rx('(?:d\\.\\s?r\\.|dr)(?=\\s*[=:>]|\\s+\\d|\\s*\\()', '', notFollowing(WORD))],
   ['xray', rx('\\bCCDC\\b')],
   ['references', rx('(?:[Ss]pectr(?:al|oscopic)\\s+data|[Tt]he\\s+(?:NMR\\s+)?data|[Aa]nalytical\\s+data|[Dd]ata)\\s+(?:\\w+\\s+){0,4}?(?:matched|match|were\\s+(?:consistent|in\\s+(?:good\\s+)?agreement)|(?:are|is)\\s+(?:consistent|in\\s+agreement)|agree|corresponded|correspond)')],
 ];
@@ -524,7 +532,8 @@ export function citations(textIn: string): [string, string[]] {
     }
     return out;
   };
-  const m = search(rx('(?:\\s*(?:\\[|\\()\\s*(?P<a>\\d+(?:\\s*[-–,]\\s*\\d+)*)\\s*(?:\\]|\\))|(?<=[a-z.)])\\s?(?P<b>\\d+(?:\\s*[-–,]\\s*\\d+)*))\\s*\\.?\\s*$'), text);
+  const m = search(rx('(?:\\s*(?:\\[|\\()\\s*(?P<a>\\d+(?:\\s*[-–,]\\s*\\d+)*)\\s*(?:\\]|\\))|\\s?(?P<b>\\d+(?:\\s*[-–,]\\s*\\d+)*))\\s*\\.?\\s*$', '',
+    (m, t) => m.groups!.b === undefined || /[a-z.)]$/.test(t.slice(0, m.index)), false), text);
   if (m) {
     cites = numbers(m.group('a') ?? m.group('b')!);
     text = rstrip(text.slice(0, m.index));
@@ -708,7 +717,7 @@ function parseItem(kind: string, pieceIn: string, into: ImportedCompound, labelI
   return false;
 }
 
-const SENTENCE_START = rx('(?<=[.;])\\s+(?=[A-Z0-9(\\[])');
+const SENTENCE_START = rx('\\s+(?=[A-Z0-9(\\[])', '', (m, t) => m.index > 0 && /[.;]/.test(t[m.index - 1]));
 
 /** Where the data begin in a paragraph that starts with the procedure; 0 if it starts with data or has none. */
 export function dataStart(text: string): number {
@@ -1163,7 +1172,7 @@ export function linkGeneralProcedures(plan: ImportPlan): void {
       let sentence = texts[0];
       const cid = comps[0].cid;
       for (const form of [`**${cid}**`, cid]) {
-        const pat = form.startsWith('*') ? rx(escapeRe(form)) : rx(`(?<![\\w.])${escapeRe(form)}(?![\\w′'])`);
+        const pat = form.startsWith('*') ? rx(escapeRe(form)) : rx(`${escapeRe(form)}(?![\\w′'])`, '', notFollowing(WORD_POINT));
         if (search(pat, sentence)) { sentence = sub(pat, () => '{product}', sentence, 1); break; }
       }
       gp.sentence = gpPlaceholder(sentence, gp);
@@ -1197,10 +1206,10 @@ export function linkGeneralProcedures(plan: ImportPlan): void {
     // The same amount in every compound's sentence is the reaction scale: {scale}, with each compound's Reaction scale field filled.
     let commonScale: [string, string] | null = null;
     if (!names.includes('scale')) {
-      const amounts = [...finditer(rx('(?<![\\w.{])(\\d+(?:\\.\\d+)?)\\s*(mmol|µmol|μmol)\\b'), out)];
+      const amounts = [...finditer(rx('(\\d+(?:\\.\\d+)?)\\s*(mmol|µmol|μmol)\\b', '', notFollowing(/[\p{L}\p{N}_.{]/u)), out)];
       if (amounts.length === 1) {
         commonScale = [amounts[0].group(1)!, amounts[0].group(2)!];
-        out = sub(rx('(?<![\\w.{])\\d+(?:\\.\\d+)?\\s*(?:mmol|µmol|μmol)\\b'), () => '{scale}', out, 1);
+        out = sub(rx('\\d+(?:\\.\\d+)?\\s*(?:mmol|µmol|μmol)\\b', '', notFollowing(/[\p{L}\p{N}_.{]/u)), () => '{scale}', out, 1);
       }
     }
     gp.sentence = gpPlaceholder(out, gp);

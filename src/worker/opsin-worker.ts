@@ -1,6 +1,8 @@
 // Background worker for name to structure. OPSIN (compiled to JavaScript, see opsin-js/) runs
 // here so reading a name never holds up drawing. It starts only when first needed.
 
+import '../old-webkit';
+import { gunzipSync } from 'fflate';
 import { load, parse } from '../vendor/opsin/opsin.js';
 
 export type NameRequest =
@@ -18,8 +20,10 @@ async function init(url: string): Promise<void> {
   const t0 = performance.now();
   const res = await fetch(url);
   if (!res.ok || !res.body) throw new Error(`could not load its data (${res.status})`);
-  if (typeof DecompressionStream === 'undefined') throw new Error('this system is too old to unpack its data');
-  const bytes = await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
+  // (older systems have no DecompressionStream)
+  const bytes = typeof DecompressionStream === 'undefined'
+    ? gunzipSync(new Uint8Array(await res.arrayBuffer())).slice().buffer
+    : await new Response(res.body.pipeThrough(new DecompressionStream('gzip'))).arrayBuffer();
   const err = load(new Int8Array(bytes));
   if (err) throw new Error(err);
   parse('methane'); // OPSIN sets itself up on the first name; do it now, not when the person is waiting

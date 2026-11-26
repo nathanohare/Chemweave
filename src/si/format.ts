@@ -5,6 +5,7 @@
 
 import type { Run, VAlign } from './markup';
 import { DEUTERATED, DEUTERATED_PREFIX, NUCLEUS, allMatches, formulaMatches, rangeMatches, type Found } from './chemtext';
+import { after, notAfter } from '../regex-behind';
 
 const vOf = (r: Run): VAlign => r.valign ?? 'normal';
 
@@ -57,8 +58,8 @@ function split(runs: readonly Run[], find: (text: string) => Found[], make: (m: 
   return out.filter((r) => r.text || r.ref);
 }
 
-const J = /(?<![A-Za-z])J(?=\s*(?:=|\d|[A-Z]?[A-Z]?\s*=))/g;
-const HZ = /(?<=\d)(Hz|MHz)\b/g;
+const J = notAfter(/J(?=\s*(?:=|\d|[A-Z]?[A-Z]?\s*=))/g, /[A-Za-z]/);
+const HZ = after(/(Hz|MHz)\b/g, /\d/);
 
 /** Words to print as written (the project's dictionary.txt): formulas among them are not subscripted. */
 export interface Leave { words: ReadonlySet<string> }
@@ -105,7 +106,7 @@ export function chargeRuns(display: string): Run[] {
   const m = /^(\[.*\])(\d*[+\-−][•·.]?)$/.exec(display.trim());
   if (!m) return [R(display)];
   const charge = m[2].replace(/-/g, '−').replace(/\./g, '•').replace(/·/g, '•');
-  const body = m[1].replace(/-/g, '−').split(/(?<=[A-Za-z)])(\d+)/).flatMap((part, i) => (part ? [i % 2 ? R(part, { valign: 'sub' }) : R(part)] : []));
+  const body = m[1].replace(/-/g, '−').split(after(/(\d+)/, /[A-Za-z)]/)).flatMap((part, i) => (part ? [i % 2 ? R(part, { valign: 'sub' }) : R(part)] : []));
   return [...body, R(charge, { valign: 'super' })];
 }
 

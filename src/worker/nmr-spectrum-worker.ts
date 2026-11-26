@@ -1,6 +1,7 @@
 // Background worker for predicted 1H spectra: the exact simulation of a large coupled cluster can
 // take seconds (Accurate, clusters of up to 10 spins), which would freeze the drawing on the main thread.
 
+import '../old-webkit';
 import type { JGraph } from '../chem/nmr/coupling';
 import type { ProtonJ } from '../chem/nmr/karplus';
 import { predictSpectrum, type NmrQuality, type PredictedSpectrum } from '../chem/nmr/spectrum';

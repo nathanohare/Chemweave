@@ -18,6 +18,7 @@ import { ELECTRON } from '../chem/hrms';
 import { elementNumber, isMetal, SYMBOLS } from '../chem/elements';
 import { isotopeMassOf, mostCommonIsotope } from './isotope-masses';
 import { DEEP_LIMIT, longestPathBound } from '../chem/engine-guard';
+import { notAfter } from '../regex-behind';
 
 export class ChemError extends Error {}
 
@@ -239,7 +240,7 @@ const EXPLICIT_CHARGE = [
   new RegExp(`\\^\\s*(?<n>[${DIGITS}]*)\\s*(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`),
   // (starting only where a run of spaces starts, and no two space runs side by side: a long run
   // of spaces is read in one go, not tried at each of its spaces)
-  new RegExp(`(?<!\\s)\\s+(?:(?<n>[${DIGITS}]+)\\s*)?(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`),
+  notAfter(new RegExp(`\\s+(?:(?<n>[${DIGITS}]+)\\s*)?(?<signs>[${SIGNS}]+)\\s*(?<n2>[${DIGITS}]*)$`), /\s/),
   new RegExp(`(?<n>)(?<signs>[${SIGNS}])(?<n2>[0-9]+)$`),
 ];
 const BRACKETED_ION = new RegExp(`^\\[(?<f>[A-Z].*)\\][${RADICAL}]?(?<n>[${DIGITS}]*)(?<signs>[${SIGNS}]+)(?<n2>[${DIGITS}]*)$`);

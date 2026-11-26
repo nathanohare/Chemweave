@@ -18,6 +18,7 @@ import { nameRuns } from './chem-names';
 import { R, but, chargeRuns, formatChemistry, formatNmr, formulaRuns, plain, type Leave } from './format';
 import { DEFAULT_GP_SENTENCE, autoValues, fillSentence, purificationSentence, usesPurification } from './procedures';
 import { compoundSrc, tag } from './source-map';
+import { after } from '../regex-behind';
 
 export const SI_TEXT_KEY = 'si_text';
 const SKIP = new Set(['structure', 'name', 'notes', 'private_files', 'spectra', 'files', 'scale', SI_TEXT_KEY]);
@@ -54,7 +55,7 @@ function endSentence(runs: Run[]): Run[] {
   const t = plain(runs).trimEnd();
   return t && !'.;:!?'.includes(t[t.length - 1]) ? [...runs, R('.')] : runs;
 }
-const dashRanges = (t: string): string => t.replace(/(?<=\d)\s*-\s*(?=\d)/g, '–');
+const dashRanges = (t: string): string => t.replace(after(/\s*-\s*(?=\d)/g, /\d/), '–');
 const withSpace = (runs: Run[]): Run[] => (runs.length ? [...runs, R(' ')] : runs);
 
 /** The first n characters made bold. */

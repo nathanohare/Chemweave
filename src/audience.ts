@@ -2,6 +2,7 @@
 // projector, moving on as the presenter clicks. Keys and clicks here go back to the presenter,
 // so the presenter's window always leads.
 
+import './old-webkit';
 import { isTauri } from '@tauri-apps/api/core';
 import { Player } from './deck/playback';
 import { ShowLink, deckFromData, type ShowMessage } from './deck/show-link';

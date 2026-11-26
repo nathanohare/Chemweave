@@ -68,6 +68,7 @@ import { LeftOut, connectionsKept, queryTableOf, CT_QUERY_TABLE, REL as KEPT_FEA
 import { readSheetOle, writeSheetOle, oleVml, oleNote, structureOle, structureOleRef, type KeptSheetOle, type OleWriteState } from './xlsx-ole';
 import { chemdrawObject, chemdrawProg, chemdrawCdx, oleCellTag, OLE_CELL_STREAM } from './ole-object';
 import { maxOf } from './min-max';
+import { notAfter } from '../regex-behind';
 export { applyTint };
 
 /** Pictures of structures for Excel (the app draws them; tests use stand-ins). */
@@ -226,7 +227,7 @@ function usesUnknownFunction(text: string, names: ReadonlySet<string>): boolean 
   if (/\[/.test(bare)) return true;
   for (const m of bare.matchAll(/_xlfn\.(?:_xlws\.)?([A-Za-z0-9.]+)\(/g)) if (!KNOWN.has(m[1].toUpperCase())) return true;
   // other names before a bracket, leaving out quoted sheet names and _xlfn./_xlpm. ones
-  for (const m of bare.replace(/'(?:[^']|'')*'/g, "''").matchAll(/(?<![A-Za-z0-9_.])([A-Za-z][A-Za-z0-9_.]*)\(/g)) {
+  for (const m of bare.replace(/'(?:[^']|'')*'/g, "''").matchAll(notAfter(/([A-Za-z][A-Za-z0-9_.]*)\(/g, /[A-Za-z0-9_.]/))) {
     const up = m[1].toUpperCase();
     if (!KNOWN.has(up) && !names.has(up)) return true;
   }

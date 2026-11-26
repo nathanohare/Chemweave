@@ -78,7 +78,7 @@ function render(box: HTMLElement, ps: Paragraph[], host: SiRichHost, multiline: 
 function spaces(t: string, first: boolean, last: boolean): string {
   let s = t.replace(/\n/g, ' ');
   if (!s.includes('\u00a0')) return s;
-  s = s.replace(/\u00a0(?=[ \u00a0])|(?<=[ \u00a0])\u00a0/g, ' ');
+  s = s.replace(/\u00a0/g, (c: string, at: number, all: string) => (/[ \u00a0]/.test(all[at + 1] ?? '') || /[ \u00a0]/.test(all[at - 1] ?? '') ? ' ' : c));
   if (first) s = s.replace(/^\u00a0/, ' ');
   if (last) s = s.replace(/\u00a0$/, ' ');
   return s;

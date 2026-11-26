@@ -1,4 +1,5 @@
 /// <reference types="vitest/config" />
+import colorMixFallback from './scripts/color-mix-fallback.mjs';
 import { defineConfig, type Plugin } from 'vite';
 
 // The web version (GitHub Pages) has no server to send a Content-Security-Policy header, so its
@@ -66,7 +67,8 @@ export default defineConfig({
   // docs/ holds the README pictures; the picture scripts write there while the page is open, so don't reload it
   server: { port: 5173, strictPort: true, watch: { ignored: ['**/docs/**'] } },
   build: {
-    target: 'es2022',
+    // the oldest web engine the app runs on: Safari 15.4 (macOS 12.3's apps, older iPads)
+    target: ['es2022', 'safari15.4'],
     assetsInlineLimit: 0,
     rollupOptions: {
       // the app, and the audience's window for presenter view
@@ -74,7 +76,11 @@ export default defineConfig({
       output: { entryFileNames: `[name]${STAMP}.js`, assetFileNames: `[name]${STAMP}[extname]`, chunkFileNames: `[name]${STAMP}.js` },
     },
   },
-  worker: { format: 'iife', rollupOptions: { output: { entryFileNames: `[name]${STAMP}.js` } } },
+  // color-mix() has a plain fallback for Safari before 16.2
+  css: { postcss: { plugins: [colorMixFallback()] } },
+  // ("-run": without a build stamp, a worker and the chunk holding its ?worker&url address would otherwise
+  // share a name and one would overwrite the other)
+  worker: { format: 'iife', rollupOptions: { output: { entryFileNames: `[name]-run${STAMP}.js` } } },
   // Tests run on UTC, as on the Checks machines, so tests with clock times (Word comment dates)
   // give the same answer on a computer in any time zone. A test about time zones sets its own.
   // The real-file suites (tests/real-files.ts) are counted when skipped, and the count printed at the end.

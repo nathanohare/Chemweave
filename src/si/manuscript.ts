@@ -17,6 +17,7 @@ import type { SiTarget } from './compile-doc';
 import { valuesOf, compoundName, type SiProject } from './project';
 import { partText } from './fields';
 import * as C from './ms-check';
+import { notAfter } from '../regex-behind';
 
 /** What the manuscript needs from the SI: its targets (compounds and labels) and the page each is on. */
 export interface SiView {
@@ -78,7 +79,7 @@ export function updateSiFields(t: DocText, view: SiView): SiUpdate {
 // ---------------------------------------------------------------- compound numbers
 
 /** A compound number as typed: 2a, 12, 3b′, 4a''. */
-const ID_TOKEN = /(?<![\p{L}\p{N}′'″-])(\d{1,3})([a-z]{0,2}[′'″]{0,2})(?![\p{L}\p{N}′'″])/gu;
+const ID_TOKEN = notAfter(/(\d{1,3})([a-z]{0,2}[′'″]{0,2})(?![\p{L}\p{N}′'″])/gu, /[\p{L}\p{N}′'″-]/u);
 /** The letters typed after a compound number field (2 + "a"). */
 const LETTERS = /^[a-z]{1,2}[′'″]{0,2}(?![\p{L}\p{N}])/u;
 /** Words a bold number after them is a label or an entry, not a compound. */
@@ -553,7 +554,7 @@ function sentenceYields(text: string, ms: Mention[]): { m: Mention; value: strin
   const esc = (x: string) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   const ids = [...new Set(ms.map((m) => m.id))].sort((a, b) => b.length - a.length);
   if (!ids.length) return out;
-  const anyId = new RegExp(`(?<![\\w-])(?:${ids.map(esc).join('|')})(?![\\w-])`, 'g');
+  const anyId = notAfter(new RegExp(`(?:${ids.map(esc).join('|')})(?![\\w-])`, 'g'), /[\w-]/);
   const at: { id: string; start: number; end: number }[] = [];
   for (const x of text.matchAll(anyId)) at.push({ id: x[0], start: x.index!, end: x.index! + x[0].length });
   at.forEach((a, i) => {
