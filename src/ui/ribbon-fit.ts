@@ -223,7 +223,14 @@ function paintArrow(b: HTMLElement): void {
   b.setAttribute('aria-label', b.title);
 }
 
+/** Whether the ribbon must stay folded now (a window too short for it whole): main.ts says. */
+let mustFold: () => boolean = () => false;
+export function foldWhen(f: () => boolean, told: () => void): void { mustFold = f; tellFolded = told; }
+let tellFolded: () => void = () => {};
+
 function toggleCollapsed(): void {
+  // (folded because the window is too short: it stays so, and the person's own choice is kept)
+  if (collapsed && mustFold()) { tellFolded(); return; }
   setRibbonCollapsed(!collapsed);
   onCollapse(collapsed);
 }

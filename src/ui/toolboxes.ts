@@ -855,6 +855,8 @@ export class Toolboxes {
         // lift it out of its dock while it moves
         f.classList.add('dragging', 'floating');
         f.classList.remove('vertical');
+        // (whole while it moves: a short room below where it was is no limit where it goes)
+        f.style.maxHeight = '';
         document.body.append(f);
       }
       f.style.left = `${m.clientX - dx}px`;

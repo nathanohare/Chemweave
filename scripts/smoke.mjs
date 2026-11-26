@@ -291,7 +291,26 @@ try {
   const tabsOwnRow = async (pg, on) => { if (await pg.evaluate(() => document.body.classList.contains('tabs-in-menu')) === on) await pg.evaluate(() => window.__app.command('tabs-in-menu')); };
   await tabsOwnRow(page, true);
   for (const p of await sweepEssentials(page, OWN_ROW, 'web, file tabs on their own row')) fail(p);
+  // (Focus View: Quick Access and Search go back to the top row, which fits too)
+  await page.setViewportSize({ width: 500, height: 600 });
+  await page.evaluate(() => window.__app.command('focus-view'));
+  for (const p of await essentialProblems(page, 'web, file tabs on their own row, Focus View, 500 × 600')) fail(p);
+  await page.evaluate(() => window.__app.command('focus-view'));
   await tabsOwnRow(page, false);
+  // a window too short for the whole ribbon keeps it folded, whatever is clicked, and the choice made stays
+  await page.setViewportSize({ width: 390, height: 300 });
+  await page.waitForTimeout(200);
+  const fold = await page.evaluate(async () => {
+    const was = document.body.classList.contains('ribbon-collapsed');
+    window.__app.command('collapse-ribbon');
+    document.querySelector('.ribbon:not([hidden]) .rb-collapse')?.click();
+    await new Promise((ok) => setTimeout(ok, 100));
+    return { was, now: document.body.classList.contains('ribbon-collapsed') };
+  });
+  if (!fold.was || !fold.now) fail(`at 390 × 300 the ribbon is ${fold.now ? 'folded' : 'whole'} after Collapse the Ribbon and its ▾ (folded before: ${fold.was})`);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => document.body.classList.contains('ribbon-collapsed'))) fail('the ribbon stays folded once the window is tall again');
   {
     // the desktop app: its own title bar, with the window's buttons (the desktop calls do nothing here)
     const desk = await browser.newPage({ viewport: { width: 1366, height: 768 } });

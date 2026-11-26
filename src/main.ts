@@ -247,7 +247,7 @@ import { guideSpot } from './ui/guide-spot';
 import type { GuideWindow, GuideHeading } from './ui/guide-window';
 import { SettingsWindow, type SettingsHost, type SettingsPage } from './ui/settings-window';
 import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page';
-import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
+import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows, foldWhen } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
 import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
@@ -6474,7 +6474,10 @@ function fitOneRow(): void {
   // on a row of their own, the row Quick Access, Search and the window buttons are in (the ribbon's
   // row of tabs, or the menu bar)
   const withTabs = !!at && ((oneRow && at.matches('.rb-tabs')) || at.matches('header'));
-  const row = withTabs ? at : oneRow ? document.querySelector<HTMLElement>('.ribbon:not([hidden]) > .rb-tabs') : document.querySelector<HTMLElement>('header');
+  // (the header too while no ribbon's row shows: in Focus View, or before the ribbon is made, Quick
+  // Access and Search are back there)
+  const ribbonRow = oneRow && !withTabs ? document.querySelector<HTMLElement>('.ribbon:not([hidden]) > .rb-tabs') : null;
+  const row = withTabs ? at : ribbonRow?.offsetParent ? ribbonRow : document.querySelector<HTMLElement>('header');
   const cls = row?.matches('header') ? 'header-wrap' : 'row-wrap';
   watchFit(row);
   // (measured with none of the classes on; a wide window, which has none, is not touched at all)
@@ -11312,7 +11315,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'dev-tools': () => { showDevTools(!devTools); storeSettings(); },
   'show-stereo': () => previewStereo(!renderer.previewStereo),
   'scroll-bars': () => { showScrollBars(!scrollbars.shown); storeSettings(); },
-  'collapse-ribbon': () => { ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
+  'collapse-ribbon': () => { if (ribbonCollapsed() && innerHeight < TOO_SHORT) { tellTooShort(); return; } ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
@@ -16740,6 +16743,8 @@ const SHORT_WINDOW = 760;
 /** Under this height the ribbon always folds to its tabs (as Office's does): with it whole, the menus,
  * the file tabs and the status bar would not fit, and would cover one another. Click a tab to use it. */
 const TOO_SHORT = 420;
+function tellTooShort(): void { flash('The window is too short for the whole ribbon: click a tab to use its buttons.'); }
+foldWhen(() => innerHeight < TOO_SHORT, tellTooShort);
 let wasShort = false;
 /** Fold the ribbon as the window becomes short, and give it back as you had it when it is tall again. */
 function autoFoldRibbon(force = false): void {
