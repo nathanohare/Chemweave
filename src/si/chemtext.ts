@@ -4,7 +4,7 @@
 // formats the same words SI Assistant does, so the two programs print a project alike.
 
 import { ALKYL_MARKS, MARKS, PIN_MARK, markFormulaLetters } from '../text/formula-marks';
-import { guarded, notAfter, reflag } from '../regex-behind';
+import { GuardedRegExp, guarded, notAfter, reflag } from '../regex-behind';
 
 const ELEMENTS = ('H He Li Be B C N O F Ne Na Mg Al Si P S Cl Ar K Ca Sc Ti V Cr Mn Fe Co Ni Cu Zn '
   + 'Ga Ge As Se Br Kr Rb Sr Y Zr Nb Mo Tc Ru Rh Pd Ag Cd In Sn Sb Te I Xe Cs Ba La Ce '
@@ -65,9 +65,16 @@ export const NUCLEUS = notAfter(/(\d{1,3})(H|C|F|P|B|N|Si|Se|Sn|Pt|Li|O|Al)(?=\s
 /** A match: where it is in the text, and its groups (0 the whole). */
 export interface Found { start: number; end: number; groups: string[] }
 
+/** The global copy of each guarded pattern, made once: a guarded copy is slow to build, a plain one is not. */
+const globalCopies = new WeakMap<RegExp, RegExp>();
+
 export function allMatches(re: RegExp, text: string): Found[] {
   const out: Found[] = [];
-  const g = reflag(re, re.flags.includes('g') ? re.flags : re.flags + 'g');
+  let g = globalCopies.get(re);
+  if (!g) {
+    g = reflag(re, re.flags.includes('g') ? re.flags : re.flags + 'g');
+    if (re instanceof GuardedRegExp) globalCopies.set(re, g);
+  }
   for (const m of text.matchAll(g)) out.push({ start: m.index!, end: m.index! + m[0].length, groups: [...m].map((x) => x ?? '') });
   return out;
 }
