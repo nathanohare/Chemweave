@@ -81,10 +81,10 @@ describe("Word's character effects", () => {
       try { streams.push(Array.from(unzlibSync(Uint8Array.from(s.slice(i + 7, end), (c) => c.charCodeAt(0))), (c) => String.fromCharCode(c)).join('')); } catch { /* not packed */ }
       i = end;
     }
-    expect(streams.join('\n')).toMatch(/RG [\d.]+ w 1 Tr/);
+    expect(streams.join('\n')).toMatch(/RG [\d.]+ w 1 j 1 Tr/);
   });
 
-  it('leaves out, where outlines can't be drawn (EMF, EPS), an outline over its own letters, but not one on its own (review)', () => {
+  it("leaves out, where outlines can't be drawn (EMF, EPS), an outline over its own letters, but not one on its own (review)", () => {
     const both = drawn({ text: 'Both', size: 10, color: '#ffffff', outline: '#000000' });
     const i = both.findIndex((x) => x.kind === 'text' && x.stroke);
     expect(i).toBeGreaterThan(0);

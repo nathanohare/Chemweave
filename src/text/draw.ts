@@ -139,7 +139,7 @@ function drawOver(ctx: CanvasRenderingContext2D, lay: TextLayout, g: Glyphs, x: 
       const code = g.text.charCodeAt(k);
       if (/[\s\u00ad]/.test(g.text[k]) || (code >= 0xdc00 && code <= 0xdfff)) continue;
       // (at the middle of the letter, not of the letter and the spacing after it)
-      const mid = (pieceX(lay, g, k) + pieceX(lay, g, k + 1) - (g.spacing ?? 0)) / 2;
+      const mid = (pieceX(lay, g, k) + pieceX(lay, g, k + 1) + (g.rtl ? 1 : -1) * (g.spacing ?? 0)) / 2;
       // (in right-to-left text, from the piece's right end)
       const cx = x + (g.rtl ? g.w - mid : mid);
       ctx.beginPath();
