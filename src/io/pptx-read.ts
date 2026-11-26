@@ -53,7 +53,7 @@ import { gluePoint, arrowPoints, boxOf as pointsBox } from '../objects';
 import { stackAsRead, type StackItem } from '../editor/stacking';
 import { roughBox } from '../deck/split-slide';
 import { readEffects } from './pptx-effects';
-import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame, wordUnderline } from './pptx-keep';
+import { readRunKept, finishRunKept, readParaKept, finishParaKept, keptFrame, keptBox, wordUnderline } from './pptx-keep';
 import { readViewProps, readSlideGuides } from '../deck/guides';
 import { readMasterHF } from '../deck/notes-pages';
 import { readShowPr, readCustShows } from '../deck/show-setup';
@@ -3197,8 +3197,24 @@ function poseNew(doc: Doc, mark: number, box: Rect & { rot: number; flipH: boole
   if (box.flipH || box.flipV) {
     const ids = <T extends { id: number }>(m: Map<number, T>) => new Set([...m.values()].filter((x) => x.id >= mark).map((x) => x.id));
     const sel = { atoms: ids(doc.atoms), bonds: ids(doc.bonds), captions: ids(doc.captions), arrows: ids(doc.arrows), shapes: ids(doc.shapes) };
+    // a PowerPoint text box with its frame kept (not turned): the frame mirrored in the group, the
+    // text where it was in it, as PowerPoint shows it (its start isn't mirrored as a point; coordinators #69)
+    const framed = new Map<number, { x: number; y: number; w: number; h: number }>();
+    for (const id of sel.captions) {
+      const cap = doc.captions.get(id);
+      const f = cap && !cap.rot ? keptBox(cap.pbox) : null;
+      if (f) framed.set(id, f);
+    }
+    for (const id of framed.keys()) sel.captions.delete(id);
     if (box.flipH) transform(doc, snapshot(doc, sel, POINTS), mirrorX(c.x), true);
     if (box.flipV) transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true);
+    for (const [id, f] of framed) {
+      const cap = doc.captions.get(id)!;
+      doc.updateCaption(id, {
+        ...(box.flipH ? { x: 2 * c.x - (f.x + f.w) + (cap.x - f.x) } : {}),
+        ...(box.flipV ? { y: 2 * c.y - (f.y + f.h) + (cap.y - f.y) } : {}),
+      });
+    }
   }
   const rot = normDegrees(box.rot);
   if (Math.abs(rot) > 1e-6) turnNew(doc, mark, c, rot);
