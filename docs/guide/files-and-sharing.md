@@ -1,6 +1,6 @@
 # Files and sharing
 
-This page covers the files Chemweave opens and saves, copying and pasting with ChemDraw and Office, Split View, workspaces, AutoSave and recovery, Version History, shared folders, recent files, printing and fonts.
+This page covers the files Chemweave opens and saves, copying and pasting with ChemDraw and Office, Split Screen, workspaces, AutoSave and recovery, Version History, shared folders, recent files, printing and fonts.
 
 ## File types
 
@@ -115,16 +115,18 @@ Tables travel too:
 
 Charts in a spreadsheet have **Copy as Picture** on the **Chart** tab, to paste into Word, PowerPoint, or a document or slide here.
 
-## Split View
+## Split Screen
 
-Split View puts a canvas beside a document, spreadsheet, presentation or design, so you can draw and write at the same time.
+Split Screen shows two open tabs side by side: a canvas beside a document, two canvases, a presentation beside a spreadsheet, or any other pair.
 
-![A canvas beside a document in Split View](../images/split-view.png)
+![A canvas beside a document in Split Screen](../images/split-view.png)
 
-1. In a document, spreadsheet, presentation or design tab, choose **View ▸ Split View: Canvas Beside**. A canvas opens on the right: the first canvas tab, or a new one.
-2. Click a side to work on it. Beside a document or spreadsheet, both sides stay live; Ctrl+Z and Ctrl+S act on the side you clicked last. Beside slides or a design, the side you aren't working on shows as a picture until you click it.
-3. The bar above the canvas picks another open canvas or a new one. **Insert into Document** (or **Cell**, **Slide** or **Design**) puts the selected structures, or the whole drawing, in at the cursor, the selected cell, the slide or the design.
-4. Drag the divider to change the widths. The × closes the split; the canvas stays open in its own tab.
+1. Drag a tab down from the tab row into the window. While you hold it there, an outline shows the split it will make: the tab goes on the half you're pointing at, beside the tab you're working on. Let go to split the screen. To call it off, press Esc or move back out of the window. (On a touch screen or with a pen, hold the tab for a moment first.) You can also right-click a tab and choose **Split Screen Left** or **Split Screen Right**.
+2. Click a side to work on it. The ribbon, the Side Panel and the status bar change to match it, and Undo and Save act on it. The two tabs sit next to each other in the tab row, left then right, and the tab of the side you aren't working on is shaded. The other side shows its tab as you left it until you click it. A canvas beside a document or spreadsheet stays live on both sides, so you can draw and type without clicking first.
+3. Drag the divider to change the widths, or double-click it to share the width half and half. Each side keeps at least a fifth of the window.
+4. Drag another tab onto a side to replace the tab on that side. Drag a tab in the split to the other side to swap them.
+5. With a canvas beside a document, spreadsheet, presentation or design, **Insert into Document** (or **Cell**, **Slide** or **Design**) on the bar above the side you are not working on puts the selected structures, or the whole canvas, into the other side.
+6. Clicking a tab that isn't in the split shows it on its own; clicking either tab of the split brings the split back. The × on the bar, **View ▸ Close Split** or **Close Split** on a tab's right-click menu ends the split. Both tabs stay open.
 
 ## Workspaces
 
@@ -135,7 +137,7 @@ A workspace saves all your open tabs together, so a project's scheme, slides, SI
    - **Save changes to tabs already saved as files.**
 2. Click **Choose Folder…**, pick or make a folder, and name the workspace.
 
-The folder then holds your files plus a small `.ciworkspace` file listing the tabs, their order, which tab was showing and any Split View. Tabs never saved are saved there under their tab names; a file that would replace another gets "(2)" added instead.
+The folder then holds your files plus a small `.ciworkspace` file listing the tabs, their order, which tab was showing and any Split Screen. Tabs never saved are saved there under their tab names; a file that would replace another gets "(2)" added instead.
 
 To open it again, use **File ▸ Workspace ▸ Open Workspace…** or **File ▸ Open**, and pick the `.ciworkspace` file. **Save Workspace** then saves back to the same place, and **Save Workspace As…** saves a new one.
 
