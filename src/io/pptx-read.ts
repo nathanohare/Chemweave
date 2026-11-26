@@ -1929,7 +1929,7 @@ class Reader {
     // a text box or placeholder of PowerPoint's: its frame as the file had it (size, place, anchor
     // and margins), kept while it isn't resized here (a placeholder placed by its layout has none of
     // its own, and one that comes back as this program saved it keeps the frame in its tag)
-    if (c && !c.pbox && (!ph || !asSaved)) c = { ...c, pbox: keptFrame(sp, c) ?? undefined };
+    if (c && !c.pbox && (!ph || !asSaved)) c = { ...c, pbox: keptFrame(sp, c, t) ?? undefined };
     if (c && !c.pbox) delete c.pbox;
     // a table's title or footnotes, saved here as a text box beside it
     const part = (() => {
