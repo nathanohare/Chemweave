@@ -16,7 +16,8 @@
 // page and SI Assistant show them too.
 
 import type { DocText } from '../document/document';
-import type { TextRun } from '../model';
+import type { Justify, ParaStyle, TextRun } from '../model';
+import { fitParas, paraAt, paraCount } from '../text/paragraphs';
 import * as rt from '../richtext';
 import type { SiFolder } from './folder';
 import { parseMarkup, writeMarkup, type Run as MarkupRun } from './markup';
@@ -26,9 +27,14 @@ import type { SourceBlock, SourceSpan } from './source-map';
 export const PREVIEW_FORMAT_FILE = 'chemweave-preview-format.json';
 
 /** The looks a piece can set. `false` (or '') takes a look off that the text has from elsewhere. */
-export type FormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight'>>;
+export type RunFormatLook = Partial<Pick<TextRun, 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'smallCaps' | 'font' | 'size' | 'color' | 'highlight'>>;
+export type FormatLook = RunFormatLook & ParaLook;
+/** A paragraph's own look (Home ▸ Paragraph): on every paragraph the words are in. */
+export type ParaLook = Partial<Pick<ParaStyle, 'align' | 'indent' | 'spaceBefore' | 'spaceAfter' | 'line'>>;
+export const PARA_KEYS: readonly (keyof ParaLook)[] = ['align', 'indent', 'spaceBefore', 'spaceAfter', 'line'];
+const ALIGNS: readonly Justify[] = ['left', 'center', 'right', 'justify'];
 
-export const LOOK_KEYS: readonly (keyof FormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight'];
+export const LOOK_KEYS: readonly (keyof RunFormatLook)[] = ['bold', 'italic', 'underline', 'strike', 'sub', 'sup', 'smallCaps', 'font', 'size', 'color', 'highlight'];
 
 export interface PreviewFormat {
   id: string;
@@ -84,6 +90,11 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
         const v = (x.look as Record<string, unknown>)[k];
         if (typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') (look as Record<string, unknown>)[k] = v;
       }
+      for (const k of PARA_KEYS) {
+        const v = (x.look as Record<string, unknown>)[k];
+        if (k === 'align' ? ALIGNS.includes(v as Justify) : typeof v === 'number' && Number.isFinite(v) && v >= 0 && v <= 1000) (look as Record<string, unknown>)[k] = v;
+      }
+      if (!Object.keys(look).length) continue;
       const piece: PreviewFormat = { id: typeof x.id === 'string' ? x.id : newFormatId(), src: x.src, start: x.start, end: x.end, text: x.text, look };
       if (typeof x.before === 'string') piece.before = x.before;
       if (typeof x.after === 'string') piece.after = x.after;
@@ -178,11 +189,21 @@ function patchOf(look: FormatLook): Partial<TextRun> {
   return p as Partial<TextRun>;
 }
 
+/** A look's paragraph settings (left alignment, no indent, no space: the paragraph's own taken off), or null. */
+function paraPatchOf(look: FormatLook): Partial<ParaStyle> | null {
+  const keys = PARA_KEYS.filter((k) => look[k] !== undefined);
+  if (!keys.length) return null;
+  const p: Record<string, unknown> = {};
+  for (const k of keys) p[k] = k === 'align' ? look.align : look[k] || undefined;
+  return p as Partial<ParaStyle>;
+}
+
 /** The document with each piece's look on the text it formats (pieces later in the list win). */
 export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[], blocks: readonly SourceBlock[], items: readonly PreviewFormat[]): DocText {
   if (!items.length) return doc;
   const text = rt.plainText(doc.runs);
   let runs = doc.runs;
+  let paras: ParaStyle[] | null = null;
   // (each source's own stretches, found once: a piece whose source isn't in this compile is passed over)
   const bySrc = new Map<string, SourceSpan[]>();
   for (const sp of sources) { const l = bySrc.get(sp.src); if (l) l.push(sp); else bySrc.set(sp.src, [sp]); }
@@ -195,9 +216,20 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
     const at = locateFormat(printed, f);
     if (!at) continue;
     const patch = patchOf(f.look);
-    for (const [a, b] of docRanges(text, mine, f.src, at[0], at[1], blocks)) runs = rt.applyStyle(runs, a, b, patch);
+    const para = paraPatchOf(f.look);
+    for (const [a, b] of docRanges(text, mine, f.src, at[0], at[1], blocks)) {
+      if (Object.keys(patch).length) runs = rt.applyStyle(runs, a, b, patch);
+      if (para) {
+        paras ??= fitParas(doc.paras, paraCount(text));
+        for (let i = paraAt(text, a), last = paraAt(text, Math.max(a, b - 1)); i <= last; i++) {
+          const next: Record<string, unknown> = { ...paras[i] };
+          for (const [k, v] of Object.entries(para)) { if (v === undefined) delete next[k]; else next[k] = v; }
+          paras[i] = next as ParaStyle;
+        }
+      }
+    }
   }
-  return runs === doc.runs ? doc : { ...doc, runs };
+  return runs === doc.runs && !paras ? doc : { ...doc, runs, ...(paras ? { paras } : {}) };
 }
 
 /**

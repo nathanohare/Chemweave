@@ -79,6 +79,28 @@ describe('the formatting file', () => {
     expect(run?.color).toBe('#c00000');
     expect(rt.plainText(out.runs)).toBe('Yield: 91 mg');
   });
+
+  it('puts a paragraph look on every paragraph its words are in, and only those', () => {
+    const d = { runs: [{ text: 'Intro\nStep one\nStep two' }], paras: [{}, {}, {}] } as unknown as DocText;
+    const spans = [{ start: 6, end: 23, src: 'p' }];
+    const out = applyPreviewFormats(d, spans, [], [{ id: 'x', src: 'p', start: 0, end: 17, text: 'Step one\nStep two', look: { align: 'center', indent: 36 } }]);
+    expect(out.paras[0]).toEqual({});
+    expect(out.paras[1]).toEqual({ align: 'center', indent: 36 });
+    expect(out.paras[2]).toEqual({ align: 'center', indent: 36 });
+    expect(rt.plainText(out.runs)).toBe('Intro\nStep one\nStep two');
+  });
+
+  it('takes a paragraph look off with no indent', () => {
+    const d = { runs: [{ text: 'Step one' }], paras: [{ indent: 36 }] } as unknown as DocText;
+    const out = applyPreviewFormats(d, [{ start: 0, end: 8, src: 'p' }], [], [{ id: 'x', src: 'p', start: 0, end: 8, text: 'Step one', look: { indent: 0 } }]);
+    expect(out.paras[0].indent).toBeUndefined();
+  });
+
+  it('reads paragraph looks back, and drops ones it cannot use', () => {
+    const items = parsePreviewFormats(JSON.stringify({ version: 1, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { align: 'center', line: 1.5, indent: 'far' } }, { src: 'p', start: 0, end: 3, text: 'abc', look: { align: 'sideways' } }] }));
+    expect(items).toHaveLength(1);
+    expect(items![0].look).toEqual({ align: 'center', line: 1.5 });
+  });
 });
 
 describe('finding the words again safely', () => {

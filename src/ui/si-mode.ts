@@ -73,6 +73,7 @@ import { showContextMenu, type MenuItem } from './context-menu';
 import { buildSelectGalleries } from './select-gallery';
 import { FIGURE_WRAPS, figureKey, POSITIONS, POSITION_NAMES, WRAPS, WRAP_NAMES, clearOwnPlacements, kindOfKey, ownPlacement, placementOf, projectPlacement, storeOwnPlacement, storeProjectPlacement, structureKey, type OwnPlacement, type SiWrap } from '../si/placement';
 import { fontGroupHtml, siFontBoxes, SI_FONT_OFF, SI_FONT_REASON } from './font-group';
+import { RIBBON_ICONS } from './ribbon-icons';
 import { paintCanRun } from './can-run';
 import { formulaStyleRange } from './si-formula';
 import { allBoxes } from '../si/scheme-edit';
@@ -213,6 +214,9 @@ const SYNC_ICON = '<svg viewBox="0 0 16 16" width="14" height="14" fill="none" s
 const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another compound or section opens its page here, a moment after you stop. It never changes page while a field of the page is selected or being typed in.';
 
 /** The ribbon: what each button does is its data-si command. */
+/** Why Home ▸ Paragraph is greyed while typing on the SI page. */
+const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
+
 const RIBBON = `
   <div class="rb-tabs">
     <div class="rb-tablist" role="tablist" aria-label="Ribbon tabs">
@@ -590,6 +594,23 @@ const RIBBON = `
       </div>
     </div><div class="rb-label">Organize</div></div>
     ${fontGroupHtml('si')}
+    <div class="rb-group si-para-group"><div class="rb-row">
+      <div class="rb-col">
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="left" title="Align Left (the paragraphs selected in the Live Preview)" aria-label="Align Left">${RIBBON_ICONS['doc-align-left']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="center" title="Center" aria-label="Center">${RIBBON_ICONS['doc-align-center']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="right" title="Align Right" aria-label="Align Right">${RIBBON_ICONS['doc-align-right']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify (both edges straight)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
+        </div>
+        <div class="rb-pair">
+          <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="indent" title="Increase Indent" aria-label="Increase Indent">${RIBBON_ICONS['doc-indent']}</button>
+          <select data-si-para="line" title="Line Spacing (the paragraphs selected in the Live Preview)" aria-label="Line Spacing">
+            <option value="" hidden>Line Spacing</option><option value="1">Single</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">Double</option>
+          </select>
+        </div>
+      </div>
+    </div><div class="rb-label">Paragraph</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
@@ -749,6 +770,7 @@ export class SiMode {
     buildSelectGalleries(this.ribbon);
     // the shared Font group (G5-26, R13): what SI text cannot hold is greyed with the reason
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? SI_FONT_REASON : null));
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para], [data-si-paint]')) el.disabled = true;
     siFontBoxes(this.ribbon, defaultStyles().Normal);
     // Bold, Italic… show whether the text being typed has them
     document.addEventListener('selectionchange', () => {
@@ -762,13 +784,15 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para]')) e.preventDefault(); });
     this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
+      const para = t.closest<HTMLButtonElement>('button[data-si-para]');
+      if (para) { void this.paragraph(para.dataset.siPara!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
@@ -798,6 +822,8 @@ export class SiMode {
     this.ribbon.addEventListener('change', (e) => {
       const fi = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-si-fmt]');
       if (fi) { this.format(fi.dataset.siFmt!, fi.value); return; }
+      const ls = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-para]');
+      if (ls) { const v = ls.value; ls.value = ''; void this.paragraph(ls.dataset.siPara!, v); return; }
       const wr = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-place-wrap]');
       if (wr) { if (this.placedStructure) void this.setWrap(this.placedStructure, wr.value as SiWrap | 'inline'); return; }
       const fw = (e.target as HTMLElement).closest<HTMLSelectElement>('select[data-si-figplace-wrap]');
@@ -1200,6 +1226,7 @@ export class SiMode {
   /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
   private fontState(): void {
     const on = !!this.previewTyped;
+    for (const el of this.ribbon.querySelectorAll<HTMLButtonElement | HTMLSelectElement>('[data-si-para]')) { el.disabled = !on; el.closest('.rb-group')!.setAttribute('title', on ? '' : SI_PARA_REASON); }
     const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
     if (brush) { brush.disabled = !on; if (!on) this.preview?.stopPainting(); }
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
@@ -1209,6 +1236,19 @@ export class SiMode {
         (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
       }
     } else siFontBoxes(this.ribbon, defaultStyles().Normal);
+  }
+
+  /** Home ▸ Paragraph on the Live Preview's paragraphs (greyed on the SI page, whose text takes the journal style's paragraphs). */
+  private async paragraph(cmd: string, value?: string): Promise<void> {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash(SI_PARA_REASON, 6000); return; }
+    const INDENT = 36;
+    switch (cmd) {
+      case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
+      case 'indent': case 'outdent': await pv.paraFormat({ indent: Math.max(0, (pv.paraValue('indent') ?? 0) + (cmd === 'indent' ? INDENT : -INDENT)) }); break;
+      case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n }); break; }
+    }
+    pv.input.focus();
   }
 
   /** Format Painter (Home ▸ Clipboard): a click paints once, a double-click keeps painting until Esc; pressed again, it stops. */

@@ -9,10 +9,13 @@ import { join } from 'node:path';
 import { ICON_SET, applyIconSet, buttonKey } from '../src/ui/icon-set';
 import { SI_ICONS, SI_ICON_SAME } from '../src/ui/si-icons';
 import { TEXT_ICONS } from '../src/ui/icon-picks';
+import { RIBBON_ICONS } from '../src/ui/ribbon-icons';
 
 const src = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8');
 const siSrc = src('src/ui/si-mode.ts');
-const RIBBON = siSrc.slice(siSrc.indexOf('const RIBBON = `') + 16, siSrc.indexOf('`;', siSrc.indexOf('const RIBBON = `')));
+const RIBBON_SRC = siSrc.slice(siSrc.indexOf('const RIBBON = `') + 16, siSrc.indexOf('`;', siSrc.indexOf('const RIBBON = `')));
+// (the template as the app makes it: Document's paragraph pictures put in)
+const RIBBON = RIBBON_SRC.replace(/\$\{RIBBON_ICONS\['([a-z-]+)'\]\}/g, (_, k: string) => RIBBON_ICONS[k]);
 
 describe('SI ribbon', () => {
   let ribbon: HTMLElement;

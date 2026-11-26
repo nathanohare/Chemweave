@@ -10,6 +10,7 @@
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
 import { BRUSH, IBEAM } from '../editor/cursors';
+import { paraAt } from '../text/paragraphs';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
@@ -21,7 +22,7 @@ import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, ty
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
-import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type PreviewFormat } from '../si/preview-format';
+import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -85,6 +86,9 @@ const SCROLL_SETTLE = 450;
 /** Where in the window the page being read is taken to be (a third of the way down), and how far either side of it the page chosen still counts as read (hysteresis). */
 const READ_AT = 0.3;
 const READ_BAND = 0.12;
+
+/** How many characters from a paragraph's start keep its own look (Home ▸ Paragraph with the caret in it). */
+const PARA_ANCHOR = 24;
 
 export class SiPreview {
   readonly view: DocView;
@@ -1114,7 +1118,7 @@ export class SiPreview {
   // ---------------------------------------------------------------- formatting (preview-format.ts)
 
   /** Format Painter: the look being copied, and whether it stays on after one use (double-click). */
-  private brush: { look: FormatLook; keep: boolean } | null = null;
+  private brush: { look: RunFormatLook; keep: boolean } | null = null;
   /** Format Painter turned on or off (the ribbon button shows it). */
   onPainting: (on: boolean) => void = () => {};
   get painting(): boolean { return !!this.brush; }
@@ -1126,7 +1130,7 @@ export class SiPreview {
   startPainting(keep: boolean): void {
     if (!this.file) return;
     if (!this.editable) { this.api.flash(this.why); return; }
-    const look: FormatLook = {};
+    const look: RunFormatLook = {};
     for (const k of LOOK_KEYS) {
       const v = this.selectionValue(k);
       // (on or off for each look, so the words painted match; a font, size or color only when it has one)
@@ -1153,15 +1157,39 @@ export class SiPreview {
     if (ed.collapsed) return;
     // only what differs is changed: words already so get no piece of their own
     const patch: FormatLook = {};
-    for (const [k, v] of Object.entries(b.look) as [keyof FormatLook, FormatLook[keyof FormatLook]][]) {
+    for (const [k, v] of Object.entries(b.look) as [keyof RunFormatLook, RunFormatLook[keyof RunFormatLook]][]) {
       const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : this.selectionValue(k) !== v || this.selectionAny(k, v);
       if (differs) (patch as Record<string, unknown>)[k] = v;
     }
     if (Object.keys(patch).length) void this.format(patch);
   }
 
+  /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */
+  paraValue<K extends keyof ParaLook>(key: K): ParaLook[K] | undefined {
+    const f = this.file;
+    if (!f) return undefined;
+    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)]?.[key] as ParaLook[K] | undefined;
+  }
+
+  /** Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is): kept across compiles as Font's looks are. */
+  async paraFormat(look: ParaLook): Promise<boolean> {
+    const ed = this.file?.ed;
+    if (!ed) return false;
+    if (ed.collapsed) {
+      const t = ed.text, at = ed.start;
+      const a = t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
+      if (b <= a) { this.api.flash('Click in a paragraph with words in it first.'); return false; }
+      // (kept by the paragraph's first words only: typing later in it doesn't lose the look)
+      ed.select(a, Math.min(b, a + PARA_ANCHOR));
+      const done = await this.format(look);
+      this.file?.ed.setCaret(Math.min(at, this.file.ed.text.length));
+      return done;
+    }
+    return this.format(look);
+  }
+
   /** Whether any character selected has `key` (with a value other than `but`, when given). */
-  private selectionAny(key: keyof FormatLook, but?: unknown): boolean {
+  private selectionAny(key: keyof RunFormatLook, but?: unknown): boolean {
     const ed = this.file?.ed;
     if (!ed || ed.collapsed) return false;
     let at = 0;
@@ -1188,7 +1216,7 @@ export class SiPreview {
   }
 
   /** Whether every character selected has `key` (Bold pressed again takes it off). */
-  selectionHas(key: keyof FormatLook): boolean {
+  selectionHas(key: keyof RunFormatLook): boolean {
     const ed = this.file?.ed;
     if (!ed || ed.collapsed) return false;
     let at = 0, any = false;
