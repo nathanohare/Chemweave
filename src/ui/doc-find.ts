@@ -45,11 +45,14 @@ export class DocFind {
   private replaceEl: HTMLElement;
   private toggleEl: HTMLButtonElement;
 
-  /** Finding only: no Replace row, and Ctrl+H does nothing (SI mode's Live Preview). */
+  /** Finding only: no Replace row, and Ctrl+H does nothing. */
   private findOnly: boolean;
+  /** Replacing done by the host (SI mode's Live Preview writes the fields the words come from): no look buttons. */
+  private replacer: ((ranges: [number, number][], with_: string) => Promise<void>) | null;
 
-  constructor(parent: HTMLElement, private host: DocFindHost, opts: { findOnly?: boolean } = {}) {
+  constructor(parent: HTMLElement, private host: DocFindHost, opts: { findOnly?: boolean; replace?: (ranges: [number, number][], with_: string) => Promise<void> } = {}) {
     this.findOnly = !!opts.findOnly;
+    this.replacer = opts.replace ?? null;
     const el = document.createElement('div');
     el.className = 'doc-find';
     el.setAttribute('role', 'search');
@@ -87,6 +90,7 @@ export class DocFind {
     this.replaceEl = el.querySelector('.df-replace')!;
     this.toggleEl = el.querySelector('.df-toggle')!;
     if (this.findOnly) { this.toggleEl.remove(); this.replaceEl.remove(); }
+    if (this.replacer) { el.querySelector('.df-look')?.remove(); el.querySelector('.df-hint')?.remove(); }
 
     this.findBox.addEventListener('input', () => { this.refresh(); this.go(0); });
     for (const c of el.querySelectorAll<HTMLInputElement>('input[type=checkbox]')) c.addEventListener('change', () => { this.refresh(); this.go(0); });
@@ -202,6 +206,11 @@ export class DocFind {
     if (i < 0) { this.go(1); return; }
     const [a, b] = this.hits[i];
     const with_ = this.withBox.value;
+    if (this.replacer) {
+      // (the text comes back from the fields: the next place is found when it shows)
+      void this.replacer([[a, b]], with_).then(() => { f.ed.setCaret(Math.min(a + with_.length, f.ed.text.length)); this.refresh(); this.go(1); });
+      return;
+    }
     const keep = !with_ && lookPatch(this.look) !== null;
     const who = keep ? null : f.ed.track?.();
     let after: number;
@@ -230,6 +239,7 @@ export class DocFind {
     if (!f || !this.hits.length) { this.host.flash('Nothing to replace: the words were not found.'); return; }
     const n = this.hits.length;
     const with_ = this.withBox.value;
+    if (this.replacer) { void this.replacer([...this.hits], with_).then(() => this.refresh()); return; }
     const keep = !with_ && lookPatch(this.look) !== null;
     const who = keep ? null : f.ed.track?.();
     const next = who ? trackedReplaceRanges(f.t, this.hits, with_, this.look, f.ed.defaults, who).t : ({ ...f.t, runs: replaceRanges(f.t.runs, this.hits, with_, this.look, f.ed.defaults) } as DocText);

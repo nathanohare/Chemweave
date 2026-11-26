@@ -1017,10 +1017,10 @@ export class SiPreview {
 
   // ---------------------------------------------------------------- the ribbon's commands
 
-  /** Find (Ctrl+F): Document mode's Find box over the preview, finding only (a field is changed by typing into it). */
+  /** Find (Ctrl+F) and Replace (Ctrl+H): Document mode's Find box over the preview; replacing writes the fields the words print from. */
   private finder: DocFind | null = null;
 
-  showFind(): void {
+  showFind(replace = false): void {
     if (!this.file) return;
     if (!this.finder) {
       this.finder = new DocFind(this.host, {
@@ -1029,10 +1029,9 @@ export class SiPreview {
         flash: (m, ms) => this.api.flash(m, ms),
         redraw: () => { this.placeInput(); this.view.redraw(); },
         found: () => this.foundShown(),
-        // (replacing would write into many fields at once, past the typing guard: not here)
-      }, { findOnly: true });
+      }, { replace: (ranges, with_) => this.replaceAt(ranges, with_) });
     }
-    this.finder.show(false);
+    this.finder.show(replace);
   }
 
   /** While the text changes under an open Find box: its places looked for again (nothing is moved into view). */
@@ -1162,6 +1161,60 @@ export class SiPreview {
       if (differs) (patch as Record<string, unknown>)[k] = v;
     }
     if (Object.keys(patch).length) void this.format(patch);
+  }
+
+  /**
+   * Replace (Home ▸ Editing): the found places [a, b) of the preview's text become `with_` in the
+   * fields they print from, all in one step of Undo; places in words the program writes (an ID, a
+   * heading, a label) are left, and said so.
+   */
+  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<void> {
+    if (!this.file || !ranges.length) return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return;
+    const owner = this.owner, text = f.ed.text;
+    const spansNow = this.spans.map((x) => ({ ...x }));
+    // each place by the field it is in (a place across two fields, or in words of the program's own, is left)
+    const bySrc = new Map<string, [number, number][]>();
+    let left = 0;
+    for (const [a, b] of ranges) {
+      const sp = spansNow.find((x) => x.start <= a && x.end >= b);
+      if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src)) { left++; continue; }
+      const p = printedOf(text, spansNow, sp.src);
+      const at = p.at(a);
+      const l = bySrc.get(sp.src);
+      if (l) l.push([at, at + b - a]); else bySrc.set(sp.src, [[at, at + b - a]]);
+    }
+    const fields: { src: string; text: string; from: string }[] = [];
+    let done = 0;
+    for (const [src, places] of bySrc) {
+      const raw = await this.api.read(src, owner);
+      if (raw === null) { left += places.length; continue; }
+      let printed = printedOf(text, spansNow, src).printed, out = raw;
+      // (from the last place back, each against the printed text as it is by then)
+      for (const [pa, pb] of [...places].sort((x, y) => y[0] - x[0])) {
+        const next = applyToRaw(out, printed, pa, pb, with_, markupSrc(src));
+        if (next === null) { left++; continue; }
+        out = next;
+        printed = printed.slice(0, pa) + with_ + printed.slice(pb);
+        done++;
+      }
+      if (out !== raw) fields.push({ src, text: out, from: raw });
+    }
+    if (fields.length) {
+      try {
+        await this.api.writeFormat(fields, null, owner);
+      } catch (err) {
+        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
+        return;
+      }
+      for (const x of fields) this.written.delete(x.src);
+      this.editGen++; this.writtenGen = this.editGen;
+    }
+    const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
+    if (ranges.length > 1 || left) this.api.flash(left ? `Replaced ${what(done)}. ${what(left)} ${left === 1 ? 'is' : 'are'} not a compound’s own text (a general procedure’s, an ID, a heading), left as ${left === 1 ? 'it is' : 'they are'}: change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.` : `Replaced ${what(done)}. Ctrl+Z restores them.`, left ? 9000 : 4000);
   }
 
   /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */

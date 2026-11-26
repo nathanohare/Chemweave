@@ -614,6 +614,9 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
+        <button data-si="replace" title="Replace (Ctrl+H): found words changed in the fields they come from, one place or all of them (one step of Undo); words Chemweave writes, or a general procedure's, are left">Replace…</button>
+      </div>
+      <div class="rb-col">
         <button data-si="go-to" data-ic="doc-go-to" title="Go To (Ctrl+G): a page of the compiled SI by its number, or a compound by its ID">Go To…</button>
         <button data-si="select-all" data-ic="doc-select" title="Select All (Ctrl+A): all the text where you are typing (a box on the SI page, or the whole Live Preview)">Select All</button>
       </div>
@@ -4800,9 +4803,9 @@ export class SiMode {
     if (e.key === 'F7' && !e.shiftKey && !e.ctrlKey && !e.altKey) { e.preventDefault(); void this.run('spelling'); return; }
     if ((e.ctrlKey || e.metaKey) && e.shiftKey && e.key.toLowerCase() === 'l') { e.preventDefault(); this.setLive(!this.liveOn); return; }
     // (Find and Go To from anywhere in the pane; the Live Preview takes its own Ctrl+F first)
-    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && (e.key.toLowerCase() === 'f' || e.key.toLowerCase() === 'g')) {
+    if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && !e.defaultPrevented && ['f', 'g', 'h'].includes(e.key.toLowerCase())) {
       e.preventDefault();
-      void this.run(e.key.toLowerCase() === 'f' ? 'find' : 'go-to');
+      void this.run(({ f: 'find', g: 'go-to', h: 'replace' } as Record<string, string>)[e.key.toLowerCase()]);
       return;
     }
     // (in a text box or a list, Alt and the arrows are the box's own keys)
@@ -5307,7 +5310,7 @@ export class SiMode {
 
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
-    'paste', 'cut', 'copy', 'find', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
+    'paste', 'cut', 'copy', 'find', 'replace', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
     'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
@@ -5652,10 +5655,10 @@ export class SiMode {
         return;
       // ---- the commands Document mode's ribbon has (Clipboard, Editing, Layout, References, Review, View)
       case 'paste': case 'cut': case 'copy': case 'select-all': await this.clipboardCommand(cmd); return;
-      case 'find': {
+      case 'find': case 'replace': {
         const pv = await this.previewShown();
-        if (!pv) { this.host.flash(this.noPreviewWhy('Find looks in the Live Preview')); return; }
-        pv.showFind();
+        if (!pv) { this.host.flash(this.noPreviewWhy(cmd === 'find' ? 'Find looks in the Live Preview' : 'Replace works in the Live Preview')); return; }
+        pv.showFind(cmd === 'replace');
         return;
       }
       case 'go-to': await this.goTo(); return;

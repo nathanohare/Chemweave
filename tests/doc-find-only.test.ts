@@ -26,4 +26,22 @@ describe('Find only', () => {
     expect(f.ed.text).toBe('Dry over MgSO4, then MgSO4 again.');
     expect(find.hits.length).toBe(2);
   });
+
+  it('hands Replace to the host when it does the replacing, with no look buttons', async () => {
+    const f = new DocFile({ ...newDocument(), runs: [{ text: 'Dry over MgSO4, then MgSO4 again.' }], paras: [{}] } as DocText);
+    const parent = document.createElement('div');
+    document.body.append(parent);
+    const asked: [number, number][][] = [];
+    const find = new DocFind(parent, { file: () => f, focus: () => {}, flash: () => {}, redraw: () => {} }, { replace: async (r) => { asked.push(r); } });
+    find.show(true);
+    expect(parent.querySelector('.df-look')).toBeNull();
+    (parent.querySelector('.df-find') as HTMLInputElement).value = 'MgSO4';
+    find.refresh();
+    (parent.querySelector('.df-with') as HTMLInputElement).value = 'Na2SO4';
+    (parent.querySelector('[data-act="all"]') as HTMLButtonElement).click();
+    await Promise.resolve();
+    // (the host writes the fields; the text here is left for the compile to change)
+    expect(asked).toEqual([[[9, 14], [21, 26]]]);
+    expect(f.ed.text).toBe('Dry over MgSO4, then MgSO4 again.');
+  });
 });
