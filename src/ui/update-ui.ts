@@ -1,13 +1,15 @@
 // Checking for a newer version (desktop app only): a quiet check a few seconds after the app
 // starts, which shows a small notice in the corner if there is one, and File > Check for Updates…,
-// which always says what it found. Installing asks first when some tabs aren't saved.
+// which always says what it found. Installing keeps every open tab, unsaved changes and all, and
+// the app opens them again after the restart (src/keep/restart.ts); it asks first only about a tab
+// that can't be kept.
 
 import { appVersion, findRelease, notesSince, newestNotes, noteLine, publishedReleases, shortNotes, worthOffering, RELEASES_PAGE, type Release, type UpdateChannel } from '../updates';
 import { ask } from './ask';
 
 export interface UpdateHost {
-  /** Names of the open tabs with changes that aren't saved. */
-  unsaved(): string[];
+  /** Names of the open tabs with unsaved changes that can't be kept over the restart (an SI project held in memory only). */
+  unkept(): string[];
   /** The version the user chose not to hear about again, if any. */
   skipped(): string | null;
   skip(version: string | null): void;
@@ -16,15 +18,25 @@ export interface UpdateHost {
   /** Open a web page in the computer's browser. */
   openPage(url: string): void;
   /**
-   * The app is about to close for the installer, the user having agreed to lose what isn't
-   * saved: tidy up as a normal close does, so the next start doesn't offer those tabs back.
+   * The app is about to close for the installer: keep the open tabs for the next start (throws,
+   * stopping the update, when one with unsaved changes couldn't be kept), then tidy up as a normal
+   * close does, so the next start doesn't also offer those tabs as unsaved work to recover.
    */
   closing(): Promise<void>;
+  /** Keeping the tabs failed (`closing` threw before putting anything away): what was kept isn't needed. */
+  keepFailed?(): void;
+  /**
+   * The update didn't install after `closing` put the app's safety nets away: start the app again
+   * (it reopens the kept tabs, saying why). False when it couldn't restart.
+   */
+  notInstalled?(why: string): Promise<boolean>;
 }
 
 export class UpdateUI {
   private box: HTMLElement | null = null;
   private busy = false;
+  /** Tabs the person agreed to lose unsaved changes to (Install Anyway): not kept, and not a reason to stop. */
+  unkeptAgreed: string[] = [];
 
   constructor(private host: UpdateHost) {}
 
@@ -180,27 +192,79 @@ export class UpdateUI {
 
   private async install(r: Release, bar: HTMLElement, row: HTMLElement): Promise<void> {
     if (this.busy) return;
-    const open = this.host.unsaved();
+    const open = this.host.unkept();
     if (open.length) {
       const ok = await ask('Install the Update?', [], {
         ok: 'Install Anyway',
-        note: `The app restarts to install version ${r.version}. These tabs have changes that aren’t saved and will lose them: ${open.join(', ')}. Choose Cancel to save them first.`,
+        note: `The app restarts to install version ${r.version}. Other tabs reopen as they are, but these can’t be kept and will lose their unsaved changes: ${open.join(', ')}. Choose Cancel to save them first.`,
       });
       if (!ok) return;
     }
+    this.unkeptAgreed = open;
     this.busy = true;
     row.hidden = true;
     bar.hidden = false;
     bar.textContent = 'Downloading…';
+    // 'closing': the tabs are being kept; 'closed': kept, and the app's safety nets put away for the installer
+    const at: { stage: 'download' | 'closing' | 'closed'; wait: HTMLDialogElement | null } = { stage: 'download', wait: null };
     try {
       await r.install((done) => {
         bar.textContent = done === null ? 'Downloading…' : done >= 1 ? 'Installing…' : `Downloading… ${Math.round(done * 100)}%`;
-      }, () => this.host.closing());
+      }, async () => {
+        at.stage = 'closing';
+        // nothing typed from here on would be in what is kept
+        at.wait = restartWindow(`Restarting to install version ${r.version}…`);
+        await this.host.closing();
+        at.stage = 'closed';
+      });
     } catch (e) {
-      bar.textContent = `The update didn’t install: ${String(e)}`;
+      const why = e instanceof Error ? e.message : String(e);
+      const wait = at.wait;
+      if (at.stage === 'closed' && wait) {
+        // the app can't go on safely as it is (AutoSave and recovery copies stopped): start again, the tabs as they were
+        const w = wait;
+        restartText(w, `The update didn’t install: ${why}. Chemweave restarts, and your tabs come back as they were.`);
+        if (!(await this.host.notInstalled?.(why).catch(() => false))) {
+          restartText(w, `The update didn’t install: ${why}. Restart Chemweave to carry on: your tabs, unsaved changes included, come back as they were. Until then, AutoSave and recovery copies are off.`);
+          const go = document.createElement('button');
+          go.type = 'button';
+          go.textContent = 'Keep Working';
+          go.addEventListener('click', () => endWindow(w));
+          w.append(go);
+        }
+        return;
+      }
+      if (wait) endWindow(wait);
+      if (at.stage === 'closing') this.host.keepFailed?.();
+      bar.textContent = `The update didn’t install: ${why}`;
       row.hidden = false;
     } finally {
       this.busy = false;
     }
   }
+}
+
+/** The window shown while the app closes for the installer: it takes the keys and clicks, so nothing is typed after the tabs are kept. */
+function restartWindow(text: string): HTMLDialogElement {
+  const d = document.createElement('dialog');
+  d.className = 'update-restart';
+  d.dataset.outsideClick = 'keep';
+  const p = document.createElement('p');
+  p.textContent = text;
+  d.append(p);
+  // (Esc doesn't close it)
+  d.addEventListener('cancel', (e) => e.preventDefault());
+  document.body.append(d);
+  // (where windows can't be shown as modal, as in tests, it is just there)
+  try { d.showModal(); } catch { d.setAttribute('open', ''); }
+  return d;
+}
+
+function restartText(d: HTMLDialogElement, text: string): void {
+  d.querySelector('p')!.textContent = text;
+}
+
+function endWindow(d: HTMLDialogElement): void {
+  try { d.close(); } catch { /* not shown as modal */ }
+  d.remove();
 }

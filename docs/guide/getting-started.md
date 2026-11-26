@@ -66,7 +66,7 @@ Three file types are offered:
 
 A few seconds after it starts, the desktop app checks whether a newer version has been released. If there is one, a small message says which version is ready and what changed, and offers:
 
-- **Install and Restart**: downloads it, installs it and restarts the app. If any tab has unsaved changes, you are warned first so you can cancel and save.
+- **Install and Restart**: downloads it, installs it and restarts the app. Every tab you had open comes back as it was: the same tabs in the same order, the one showing, Split Screen, zoom and the slide you were on, and SI projects. Tabs with unsaved changes (and new ones never saved) come back unsaved, with their changes, so nothing needs saving first; your files on disk are not changed.
 - **Later**: closes the message for now.
 - **Skip This Version**: stops asking about this one version.
 

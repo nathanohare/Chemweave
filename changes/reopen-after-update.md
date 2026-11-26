@@ -1,0 +1,2 @@
+Added: Desktop app: installing an update reopens every tab afterward as it was: the same tabs in the same order, the tab showing, Split Screen, other windows of a document, each tab's zoom and slide, and SI projects. Tabs with unsaved changes, and ones never saved, come back unsaved, so the update no longer asks you to save or lose them; your files on disk aren't changed.
+Fixed: Desktop app: the Knowledge Base's imported tables are kept between sessions (they couldn't be written to the app's data folder).
