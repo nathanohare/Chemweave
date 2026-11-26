@@ -489,6 +489,7 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
     notes: { v: [{ text: 'a Measured at 25 °C.' }] },
     title: { v: [{ text: 'Table 1', bold: true }] },
     width: { v: { pct: 50 } },
+    lineW: { v: 2 },
   },
   // ---- a spreadsheet's cells (the excel column)
   Cell: {
@@ -531,6 +532,10 @@ const NOT_WALKED: Record<string, Record<string, string>> = {
     crossing: 'needs a bond passing across it, which this drawing has not (tests/crossing.test.ts)',
   },
   Caption: { id: 'renumbered on reading', x: 'checked as position relative to the structure', y: 'checked as position relative to the structure' },
+  TableData: {
+    edges: "a PowerPoint table's cells' own borders, read only where they differ from its lines (a heavier cell): round trips in tests/pptx-table.test.ts",
+    edgesKey: 'goes with edges: what the table was like when they were read (tests/pptx-table.test.ts)',
+  },
   Arrow: { id: 'renumbered on reading', tail: 'checked as position relative to the structure', head: 'checked as position relative to the structure' },
   Shape: {
     id: 'renumbered on reading', x1: 'position', y1: 'position', x2: 'position', y2: 'position',
@@ -657,6 +662,7 @@ const CANT_CARRY: Partial<Record<Column, Record<string, string>>> = {
     'TableData.notes': "a drawing table's footnotes; in a document they are paragraphs of their own",
     'TableData.size': "a drawing table's text size; a Word table's text carries its own sizes",
     'TableData.title': "a drawing table's title; in a document a table's caption is a paragraph of its own",
+    'TableData.lineW': "a drawing table's line width; a Word table's cells carry their own borders",
     'TextRun.cite': "Slides only (src/model.ts \"Slides:\"): a citation of the presentation's references; a document's citations are fields of their own",
     'TextRun.field': "Slides only (src/model.ts \"Slides:\"): a PowerPoint field; a document's fields are objects of their own",
     'TextRun.pfx': "Slides only: PowerPoint's own run formatting as the file had it",
