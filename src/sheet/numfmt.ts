@@ -379,8 +379,9 @@ function formatDate(v: number, sec: Section): string {
     toks.forEach((t, i) => {
       const low = t.toLowerCase();
       // (an elapsed [h] or [s] beside m makes it minutes too: [h]:mm)
-      const prev = toks.slice(0, i).reverse().find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace('[', '') ?? '';
-      const next = toks.slice(i + 1).find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace('[', '') ?? '';
+      // (the letters of the code part before and after, an elapsed part's opening bracket left off)
+      const prev = toks.slice(0, i).reverse().find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace(/^\[/, '') ?? '';
+      const next = toks.slice(i + 1).find((x) => /^\[?[a-z]/i.test(x))?.toLowerCase().replace(/^\[/, '') ?? '';
       if (/^y+$/.test(low)) out += low.length <= 2 ? String(Y % 100).padStart(2, '0') : String(Y);
       else if (/^m+$/.test(low)) {
         const minutes = prev.startsWith('h') || next.startsWith('s');
