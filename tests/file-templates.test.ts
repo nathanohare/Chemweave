@@ -227,6 +227,15 @@ describe('the template window', () => {
       .toEqual(['— Blank', 'B1', '— Light', 'ONE', 'TWO', '— Dark', 'THREE']);
     expect(document.activeElement).toBe(root.querySelector('.tw-card'));
     expect(root.querySelector('.tw-card')!.classList.contains('tw-default')).toBe(true);
+    // the dividers are headings; the cards are one Tab stop; End and Home go to the last and first card
+    expect([...root.querySelectorAll('.tw-section')].every((d) => d.getAttribute('role') === 'heading')).toBe(true);
+    expect([...root.querySelectorAll<HTMLElement>('.tw-card')].map((c) => c.tabIndex)).toEqual([0, -1, -1, -1]);
+    root.querySelector('.tw-card')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    const last = [...root.querySelectorAll<HTMLElement>('.tw-card')].pop()!;
+    expect(document.activeElement).toBe(last);
+    expect([...root.querySelectorAll<HTMLElement>('.tw-card')].map((c) => c.tabIndex)).toEqual([-1, -1, -1, 0]);
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(document.activeElement).toBe(root.querySelector('.tw-card'));
     // one category alone: its cards, no dividers
     (root.querySelectorAll('.tw-cat')[2] as HTMLButtonElement).click();
     await new Promise((r) => setTimeout(r, 0));

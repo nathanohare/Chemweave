@@ -231,10 +231,17 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     }, 450);
   };
   grid.addEventListener('scroll', hideZoom);
-  // the default card's mark goes once another card takes the keyboard (one card looks chosen)
+  // the default card's mark goes once another card takes the keyboard (one card looks chosen); the cards
+  // are one Tab stop, the card last focused (the arrow keys move among them), so Tab reaches the checkbox
   grid.addEventListener('focusin', (e) => {
-    const to = (e.target as HTMLElement).closest?.('.tw-card');
-    if (to && !to.classList.contains('tw-default')) grid.querySelector('.tw-default')?.classList.remove('tw-default');
+    const to = (e.target as HTMLElement).closest?.<HTMLElement>('.tw-card');
+    if (!to) return;
+    if (!to.classList.contains('tw-default')) grid.querySelector('.tw-default')?.classList.remove('tw-default');
+    for (const c of grid.querySelectorAll<HTMLElement>('.tw-card')) c.tabIndex = c === to ? 0 : -1;
+    // a card in a section's first row brings the section's name into view with it
+    let before = to.previousElementSibling as HTMLElement | null;
+    while (before?.classList.contains('tw-card') && before.offsetTop === to.offsetTop) before = before.previousElementSibling as HTMLElement | null;
+    if (before?.classList.contains('tw-section')) before.scrollIntoView?.({ block: 'nearest' });
   });
 
   const makeCard = (c: TemplateCard): HTMLButtonElement => {
@@ -274,10 +281,11 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     });
     // the arrow keys move from card to card; Left from a row's first card goes back to the categories
     b.addEventListener('keydown', (e) => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
       const cards = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
       const i = cards.indexOf(b);
       e.preventDefault();
+      if (e.key === 'Home' || e.key === 'End') { cards[e.key === 'Home' ? 0 : cards.length - 1]?.focus(); return; }
       // (rows can be short where a section ends, so Up and Down go to the nearest card in the row above or below)
       if (e.key === 'ArrowLeft' && (i === 0 || cards[i - 1].offsetTop !== b.offsetTop)) { tabs.get(showing)?.focus(); return; }
       if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { cards[Math.min(cards.length - 1, Math.max(0, i + (e.key === 'ArrowLeft' ? -1 : 1)))]?.focus(); return; }
@@ -298,19 +306,21 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
   const load = (c: TemplateCategory) => async () => c.cards();
   const cats: Cat[] = o.categories.map((c) => ({ id: c.id, name: c.name, cards: load(c) }));
   if (o.all) {
-    const sections = async (): Promise<Section[]> => {
+    // (made once for the window: the All count and the list share it)
+    let made: Promise<Section[]> | null = null;
+    const sections = (): Promise<Section[]> => made ??= (async () => {
       const seen = new Set<string>();
       const lists = await Promise.all(o.categories.map((c) => c.cards()));
       return o.categories.map((c, i) => ({ name: c.name, cards: lists[i].filter((t) => !seen.has(t.id) && !!seen.add(t.id)) })).filter((x) => x.cards.length);
-    };
+    })();
     cats.unshift({ id: 'all', name: 'All', sections, cards: async () => (await sections()).flatMap((x) => x.cards) });
   }
-  /** The divider before a category's cards in All: its name and a line, across the whole row. */
+  /** The divider before a category's cards in All: its name (a heading, for screen readers) and a line, across the whole row. */
   const divider = (name: string): HTMLElement => {
     const d = document.createElement('div');
     d.className = 'tw-section';
-    d.setAttribute('role', 'separator');
-    d.setAttribute('aria-label', name);
+    d.setAttribute('role', 'heading');
+    d.setAttribute('aria-level', '3');
     d.textContent = name;
     return d;
   };
@@ -321,10 +331,15 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     for (const [k, b] of tabs) { b.setAttribute('aria-selected', String(k === id)); b.tabIndex = k === id ? 0 : -1; }
     if (focus) tabs.get(id)?.focus();
     const cat = cats.find((c) => c.id === id)!;
+    grid.setAttribute('aria-label', cat.name);
     const parts = cat.sections ? await cat.sections() : [{ name: '', cards: await cat.cards() }];
     if (showing !== id || !isOpen) return;
     io?.disconnect();
     grid.replaceChildren(...parts.flatMap((x) => [...(x.name ? [divider(x.name)] : []), ...x.cards.map(makeCard)]));
+    // one Tab stop in the cards: the default card where there is one, else the first
+    const all = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
+    const stop = all.find((b) => b.dataset.id === o.initialCard) ?? all[0];
+    for (const b of all) b.tabIndex = b === stop ? 0 : -1;
     // another category's templates fade in (Nate's note on Motion Choices)
     enter(grid, 'fade');
     grid.scrollTop = 0;
