@@ -62,9 +62,9 @@ export interface SiPreviewHost {
   /** Write a field's new stored value: one step of Undo. */
   write(src: string, text: string, owner: unknown): Promise<void>;
   /** Save the person's own text (all of it). */
-  writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown): Promise<void>;
+  writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown, label?: string): Promise<void>;
   /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
-  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace'): Promise<void>;
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace' | 'Link' | 'Remove Link'): Promise<void>;
   undo(redo: boolean): void;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
@@ -637,6 +637,8 @@ export class SiPreview {
   }
 
   private pendingEdit: { start: number; end: number; typed: string } | null = null;
+  /** The name of the next write of custom text's step of Undo (Insert Equation), when it isn't typing. */
+  private writeLabel: string | null = null;
   /** Where an equation is being put in (Insert ▸ Equation): there it is text of the SI's own. */
   private equationHere: number | null = null;
 
@@ -762,6 +764,8 @@ export class SiPreview {
       // (the places of the new pieces written now; one typed since waits for its own write)
       const fresh = new Map([...this.fresh].filter(([id]) => customs.some((c) => c.id === id)));
       for (const id of fresh.keys()) this.fresh.delete(id);
+      const label = this.writeLabel ?? undefined;
+      this.writeLabel = null;
       await this.api.writeCustom((items) => {
         let out = [...items];
         for (const c of customs) {
@@ -776,7 +780,7 @@ export class SiPreview {
           }
         }
         return out;
-      }, owner).catch((e) => { failed = true; this.api.flash(`Could not save your text: ${e instanceof Error ? e.message : String(e)}`, 8000); });
+      }, owner, label).catch((e) => { failed = true; this.api.flash(`Could not save your text: ${e instanceof Error ? e.message : String(e)}`, 8000); });
     }
     // (after a failure: the stored text again, from the compile waiting or a new one)
     if (failed) {
@@ -1443,7 +1447,7 @@ export class SiPreview {
    * 'unlink' (Remove Link) takes the formatting file's links off, with their blue and underline;
    * a link Chemweave makes (a mention) is the field's, and stays (said).
    */
-  async format(look: FormatLook | 'clear' | 'unlink'): Promise<boolean> {
+  async format(look: FormatLook | 'clear' | 'unlink', what: 'Format' | 'Link' | 'Remove Link' = 'Format'): Promise<boolean> {
     if (!this.file) return false;
     if (!this.editable) { this.api.flash(this.why); return false; }
     if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
@@ -1527,7 +1531,7 @@ export class SiPreview {
     if (!fields.length && !later.length) return false;
     const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
     try {
-      await this.api.writeFormat(fields, change, owner);
+      await this.api.writeFormat(fields, change, owner, what);
     } catch (err) {
       if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not save the formatting: ${err instanceof Error ? err.message : String(err)}`, 8000);
       return false;
@@ -1599,7 +1603,17 @@ export class SiPreview {
    * the line at the caret. It is text of the SI's own (custom-text.ts keeps its LaTeX), so it is
    * in the preview, the compiled document and the Word file (as a Word equation).
    */
-  async insertEquation(): Promise<boolean> {
+  insertEquation(): Promise<boolean> { return this.once(false, () => this.insertEquationNow()); }
+
+  /** A window of Link or Equation is open, or about to be (a second Ctrl+K meanwhile opens no second one). */
+  private asking = false;
+  private async once<T>(none: T, f: () => Promise<T>): Promise<T> {
+    if (this.asking) return none;
+    this.asking = true;
+    try { return await f(); } finally { this.asking = false; }
+  }
+
+  private async insertEquationNow(): Promise<boolean> {
     if (!this.file) return false;
     if (!this.editable) { this.api.flash(this.why); return false; }
     if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return false; }
@@ -1623,11 +1637,17 @@ export class SiPreview {
     try {
       g.ed.update({ ...g.t, objects: { ...g.t.objects, [id]: { kind: 'math', tex: got.tex } }, runs: rt.replaceRange(g.t.runs, place, place, [run]) } as DocText, 'Insert equation', place + 1, place + 1);
     } finally { this.equationHere = null; }
+    // (written now, as a step of Undo of its own and with its name)
+    this.writeLabel = 'Insert Equation';
+    clearTimeout(this.writeTimer);
+    await this.writeNow();
     return true;
   }
 
   /** Change an equation (double-click it, or Edit Equation): its LaTeX in the equation window; one step of Undo. */
-  async editEquation(id: number): Promise<void> {
+  editEquation(id: number): Promise<void> { return this.once(undefined, () => this.editEquationNow(id)); }
+
+  private async editEquationNow(id: number): Promise<void> {
     if (!this.file || this.file.t.objects[id]?.kind !== 'math') return;
     if (!this.editable) { this.api.flash(this.why); return; }
     // (what it is is read from the stored text: the last change shown first)
@@ -1646,6 +1666,7 @@ export class SiPreview {
     f.ed.update({ ...f.t, objects: { ...f.t.objects, [now]: { kind: 'math', tex: got.tex } } } as DocText, 'Change equation');
     const span = { src: where.src };
     // (written as typing is: the piece with its equations)
+    this.writeLabel = 'Change Equation';
     this.dirty.add(span.src);
     this.editGen++;
     clearTimeout(this.writeTimer);
@@ -1668,7 +1689,9 @@ export class SiPreview {
    * DOI, email address, file or a place in this SI, in the link window Document mode uses. Kept
    * in the formatting file (preview-format.ts) as a look, so it is a real link in the Word file.
    */
-  async editLink(): Promise<boolean> {
+  editLink(): Promise<boolean> { return this.once(false, () => this.editLinkNow()); }
+
+  private async editLinkNow(): Promise<boolean> {
     if (!this.file) return false;
     if (!this.editable) { this.api.flash(this.why); return false; }
     // (what is linked is the stored text: the last change shown first)
@@ -1679,17 +1702,19 @@ export class SiPreview {
     this.ta.focus({ preventScroll: true });
     // (a compile shown meanwhile keeps the selection on the same words: it is linked in what shows now)
     if (!got || !this.file) return false;
-    if ('remove' in got) return this.removeLink();
+    if ('remove' in got) return this.removeLinkNow();
     if (this.file.ed.collapsed) { this.api.flash('The words to link are gone. Select them and try again.'); return false; }
-    return this.format({ link: got.link, color: LINK_COLOUR, underline: true });
+    return this.format({ link: got.link, color: LINK_COLOUR, underline: true }, 'Link');
   }
 
   /** Remove Link: the links on the words selected (or the link the caret is in) taken off, with their blue and underline. */
-  async removeLink(): Promise<boolean> {
+  removeLink(): Promise<boolean> { return this.once(false, () => this.removeLinkNow()); }
+
+  private async removeLinkNow(): Promise<boolean> {
     if (!this.file) return false;
     if (!(await this.ready()) || !this.file) return false;
     if (!this.selectLink() || !this.selectionAny('link')) { this.api.flash('Put the cursor in a link first.'); return false; }
-    return this.format('unlink');
+    return this.format('unlink', 'Remove Link');
   }
 
   /** Where an equation at `at` is: its piece of custom text and its place among that piece's object characters; null when it isn't in custom text. */

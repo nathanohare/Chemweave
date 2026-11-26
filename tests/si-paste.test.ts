@@ -4,6 +4,7 @@
 import { describe, expect, it } from 'vitest';
 import { guessPastedType, keptLine, pastedStem } from '../src/si/spectrum-paste';
 import { cleanPastedHtml } from '../src/ui/si-paste-html';
+import { SiRichBox } from '../src/ui/si-rich';
 import type { SiCompound } from '../src/si/project';
 
 const compound = (values: Record<string, unknown>): SiCompound => ({ id: 'c', folder: 'c', sectionId: 's', data: { values } } as unknown as SiCompound);
@@ -29,6 +30,16 @@ describe('pasting formatted text', () => {
   it('keeps bold, italics, sub- and superscripts and drops the rest', () => {
     const html = '<html><head><style>p{color:red}</style></head><body><p class=MsoNormal><span style="font-family:Arial;color:blue">Yield: <b>95%</b>, CH<sub>2</sub>Cl<sub>2</sub>, <i>J</i> = 7.2 Hz, 10<sup>−3</sup> <a href="x">link</a></span></p></body></html>';
     expect(cleanPastedHtml(html, false)).toBe('Yield: <b>95%</b>, CH<sub>2</sub>Cl<sub>2</sub>, <i>J</i> = 7.2 Hz, 10<sup>−3</sup> link');
+  });
+
+  it('leaves out a bare U+FFFC (a picture or equation’s place in copied text)', () => {
+    expect(cleanPastedHtml('<p>CH<sub>2</sub>\uFFFCCl<sub>2</sub> \uFFFC</p>', false)).toBe('CH<sub>2</sub>Cl<sub>2</sub>');
+  });
+
+  it('never keeps a U+FFFC in a field, whichever way it came in (Paste on the ribbon, a drop, a browser’s own paste)', () => {
+    const b = new SiRichBox('', { label: (r) => r, changed: () => {} });
+    b.el.innerHTML = '<p>Yield \uFFFC95%\uFFFC</p>';
+    expect(b.text).toBe('Yield 95%');
   });
 
   it('reads styles written as CSS (Word, Mnova) and keeps lines only where asked', () => {

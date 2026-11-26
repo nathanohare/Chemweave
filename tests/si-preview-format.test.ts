@@ -171,6 +171,11 @@ describe('links (Insert ▸ Link in the Live Preview)', () => {
     expect(linkPieceOn(items, 'p', 'data here', 5, 9)).toBe(false);
   });
 
+  it('Remove Link keeps a color other than the link blue (Document mode’s rule)', () => {
+    const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#00a000', underline: true } }];
+    expect(removeLinks(items, 'p', 'data here', 0, 4).map((f) => f.look)).toEqual([{ color: '#00a000', underline: true }]);
+  });
+
   it('Clear All Formatting keeps a link, with the blue and underline it came with', () => {
     const items: PreviewFormat[] = [{ id: 'x', src: 'p', start: 0, end: 4, text: 'data', look: { link: 'https://example.org/', color: '#0563c1', underline: true, bold: true } }];
     expect(clearFormats(items, 'p', 'data here', 0, 9).map((f) => f.look)).toEqual([{ link: 'https://example.org/', color: '#0563c1', underline: true }]);

@@ -17,19 +17,24 @@ describe('askStructureFromName', () => {
     answers.push({ text: '  caffeine ' });
     const toStructure = vi.fn(async () => ({ contents, notes: [] }));
     const flash = vi.fn();
-    expect(await askStructureFromName({ toStructure, style, flash, ok: 'Insert', where: 'It goes here.' })).toBe(contents);
+    expect(await askStructureFromName({ toStructure, style, flash, ok: 'Insert', where: 'It goes here.' })).toEqual({ contents, notes: [] });
     expect(toStructure).toHaveBeenCalledWith('caffeine', style);
     expect(vi.mocked(ask).mock.calls[0][0]).toBe(STRUCTURE_FROM_NAME);
     expect(flash).not.toHaveBeenCalled();
   });
 
-  it('says why a name could not be read, and the reader’s notes', async () => {
-    answers.push({ text: 'not a name' }, { text: 'benzene' });
+  it('says why a name could not be read, for as long as asked, and hands the reader’s notes back unsaid', async () => {
+    answers.push({ text: 'not a name' }, { text: 'not a name' }, { text: 'benzene' });
     const flash = vi.fn();
     expect(await askStructureFromName({ toStructure: async () => ({ error: 'Not read.' }), style, flash, ok: 'Insert', where: '' })).toBeNull();
     expect(flash).toHaveBeenCalledWith('Not read.', 8000);
-    await askStructureFromName({ toStructure: async () => ({ contents, notes: ['Read as a SMILES.'] }), style, flash, ok: 'Insert', where: '' });
-    expect(flash).toHaveBeenLastCalledWith('Note from the name reader: Read as a SMILES.', 8000);
+    expect(await askStructureFromName({ toStructure: async () => ({ error: 'Not read.' }), style, flash, ok: 'Draw', where: '', ms: 9000 })).toBeNull();
+    expect(flash).toHaveBeenLastCalledWith('Not read.', 9000);
+    flash.mockClear();
+    // (the caller says the notes once the structure is in, never when putting it in failed)
+    expect(await askStructureFromName({ toStructure: async () => ({ contents, notes: ['Read as a SMILES.'] }), style, flash, ok: 'Insert', where: '' }))
+      .toEqual({ contents, notes: ['Read as a SMILES.'] });
+    expect(flash).not.toHaveBeenCalled();
   });
 
   it('does nothing when cancelled, or when the file shown changed', async () => {

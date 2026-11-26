@@ -268,7 +268,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="new-figure-paste" title="A figure from the copied picture or drawing (ChemDraw or Chemweave drawings stay vector pictures you can draw again)">Paste Picture</button>
         <button data-si="new-figure-compound" title="A figure of a compound's structure, its caption mentioning the compound">Compound…</button>
-        <button data-si="new-figure-name" title="Structure from Name: a figure of the structure for a name, SMILES or CAS RN (a drawing you can draw again), at the end of the Custom section's text">Structure from Name…</button>
+        <button data-si="new-figure-name" title="Structure from Name: a figure of the structure for a name, SMILES or CAS RN (a drawing you can draw again), at the end of the Custom section's text">Structure from Name</button>
       </div>
     </div><div class="rb-label">Figures</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -685,7 +685,7 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="paste-structure" data-ic="paste" title="The structure copied in ChemDraw or Chemweave (or a molfile) as the compound's structure. Ctrl+V on the structure picture does the same">Paste Structure</button>
-        <button data-si="structure-from-name" title="Structure from Name: the selected compound's structure from a name, SMILES or CAS RN (asks before replacing a structure it has); one step of Undo">Structure from Name…</button>
+        <button data-si="structure-from-name" title="Structure from Name: the selected compound's structure from a name, SMILES or CAS RN (asks before replacing a structure it has); one step of Undo">Structure from Name</button>
         <button data-si="structure-to-name" title="Structure to Name: the IUPAC name of the selected compound (or of every compound of the selected Data section that has no name), generated offline. Given only when the name converts back to the same structure; the namer (about 14 MB) downloads on first use">Structure to Name</button>
       </div>
     </div><div class="rb-label">Structure</div></div>
@@ -2956,16 +2956,18 @@ export class SiMode {
   private async newFigure(s: SiSection, how: 'picture' | 'draw' | 'paste' | 'compound' | 'name'): Promise<void> {
     const p = this.project!;
     await this.commitAll();
-    const pics = new SiPictures(this.tableHost(s));
+    // (the picture is written with the figure, in one step of Undo)
+    const pics = new SiPictures(this.tableHost(s), true);
     let rel: string | null = null, caption = 'Caption of the figure';
+    let notes: string[] = [];
     try {
       if (how === 'picture') rel = await pics.fromFile('Picture for the figure');
       else if (how === 'paste') rel = await pics.fromClipboard();
       else if (how === 'draw') rel = await pics.draw('', 'Figure');
       else if (how === 'name') {
         // (as Document mode's Structure from Name: a drawing, kept as a picture you can draw again)
-        const contents = await this.fromName('The structure becomes a figure at the end of the section’s text.');
-        if (contents) rel = await pics.fromDrawing(contents);
+        const got = await this.fromName('The structure becomes a figure at the end of the section’s text.');
+        if (got) { rel = await pics.fromDrawing(got.contents); notes = got.notes; }
       } else {
         const got = await pics.fromCompound();
         if (got) { rel = got.rel; caption = `Structure of **@{${got.id}}**`; }
@@ -2974,13 +2976,16 @@ export class SiMode {
     if (!rel) return;
     const id = newId('f');
     await this.act(async () => {
+      const file = await pics.writePending();
       const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
-      figs[id] = { file: rel };
+      figs[id] = { file };
       await p.saveSection(s);
       const text = (await p.readSectionText(s)).replace(/\s+$/, '');
       await p.writeSectionText(s, `${text ? text + '\n' : ''}!figure{${id}} ${caption}`);
-    });
+    }, true, undefined, undefined, 'Insert Figure');
     this.focusTable = id;
+    // (the name reader's notes once the figure is in)
+    if (notes.length && (s.data.figures as Json | undefined)?.[id]) this.nameNotes(notes);
   }
 
   /**
@@ -2992,23 +2997,24 @@ export class SiMode {
     if (!p) return;
     // (read while the paste event lasts: its clipboard data is gone after it)
     const reading = this.clipboard(e);
-    const pics = new SiPictures(this.tableHost(s));
+    // (the picture is written with the figure, in one step of Undo)
+    const pics = new SiPictures(this.tableHost(s), true);
     let rel: string | null = null;
     try {
       const got = await reading;
       if (!got) return;
       // (text after all, such as a SMILES with no drawing to be found: typed in as text, as a paste of text is)
-      if (got.kind === 'text') { document.execCommand('insertText', false, got.text); return; }
+      if (got.kind === 'text') { document.execCommand('insertText', false, got.text.replace(/\uFFFC/g, '')); return; }
       rel = await pics.fromPasted(got);
       if (!rel && got.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
     } catch (err) { this.host.flash(`The picture could not be added: ${err instanceof Error ? err.message : String(err)}`); return; }
     if (!rel || this.project !== p) return;
     const id = newId('f');
     const text = place(parseMarkup(`!figure{${id}} Caption of the figure`)[0]);
-    const file = rel;
     // (the figure gets the focus when the page is drawn again with it)
     this.focusTable = id;
     await this.act(async () => {
+      const file = await pics.writePending();
       const figs = (s.data.figures && typeof s.data.figures === 'object' && !Array.isArray(s.data.figures) ? s.data.figures : (s.data.figures = {})) as Json;
       figs[id] = { file };
       await p.saveSection(s);
@@ -4277,11 +4283,11 @@ export class SiMode {
         if (p !== this.project) { await this.change(p, 'Edit in Live Preview', () => a.write(text)); return; }
         await this.act(() => a.write(text), true, c);
       },
-      writeCustom: async (f, owner) => {
+      writeCustom: async (f, owner, label) => {
         const p = asProject(owner);
         const save = async (): Promise<void> => { await p.folder.writeText(CUSTOM_TEXT_FILE, customTextJson(f(await readCustomTextToChange(p.folder)))); };
-        if (p !== this.project) { await this.change(p, 'Type in Live Preview', save); return; }
-        await this.act(save, false);
+        if (p !== this.project) { await this.change(p, label ?? 'Type in Live Preview', save); return; }
+        await this.act(save, false, undefined, undefined, label ?? 'Type in Live Preview');
       },
       writeFormat: async (fields, change, owner, what = 'Format') => {
         const p = asProject(owner);
@@ -4298,8 +4304,9 @@ export class SiMode {
           if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
           done = true;
         };
-        if (p !== this.project) await this.change(p, what === 'Replace' ? 'Replace in Live Preview' : 'Format in Live Preview', save);
-        else await this.act(save, fields.length > 0);
+        const label = what === 'Replace' ? 'Replace in Live Preview' : what === 'Format' ? 'Format in Live Preview' : what;
+        if (p !== this.project) await this.change(p, label, save);
+        else await this.act(save, fields.length > 0, undefined, undefined, label);
         // (the reason was said)
         if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
       },
@@ -6281,7 +6288,7 @@ export class SiMode {
       at.dispatchEvent(ev);
       if (ev.defaultPrevented) return;
     }
-    document.execCommand('insertText', false, got.plain);
+    document.execCommand('insertText', false, got.plain.replace(/\uFFFC/g, ''));
   }
 
   /** The copied text, with its HTML when there is some; null (said why) when the clipboard can't be read from a button. */
@@ -6471,10 +6478,15 @@ export class SiMode {
   }
 
   /** Structure from Name or SMILES (structure-from-name.ts, as Document mode asks it), in the SI's drawing style; null when cancelled or not read (said). */
-  private fromName(where: string): Promise<Contents | null> {
+  private fromName(where: string): Promise<{ contents: Contents; notes: string[] } | null> {
     const to = this.host.toStructure;
     if (!to) { this.host.flash('Structure from Name works in the app (its name reader isn’t here).'); return Promise.resolve(null); }
     return askStructureFromName({ toStructure: to, style: this.host.siStyle(), flash: (m, ms) => this.host.flash(m, ms), ok: 'Insert', where });
+  }
+
+  /** The name reader's notes on a structure put in (after it is in, as Document mode says them). */
+  private nameNotes(notes: string[]): void {
+    if (notes.length) this.host.flash(notes.join(' '), 8000);
   }
 
   /** Home ▸ Structure ▸ Structure from Name: the compound's structure from a name, SMILES or CAS RN (asked before one it has is replaced); one step of Undo. */
@@ -6482,16 +6494,19 @@ export class SiMode {
     const p = this.project!;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
     await this.commitAll();
-    const contents = await this.fromName(`It becomes ${this.idOf(c)}’s structure.`);
-    if (!contents || this.project !== p) return;
-    const m = this.host.molfileOf(contents);
+    const got = await this.fromName(`It becomes ${this.idOf(c)}’s structure.`);
+    if (!got || this.project !== p) return;
+    const m = this.host.molfileOf(got.contents);
     if (!m.molblock) { this.host.flash(m.problem ?? 'The structure could not be read as one structure.', 6000); return; }
     if (p.hasStructure(c)) {
       const go = await askChoice('Structure from Name', `Replace ${this.idOf(c)}’s structure with this one? (Edit ▸ Undo puts it back.)`, [{ value: 'go', label: 'Replace', primary: true }, { value: 'no', label: 'Cancel' }], 'no');
       if (go !== 'go' || this.project !== p) return;
     }
     const mol = m.molblock;
-    await this.act(async () => { await p.setStructure(c, mol); this.forgetStructure(c); });
+    let done = false;
+    await this.act(async () => { await p.setStructure(c, mol); this.forgetStructure(c); done = true; }, true, undefined, undefined, 'Structure from Name');
+    // (the name reader's notes once the structure is in, never when it couldn't be saved)
+    if (done) this.nameNotes(got.notes);
   }
 
   private async addFiles(c: SiCompound, def: FieldDef): Promise<void> {

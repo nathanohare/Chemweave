@@ -4687,14 +4687,15 @@ export class DocumentMode {
   private async fromName(): Promise<void> {
     const f = this.file!;
     const spot = this.cellSpot();
-    const contents = await askStructureFromName({
+    const got = await askStructureFromName({
       toStructure: (t, st) => this.host.toStructure(t, st), style: f.t.drawingStyle, flash: (m, ms) => this.host.flash(m, ms),
       ok: 'Insert', where: 'The structure goes in the text at the cursor.',
       closed: () => { this.focus(); return this.file === f; },
     });
-    if (!contents || this.file !== f) return;
+    if (!got || this.file !== f) return;
     this.backToCell(spot);
-    this.insertObject({ kind: 'drawing', contents }, 'Insert structure');
+    this.insertObject({ kind: 'drawing', contents: got.contents }, 'Insert structure');
+    if (got.notes.length) this.host.flash(got.notes.join(' '), 8000);
   }
 
   private async insertPicture(): Promise<void> {

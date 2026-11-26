@@ -1708,12 +1708,13 @@ export class SheetMode {
       return;
     }
     const { r, c } = v.sel.active;
-    const contents = await askStructureFromName({
-      toStructure: (t, st) => this.host.toStructure(t, st), style, flash: (m, ms) => this.host.flash(m, ms),
+    const got = await askStructureFromName({
+      toStructure: (t, st) => this.host.toStructure(t, st), style, flash: (m, ms) => this.host.flash(m, ms), ms: 9000,
       ok: 'Draw', where: `Draws the structure in ${cellName(r, c)}. Names are read on this computer (OPSIN): systematic names and many common ones such as caffeine. CAS RNs are looked up on PubChem.`,
     });
-    if (!contents) return;
-    this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, contents), { r1: r, c1: c, r2: r, c2: c });
+    if (!got) return;
+    if (!this.editSheet(s, 'Structure from name', (sh) => sh.setStructure(r, c, got.contents), { r1: r, c1: c, r2: r, c2: c })) return;
+    if (got.notes.length) this.host.flash('Note from the name reader: ' + got.notes.join(' '), 9000);
   }
 
   /**

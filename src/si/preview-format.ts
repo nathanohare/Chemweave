@@ -23,6 +23,7 @@ import type { DocText } from '../document/document';
 import type { Justify, ParaStyle, TextRun } from '../model';
 import { fitParas, paraCount } from '../text/paragraphs';
 import * as rt from '../richtext';
+import { plainLook } from '../links';
 import type { SiFolder } from './folder';
 import { parseMarkup, writeMarkup, type Run as MarkupRun } from './markup';
 import { lineUp, printedOf } from './preview-edit';
@@ -336,8 +337,8 @@ export function linkPieceOn(items: readonly PreviewFormat[], src: string, printe
 
 /**
  * The pieces after Remove Link on the printed text [a, b) of `src`: the pieces that carry a link
- * lose it there, with their color and underline (the link's blue); other pieces (the person's
- * own color or underline) are left as they are.
+ * lose it there, and the link's blue and underline with it (Document mode's rule, links.ts
+ * plainLook: a color other than the link blue stays); other pieces are left as they are.
  */
 export function removeLinks(items: readonly PreviewFormat[], src: string, printed: string, a: number, b: number): PreviewFormat[] {
   const out: PreviewFormat[] = [];
@@ -347,7 +348,7 @@ export function removeLinks(items: readonly PreviewFormat[], src: string, printe
     if (!at) continue;
     const [fa, fb] = at;
     if (fb <= a || fa >= b) { out.push({ ...f, ...pieceAt(src, printed, fa, fb, f.look, f.id) }); continue; }
-    const { link: _l, color: _c, underline: _u, ...rest } = f.look;
+    const rest = plainLook(f.look as Partial<TextRun>) as FormatLook;
     const lo = Math.max(fa, a), hi = Math.min(fb, b);
     if (Object.keys(rest).length) out.push(pieceAt(src, printed, lo, hi, rest));
     if (fa < a) out.push(pieceAt(src, printed, fa, a, f.look));
