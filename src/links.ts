@@ -175,7 +175,9 @@ export function removeLink(runs: TextRun[], start: number, end: number): TextRun
 export function plainLook<T extends Partial<TextRun>>(r: T): T {
   const o = { ...r };
   delete o.link;
-  if (o.color?.toLowerCase() === LINK_COLOUR) { delete o.color; delete o.underline; }
+  // (Word's link style, with the look it gave; or Word's own link blue)
+  if (o.cstyle && rt.LINK_STYLES.has(o.cstyle)) { delete o.cstyle; delete o.color; delete o.underline; }
+  else if (o.color?.toLowerCase() === LINK_COLOUR) { delete o.color; delete o.underline; }
   return o;
 }
 

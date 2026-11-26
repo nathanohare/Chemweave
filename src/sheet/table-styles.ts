@@ -29,6 +29,11 @@ export interface TableDef {
    * there), with each calculated column's formula as its element, kept to save back.
    */
   columns?: { name: string; calc?: string }[];
+  /**
+   * No filter buttons on its header row (Excel's Table Design ▸ Filter Button off: the table part
+   * has no autoFilter). Left out, a table with a header row has them, as Excel makes one.
+   */
+  noFilter?: true;
   /** The sort Excel remembers for the table (its sortState element), kept to save back. */
   sortState?: string;
   /** The differential formats a sort by color in sortState names, as elements, by the dxfId it gives them. */

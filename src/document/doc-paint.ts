@@ -418,7 +418,7 @@ export function placeItems(pic: Picture, at: { x: number; y: number; w: number; 
   return pic.items.map((one): Item => {
     const c = one.clip;
     const it = c ? { ...one, clip: { x1: X(c.x1), y1: Y(c.y1), x2: X(c.x2), y2: Y(c.y2) } } : one;
-    if (it.kind === 'text') return { ...it, x: X(it.x), y: Y(it.y), size: it.size * k, widths: it.widths.map((w) => w * k) };
+    if (it.kind === 'text') return { ...it, x: X(it.x), y: Y(it.y), size: it.size * k, widths: it.widths.map((w) => w * k), ...(it.stroke ? { stroke: it.stroke * k } : {}) };
     if (it.kind === 'image') return { ...it, x: X(it.x), y: Y(it.y), w: it.w * kx, h: it.h * ky };
     return {
       ...it,

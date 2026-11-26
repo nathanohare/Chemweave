@@ -32,7 +32,7 @@ import { facesToEmbed, newGuid, obfuscate, type FontSource } from './font-embed'
 import { fromDataUrl } from '../render/images';
 import { chemdrawProg, chemdrawObject, embeddedPart, OLE_REL, OLE_TYPE } from './ole-object';
 import { BULLETS, fitParas, listInfo, paraCount, samePara, schemeOf, splitParagraphs, type ListInfo } from '../text/paragraphs';
-import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark } from '../document/document';
+import { BOX_PAD, COL_GAP, COMPOUND, compoundSeqs, END_FORMAT, FOOT_FORMAT, columnsOf, contentsPrint, OBJECT_CHAR, SHADOWS, charStylesOf, watermarkPlace, fieldTexts, floatOf, floatGaps, lookExtent, lookOf, noteStyle, objectsInText, pruneObjects, EMPTY_FORM, styleOf, runStyleOf, type CharStyle, type DocObject, type DocText, type Embedded, type FigureFrame, type FigureLook, type HeaderFooter, type HfBody, type HfKey, type NamedStyle, type PageBorder, type PageSetup, type TocLook, type Watermark, type WordPane } from '../document/document';
 import { ACS_LINE, GRID_LINE, bibHang, docCellAlign, shownSize } from '../document/doc-layout';
 import { hasTitlePg, sectionsOf, type Section } from '../document/sections';
 import { bibliography, piecesText, type Reference } from '../document/references';
@@ -62,6 +62,7 @@ import {
   BIB_MARK, CHART_NAME, CITE_FIELD, SI_FIELD, CONT_MARK, HEAD_MARK, DOCX_CT, W14_FX, W14_NS, W15_NS, W16CID_NS, W16CEX_NS, w14Look, w14Parts, DOCX_REL, DRAWING_NAME, FORMULA_STYLE, MODEL_NS, MC_NS, M_NS, PIC_NS, TABLE_MARK, W_NS, WORD_HIGHLIGHTS, WP_NS, WPS_NS, WPG_NS, twips, toWordDate, type DocxModel,
 } from './docx-base';
 import { minOf, maxOf } from './min-max';
+import { stackOrder } from '../document/arrange';
 
 export interface DocxDeps {
   /** A drawing's picture for Word: PNG bytes, an SVG Word shows instead when it can, and its own size in points. */
@@ -140,15 +141,22 @@ export function wordBuiltInName(name: string, more?: ReadonlyMap<string, string>
 
 const PRIORITY: Record<string, number> = { Normal: 0, Title: 10, Caption: 35, ...Object.fromEntries([1, 2, 3, 4, 5, 6, 7, 8, 9].map((n) => [`Heading${n}`, 9])) };
 /** Word's own character styles, by id: their names, and where Word lists them. */
-const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20], Strong: ['Strong', 22], SubtleEmphasis: ['Subtle Emphasis', 19], IntenseEmphasis: ['Intense Emphasis', 21] };
+const WORD_CHAR: Record<string, [string, number]> = { Emphasis: ['Emphasis', 20], Strong: ['Strong', 22], SubtleEmphasis: ['Subtle Emphasis', 19], IntenseEmphasis: ['Intense Emphasis', 21], Hyperlink: ['Hyperlink', 99], FollowedHyperlink: ['FollowedHyperlink', 99] };
+/** Word's link styles: not in its Quick Styles gallery, shown in its lists once used (as Word writes them). */
+const WORD_LINK_CHAR: Record<string, string> = { Hyperlink: '<w:unhideWhenUsed/>', FollowedHyperlink: '<w:semiHidden/><w:unhideWhenUsed/>' };
 const JC: Record<Justify, string> = { left: 'left', center: 'center', right: 'right', justify: 'both' };
 
-/** What a paragraph looks like apart from what is only its own (its line break above, bookmarks, index entries). */
-const lineless = (p: ParaStyle): ParaStyle => ({ ...p, soft: undefined, cont: undefined, marks: undefined, xe: undefined, ta: undefined });
-/** Whether a paragraph carrying on the one before it after a line break (Shift+Enter) goes in that Word paragraph: they look the same. */
+/**
+ * What a paragraph looks like apart from what is only its own (its line, page or column break
+ * above, bookmarks, index entries).
+ */
+const lineless = (p: ParaStyle): ParaStyle => ({ ...p, soft: undefined, cont: undefined, marks: undefined, xe: undefined, ta: undefined, pageBreak: undefined, colBreak: undefined });
+/**
+ * Whether a paragraph carrying on the one before it after a line break (Shift+Enter), or a page or
+ * column break inside the paragraph (Ctrl+Enter mid-line), goes in that Word paragraph: they look the same.
+ */
 const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
-  !!ps.soft && !!prev && !ps.pageBreak && !ps.colBreak && !ps.section && samePara(lineless(prev), lineless(ps));
-/** A Word paragraph with another's runs added after a line break. */
+  !!ps.soft && !!prev && !ps.section && samePara(lineless(prev), lineless(ps));
 /**
  * What starts the paragraph after it below the figures floating beside it (ParaStyle.clear): a
  * paragraph exactly 1 point high holding a text wrapping break that clears them (ECMA-376 part 1
@@ -156,7 +164,15 @@ const joins = (prev: ParaStyle | undefined, ps: ParaStyle): boolean =>
  * the next paragraph's `clear` (docx-read.ts isClearPara).
  */
 export const CLEAR_PARA = '<w:p><w:pPr><w:keepNext/><w:spacing w:before="0" w:after="0" w:line="20" w:lineRule="exact"/><w:ind w:left="0" w:right="0" w:firstLine="0"/><w:jc w:val="left"/><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr></w:pPr><w:r><w:rPr><w:sz w:val="2"/><w:szCs w:val="2"/></w:rPr><w:br w:type="textWrapping" w:clear="all"/></w:r></w:p>';
-const joinTo = (para: string, body: string): string => `${para.slice(0, -'</w:p>'.length)}<w:r><w:br/></w:r>${body}</w:p>`;
+/**
+ * A page or column break with nothing after it in its paragraph: written as an empty paragraph
+ * with the break before it, as before, since a Word paragraph ending in a page break keeps its mark
+ * on the break's page (Word 2013 on) and the empty line, or a second break, would be lost (review).
+ */
+const emptyBreak = (ps: ParaStyle, runs: TextRun[]): boolean => !!(ps.pageBreak || ps.colBreak) && !runs.some((r) => r.text || r.obj !== undefined);
+/** A Word paragraph with another's runs added after a line break (or the page or column break `ps` starts with). */
+const joinTo = (para: string, body: string, ps?: ParaStyle): string =>
+  `${para.slice(0, -'</w:p>'.length)}<w:r><w:br${ps?.pageBreak ? ' w:type="page"' : ps?.colBreak ? ' w:type="column"' : ''}/></w:r>${body}</w:p>`;
 
 /** Save a document as a Word file. */
 const THEME_CT = 'application/vnd.openxmlformats-officedocument.theme+xml';
@@ -185,6 +201,16 @@ export async function writeDocx(t: DocText, deps: DocxDeps, title = ''): Promise
 class DocxWriter {
   private pkg = new Package();
   private docPr = 1;
+  /**
+   * Each floating drawing's place in Word's stack (wp:anchor's relativeHeight), from the back: the
+   * text's floats as they are drawn here (arrange's stackOrder: by z, else in the order of the text)
+   * above those of headers, footers and the like (`others`, numbered in the order written, as the
+   * reader reads them first and Word draws them under the text). So each has its own place, and a
+   * stack in the text's order reads back with none of its own (no z) and is numbered the same again.
+   */
+  private stackAt: Map<object, number> | null = null;
+  /** The floats not in the text's stack written so far. */
+  private others = 0;
   private bookmarkId = 0;
   /** Content controls' ids (Mendeley Cite's citations). */
   private sdtId = 1;
@@ -500,8 +526,11 @@ class DocxWriter {
     const paras = oneWordList(fitted, lists);
     // tracked changes on the paragraph marks (a line break typed or deleted while tracking)
     const markRev: (string | undefined)[] = [];
-    for (const r of t.runs) for (const ch of r.text) if (ch === '\n') markRev.push(r.rev);
+    // (and each paragraph mark's look: the run its line break is in)
+    const markRuns: TextRun[] = [];
+    for (const r of t.runs) for (const ch of r.text) if (ch === '\n') { markRev.push(r.rev); markRuns.push(r); }
     this.markRev = markRev;
+    this.markRuns = markRuns;
     const out: string[] = [];
     let lastWasTable = false, lastFloats = false;
     let listNum = 0;
@@ -579,8 +608,8 @@ class DocxWriter {
         if (part.some((x) => x.text) || own.xe || own.ta) out.push(await partPara());
         close();
         plain = null;
-      } else if (plain?.p === p - 1 && plain.at === out.length - 1 && !sectXml && !endsSection.has(p - 1) && !markRev[p - 1] && !markRev[p] && joins(paras[p - 1], ps)) {
-        out[plain.at] = joinTo(out[plain.at], await this.paragraph(main, ps, runs, listNum, p, '', true));
+      } else if (plain?.p === p - 1 && plain.at === out.length - 1 && !sectXml && !endsSection.has(p - 1) && !markRev[p - 1] && !markRev[p] && joins(paras[p - 1], ps) && !emptyBreak(ps, runs)) {
+        out[plain.at] = joinTo(out[plain.at], await this.paragraph(main, ps, runs, listNum, p, '', true), ps);
         plain = { p, at: plain.at };
       } else {
         out.push(await this.paragraph(main, ps, runs, listNum, p, sectXml));
@@ -598,8 +627,22 @@ class DocxWriter {
     return out.join('');
   }
 
+  /** A style's numbering as written (w:numPr), where its list is in the file. */
+  private styleNum(s: NamedStyle): string {
+    const id = s.wnum && typeof s.wnum.num === 'string' ? this.keptNumIds.get(s.wnum.num) : undefined;
+    if (!id) return '';
+    const lv = s.wnum!.ilvl;
+    return `<w:numPr>${typeof lv === 'number' && lv >= 0 && lv <= 8 ? `<w:ilvl w:val="${Math.round(lv)}"/>` : ''}<w:numId w:val="${id}"/></w:numPr>`;
+  }
+
   /** Each paragraph mark's tracked change, if any. */
   private markRev: (string | undefined)[] = [];
+  /** Each paragraph mark's run (how the mark looks: Word's w:pPr/w:rPr). */
+  private markRuns: TextRun[] = [];
+  /** A paragraph mark's look as Word's w:pPr/w:rPr has it: direct formatting only, kerning left to the text. */
+  private markProps(r: TextRun, st: NamedStyle): string {
+    return this.runProps({ ...r, text: '', rev: undefined, fmt: undefined, cmt: undefined, link: undefined, obj: undefined, cstyle: undefined, noKern: undefined }, st, {});
+  }
   // tracked changes count apart from the bookmarks (Word wants each id used once)
   private revId = 10001;
 
@@ -788,13 +831,16 @@ class DocxWriter {
       // indented to its text, with a hidden bookmark saying so beside that indent (CONT_MARK, read back by docx-read.ts)
       pPr.push(`<w:numPr><w:ilvl w:val="${Math.max(0, Math.min(8, ps.level ?? 0))}"/><w:numId w:val="0"/></w:numPr>`);
       if (!bodyOnly) { const id = this.bookmarkId++; contMark = `<w:bookmarkStart w:id="${id}" w:name="${CONT_MARK}${twips(listIndent(ps, em).left)}_${id}"/><w:bookmarkEnd w:id="${id}"/>`; }
+    } else if (this.styleNum(st)) {
+      // (in a style with numbering, not a list here: Word's "no numbering")
+      pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
     }
     if (ps.noLineNumbers) pPr.push('<w:suppressLineNumbers/>');
-    pPr.push(paraBorderXml(ps));
+    pPr.push(paraBorderXml(ps, st));
     // (with the bar tabs Word had, which aren't tab stops here)
     if (ps.tabs?.length || raw.bar) pPr.push(`<w:tabs>${raw.bar ?? ''}${(ps.tabs ?? []).map((x) => `<w:tab w:val="${x.kind}"${x.leader ? ` w:leader="${x.leader}"` : ''} w:pos="${twips(x.pos)}"/>`).join('')}</w:tabs>`);
     if (ps.noHyphen) pPr.push('<w:suppressAutoHyphens/>');
-    pPr.push(raw.c ?? '');
+    pPr.push(bidiXml(raw.c ?? '', !!ps.rtl, !!st.rtl));
     const sp: string[] = [];
     // (the spacing Word had where "don't add space between paragraphs of the same style" shows
     // it as none; automatic spacing, shown as 14 pt, as automatic)
@@ -833,7 +879,11 @@ class DocxWriter {
     // (and a list number's own bold or italic, which Word takes from the mark)
     const nl = ps.list === 'number' ? ps.numLook : undefined;
     const markLook = `${nl?.bold !== undefined ? (nl.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>') : ''}${nl?.italic !== undefined ? (nl.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>') : ''}`;
-    if (mr || markLook) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}</w:rPr>`);
+    // (else the mark's own look, where it isn't the paragraph style's)
+    // (not a list item's: Word draws its number or bullet in the mark's look, which isn't drawn here)
+    const mk = index >= 0 && !ps.list ? this.markRuns[index] : undefined;
+    const markOwn = mk ? this.markProps(mk, st) : '';
+    if (mr || markLook || markOwn) pPr.push(`<w:rPr>${mr ? `<w:${mr.kind} ${this.revAttrs(this.markRev[index]!)}/>` : ''}${markLook}${markOwn}</w:rPr>`);
     // the section ending with this paragraph
     if (sectXml) pPr.push(sectXml);
 
@@ -850,7 +900,10 @@ class DocxWriter {
       out.push(`<w:bookmarkStart w:id="${open.id}" w:name="${this.bookmarks.get(seqs[0])}"/>`);
     }
     // the paragraph's bookmarks (Insert > Document > Bookmark), round the whole paragraph
-    const marks = (ps.marks ?? []).map((name) => ({ name, id: this.bookmarkId++ }));
+    // (not one a legacy form field in it writes round itself, under the same name, as Word has it: that
+    // bookmark comes back on the paragraph when the file is read, and is written once, round the field)
+    const formMarks = new Set(runs.flatMap((r) => { const o = r.obj !== undefined ? this.t.objects[r.obj] : undefined; return o?.kind === 'form' ? [formName(o)] : []; }).filter((n) => n && !this.formNames.has(n)));
+    const marks = (ps.marks ?? []).filter((name) => !formMarks.has(name)).map((name) => ({ name, id: this.bookmarkId++ }));
     for (const m of marks) out.push(`<w:bookmarkStart w:id="${m.id}" w:name="${xml(m.name)}"/>`);
     // index entries and marked citations (Word's XE and TA fields, hidden text with no result)
     for (const m of ps.xe ?? []) out.push(markField(xeInstr(m)));
@@ -1085,6 +1138,8 @@ class DocxWriter {
         const paras = fitParas(o.paras, paraCount(rt.plainText(o.runs)));
         const ps = paras.map((p, i) => {
           const pPr: string[] = [`<w:pStyle w:val="${style}"/>`];
+          // (a note style with numbering: not on the notes, as here)
+          if (this.styleNum(t.styles[style] ?? st)) pPr.push('<w:numPr><w:numId w:val="0"/></w:numPr>');
           const align = p.align ?? 'left';
           if (align !== st.align) pPr.push(`<w:jc w:val="${JC[align]}"/>`);
           // the note's number, and the space after it (or what the note had there in Word)
@@ -1099,7 +1154,7 @@ class DocxWriter {
         });
         // a line after a line break (Shift+Enter) goes in the paragraph before it
         const xmls: string[] = [];
-        ps.forEach((x, i) => { if (i > 0 && joins(paras[i - 1], paras[i])) xmls[xmls.length - 1] = joinTo(xmls[xmls.length - 1], x.body); else xmls.push(x.para); });
+        ps.forEach((x, i) => { if (i > 0 && joins(paras[i - 1], paras[i])) xmls[xmls.length - 1] = joinTo(xmls[xmls.length - 1], x.body, paras[i]); else xmls.push(x.para); });
         out.push(`<w:${tag} w:id="${n}">${xmls.join('')}</w:${tag}>`);
       }
       const name = `${tag}s.xml`;
@@ -1197,15 +1252,21 @@ class DocxWriter {
     const fx = fl?.effect;
     const [el, et, er, eb] = lookExtent(lookOf(o)).map((v, i) => emu(v + (fx ? [fx.l, fx.t, fx.r, fx.b][i] : 0)));
     const ext = `<wp:extent cx="${cx}" cy="${cy}"/><wp:effectExtent l="${el}" t="${et}" r="${er}" b="${eb}"/>`;
-    if (!fl) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
+    // (one in line with text in Word, still where it was put: in line again)
+    const asRead = !!fl?.inline && fl.wrap === 'topBottom' && !fl.x && !fl.y && !fl.hidden && !fl.name && fl.group === undefined && !fl.align && !fl.xFrom && !fl.yFrom &&
+      fl.gap === undefined && fl.gapTop === undefined && fl.gapBottom === undefined && fl.gapRight === undefined;
     // hidden in the Selection Pane (Word's own mark); its group and name kept with our data, by its id
+    // (a figure in the line: its own, on the object)
+    const pane: (WordPane & { group?: number }) | undefined = fl ?? (o.kind === 'picture' || o.kind === 'drawing' ? o.wordPr : undefined);
     const pr = /<wp:docPr id="(\d+)"/.exec(inner);
-    if (fl.hidden) inner = inner.replace(/<wp:docPr ([^>]*?)(\/?)>/, '<wp:docPr $1 hidden="1"$2>');
+    if (pane?.hidden) inner = inner.replace(/<wp:docPr ([^>]*?)(\/?)>/, '<wp:docPr $1 hidden="1"$2>');
     // a name from the Selection Pane goes on wp:docPr, where Word's Selection Pane reads it (laptop bench)
     // (our own names, "Picture 4" and the like, have nothing to escape)
-    const was = fl.name ? /<wp:docPr [^>]*?name="([^"]*)"/.exec(inner)?.[1] : undefined;
-    if (fl.name && was !== undefined) inner = inner.replace(/(<wp:docPr [^>]*?name=")[^"]*"/, (_, a: string) => `${a}${xmlAttr(fl.name!)}"`);
-    if (pr && (fl.group !== undefined || fl.name)) (this.model.floats ??= {})[Number(pr[1])] = { ...(fl.group !== undefined ? { group: fl.group } : {}), ...(fl.name ? { name: fl.name } : {}), ...(was !== undefined ? { was } : {}) };
+    const name = pane?.name;
+    const was = name ? /<wp:docPr [^>]*?name="([^"]*)"/.exec(inner)?.[1] : undefined;
+    if (name && was !== undefined) inner = inner.replace(/(<wp:docPr [^>]*?name=")[^"]*"/, (_, a: string) => `${a}${xmlAttr(name)}"`);
+    if (pr && pane && (pane.group !== undefined || name)) (this.model.floats ??= {})[Number(pr[1])] = { ...(pane.group !== undefined ? { group: pane.group } : {}), ...(name ? { name } : {}), ...(was !== undefined ? { was } : {}) };
+    if (!fl || asRead) return `<wp:inline distT="0" distB="0" distL="0" distR="0">${ext}${inner}</wp:inline>`;
     const [l, t] = lookExtent(lookOf(o));
     return this.anchor(fl, emu(fl.x + l), emu(fl.y + t), ext, inner);
   }
@@ -1213,10 +1274,36 @@ class DocxWriter {
   /** wp:anchor (ECMA-376 part 1 §20.4.2.3): a frame placed at x, y (EMU) as `fl` places it, with the text wrapping round it as `fl` says. */
   private anchor(fl: NonNullable<ReturnType<typeof floatOf>>, x: number, y: number, ext: string, inner: string): string {
     const gap = floatGaps(fl);
+    if (!this.stackAt) {
+      const order = stackOrder(this.t), inText = new Set(order);
+      const outside = Object.entries(this.t.objects).filter(([id, o]) => floatOf(o) && !inText.has(Number(id))).length;
+      // (a group written as one Word group is one drawing there, at the place of its member furthest back;
+      // the paragraphs' runs, to tell which groups are, as each paragraph is written)
+      const oneAnchor = new Set<number>();
+      let para: TextRun[] = [];
+      const flush = () => { for (const id of this.groupsIn(para).keys()) oneAnchor.add(id); para = []; };
+      for (const r of this.t.runs) {
+        if (r.obj !== undefined) para.push(r);
+        if (r.text.includes('\n')) flush();
+      }
+      flush();
+      this.stackAt = new Map();
+      const groups = new Map<number, number>();
+      let at = outside;
+      for (const id of order) {
+        const fl = floatOf(this.t.objects[id])!;
+        if (fl.group === undefined || !oneAnchor.has(id)) { this.stackAt.set(fl, at++); continue; }
+        if (!groups.has(fl.group)) groups.set(fl.group, at++);
+        this.stackAt.set(fl, groups.get(fl.group)!);
+      }
+    }
+    // (one outside the text's stack written twice, as a chart and its picture, at one place)
+    let at = this.stackAt.get(fl);
+    if (at === undefined) this.stackAt.set(fl, (at = this.others++));
     const h = fl.xFrom === 'page' ? 'page' : 'margin';
     const v = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'paragraph';
-    const wrap = fl.wrap === 'square' ? '<wp:wrapSquare wrapText="largest"/>' : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
-    return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (fl.z !== undefined ? fl.z + 1 : this.docPr) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
+    const wrap = fl.wrap === 'square' ? `<wp:wrapSquare wrapText="${fl.side ?? 'largest'}"/>` : fl.wrap === 'topBottom' ? '<wp:wrapTopAndBottom/>' : '<wp:wrapNone/>';
+    return `<wp:anchor distT="${emu(gap.t)}" distB="${emu(gap.b)}" distL="${emu(gap.l)}" distR="${emu(gap.r)}" simplePos="0" relativeHeight="${251659264 + (at + 1) * 1024}" behindDoc="${fl.wrap === 'behind' ? 1 : 0}" locked="0" layoutInCell="1" allowOverlap="1">` +
       `<wp:simplePos x="0" y="0"/><wp:positionH relativeFrom="${h}">${fl.align ? `<wp:align>${fl.align}</wp:align>` : `<wp:posOffset>${x}</wp:posOffset>`}</wp:positionH>` +
       `<wp:positionV relativeFrom="${v}"><wp:posOffset>${y}</wp:posOffset></wp:positionV>${ext}${wrap}${inner}</wp:anchor>`;
   }
@@ -1228,6 +1315,12 @@ class DocxWriter {
    */
   private wordGroups = new Map<number, number[]>();
   private noteWordGroups(runs: TextRun[]): void {
+    for (const [id, ids] of this.groupsIn(runs)) this.wordGroups.set(id, ids);
+  }
+
+  /** The groups written as one Word group from a paragraph with these runs (see wordGroups): each picture's id to the group's. */
+  private groupsIn(runs: TextRun[]): Map<number, number[]> {
+    const out = new Map<number, number[]>();
     const by = new Map<number, number[]>();
     for (const r of runs) {
       if (r.obj === undefined || r.rev) continue;
@@ -1241,9 +1334,10 @@ class DocxWriter {
       if (ids.length < 2) continue;
       const all = Object.values(this.t.objects).filter((o) => floatOf(o)?.group === g);
       const fls = ids.map((id) => floatOf(this.t.objects[id])!);
-      const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
-      if (all.length === ids.length && same) for (const id of ids) this.wordGroups.set(id, ids);
+      const same = fls.every((f) => !f.hidden && f.wrap === fls[0].wrap && f.side === fls[0].side && (f.xFrom ?? 'margin') === (fls[0].xFrom ?? 'margin') && (f.yFrom ?? 'para') === (fls[0].yFrom ?? 'para'));
+      if (all.length === ids.length && same) for (const id of ids) out.set(id, ids);
     }
+    return out;
   }
 
   /**
@@ -1258,7 +1352,8 @@ class DocxWriter {
       const o = this.t.objects[id];
       const fl = floatOf(o);
       if (!o || !fl) return null;
-      const one = await this.picture(main, id, { ...o, float: undefined } as DocObject, '');
+      // (each picture in the group without a name or hidden mark of its own: the group has them)
+      const one = await this.picture(main, id, { ...o, float: undefined, wordPr: undefined } as DocObject, '');
       const ext = /<wp:extent cx="(\d+)" cy="(\d+)"\/>/.exec(one);
       const docPr = /<wp:docPr id="(\d+)"[^>]*?(?: descr="([^"]*)")?\/>/.exec(one);
       const blip = /<a:blip r:embed="([^"]+)"/.exec(one);
@@ -1285,7 +1380,7 @@ class DocxWriter {
     // VML for older Words: the group in its own units (EMU here), each picture a shape in it
     const pt = (v: number) => Math.round((v / 12700) * 100) / 100;
     const hRel = fl.xFrom === 'page' ? 'page' : 'margin', vRel = fl.yFrom === 'page' ? 'page' : fl.yFrom === 'margin' ? 'margin' : 'text';
-    const wrap = fl.wrap === 'square' ? '<w10:wrap type="square"/>' : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
+    const wrap = fl.wrap === 'square' ? `<w10:wrap type="square"${fl.side ? ` side="${fl.side === 'bothSides' ? 'both' : fl.side}"` : ''}/>` : fl.wrap === 'topBottom' ? '<w10:wrap type="topAndBottom"/>' : '';
     const z = fl.wrap === 'behind' ? -251658240 + n : 251659264 + n;
     // (shape ids from one count, clear of the watermark's 2049 on; the picture shape type once in each part, as Word writes it)
     const type = this.oleTypes.has(main) ? '' : T75;
@@ -1303,7 +1398,7 @@ class DocxWriter {
     const runsOf = this.splitParas(o.runs);
     const ps: string[] = [];
     for (let p = 0; p < n; p++) {
-      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], 0, -1, '', true));
+      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], 0, -1, '', true), paras[p]);
       else ps.push(await this.paragraph(main, paras[p], runsOf[p] ?? [], 0));
     }
     const N = styleOf(this.t, {});
@@ -1313,7 +1408,9 @@ class DocxWriter {
     const cx = emu(o.w), cy = emu(h);
     const k = this.docPr++;
     const look = lookOf(o);
-    const fill = o.fill ? `<a:solidFill><a:srgbClr val="${hex6(o.fill)}"/></a:solidFill>` : '<a:noFill/>';
+    // (Word's gradient as the file had it, while its first colour is still the fill here)
+    const grad = o.wfill && gradientOk(o.wfill) && (gradFirst(o.wfill) ?? null) === (o.fill ? `#${hex6(o.fill).toLowerCase()}` : null) ? o.wfill : null;
+    const fill = grad ?? (o.fill ? `<a:solidFill><a:srgbClr val="${hex6(o.fill)}"/></a:solidFill>` : '<a:noFill/>');
     // the look's own white fill (under a shadow) gives way to the box's fill
     const lookRest = lookXml(look).replace(/^<a:solidFill>.*?<\/a:solidFill>/, '');
     const line = look?.frame ? '' : '<a:ln><a:noFill/></a:ln>';
@@ -1335,7 +1432,9 @@ class DocxWriter {
   private async chart(main: string, id: number, o: Extract<DocObject, { kind: 'picture' }>, box: ChartBox, rPr: string): Promise<string> {
     const size = shownSize({ w: o.w, h: o.h }, o.scale ?? 1, this.textW);
     const { rid, print } = await addChart(this.pkg, main, 'word', ++this.chartNo, box, size.w, size.h);
-    (this.model.charts ??= {})[id] = box;
+    // (under its number in the file, not the id it has while open: the reader gives it a new one, and the
+    // same file saved again writes the same)
+    (this.model.charts ??= {})[id] = { ...box, chart: { ...box.chart, id: this.chartNo } };
     if (print) (this.model.chartPrints ??= {})[id] = print;
     const n = this.docPr++;
     const ex = isChartEx(box.chart.kind);
@@ -1692,7 +1791,7 @@ class DocxWriter {
             cellList = this.addNum(key, false, { level: Math.max(0, Math.min(8, cps.level ?? 0)), value: cps.startAt });
           }
           this.shownN = cps.list === 'number' && !cps.cont ? shownHere[i]?.n : undefined;
-          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, cellList, -1, '', true));
+          if (i > 0 && !lastTable && paras.length && joins({ ...ps[i - 1], align: ps[i - 1]?.align ?? ca }, cps)) paras[paras.length - 1] = joinTo(paras[paras.length - 1], await this.paragraph(main, cps, pr, cellList, -1, '', true), cps);
           else paras.push(await this.paragraph(main, cps, pr, cellList));
           lastTable = false;
         }
@@ -1831,7 +1930,7 @@ class DocxWriter {
         continue;
       }
       const joined = p > 0 && out.length && joins(ps[p - 1], ps[p]) && out[out.length - 1].endsWith('</w:p>');
-      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, 0, -1, '', true));
+      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, 0, -1, '', true), ps[p]);
       else out.push(await this.paragraph(part, ps[p], runs, 0));
     }
     const wm = kind === 'header' && t.watermark?.text ? watermarkXml(t.watermark, pg, this.watermarks++) : '';
@@ -1855,38 +1954,39 @@ class DocxWriter {
     // Word's built-in style names: ours, and those the file read lists in its latent styles
     const latent = new Map([...(t.kept?.latentStyles ?? '').matchAll(/<w:lsdException\b[^>]*\bw:name="([^"]+)"/g)].map((m) => { const n = unxml(m[1]); return [n.toLowerCase(), n]; }));
     const builtIn = (name: string) => wordBuiltInName(name, latent);
+    // (a style based on Normal that hasn't Normal's lines or shading: nil sides and no fill, as Word writes it)
+    const unNormal = (x: string) => unNormalXml(x, normal);
     out.push(`<w:docDefaults><w:rPrDefault><w:rPr>${fontsXml(normal.font)}<w:kern w:val="2"/><w:sz w:val="${half(normal.size)}"/><w:szCs w:val="${half(normal.size)}"/><w:lang w:val="${xml(t.lang ?? 'en-US')}" w:eastAsia="en-US" w:bidi="ar-SA"/></w:rPr></w:rPrDefault>` +
       `<w:pPrDefault><w:pPr><w:widowControl/><w:spacing w:after="0" w:line="240" w:lineRule="auto"/></w:pPr></w:pPrDefault></w:docDefaults>`);
     // (ECMA-376 part 1, 17.7.4.18: latent styles come after the defaults, before the styles)
     if (t.kept?.latentStyles) out.push(t.kept.latentStyles);
     const ids = Object.keys(t.styles);
+    // (the character styles the file will have, for the paragraph styles linked to one)
+    const chars = new Set((t.kept?.styles ?? []).filter((k) => k.type === 'character' && !this.charStyles[k.id]).map((k) => k.id));
+    // (the paragraph styles a style can be based on)
+    // (only ours: one kept as the file had it would give the style its settings that aren't written here)
+    const paras = new Set(ids);
+    // (none based, through others, on itself)
+    for (const id of ids) { const seen = new Set([id]); for (let b = t.styles[id]?.basedOn; b && t.styles[b]; b = t.styles[b].basedOn) { if (seen.has(b)) { paras.delete(b); break; } seen.add(b); } }
     for (const id of ['Normal', ...ids.filter((k) => k !== 'Normal')]) {
       const s = t.styles[id];
-      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept));
+      if (s) out.push(styleXml(s, ids, builtIn, this.themeKept, normal, chars, paras, t.styles, this.styleNum(s)));
     }
-    // the contents' lines (Word's own "toc 1" to "toc 3", which Update Field uses)
-    if (Object.values(t.objects).some((o) => o.kind === 'toc')) {
-      for (let n = 1; n <= 3; n++) if (!t.styles[`TOC${n}`]) out.push(`<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
-    }
-    // the table of figures' lines (Word's own "table of figures")
-    if (Object.values(t.objects).some((o) => o.kind === 'tof')) {
-      out.push(`<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`);
-    }
-    // the index's and table of authorities' lines (Word's own "index 1", "index 2", "index heading", "table of authorities", "toa heading")
-    if (Object.values(t.objects).some((o) => o.kind === 'index')) {
-      for (const n of [1, 2]) out.push(`<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
-      out.push(`<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`);
-    }
-    if (Object.values(t.objects).some((o) => o.kind === 'toa')) {
-      out.push(`<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`);
-      out.push(`<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normal.size)}" w:after="${twips(normal.size / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`);
-    }
+    // Word's own styles for the lines of the contents ("toc 1" to "toc 3", which Update Field uses), the
+    // table of figures, the index and the table of authorities, where the document has none of its own
+    const own = (kind: string, ids: string[]) => {
+      if (Object.values(t.objects).some((o) => o.kind === kind)) for (const id of ids) if (!t.styles[id]) out.push(ownStyleXml(id, normal)!);
+    };
+    own('toc', ['TOC1', 'TOC2', 'TOC3']);
+    own('tof', ['TableofFigures']);
+    own('index', ['Index1', 'Index2', 'IndexHeading']);
+    own('toa', ['TableofAuthorities', 'TOAHeading']);
     // footnotes and endnotes: Word's own styles for their text and their numbers
     if (Object.values(t.objects).some((o) => o.kind === 'note')) {
       const ns = noteStyle(t);
       for (const [sid, nm] of [['FootnoteText', 'footnote text'], ['EndnoteText', 'endnote text']]) {
         if (t.styles[sid]) continue;
-        out.push(styleXml({ ...ns, id: sid, name: nm }, ids, wordBuiltInName, this.themeKept).replace(' w:customStyle="1"', ''));
+        out.push(styleXml({ ...ns, id: sid, name: nm }, ids, wordBuiltInName, this.themeKept, normal).replace(' w:customStyle="1"', ''));
       }
       for (const [sid, nm] of [['FootnoteReference', 'footnote reference'], ['EndnoteReference', 'endnote reference']]) {
         out.push(`<w:style w:type="character" w:styleId="${sid}"><w:name w:val="${nm}"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:vertAlign w:val="superscript"/></w:rPr></w:style>`);
@@ -1895,14 +1995,14 @@ class DocxWriter {
     // comments: Word's own styles for their text and marks, and for the links in comments kept as Word wrote them
     if (this.cmts.size) {
       const has = (id: string) => !!t.styles[id] || !!this.charStyles[id];
-      if (!has('CommentText')) out.push(`<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>`);
+      if (!has('CommentText')) out.push(unNormal(`<w:style w:type="paragraph" w:styleId="CommentText"><w:name w:val="annotation text"/><w:basedOn w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:sz w:val="20"/><w:szCs w:val="20"/></w:rPr></w:style>`));
       if (!has('CommentReference')) out.push(`<w:style w:type="character" w:styleId="CommentReference"><w:name w:val="annotation reference"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:semiHidden/><w:unhideWhenUsed/><w:rPr><w:sz w:val="16"/><w:szCs w:val="16"/></w:rPr></w:style>`);
       const linked = [...this.cmts.values()].some(({ c }) => [c, ...(c.replies ?? [])].some((n) => n.word?.paras?.some((x) => x.includes('<w:rStyle w:val="Hyperlink"/>'))));
       if (linked && !has('Hyperlink')) out.push(`<w:style w:type="character" w:styleId="Hyperlink"><w:name w:val="Hyperlink"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:rPr><w:color w:val="0563C1"/><w:u w:val="single"/></w:rPr></w:style>`);
     }
     out.push(`<w:style w:type="character" w:default="1" w:styleId="DefaultParagraphFont"><w:name w:val="Default Paragraph Font"/><w:uiPriority w:val="1"/><w:semiHidden/><w:unhideWhenUsed/></w:style>`);
     // the character styles (Emphasis, Strong, Compound Number and the person's own)
-    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs, builtIn, this.themeKept));
+    for (const cs of Object.values(this.charStyles)) out.push(charStyleXml(cs, builtIn, this.themeKept, this.charStyles));
     // formulas look like any other text in Word: the style only marks them, so they stay formulas when opened here
     out.push(`<w:style w:type="character" w:customStyle="1" w:styleId="${FORMULA_STYLE}"><w:name w:val="Chemical Formula"/><w:basedOn w:val="DefaultParagraphFont"/><w:uiPriority w:val="1"/></w:style>`);
     // the table styles the tables use, as Word's own (so Word draws them as they are drawn here)
@@ -1918,7 +2018,14 @@ class DocxWriter {
     // the file's styles that aren't styles here (a journal template's unused ones, character and
     // table styles nothing uses), as Word had them, unless one of the same kind and id is written above
     const written = new Set([...out.join('').matchAll(/<w:style\b[^>]*?\bw:type="([^"]+)"[^>]*?\bw:styleId="([^"]+)"/g)].map((m) => `${m[1]}:${unxml(m[2])}`));
-    for (const k of t.kept?.styles ?? []) if (!written.has(`${k.type}:${k.id}`)) out.push(keptStyleXml(k, this.keptNumIds));
+    const paraIds = new Set([...written].filter((k) => k.startsWith('paragraph:')).map((k) => k.slice(10)));
+    for (const k of t.kept?.styles ?? []) if (k.type === 'paragraph' && !written.has(`paragraph:${k.id}`)) paraIds.add(k.id);
+    for (const k of t.kept?.styles ?? []) {
+      if (written.has(`${k.type}:${k.id}`)) continue;
+      const lk = k.type === 'character' ? /<w:link w:val="([^"]*)"\/>/.exec(k.xml) : null;
+      const x = lk && !paraIds.has(unxml(lk[1])) ? { ...k, xml: k.xml.replace(lk[0], '') } : k;
+      out.push(keptStyleXml(x, this.keptNumIds));
+    }
     out.push('</w:styles>');
     return out.join('');
   }
@@ -2110,8 +2217,11 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   // character spacing (twentieths of a point) and kerning taken off
   if (r.spacing) out.push(`<w:spacing w:val="${Math.round(r.spacing * 20)}"/>`);
   out.push(raw.d ?? '');
-  if (r.noKern) out.push('<w:kern w:val="0"/>');
+  // (Word's kerning size as the file had it, while the text is still kerned, or not, as it says at its size)
   const size = r.size ?? st.size;
+  // (Word's sizes go up to 1638 pt)
+  if (r.kernAt !== undefined && r.kernAt > 0 && r.kernAt <= 1638 && !r.noKern === size >= r.kernAt) out.push(`<w:kern w:val="${Math.round(r.kernAt * 2)}"/>`);
+  else if (r.noKern) out.push('<w:kern w:val="0"/>');
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
   const hl = r.highlight && !(raw.shd && raw.shdFill === r.highlight) ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
@@ -2243,23 +2353,76 @@ function fieldStart(rPr: string, instr: string, data?: string): string {
   return `<w:r>${pr}${begin}</w:r>${text}${inner}<w:r>${pr}<w:fldChar w:fldCharType="separate"/></w:r>`;
 }
 
+/** A gradient fill (a:gradFill) made only of DrawingML's gradient and colour elements, well formed, with no text: one to write back as it is. */
+const GRAD_TAG = /^<(\/?)a:(gradFill|gsLst|gs|srgbClr|schemeClr|prstClr|sysClr|lin|path|fillToRect|tileRect|lumMod|lumOff|alpha|alphaMod|alphaOff|tint|shade|satMod|satOff|hueMod|hueOff|gamma|invGamma)((?:\s+[A-Za-z]+="[^"<>&]*")*)\s*(\/?)>$/;
+export function gradientOk(xml: unknown): xml is string {
+  if (typeof xml !== 'string' || !/^<a:gradFill[\s>]/.test(xml) || !xml.endsWith('</a:gradFill>') || xml.length > 20000) return false;
+  const open: string[] = [];
+  let ended = false;
+  for (const p of xml.split(/(<[^<>]*>)/)) {
+    if (p === '') continue;
+    if (!p.startsWith('<')) { if (p.trim()) return false; continue; }
+    const m = GRAD_TAG.exec(p);
+    // (one gradFill, with none inside it)
+    if (!m || ended || (m[2] === 'gradFill' && !m[1] && open.length)) return false;
+    const [, close, name, attrs, self] = m;
+    if (close && open.length === 1) ended = true;
+    if (close) { if (attrs.trim() || self || open.pop() !== name) return false; continue; }
+    // (each attribute once)
+    const names = [...attrs.matchAll(/([A-Za-z]+)=/g)].map((x) => x[1]);
+    if (new Set(names).size !== names.length) return false;
+    if (!self) open.push(name);
+  }
+  return open.length === 0;
+}
+
+/** The colour a gradient is shown in here: its first stop's, unless that stop shows through (or isn't a plain colour). */
+export function gradFirst(xml: string): string | undefined {
+  const gs = /<a:gs\b[^>]*>([\s\S]*?)<\/a:gs>/.exec(xml)?.[1] ?? '';
+  const c = /^\s*<a:srgbClr val="([0-9A-Fa-f]{6})"\s*(\/>|>([\s\S]*?)<\/a:srgbClr>)/.exec(gs);
+  if (!c || /<a:alpha(Mod|Off)?\b/.test(c[3] ?? '')) return undefined;
+  return `#${c[1].toLowerCase()}`;
+}
+
 /** A paragraph's borders (w:pBdr, Word's spacing from the text) and shading (w:shd). */
-export function paraBorderXml(ps: ParaStyle): string {
+/**
+ * A paragraph's kept settings of the group w:bidi is in (kinsoku to snapToGrid: `kept`, as the file
+ * had them) with its direction as it is now (`rtl`): left as they are where they already say so, or
+ * where they say nothing and the paragraph's style (`styleRtl`) does; else w:bidi put in, in its
+ * place before adjustRightInd and snapToGrid, or turned off.
+ */
+export function bidiXml(kept: string, rtl: boolean, styleRtl: boolean): string {
+  const m = /<w:bidi(?:\s+w:val="([^"]*)")?\s*\/>/.exec(kept);
+  const says = m ? !/^(0|false|off)$/.test(m[1] ?? '') : styleRtl;
+  if (says === rtl) return kept;
+  const rest = kept.replace(/<w:bidi(?:\s+w:val="[^"]*")?\s*\/>/, '');
+  const el = rtl === styleRtl ? '' : rtl ? '<w:bidi/>' : '<w:bidi w:val="0"/>';
+  const at = rest.search(/<w:(adjustRightInd|snapToGrid)\b/);
+  return at < 0 ? rest + el : rest.slice(0, at) + el + rest.slice(at);
+}
+
+export function paraBorderXml(ps: ParaStyle, st?: Pick<NamedStyle, 'border' | 'shade'>): string {
   let out = '';
   const b = cleanBorders(ps.border);
+  // (the paragraph's style's: nothing where the paragraph has the same, a side or shading taken away where it hasn't)
+  const sb = cleanBorders(st?.border);
+  const sameLines = !!st && JSON.stringify(b ?? null) === JSON.stringify(sb ?? null) && !keptPPr(ps).bsp;
+  const sameShade = !!st && (ps.shade ?? '').toLowerCase() === (st.shade ?? '').toLowerCase();
+  const off = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => (sb?.[name] && !b?.[name] ? `<w:${name} w:val="nil"/>` : '');
   let keptSpace: Record<string, string> = {};
   try { keptSpace = JSON.parse(keptPPr(ps).bsp ?? '{}') as Record<string, string>; } catch { keptSpace = {}; }
-  if (b) {
+  if (sameLines) { /* the style's */ } else if (b) {
     const side = (name: 'top' | 'left' | 'bottom' | 'right' | 'between') => {
       const l = b[name];
-      if (!l) return '';
+      if (!l) return off(name);
       // (each side's own distance as Word had it, else the one used here)
       const space = keptSpace[name] ?? (name === 'left' || name === 'right' ? BORDER_SPACE.x : BORDER_SPACE.y);
       return borderXml(name, l).replace('w:space="0"', `w:space="${space}"`);
     };
     out += `<w:pBdr>${side('top')}${side('left')}${side('bottom')}${side('right')}${side('between')}</w:pBdr>`;
-  }
-  if (ps.shade) out += `<w:shd w:val="clear" w:color="auto" w:fill="${hex6(ps.shade)}"/>`;
+  } else if (sb) out += `<w:pBdr>${off('top')}${off('left')}${off('bottom')}${off('right')}${off('between')}</w:pBdr>`;
+  if (sameShade) { /* the style's */ } else if (ps.shade) out += `<w:shd w:val="clear" w:color="auto" w:fill="${hex6(ps.shade)}"/>`;
+  else if (st?.shade) out += '<w:shd w:val="clear" w:color="auto" w:fill="auto"/>';
   return out;
 }
 
@@ -2281,13 +2444,53 @@ function protectionXml(p: Protection | undefined): string {
   return `<w:documentProtection w:edit="${p.edit}" w:enforcement="1"${pw}/>`;
 }
 
+/** A style based on Normal that hasn't Normal's lines or shading (`normal`): with nil sides and no fill, as Word writes it. */
+export function unNormalXml(x: string, normal: Pick<NamedStyle, 'border' | 'shade'>): string {
+  const reset = paraBorderXml({}, normal);
+  return !reset ? x
+    : x.includes('<w:pPr>') ? x.replace(/<w:pPr>(<w:keepNext\/>)?/, (m) => m + reset)
+    : x.replace(/(<w:rPr>|<\/w:style>)/, (m) => `<w:pPr>${reset}</w:pPr>${m}`);
+}
+
+/** ownStyleBare as written: saying where it hasn't Normal's (`normal`) lines or shading. */
+export function ownStyleXml(id: string, normal: Pick<NamedStyle, 'size' | 'border' | 'shade'>): string | null {
+  const x = ownStyleBare(id, normal.size);
+  return x === null ? null : unNormalXml(x, normal);
+}
+
+/**
+ * Word's own styles for the lines of the contents ("toc 1" to "toc 3"), the table of figures, the
+ * index ("index 1", "index 2", "index heading") and the table of authorities ("table of authorities",
+ * "toa heading") as this program writes them for a document with none of its own (`normalSize`: the
+ * Normal style's size, in points); null for any other id. The reader leaves a style exactly so out of
+ * the document's styles, so a file saved again writes it once, the same.
+ */
+function ownStyleBare(id: string, normalSize: number): string | null {
+  const toc = /^TOC([1-3])$/.exec(id);
+  if (toc) { const n = Number(toc[1]); return `<w:style w:type="paragraph" w:styleId="TOC${n}"><w:name w:val="toc ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="39"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips((n - 1) * TOC_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`; }
+  const index = /^Index([12])$/.exec(id);
+  if (index) { const n = Number(index[1]); return `<w:style w:type="paragraph" w:styleId="Index${n}"><w:name w:val="index ${n}"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:autoRedefine/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(n * INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`; }
+  switch (id) {
+    case 'TableofFigures': return `<w:style w:type="paragraph" w:styleId="TableofFigures"><w:name w:val="table of figures"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:jc w:val="left"/></w:pPr></w:style>`;
+    case 'IndexHeading': return `<w:style w:type="paragraph" w:styleId="IndexHeading"><w:name w:val="index heading"/><w:basedOn w:val="Normal"/><w:next w:val="Index1"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normalSize)}" w:after="${twips(normalSize / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`;
+    case 'TableofAuthorities': return `<w:style w:type="paragraph" w:styleId="TableofAuthorities"><w:name w:val="table of authorities"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:spacing w:after="0"/><w:ind w:left="${twips(INDEX_INDENT)}" w:hanging="${twips(INDEX_INDENT)}"/><w:jc w:val="left"/></w:pPr></w:style>`;
+    case 'TOAHeading': return `<w:style w:type="paragraph" w:styleId="TOAHeading"><w:name w:val="toa heading"/><w:basedOn w:val="Normal"/><w:next w:val="Normal"/><w:uiPriority w:val="99"/><w:unhideWhenUsed/><w:pPr><w:keepNext/><w:spacing w:before="${twips(normalSize)}" w:after="${twips(normalSize / 4)}"/><w:jc w:val="left"/></w:pPr><w:rPr><w:b/><w:bCs/></w:rPr></w:style>`;
+    default: return null;
+  }
+}
+
+/** A form field's name as written (Word's: letters, digits and _, up to 20), before it is told apart from the others'. */
+function formName(o: Extract<DocObject, { kind: 'form' }>): string {
+  return (o.name ?? '').replace(/[^\w]/g, '').slice(0, 20);
+}
+
 /**
  * A form field as Word's legacy form field: its settings (w:ffData) on the field's start, its
  * name, and a text field's entry or a drop-down's choice as the result.
  */
 function formField(o: Extract<DocObject, { kind: 'form' }>, rPr: string, names: Map<string, number>, mark: number): string {
   const base = o.type === 'check' ? 'Check' : o.type === 'drop' ? 'Dropdown' : 'Text';
-  let name = (o.name ?? '').replace(/[^\w]/g, '').slice(0, 20);
+  let name = formName(o);
   if (!name || names.has(name)) { let n = names.size + 1; while (names.has(`${base}${n}`)) n++; name = `${base}${n}`; }
   names.set(name, 1);
   const help = o.help ? `<w:helpText w:type="text" w:val="${xml(o.help.slice(0, 255))}"/><w:statusText w:type="text" w:val="${xml(o.help.slice(0, 138))}"/>` : '';
@@ -2374,9 +2577,12 @@ function withAnnotationRef(p: string): string {
 /** A paragraph of a comment without its comment mark (w:annotationRef, which goes in the first only). */
 const noAnnotationRef = (p: string) => p.replace(/<w:r\b(?:(?!<\/w:r>)[\s\S])*?<w:annotationRef\/>(?:(?!<\/w:r>)[\s\S])*?<\/w:r>/, '');
 
+/** Characters Word writes as elements of their own in a run: a tab, a soft hyphen and a non-breaking hyphen (§17.3.3.18, :29, :23). */
+const RUN_MARKS = new Map([['\t', '<w:tab/>'], ['\u00ad', '<w:softHyphen/>'], ['\u2011', '<w:noBreakHyphen/>']]);
+
 function run(rPr: string, text: string): string {
   if (!text) return '';
-  const body = text.split(/([\t\u00ad])/).map((s) => (s === '\t' ? '<w:tab/>' : s === '\u00ad' ? '<w:softHyphen/>' : s ? `<w:t xml:space="preserve">${xml(s)}</w:t>` : '')).join('');
+  const body = text.split(/([\t\u00ad\u2011])/).map((s) => RUN_MARKS.get(s) ?? (s ? `<w:t xml:space="preserve">${xml(s)}</w:t>` : '')).join('');
   return `<w:r>${rPr ? `<w:rPr>${rPr}</w:rPr>` : ''}${body}</w:r>`;
 }
 
@@ -2430,13 +2636,33 @@ const unxml = (s: string) => s.replace(/&quot;/g, '"').replace(/&apos;/g, "'").r
 function keptStyleXml(k: { xml: string }, numIds: ReadonlyMap<string, string>): string {
   return k.xml.replace(/<w:numPr\b[^>]*?(?:\/>|>[\s\S]*?<\/w:numPr>)/g, (m) => {
     const id = /<w:numId w:val="([^"]+)"/.exec(m)?.[1];
-    const to = id === undefined ? undefined : numIds.get(id);
+    // (Word's "no numbering", which a style says over the one it is based on, and a level alone, on
+    // the list of the one it is based on: as they are)
+    if (id === '0' || id === undefined) return m;
+    const to = numIds.get(id);
     return to ? m.replace(/(<w:numId w:val=")[^"]+"/, `$1${to}"`) : '';
-  });
+  // (and paragraph settings left empty by that written as the file's own empty ones read back: the
+  // same on a second save; kept, as a tracked change's old settings need one)
+  }).replace(/<w:pPr><\/w:pPr>/g, '<w:pPr/>');
 }
 
 /** A character style: only what it sets. */
-function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName, themes = true): string {
+function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = wordBuiltInName, themes = true, ours: Record<string, CharStyle> = {}): string {
+  // based on another style here (not on itself through others): what the ones it is based on set comes
+  // from them where it leaves it unset, so it says "off" where it has a property off that they have on,
+  // and isn't based on them where it leaves unset a font, size, bold, italic or colour they set
+  const has = (id: string | undefined): id is string => !!id && Object.hasOwn(ours, id);
+  let chained = has(s.basedOn) && s.basedOn !== s.id;
+  const up: Partial<Record<'font' | 'size' | 'bold' | 'italic' | 'color' | 'allCaps' | 'smallCaps' | 'strike' | 'underline', boolean>> = {};
+  for (let b = s.basedOn, seen = new Set([s.id]); chained && has(b); b = ours[b].basedOn) {
+    if (seen.has(b)) { chained = false; break; }
+    seen.add(b);
+    const a = ours[b];
+    for (const k of ['font', 'size', 'bold', 'italic', 'color'] as const) if (a[k] !== undefined) up[k] = true;
+    for (const k of ['allCaps', 'smallCaps', 'strike', 'underline'] as const) if (a[k]) up[k] = true;
+  }
+  if (chained && (['font', 'size', 'bold', 'italic', 'color'] as const).some((k) => up[k] && s[k] === undefined)) chained = false;
+  const off = (k: 'allCaps' | 'smallCaps' | 'strike' | 'underline') => chained && !!up[k];
   const own = WORD_CHAR[s.id];
   // (Word's own by its name too: Book Title, Subtle Reference...)
   const word = own ? null : builtIn(s.name);
@@ -2445,35 +2671,46 @@ function charStyleXml(s: CharStyle, builtIn: (name: string) => string | null = w
   if (s.font) rPr.push(fontsXml(s.font, th));
   if (s.bold !== undefined) rPr.push(s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>');
   if (s.italic !== undefined) rPr.push(s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>');
-  if (s.allCaps) rPr.push('<w:caps/>');
-  if (s.smallCaps) rPr.push('<w:smallCaps/>');
-  if (s.strike) rPr.push('<w:strike/>');
+  if (s.allCaps) rPr.push('<w:caps/>'); else if (off('allCaps')) rPr.push('<w:caps w:val="0"/>');
+  if (s.smallCaps) rPr.push('<w:smallCaps/>'); else if (off('smallCaps')) rPr.push('<w:smallCaps w:val="0"/>');
+  if (s.strike) rPr.push('<w:strike/>'); else if (off('strike')) rPr.push('<w:strike w:val="0"/>');
   if (s.color) rPr.push(colorXml(s.color, th));
   if (s.size) rPr.push(`<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`);
-  if (s.underline) rPr.push('<w:u w:val="single"/>');
-  return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="DefaultParagraphFont"/>` +
-    `<w:uiPriority w:val="${own?.[1] ?? 29}"/><w:qFormat/>${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
+  // (its underline's kind, as a run's)
+  if (s.underline) rPr.push(underlineXml({ text: '', underline: true, ukind: s.ukind })); else if (off('underline')) rPr.push('<w:u w:val="none"/>');
+  return `<w:style w:type="character"${own || word ? '' : ' w:customStyle="1"'} w:styleId="${xml(s.id)}"><w:name w:val="${xml(own?.[0] ?? word ?? s.name)}"/><w:basedOn w:val="${chained ? xml(s.basedOn!) : 'DefaultParagraphFont'}"/>` +
+    `<w:uiPriority w:val="${own?.[1] ?? 29}"/>${WORD_LINK_CHAR[s.id] ?? '<w:qFormat/>'}${rPr.length ? `<w:rPr>${rPr.join('')}</w:rPr>` : ''}</w:style>`;
 }
 
 /** A named style, with all its settings written out. */
-function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true): string {
+function styleXml(s: NamedStyle, ids: string[], builtIn: (name: string) => string | null = wordBuiltInName, themes = true, normal?: NamedStyle, chars?: ReadonlySet<string>, paras?: ReadonlySet<string>, styles?: Readonly<Record<string, NamedStyle>>, numPr = ''): string {
   const id = s.id;
   // a style with one of Word's built-in names (header, No Spacing, toc 1...) is Word's own: not marked custom
   const word = WORD_NAMES[id] ?? builtIn(s.name);
   const name = word ?? s.name;
+  // (based on a style other than Normal: what it leaves unset would come from that one, so it says)
+  const chained = !!s.basedOn && s.basedOn !== id && s.basedOn !== 'Normal' && !!paras?.has(s.basedOn);
   const head = id === 'Normal'
-    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/><w:qFormat/>`
-    : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="Normal"/>` +
-      `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
+    ? `<w:style w:type="paragraph" w:default="1" w:styleId="Normal"><w:name w:val="Normal"/>${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:qFormat/>`
+    : `<w:style w:type="paragraph"${word ? '' : ' w:customStyle="1"'} w:styleId="${xml(id)}"><w:name w:val="${xml(name)}"/><w:basedOn w:val="${xml(chained ? s.basedOn! : 'Normal')}"/>` +
+      `${s.next && ids.includes(s.next) ? `<w:next w:val="${xml(s.next)}"/>` : ''}${s.link && chars?.has(s.link) ? `<w:link w:val="${xml(s.link)}"/>` : ''}<w:uiPriority w:val="${PRIORITY[id] ?? 29}"/><w:qFormat/>`;
   const pPr: string[] = [];
   pPr.push(s.keepNext ? '<w:keepNext/>' : '<w:keepNext w:val="0"/>');
   // (widow and orphan control is on for every style, from the document's defaults, unless a style turns it off)
-  if (s.keepLines) pPr.push('<w:keepLines/>');
-  if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>');
+  if (s.keepLines) pPr.push('<w:keepLines/>'); else if (chained) pPr.push('<w:keepLines w:val="0"/>');
+  if (s.noWidow) pPr.push('<w:widowControl w:val="0"/>'); else if (chained) pPr.push('<w:widowControl/>');
+  // (its numbering, in its place after widow control)
+  if (numPr) pPr.push(numPr);
+  // (its lines and shading, in their place before the spacing; a style says where it hasn't those of the
+  // style it is based on: Normal, or the one in Word it stays based on)
+  pPr.push(paraBorderXml({ border: s.border, shade: s.shade }, id === 'Normal' ? undefined : chained ? styles?.[s.basedOn!] : normal));
+  // (right to left: its own, or where the style it is based on is and it isn't)
+  const baseRtl = id === 'Normal' ? false : chained ? !!styles?.[s.basedOn!]?.rtl : !!normal?.rtl;
+  if (!!s.rtl !== baseRtl) pPr.push(s.rtl ? '<w:bidi/>' : '<w:bidi w:val="0"/>');
   pPr.push(`<w:spacing w:before="${twips(s.spaceBefore)}" w:after="${twips(s.spaceAfter)}" w:line="${Math.round(240 * s.line)}" w:lineRule="auto"/>`);
   pPr.push(`<w:ind w:left="${twips(s.indent)}" ${s.firstLine < 0 ? `w:hanging="${twips(-s.firstLine)}"` : `w:firstLine="${twips(s.firstLine)}"`}/>`);
   pPr.push(`<w:jc w:val="${JC[s.align]}"/>`);
-  if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`);
+  if (s.outline) pPr.push(`<w:outlineLvl w:val="${s.outline - 1}"/>`); else if (chained) pPr.push('<w:outlineLvl w:val="9"/>');
   const th = themes ? themeOf(s.wth) : undefined;
   const rPr = `${fontsXml(s.font, th)}${s.bold ? '<w:b/><w:bCs/>' : '<w:b w:val="0"/><w:bCs w:val="0"/>'}${s.italic ? '<w:i/><w:iCs/>' : '<w:i w:val="0"/><w:iCs w:val="0"/>'}` +
     `${colorXml(s.color, th)}<w:sz w:val="${half(s.size)}"/><w:szCs w:val="${half(s.size)}"/>`;

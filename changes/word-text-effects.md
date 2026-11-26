@@ -1,0 +1,1 @@
+Fixed: Documents: Word's hollow (outline), embossed and engraved letters, emphasis marks, character borders and the Word 2010 glow are drawn, and outlined text and shadows show in PDFs and pictures too.

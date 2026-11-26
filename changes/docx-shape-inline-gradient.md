@@ -1,0 +1,1 @@
+Fixed: Documents: a shape in line with text from a Word file stays in line when saved (until it is moved, hidden, named, grouped or positioned here), and a shape's gradient fill is kept (shown here as its first colour, or none where that shows through) instead of being lost.

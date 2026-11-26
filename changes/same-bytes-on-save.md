@@ -1,0 +1,1 @@
+Fixed: Word and Slides: a chart's data workbook inside a saved file is the same each time the file is saved, and every file saved here dates its zip entries as Office does (1 January 1980), not with the time of the save.

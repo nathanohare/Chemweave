@@ -39,7 +39,19 @@ describe('changing the pixels', () => {
     expect(e[2]).toBe(255);
     const f = new Uint8ClampedArray([0, 255, 128, 255]);
     brightContrast(f, 0, -1);
-    expect(Array.from(f.slice(0, 3))).toEqual([128, 128, 128]);
+    // (all but flat grey: within a level of it)
+    for (const v of f.slice(0, 3)) expect(Math.abs(v - 128)).toBeLessThanOrEqual(1);
+    // Office's scale (as LibreOffice shows Office's pictures): +40 % contrast stretches by 128 / (128 - 0.4 × 127), not twice
+    const g = new Uint8ClampedArray([100, 128, 160, 255]);
+    brightContrast(g, 0, 0.4);
+    expect(Array.from(g.slice(0, 3))).toEqual([82, 128, 181]);
+    // both: half the brightness before the contrast and half after, as Office does; Washout
+    // (+70 % brightness, -70 % contrast) leaves a faint picture, not blank white (review)
+    const w = new Uint8ClampedArray([0, 128, 255, 255]);
+    recolor(w, { kind: 'washout' });
+    expect(w[0]).toBeGreaterThan(195);
+    expect(w[0]).toBeLessThan(215);
+    expect(w[1]).toBeLessThan(255);
   });
 
   it('recolours: greys, black and white, two colours, sepia', () => {

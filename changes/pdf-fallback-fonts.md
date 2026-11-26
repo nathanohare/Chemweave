@@ -1,0 +1,1 @@
+Fixed: PDF export: Chinese, Japanese, Hebrew and Arabic text, and symbol bullets and Wingdings characters, are drawn with the free Noto Sans fonts that come with the app instead of printing as "?". Hebrew and Arabic still come out left to right with Arabic letters unjoined (F-V-02).

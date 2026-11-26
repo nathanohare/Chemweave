@@ -1,0 +1,1 @@
+Fixed: Slides: a rounded rectangle from a PowerPoint file keeps its corner size when saved (and other shapes their adjustments, such as an arrow's head), and a corner dragged in PowerPoint on a shape saved here is kept with the rest of the shape. Chemweave still draws these shapes with their usual corner and head.

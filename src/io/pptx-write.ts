@@ -24,7 +24,7 @@ import { arrowPoints, shapeBox, boxOf, shapeOrder, elbowRoute } from '../objects
 import { geoDef, textArea, type GeoStep } from '../design/geo';
 import { layoutTable, cellAlign, spanOf, rowSpanOf, coveringCell, tableText, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, lookOf, slideCellLook, styledRuns, type CellLine, type Side } from '../deck/table-styles';
-import { tableBorders } from './cdxml-table';
+import { savedBorders } from './cdxml-table';
 import { writeCdxml } from './cdxml-write';
 import { REF_FIELDS, type RefKind } from './remap-refs';
 import { cdxmlToCdx } from './cdx';
@@ -36,7 +36,7 @@ import { Package, NS, REL, emu, fromEmu, xml, xmlAttr, hex6, MediaFiles, structu
 import { SLIDE_SIZE_TYPES, hasItems } from '../deck/deck';
 import { masterBoxes } from '../deck/master-view';
 import { notesParagraphs, type NotesLook } from '../deck/notes-look';
-import { appPropsXml, corePropsXml, writeKeptParts, type KeptParts } from './kept-parts';
+import { appPropsXml, corePropsXml, relativeTarget, writeKeptParts, type KeptParts } from './kept-parts';
 import { olePrint, picturePrint, svgWithDrawing, type KeptOle, type KeptPicture } from './ole-kept';
 import { facesToEmbed, toEot, type FontSource } from './font-embed';
 import { dataUrl, fromDataUrl } from '../render/images';
@@ -396,11 +396,15 @@ const lang = 'lang="en-US"';
 /** A link as PowerPoint's own (a:hlinkClick), or '' when it can't be kept. */
 export type LinkXml = (link: string) => string;
 
-/** One run as PowerPoint runs (formula style turns into subscripts and superscripts). */
+/**
+ * The fields numbered so far in the file being written: each save's own (Writer.paras puts it in
+ * place for the paragraphs it writes, which are written without a pause), so a file saved again has
+ * the same ids, whatever other save is under way.
+ */
+let fields = { n: 0 };
 /** A new field id (a GUID, as PowerPoint gives each field). */
-let fields = 0;
 function fieldId(): string {
-  const n = (++fields).toString(16).padStart(12, '0');
+  const n = (++fields.n).toString(16).padStart(12, '0');
   return `{5C0E1D2A-7F3B-4C59-9A61-${n.toUpperCase()}}`;
 }
 
@@ -411,6 +415,7 @@ function fieldId(): string {
 export type ColourXml = (color: string | undefined, inner?: string) => string;
 export const srgbXml: ColourXml = (color, inner = '') => `<a:srgbClr val="${hex6(color)}"${inner ? `>${inner}</a:srgbClr>` : '/>'}`;
 
+/** One run as PowerPoint runs (formula style turns into subscripts and superscripts). */
 function runXml(r: TextRun, explicit: { size: number; font: string } | null, hlink?: LinkXml, clr: ColourXml = srgbXml, para?: readonly TextRun[]): string {
   const click = r.link && hlink ? hlink(r.link) : '';
   const parts = r.formula && !r.sub && !r.sup ? formulaPartsIn(para, r) : [{ text: r.text, pos: r.sub ? 'sub' : r.sup ? 'sup' : 'base' }];
@@ -617,13 +622,36 @@ const nameAttrs = (name: string, hidden?: boolean): string => ` name="${xml(name
 export const xfrm = (r: Rect, extra = '') => `<a:xfrm${extra}><a:off x="${emu(r.x1)}" y="${emu(r.y1)}"/><a:ext cx="${Math.max(0, emu(r.x2 - r.x1))}" cy="${Math.max(0, emu(r.y2 - r.y1))}"/></a:xfrm>`;
 const GROUP = '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x="0" y="0"/><a:ext cx="0" cy="0"/><a:chOff x="0" y="0"/><a:chExt cx="0" cy="0"/></a:xfrm></p:grpSpPr>';
 
-/** The slide size's type attribute (ECMA-376 Part 1 §19.7.18): the file's own (Letter, A4...), else 4:3's for 10 × 7.5 in. */
+/** A slide size in EMU as PowerPoint has them (ECMA-376 Part 1 §19.2.1.39 ST_SlideSizeCoordinate: 1 to 56 in). */
+export const slideEmuOk = (v: unknown): v is number => typeof v === 'number' && Number.isSafeInteger(v) && v >= 914400 && v <= 51206400;
+
+/**
+ * The slide size in EMU: exactly as the file had it while it is still that size to the nearest point.
+ * (What is on the slides is laid out on the size in points: for A4 the right edge is 0.1 pt off.)
+ */
+function keptEmu(s: SlideSize, w: number, h: number): { cx: number; cy: number } | null {
+  const e = s.emu;
+  return e && slideEmuOk(e.cx) && slideEmuOk(e.cy) && Math.round(e.cx / 12700) === w && Math.round(e.cy / 12700) === h ? e : null;
+}
+function sizeEmu(s: SlideSize, w: number, h: number): string {
+  const e = keptEmu(s, w, h);
+  return e ? `cx="${e.cx}" cy="${e.cy}"` : `cx="${emu(w)}" cy="${emu(h)}"`;
+}
+
+/** The slide size's type attribute (ECMA-376 Part 1 §19.7.18): the file's own (Letter, A4...), else 4:3's for exactly 10 × 7.5 in. */
 function sizeType(s: SlideSize): string {
-  const type = s.type && SLIDE_SIZE_TYPES.includes(s.type) ? s.type : s.w === 720 && s.h === 540 ? 'screen4x3' : '';
+  const type = s.type && SLIDE_SIZE_TYPES.includes(s.type) ? s.type : s.w === 720 && s.h === 540 && !keptEmu(s, s.w, s.h) ? 'screen4x3' : '';
   return type ? ` type="${type}"` : '';
 }
 
 class Writer {
+  /** This save's fields, numbered from the first (see fieldId). */
+  private fieldCount = { n: 0 };
+  /** paragraphsXml with this save's field numbers. */
+  private paras(...args: Parameters<typeof paragraphsXml>): string {
+    fields = this.fieldCount;
+    return paragraphsXml(...args);
+  }
   pkg = new Package();
   private media = 0;
   private mediaFiles = new MediaFiles();
@@ -750,7 +778,8 @@ class Writer {
     const id = slideOfLink(link);
     if (id !== null) {
       const i = this.deck.slides.findIndex((s) => s.id === id);
-      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`)}" action="ppaction://hlinksldjump"/>`;
+      // (from the part it is in: a slide, or a layout or master)
+      return i < 0 ? '' : `<a:hlinkClick r:id="${this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`))}" action="ppaction://hlinksldjump"/>`;
     }
     if (link.startsWith('#')) return '';
     return `<a:hlinkClick r:id="${this.pkg.relate(from, REL.hyperlink, officeTarget(link), true)}"/>`;
@@ -866,7 +895,7 @@ class Writer {
       (hasNotes ? `<p:notesMasterIdLst><p:notesMasterId r:id="${notesMasterRel}"/></p:notesMasterIdLst>` : '') +
       (hasHandout ? `<p:handoutMasterIdLst><p:handoutMasterId r:id="${handoutRel}"/></p:handoutMasterIdLst>` : '') +
       `<p:sldIdLst>${slideRels.map((r, i) => `<p:sldId id="${256 + i}" r:id="${r}"/>`).join('')}</p:sldIdLst>` +
-      `<p:sldSz cx="${emu(w)}" cy="${emu(h)}"${sizeType(deck.size)}/>` +
+      `<p:sldSz ${sizeEmu(deck.size, w, h)}${sizeType(deck.size)}/>` +
       (deck.master.notesPage?.landscape ? `<p:notesSz cx="9144000" cy="6858000"/>` : `<p:notesSz cx="6858000" cy="9144000"/>`) + fontList +
       custShowsXml(deck.settings?.customShows ?? [], (sid) => slideRels[deck.slides.findIndex((x) => x.id === sid)], xml) +
       `<p:custDataLst><p:tags r:id="${masterTags}"/></p:custDataLst>` +
@@ -1188,7 +1217,7 @@ class Writer {
       let e = k + 1;
       while (g !== undefined && e < out.length - first && grpOf[e] === g) e++;
       const box = g !== undefined && e - k > 1 && !animated.has(g) ? groupBox(doc, g) : null;
-      if (box) wrapped.push(groupXml(id++, `Group ${id - 2}`, box, out.slice(first + k, first + e).join('')));
+      if (box) wrapped.push(groupXml(id++, groupName(doc, g!) ?? `Group ${id - 2}`, box, out.slice(first + k, first + e).join('')));
       else wrapped.push(...out.slice(first + k, first + e));
       k = e;
     }
@@ -1360,7 +1389,9 @@ class Writer {
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
     const { rid, print } = await addChart(this.pkg, path, 'ppt', ++this.charts, box0, w, h);
     // with the chart's print, to tell whether it was changed in PowerPoint (native-print.ts)
-    const tags = this.addTags(path, { [TAG.chart]: JSON.stringify(print ? { ...box0, pr: print } : box0) });
+    // (not the chart's id: a chart read back gets a new one, freshBox, so a second save would write another)
+    const kept = { ...box0, chart: { ...box0.chart, id: undefined } };
+    const tags = this.addTags(path, { [TAG.chart]: JSON.stringify(print ? { ...kept, pr: print } : kept) });
     const ex = isChartEx(box0.chart.kind);
     const uri = ex ? CX_NS : C_NS, tag = ex ? 'cx' : 'c';
     const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Chart ${id - 1}"${alt?.trim() ? ` descr="${xmlAttr(alt.trim())}"` : ''}/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>` +
@@ -1416,7 +1447,7 @@ class Writer {
     const ext = MIME_EXT[still.mime];
     if (!ext || ext === 'svg') return '';
     const blip = this.addMedia(from, still.bytes, ext);
-    const rel = this.pkg.relate(from, REL.slide, `slide${i + 1}.xml`);
+    const rel = this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${i + 1}.xml`));
     const tags = this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: p.zoom, link: p.link }) });
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
     const name = `Slide Zoom ${id - 1}`;
@@ -1476,7 +1507,7 @@ class Writer {
       const ext = MIME_EXT[still.mime];
       if (!ext || ext === 'svg') return '';
       items.push({
-        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, `slide${z.i + 1}.xml`),
+        box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${z.i + 1}.xml`)),
         tags: this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: z.p.zoom, link: z.p.link }) }), back: !!z.p.zoom?.back, section: z.section, k,
       });
     }
@@ -1558,7 +1589,7 @@ class Writer {
     const algn = justify === 'center' ? 'ctr' : justify === 'right' ? 'r' : justify === 'justify' ? 'just' : 'l';
     const hasText = !!s.text?.runs.some((r) => r.text);
     const body = hasText
-      ? paragraphsXml({ id: 0, x: 0, y: 0, runs: s.text!.runs, paras: s.text!.paras, justify }, { size: textSize, font: doc.style.captionFont || 'Arial' }, textSize, this.measure, this.hlink, this.clr)
+      ? this.paras({ id: 0, x: 0, y: 0, runs: s.text!.runs, paras: s.text!.paras, justify }, { size: textSize, font: doc.style.captionFont || 'Arial' }, textSize, this.measure, this.hlink, this.clr)
       : `<a:p><a:pPr algn="${algn}"/><a:endParaRPr ${lang} sz="${Math.round(textSize * 100)}" dirty="0"/></a:p>`;
     const anchor = s.textValign === 'top' ? 't' : s.textValign === 'bottom' ? 'b' : 'ctr';
     const ins = def.prst ? 3.6 : 0;
@@ -1571,7 +1602,7 @@ class Writer {
     // prints of its outline, look and text as written, to tell what PowerPoint changed (native-print.ts)
     const sp = fragment(spPr);
     const pr = sp ? { g: spPrPrint(sp, 'geom'), l: spPrPrint(sp, 'look'), t: textPrint(fragment(txBody)) } : undefined;
-    const tag = this.addTags(path, { [TAG.geo]: JSON.stringify({ v: 1, s: look, plain, sid: s.id, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.geo]: JSON.stringify({ v: 1, s: ordered(look), plain, sid: s.id, ...(pr ? { pr } : {}) }) });
     const click = s.link ? this.hlink(s.link) : '';
     return `<p:sp><p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(s.name?.trim() || `${def.name} ${id - 1}`, s.hidden)}${click ? `>${click}</p:cNvPr>` : '/>'}<p:cNvSpPr/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>` +
       `${spPr}${txBody}</p:sp>`;
@@ -1590,7 +1621,7 @@ class Writer {
     // not its name and hidden, which PowerPoint's cNvPr has, unless the name is one like PowerPoint's own)
     const { name, hidden: _h, ...rest } = look;
     const keep = name !== undefined && PPT_NAME.test(name.trim()) ? { ...rest, name } : rest;
-    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: keep, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
+    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: ordered(keep), sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
     return xmlText.replace('<p:nvPr/>', `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`);
   }
 
@@ -1618,19 +1649,24 @@ class Writer {
     // an elbow as PowerPoint's bent connector (bentConnector2 to 5) when its route is one
     const bent = r.elbow ? bentConnector(elbowRoute(r)) : null;
     if (bent) { frame = bent.frame; geom = bent.geom; curved = false; name = `Elbow Connector ${id - 1}`; }
-    const { id: _, ...keep } = r;
+    // (its own name, where it was given one)
+    if (typeof r.name === 'string' && r.name.trim()) name = r.name.trim();
+    // (its name in the tag only where it is one like PowerPoint's own, which isn't read from cNvPr;
+    // else cNvPr has it, so a name changed in PowerPoint isn't put back from the tag)
+    const { id: _, name: own, ...rest } = r;
+    const keep = typeof own === 'string' && own.trim() && PPT_NAME.test(own.trim()) ? { ...rest, name: own.trim() } : rest;
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';
-    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, sid: r.id, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: ordered(keep), sid: r.id, ...(pr ? { pr } : {}) }) });
     const nvPr = `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`;
     // a curved arrow is a shape drawn along the curve (programs route a connector afresh, square),
     // and so is an elbow PowerPoint has no bent connector for: PowerPoint repairs a connector
     // drawn as a path by deleting the slide's contents
-    if (curved) return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${name}"/><p:cNvSpPr/>${nvPr}</p:nvSpPr><p:spPr>${frame}${geom}${ln}</p:spPr></p:sp>`;
+    if (curved) return `<p:sp><p:nvSpPr><p:cNvPr id="${id}" name="${xml(name)}"/><p:cNvSpPr/>${nvPr}</p:nvSpPr><p:spPr>${frame}${geom}${ln}</p:spPr></p:sp>`;
     const st = site(r.from), end = site(r.to);
     const ends = `${st ? `<a:stCxn id="${st.id}" idx="${st.idx}"/>` : ''}${end ? `<a:endCxn id="${end.id}" idx="${end.idx}"/>` : ''}`;
-    return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${name}"/>${ends ? `<p:cNvCxnSpPr>${ends}</p:cNvCxnSpPr>` : '<p:cNvCxnSpPr/>'}${nvPr}</p:nvCxnSpPr>` +
+    return `<p:cxnSp><p:nvCxnSpPr><p:cNvPr id="${id}" name="${xml(name)}"/>${ends ? `<p:cNvCxnSpPr>${ends}</p:cNvCxnSpPr>` : '<p:cNvCxnSpPr/>'}${nvPr}</p:nvCxnSpPr>` +
       `<p:spPr>${frame}${geom}${ln}</p:spPr></p:cxnSp>`;
   }
 
@@ -1645,7 +1681,10 @@ class Writer {
     const ext = MIME_EXT[mime];
     if (!ext) return '';
     const fx = tidyFx(pic?.fx);
-    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic) };
+    // (and its link, as a shape's: a web page, a file, a slide or a show jump)
+    // (a zoom whose own picture couldn't be written keeps its click to its slide)
+    const click = pic?.link ? this.hlink(pic.link) : '';
+    const more: PicMore = { rot: pic?.rot, hidden: pic?.hidden, ph: this.picPlaceholder(pic), ...(click ? { click } : {}) };
     const descr = alt?.trim() || undefined;
     // what Office can't show live goes in worked in. PowerPoint keeps the original as the blip's
     // layer only as an HD Photo (.wdp) and refuses a PNG there, so the original goes in a tag with
@@ -1722,18 +1761,28 @@ class Writer {
     });
     if (frame) {
       const off = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(frame.xfrm);
-      if (off) { const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v)); box = { x1: x, y1: y, x2: x + w, y2: y + h }; }
+      if (off) {
+        const [x, y, w, h] = off.slice(1).map((v) => fromEmu(v));
+        box = { x1: x, y1: y, x2: x + w, y2: y + h };
+        // (text running down or up: the file's box is the other way round, so the text's is it turned back,
+        // as the reader takes it)
+        if (c.dir === 'vert' || c.dir === 'vert270') box = swapBox(box);
+      }
     }
     // where the text starts in its box; turned text: the box moved so that PowerPoint, turning it
     // about its middle, puts the text where it is here (turned about where it starts)
-    const o = [+(c.x - box.x1).toFixed(3), +(c.y - box.y1).toFixed(3)];
+    // (a kept frame stays where it is, turned: the text's start in it is where it is here turned back about
+    // the frame's middle, as the reader turns it again)
+    const mid0 = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
+    const start = frame && c.rot ? turnAbout(c, mid0, -c.rot) : c;
+    const o = [+(start.x - box.x1).toFixed(3), +(start.y - box.y1).toFixed(3)];
     if (c.rot && !frame) {
       const mid = { x: (box.x1 + box.x2) / 2, y: (box.y1 + box.y2) / 2 };
       const to = turnAbout(mid, c, c.rot);
       box = { x1: box.x1 + to.x - mid.x, y1: box.y1 + to.y - mid.y, x2: box.x2 + to.x - mid.x, y2: box.y2 + to.y - mid.y };
     }
     const explicit = c.ph ? null : { size: doc.style.captionSize, font: doc.style.captionFont || 'Arial' };
-    const body = isEmptyText(c) && c.ph ? `<a:p><a:endParaRPr ${lang} dirty="0"/></a:p>` : paragraphsXml(c, explicit, base?.size ?? doc.style.captionSize, this.measure, this.hlink, this.clr);
+    const body = isEmptyText(c) && c.ph ? `<a:p><a:endParaRPr ${lang} dirty="0"/></a:p>` : this.paras(c, explicit, base?.size ?? doc.style.captionSize, this.measure, this.hlink, this.clr);
     const wrap = c.wrap !== undefined || c.ph ? 'square' : 'none';
     // AutoFit: shrink text on overflow (at the size it is shrunk to here), a box that keeps its
     // size, or one that grows with its text
@@ -1749,18 +1798,30 @@ class Writer {
     const txBody = `<p:txBody>${bodyPr}<a:lstStyle/>${body}</p:txBody>`;
     // and a print of the text as written (how each piece looks), to tell whether PowerPoint changed it (native-print.ts)
     const pr = textPrint(fragment(txBody));
-    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
-    const name = c.name?.trim() || (c.ph === 'title' ? `Title ${id - 1}` : c.ph ? `Text Placeholder ${id - 1}` : `TextBox ${id - 1}`);
-    const nvSp = ph
-      ? `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`
-      : `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr txBox="1"/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`;
-    const geom = ph ? '' : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>';
     // text running down or up: PowerPoint's box is the other way round, turned a quarter less,
     // with the text turned in it
     const quarter = c.dir === 'vert' ? 90 : c.dir === 'vert270' ? -90 : 0;
     const shape = quarter ? swapBox(box) : box;
     const rot = rotAttr((c.rot ?? 0) - quarter);
-    return `<p:sp>${nvSp}<p:spPr>${frame?.xfrm ?? xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
+    const xfrmXml = frame?.xfrm ?? xfrm(shape, rot);
+    // where the reader puts the text (ourText): the frame as written, in whole EMU, the start in it
+    // turned about its middle; the tag says that, so a second save writes the same (F-P-001)
+    const placed = ((): { x: number; y: number } => {
+      const m = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(xfrmXml);
+      if (!m) return c;
+      const [x, y, w, h] = m.slice(1).map((v) => fromEmu(v));
+      const turn = Number(/<a:xfrm[^>]*\brot="(-?\d+)"/.exec(xfrmXml)?.[1] ?? 0) / 60000 + quarter;
+      const read = { x1: x, y1: y, x2: x + w, y2: y + h };
+      const b = quarter ? { ...read, ...swapBox(read) } : read;
+      return turnAbout({ x: b.x1 + o[0], y: b.y1 + o[1] }, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, turn);
+    })();
+    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: ordered({ ...c, id: undefined, x: tagPt(placed.x), y: tagPt(placed.y) }), sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
+    const name = c.name?.trim() || (c.ph === 'title' ? `Title ${id - 1}` : c.ph ? `Text Placeholder ${id - 1}` : `TextBox ${id - 1}`);
+    const nvSp = ph
+      ? `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`
+      : `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr txBox="1"/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`;
+    const geom = ph ? '' : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>';
+    return `<p:sp>${nvSp}<p:spPr>${xfrmXml}${geom}</p:spPr>${txBody}</p:sp>`;
   }
 
   /**
@@ -1784,7 +1845,7 @@ class Writer {
 
     const n = t.rows.length, m = t.cols.length;
     const lw = doc.style.lineWidth;
-    const b = tableBorders(t, lw);
+    const b = savedBorders(t, lw);
     const color = s.color ?? '#000000';
     // PowerPoint puts the first baseline its font's ascent below the cell's top margin
     const marT = Math.max(0, lay.padY - (PPT_ASCENT - ASCENT) * size), marB = Math.max(0, lay.padY - 0.05 * size);
@@ -1832,7 +1893,7 @@ class Writer {
         // runs only under "No Style, No Grid"
         const runs = known ? cell.runs : styledRuns(cell.runs, look);
         const body = runs.some((x) => x.text)
-          ? paragraphsXml({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
+          ? this.paras({ id: 0, x: 0, y: 0, runs, paras: cell.paras, justify: align }, { size, font }, size, this.measure, this.hlink)
           : empty(algnOf(align));
         tcs.push(`<a:tc${down > 1 ? ` rowSpan="${down}"` : ''}${span > 1 ? ` gridSpan="${span}"` : ''}><a:txBody><a:bodyPr/><a:lstStyle/>${body}</a:txBody>${tcPr}</a:tc>`);
       }
@@ -1987,10 +2048,14 @@ export function connectorSpPr(r: Arrow, lw: number, clr: ColourXml = srgbXml): {
   return { frame, geom, ln, curved: curved || !!r.elbow };
 }
 
+/** Adjust values as the reader writes them (Shape.adjust.gd): name and a plain value only. */
+const ADJUST_GD = /^(<a:gd name="[A-Za-z0-9]+" fmla="val -?\d+"\/>)+$/;
+
 /** A library shape's outline `w` × `h` points big: PowerPoint's preset when it has one, else a custom shape with these outlines (as PowerPoint and Word both write them). */
-export function geoGeomXml(geo: string | undefined, w: number, h: number): string {
+export function geoGeomXml(geo: string | undefined, w: number, h: number, adjust?: Shape['adjust']): string {
   const def = geoDef(geo);
-  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst/></a:prstGeom>`;
+  // (with the adjust values the file gave this preset, while it is still that preset)
+  if (def.prst) return `<a:prstGeom prst="${def.prst}"><a:avLst>${adjust && adjust.prst === def.prst && typeof adjust.gd === 'string' && ADJUST_GD.test(adjust.gd) ? adjust.gd : ''}</a:avLst></a:prstGeom>`;
   const o = def.draw(w, h);
   const ta = textArea(def, 0, 0, w, h);
   // the text's box through guides (LibreOffice ignores a text box given as plain numbers)
@@ -2005,7 +2070,7 @@ export function geoSpPr(s: Shape, lw: number, clr: ColourXml = srgbXml): { box: 
   const box = { x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2), x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2) };
   const w = box.x2 - box.x1, h = box.y2 - box.y1;
   const width = s.lineWidth ?? (s.bold ? lw * 2.5 : lw);
-  const geom = geoGeomXml(s.geo, w, h);
+  const geom = geoGeomXml(s.geo, w, h, s.adjust);
   const fc = hex6(s.fillColor ?? s.color ?? '#000000');
   const clear = Math.max(0, Math.min(1, s.transparency ?? 0));
   const alpha = clear ? `<a:alpha val="${Math.round((1 - clear) * 100000)}"/>` : '';
@@ -2023,6 +2088,19 @@ export function geoSpPr(s: Shape, lw: number, clr: ColourXml = srgbXml): { box: 
 }
 
 /** A group of shapes, its box the same inside as out (so the shapes keep their places). */
+/** A group's name, where every member has the same one. */
+function groupName(doc: Doc, g: number): string | undefined {
+  let name: string | undefined, seen = false;
+  for (const m of [doc.atoms, doc.captions, doc.arrows, doc.shapes] as Map<number, { grp?: number; grpName?: string }>[]) {
+    for (const x of m.values()) {
+      if (x.grp !== g) continue;
+      const n = typeof x.grpName === 'string' ? x.grpName.trim() : '';
+      if (!seen) { name = n; seen = true; } else if (n !== name) return undefined;
+    }
+  }
+  return name || undefined;
+}
+
 export function groupXml(id: number, name: string, box: Rect, kids: string, nvPr = ''): string {
   const off = `<a:off x="${emu(box.x1)}" y="${emu(box.y1)}"/>`, ext = `<a:ext cx="${Math.max(0, emu(box.x2 - box.x1))}" cy="${Math.max(0, emu(box.y2 - box.y1))}"/>`;
   return `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${id}" name="${xml(name)}"/><p:cNvGrpSpPr/><p:nvPr>${nvPr}</p:nvPr></p:nvGrpSpPr>` +
@@ -2052,7 +2130,7 @@ function decorXml(sh: DecorShape, id: number): string {
 }
 
 /** A picture's turn and whether it is hidden (Selection Pane). */
-interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string }
+interface PicMore { rot?: number; hidden?: boolean; /** The picture placeholder it is in (its p:ph). */ ph?: string; /** What a click on it does (its a:hlinkClick). */ click?: string }
 
 /**
  * A picture element: PNG (or another bitmap), optionally with an SVG PowerPoint shows instead,
@@ -2065,7 +2143,8 @@ function picXml(id: number, name: string, blipId: string, svgId: string | null, 
     ? `<a:srcRect l="${Math.round(crop.l * 100000)}" t="${Math.round(crop.t * 100000)}" r="${Math.round(crop.r * 100000)}" b="${Math.round(crop.b * 100000)}"/>` : '';
   const ph = more.ph ?? '';
   const nvPr = tagsId ? `<p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tagsId}"/></p:custDataLst></p:nvPr>` : ph ? `<p:nvPr>${ph}</p:nvPr>` : '<p:nvPr/>';
-  return `<p:pic><p:nvPicPr><p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}/><p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
+  const cNv = `<p:cNvPr id="${id}"${nameAttrs(name, more.hidden)}${descr ? ` descr="${xmlAttr(descr)}"` : ''}`;
+  return `<p:pic><p:nvPicPr>${more.click ? `${cNv}>${more.click}</p:cNvPr>` : `${cNv}/>`}<p:cNvPicPr><a:picLocks${ph ? ' noGrp="1"' : ''} noChangeAspect="1"/></p:cNvPicPr>${nvPr}</p:nvPicPr>` +
     `<p:blipFill><a:blip r:embed="${blipId}">${blipEffectsXml(fx)}${ext}</a:blip>${src}<a:stretch><a:fillRect/></a:stretch></p:blipFill>` +
     `<p:spPr>${xfrm(box, rotAttr(more.rot))}${pictureLookXml(look, fx)}</p:spPr></p:pic>`;
 }
@@ -2140,7 +2219,8 @@ function patternOrGradient(s: Shape, fc: string, alpha: string, clr: ColourXml =
 
 /** A box, oval or line as a PowerPoint shape. */
 function shapeXml(s: Shape, id: number, lw: number, clr: ColourXml = srgbXml): string {
-  const width = (s.bold ? lw * 2.5 : lw);
+  // (a box's or an oval's own outline width, as drawn here; a line is drawn at the drawing's)
+  const width = (s.kind !== 'line' ? s.lineWidth : undefined) ?? (s.bold ? lw * 2.5 : lw);
   const color = hex6(s.color ?? '#000000');
   const dash = s.dotted ? '<a:prstDash val="sysDot"/>' : s.dashed ? '<a:prstDash val="dash"/>' : '';
   if (s.kind === 'line') {
@@ -2444,6 +2524,17 @@ function slideLinks(doc: Doc): string | null {
   }
   return out.length ? JSON.stringify(out) : null;
 }
+
+/**
+ * A tag's object with its fields in one order (by name), so a thing read back and saved again
+ * writes the same tag however its fields were put together (F-P-001).
+ */
+function ordered<T extends object>(o: T): T {
+  return Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) as T;
+}
+
+/** A place in a tag, to a millionth of a point: no float noise (75.10000000000001) from reading it back (F-P-001). */
+const tagPt = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /**
  * A placeholder's kept bodyPr with no AutoFit of its own or from its layout (noAutofit, as written

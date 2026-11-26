@@ -39,7 +39,7 @@ export interface ImageItem {
 
 export type Item =
   | { kind: 'path'; segs: Seg[]; fill?: string; stroke?: StrokeStyle; clip?: ClipBox }
-  | { kind: 'text'; clip?: ClipBox; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
+  | { kind: 'text'; clip?: ClipBox; /** Drawn right to left (the canvas's direction): a PDF puts its letters in the order they are seen. */ rtl?: boolean; /** Outlined letters, not filled (strokeText): the outline's width; `color` its colour. */ stroke?: number; text: string; x: number; y: number; size: number; family: string; bold: boolean; italic: boolean; color: string; widths: number[]; /** Turned anticlockwise, in degrees (90: reads upwards). */ angle?: number }
   | ImageItem;
 
 /** A path that remembers its segments (stands in for the browser's Path2D). */
@@ -177,6 +177,8 @@ export type CharWidth = (ch: string, size: number, family: string, bold: boolean
 
 export class VectorContext {
   items: Item[] = [];
+  /** The direction text is drawn in, as a canvas's ('rtl': a right-to-left piece of a document's line). */
+  direction: 'ltr' | 'rtl' | 'inherit' = 'inherit';
   /**
    * Text is placed with these widths (a document's fonts), else Arial's; `advances`, when it
    * knows the font, gives each letter's share of a whole text with kerning (null when it doesn't).
@@ -295,7 +297,17 @@ export class VectorContext {
     const at = this.pt(x, y);
     // (a turn clockwise on the page is an angle anticlockwise taken away)
     const turned = m ? -Math.atan2(m[1], m[0]) / (Math.PI / 180) : 0;
-    this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}) });
+    this.put({ kind: 'text', text, x: at.x, y: at.y, size: f.size, family: f.family, bold: f.bold, italic: f.italic, color: this.st.fillStyle, widths, ...(Math.abs(turned) > 1e-9 ? { angle: turned } : {}), ...(this.direction === 'rtl' ? { rtl: true } : {}) });
+  }
+
+  /** Letters outlined (Word's outline and hollow text): as fillText, with the outline's colour and width. */
+  strokeText(text: string, x: number, y: number): void {
+    const n = this.items.length;
+    const fill = this.st.fillStyle;
+    this.st.fillStyle = this.st.strokeStyle;
+    try { this.fillText(text, x, y); } finally { this.st.fillStyle = fill; }
+    const it = this.items[n];
+    if (it?.kind === 'text') it.stroke = this.st.lineWidth;
   }
 
   /** Text turned about its starting point (degrees anticlockwise), which a canvas does with rotate(). */
@@ -476,4 +488,10 @@ export function itemBounds(items: Item[]): { x1: number; y1: number; x2: number;
     }
   }
   return x1 === Infinity ? null : { x1, y1, x2, y2 };
+}
+
+/** A text item drawn by its outline (strokeText) over the same text just filled: left out where outlines can't be drawn. */
+export function outlineOfPrevious(items: readonly Item[], i: number): boolean {
+  const it = items[i], prev = items[i - 1];
+  return it.kind === 'text' && !!it.stroke && prev?.kind === 'text' && !prev.stroke && prev.text === it.text && Math.abs(prev.x - it.x) < 1e-6 && Math.abs(prev.y - it.y) < 1e-6;
 }

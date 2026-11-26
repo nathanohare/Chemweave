@@ -143,3 +143,86 @@ describe('Hidden text', () => {
     expect(fields(again.doc).map((o) => o.kind === 'field' && o.text)).toEqual(['note to self, ', 'really']);
   });
 });
+
+// (office sampler F-W-016: W-FLD-22, W-FLD-24)
+describe('a list field in the middle of a paragraph', () => {
+  const TOF = ' TOC \\h \\z \\c "Figure" ', INDEX = ' INDEX \\c "2" ';
+  const body = `<w:p>${text('Figures: ')}${fld(TOF, 'Figure 1. a caption')}${text(' end.')}</w:p>`
+    + `<w:p>${text('Index: ')}${fld(INDEX, 'benzene, 1')}</w:p>`;
+  const instrs = (p: string) => [...p.matchAll(/<w:instrText[^>]*>([^<]*)</g)].map((m) => m[1].replaceAll('&quot;', '"'));
+
+  it('is kept in its place as Word had it, showing its result', async () => {
+    const { doc } = await readDocx(wordFile(body));
+    expect(shownText(doc)).toBe('Figures: Figure 1. a caption end.\nIndex: benzene, 1');
+    expect(Object.values(doc.objects).some((o) => o.kind === 'tof' || o.kind === 'index')).toBe(false);
+    expect(fields(doc).map((o) => (o as { instr?: string }).instr)).toEqual([TOF, INDEX]);
+  });
+
+  it('is saved back in the same paragraph, unchanged and not marked to update', async () => {
+    const { doc } = await readDocx(wordFile(body));
+    const xml = partOf(await writeDocx(doc, deps), 'word/document.xml');
+    const paras = xml.match(/<w:p[ >].*?<\/w:p>/g) ?? [];
+    expect(paras).toHaveLength(2);
+    expect(instrs(paras[0])).toEqual([TOF]);
+    expect(paras[0]).toMatch(/Figures: <\/w:t>.*Figure 1\. a caption.* end\./);
+    expect(instrs(paras[1])).toEqual([INDEX]);
+    expect(paras[1]).toMatch(/Index: <\/w:t>.*benzene, 1/);
+    expect(xml).not.toContain('w:dirty');
+    expect(xml).not.toMatch(/TableofFigures|Index1/);
+  });
+
+  it('still makes one standing in a paragraph of its own a list of ours', async () => {
+    const { doc } = await readDocx(wordFile(`<w:p>${fld(TOF, 'Figure 1. a caption')}</w:p><w:p>${fld(INDEX, 'benzene, 1')}</w:p>`));
+    expect(Object.values(doc.objects).map((o) => o.kind).sort()).toEqual(['index', 'tof']);
+  });
+
+  const kinds = async (body: string) => Object.values((await readDocx(wordFile(body))).doc.objects).map((o) => o.kind);
+
+  it('keeps one with text only after it, and a short (w:fldSimple) one, in place (review)', async () => {
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${text(' and more')}</w:p>`)).toEqual(['field']);
+    expect(await kinds(`<w:p>${text('Index: ')}<w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple></w:p>`)).toEqual(['field']);
+    expect(await kinds(`<w:p><w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple>${text(' after')}</w:p>`)).toEqual(['field']);
+  });
+
+  it('makes one with no result, or an empty one, after text a list of ours, to be worked out here (review)', async () => {
+    const bare = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>`;
+    expect(await kinds(`<w:p>${text('Contents ')}${bare}</w:p>`)).toEqual(['toc']);
+    expect(await kinds(`<w:p>${text('Contents ')}${fld(' TOC \\o "1-3" ', ' ')}</w:p>`)).toEqual(['toc']);
+  });
+
+  it('counts only text on its own line, not before a page break or an object (review)', async () => {
+    expect(await kinds(`<w:p>${text('Title')}<w:r><w:br w:type="page"/></w:r>${fld(TOF, 'Figure 1. a caption')}</w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(' PAGE ', '1')}${fld(INDEX, 'benzene, 1')}</w:p>`)).toEqual(['field', 'index']);
+  });
+
+  it('counts only shown text after it on its line, not another field, hidden text or text after a break (re-check)', async () => {
+    const hidden = (s: string) => `<w:r><w:rPr><w:vanish/></w:rPr><w:t>${s}</w:t></w:r>`;
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${fld(' PAGE ', '1')}</w:p>`)).toEqual(['index', 'field']);
+    expect((await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}${hidden('note')}</w:p>`))[0]).toBe('index');
+    expect(await kinds(`<w:p>${fld(TOF, 'Figure 1. a caption')}<w:r><w:br w:type="page"/><w:t>next page</w:t></w:r></w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(TOF, 'Figure 1. a caption')}<w:r><w:br/></w:r>${text('next line')}</w:p>`)).toEqual(['tof']);
+    expect(await kinds(`<w:p>${fld(INDEX, 'benzene, 1')}<w:hyperlink><w:r><w:t>linked</w:t></w:r></w:hyperlink></w:p>`)).toEqual(['field']);
+  });
+
+  it('makes one whose result is only hidden text a list of ours (re-check)', async () => {
+    const hiddenResult = fld(INDEX, 'benzene, 1').replace('<w:r><w:t>benzene, 1', '<w:r><w:rPr><w:vanish/></w:rPr><w:t>benzene, 1');
+    expect(await kinds(`<w:p>${text('Index: ')}${hiddenResult}</w:p>`)).toEqual(['index']);
+  });
+
+  it('saves one with text after it, and a short one, back in place with its result', async () => {
+    const simple = `<w:fldSimple w:instr="${INDEX.replaceAll('"', '&quot;')}">${text('benzene, 1')}</w:fldSimple>`;
+    for (const body of [`<w:p>${fld(INDEX, 'benzene, 1')}${text(' and more')}</w:p>`, `<w:p>${simple}${text(' after')}</w:p>`]) {
+      const xml = partOf(await writeDocx((await readDocx(wordFile(body))).doc, deps), 'word/document.xml');
+      const paras = xml.match(/<w:p[ >].*?<\/w:p>/g) ?? [];
+      expect(paras).toHaveLength(1);
+      expect(instrs(paras[0])).toEqual([INDEX]);
+      expect(paras[0]).toMatch(/benzene, 1.*(and more| after)/);
+      expect(xml).not.toContain('w:dirty');
+    }
+  });
+
+  it('leaves a contents list Word wrote, a title in its first paragraph, a list of ours', async () => {
+    const begin = `<w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> TOC \\o "1-3" </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r>`;
+    expect(await kinds(`<w:p>${text('Contents ')}${begin}${text('Introduction 1')}</w:p><w:p>${text('Results 2')}<w:r><w:fldChar w:fldCharType="end"/></w:r></w:p>`)).toEqual(['toc']);
+  });
+});

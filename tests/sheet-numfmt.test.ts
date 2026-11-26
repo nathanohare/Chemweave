@@ -3,6 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { formatValue, generalNumber, changeDecimals, describeFormat, decimalsOf } from '../src/sheet/numfmt';
 import { CellError } from '../src/sheet/values';
+import { BUILTIN_FORMATS } from '../src/io/xlsx';
 import { parseAdduct, ionMz, formulaMass, ELECTRON, MONOISOTOPIC } from '../src/chem/hrms';
 
 const show = (v: number | string | boolean | null, f?: string) => formatValue(v, f).text;
@@ -114,5 +115,64 @@ describe('HRMS m/z', () => {
     expect(ionMz(M, '[M+2H]2+')).toBeCloseTo(91.0284058, 6);
     expect(ionMz(M, '[2M+Na]+')).toBeCloseTo(2 * M + MONOISOTOPIC.Na - ELECTRON, 9);
     expect(ionMz(M, '[M]+')).toBeCloseTo(M - ELECTRON, 9);
+  });
+});
+
+describe('fractions and times with tenths', () => {
+  it('shows fractions as Excel does', () => {
+    expect(show(1234.567, '# ?/?')).toBe('1234 4/7');
+    expect(show(3.14159, '# ???/???')).toBe('3  16/113');
+    expect(show(3.375, '# ?/8')).toBe('3 3/8');
+    expect(show(0.3, '# ??/16')).toBe('  5/16');
+    expect(show(-2.25, '# ?/4')).toBe('-2 1/4');
+    expect(show(0.5, '?/?')).toBe('1/2');
+    // (no fraction left: its room blank; a fraction of a whole one rounded up to the next)
+    expect(show(5, '# ?/?')).toBe('5    ');
+    expect(show(2.9999, '# ?/?')).toBe('3    ');
+    // (a / in quoted text is text)
+    expect(show(1, '"a/b" 0')).toBe('a/b 1');
+  });
+  it('shows minutes and seconds with tenths (Excel format 47) and elapsed seconds with hundredths', () => {
+    expect(show(0.0005, 'mm:ss.0')).toBe('00:43.2');
+    expect(show(0.00123, '[ss].00')).toBe('106.27');
+    expect(show(0.5, 'h:mm:ss.000')).toBe('12:00:00.000');
+    // (tenths that round up carry into the seconds and minutes)
+    const S = 1 / 86400;
+    expect(show(43.96 * S, 'mm:ss.0')).toBe('00:44.0');
+    expect(show(59.96 * S, 'mm:ss.0')).toBe('01:00.0');
+    expect(show(3599.96 * S, '[mm]:ss.0')).toBe('60:00.0');
+    expect(show(106.999 * S, '[ss].00')).toBe('107.00');
+    // (minutes after elapsed hours)
+    expect(show(1.5, '[h]:mm')).toBe('36:00');
+    // (Excel's built-in 47, as read from a file)
+    expect(show(0.0005, BUILTIN_FORMATS[47])).toBe('00:43.2');
+    // (a number with tenths and a unit is still a number)
+    expect(show(12.5, '0.0 "s"')).toBe('12.5 s');
+  });
+  it('puts a fraction among its text, signs and placeholders as Excel does', () => {
+    expect(show(1.5, '# ?/?" in"')).toBe('1 1/2 in');
+    expect(show(1.5, '$# ?/?')).toBe('$1 1/2');
+    expect(show(-1.5, '# ?/?;(# ?/?)')).toBe('(1 1/2)');
+    expect(show(-1.5, '# ?/?;-# ?/?')).toBe('-1 1/2');
+    expect(show(0, '# ?/?')).toBe('0    ');
+    expect(show(-0.0001, '# ?/?')).toBe('0    ');
+    expect(show(0.5, '# ?/?')).toBe(' 1/2');
+    expect(show(1.5, '?/?')).toBe('3/2');
+    expect(show(1.5, '0 0/0')).toBe('1 1/2');
+    expect(show(0.25, '0/0')).toBe('1/4');
+    expect(show(1.5, '# ??/00')).toBe('1  1/02');
+    expect(show(5, '# 0/8')).toBe('5 0/8');
+    expect(show(1234.5, '#,##0 ?/?')).toBe('1,234 1/2');
+    expect(show(5.5, '000 ?/?')).toBe('005 1/2');
+    expect(show(0, '000 ?/?')).toBe('000    ');
+    expect(show(5, '# 00/00')).toBe('5 00/01');
+    // (a date's digits after its / stay the date's)
+    expect(show(45000, 'm/d/1900')).toBe('3/15/1900');
+  });
+  it('leaves fractions and times as they are on More or Fewer Decimals, and names them', () => {
+    expect(changeDecimals('# ?/?', 1)).toBe('# ?/?');
+    expect(changeDecimals('mm:ss.0', 1)).toBe('mm:ss.0');
+    expect(describeFormat('# ?/?')).toBe('Fraction');
+    expect(describeFormat('mm:ss.0')).toBe('Date or time');
   });
 });

@@ -1,0 +1,1 @@
+Fixed: Slides: a link on a picture (a click goes to a web page, a file, a slide or the next or previous slide) is kept when the deck is saved; and a link to a slide on the slide master or a layout no longer points at a part that isn't there.

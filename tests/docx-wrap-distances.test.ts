@@ -64,3 +64,22 @@ describe('distance from text on each side of a floating picture (W6)', () => {
     expect(floatGaps({ wrap: 'square', x: 0, y: 0, gap: 4 })).toEqual({ t: 4, b: 4, l: 4, r: 4 });
   });
 });
+
+describe('the side a figure\'s text wraps on (F-W-021)', () => {
+  // ECMA-376 Part 1, §20.4.2.17 wrapSquare@wrapText, §20.4.3.7 ST_WrapText
+  const dist = 'distT="0" distB="0" distL="114300" distR="114300"';
+  const wrapText = async (wrap: string) => {
+    const { doc } = await readDocx(wordFile(dist, wrap));
+    return { side: floatIn(doc).side, saved: /<wp:wrapSquare wrapText="([^"]*)"\/>/.exec(strFromU8(unzipSync(await writeDocx(doc, deps))['word/document.xml']))?.[1] };
+  };
+  it('reads and saves left only, right only and both sides', async () => {
+    expect(await wrapText('<wp:wrapSquare wrapText="left"/>')).toEqual({ side: 'left', saved: 'left' });
+    expect(await wrapText('<wp:wrapSquare wrapText="right"/>')).toEqual({ side: 'right', saved: 'right' });
+    expect(await wrapText('<wp:wrapSquare wrapText="bothSides"/>')).toEqual({ side: 'bothSides', saved: 'bothSides' });
+  });
+  it('leaves the wider side (largest) unsaid, and keeps a tight wrap\'s side on the square one it becomes', async () => {
+    expect(await wrapText('<wp:wrapSquare wrapText="largest"/>')).toEqual({ side: undefined, saved: 'largest' });
+    expect(await wrapText('<wp:wrapTight wrapText="left"><wp:wrapPolygon edited="0"><wp:start x="0" y="0"/><wp:lineTo x="0" y="21600"/><wp:lineTo x="21600" y="21600"/><wp:lineTo x="21600" y="0"/><wp:lineTo x="0" y="0"/></wp:wrapPolygon></wp:wrapTight>'))
+      .toEqual({ side: 'left', saved: 'left' });
+  });
+});

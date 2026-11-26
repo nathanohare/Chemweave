@@ -8,6 +8,9 @@
 import { zlibSync } from 'fflate';
 import { Item, Seg, ClipBox, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
+import { hasKana, type FallbackFile, type PdfFallbackSource } from './pdf-fallback';
+import { visualText } from '../text/bidi';
+import { fontKind } from '../text/font-measure';
 
 export interface PdfPage {
   /** Page size in points. */
@@ -40,6 +43,8 @@ export interface PdfOptions {
   image(src: string): Promise<PdfImage | null>;
   /** The font files to keep inside the file for a face (left out: the reader's standard fonts). */
   fonts?: PdfFontSource;
+  /** Font files for characters neither a face's files nor the standard fonts can draw (Chinese, Hebrew, symbols: pdf-fallback.ts). */
+  fallback?: PdfFallbackSource;
   /** How far along the writing is (before each page); a rejection stops it. */
   progress?(done: number, total: number): Promise<void>;
 }
@@ -78,13 +83,52 @@ function winAnsi(ch: string): number | null {
   return WIN_ANSI_EXTRA[ch] ?? null;
 }
 
+/**
+ * Wingdings' characters that have one in Unicode, by their code in the font (Word keeps them at
+ * U+F020 to U+F0FF; a run in Wingdings may also have them as plain letters): the ones in common use
+ * (hands, faces, zodiac signs, circled numbers, bullets, stars, arrows, check boxes). Others are left
+ * as they are.
+ */
+const WINGDINGS: Record<number, number> = {
+  0x20: 0x0020, 0x21: 0x270f, 0x22: 0x2702, 0x23: 0x2701, 0x28: 0x260e, 0x29: 0x2706, 0x2a: 0x2709, 0x36: 0x231b, 0x37: 0x2328,
+  0x41: 0x270c, 0x45: 0x261c, 0x46: 0x261e, 0x47: 0x261d, 0x48: 0x261f, 0x49: 0x270b, 0x4a: 0x263a, 0x4c: 0x2639,
+  0x4e: 0x2620, 0x4f: 0x2690, 0x51: 0x2708, 0x52: 0x263c, 0x54: 0x2744, 0x56: 0x271e, 0x58: 0x2720, 0x59: 0x2721,
+  0x5a: 0x262a, 0x5b: 0x262f, 0x5c: 0x0950, 0x5d: 0x2638, 0x6c: 0x25cf, 0x6d: 0x274d, 0x6e: 0x25a0, 0x6f: 0x25a1,
+  0x71: 0x2751, 0x72: 0x2752, 0x73: 0x2b27, 0x74: 0x29eb, 0x75: 0x25c6, 0x76: 0x2756, 0x77: 0x2b25, 0x78: 0x2327,
+  0x7a: 0x2318, 0x7b: 0x2740, 0x7c: 0x273f, 0x7d: 0x275d, 0x7e: 0x275e, 0x80: 0x24ea, 0x8b: 0x24ff, 0x9e: 0x00b7,
+  0x9f: 0x2022, 0xa0: 0x25aa, 0xa1: 0x25cb, 0xa4: 0x25c9, 0xa5: 0x25ce, 0xa7: 0x25aa, 0xa8: 0x25fb, 0xaa: 0x2726,
+  0xab: 0x2605, 0xac: 0x2736, 0xad: 0x2734, 0xae: 0x2739, 0xaf: 0x2735, 0xb1: 0x2316, 0xb2: 0x27e1, 0xb3: 0x2311,
+  0xd5: 0x232b, 0xd6: 0x2326, 0xd8: 0x27a2, 0xe8: 0x2794, 0xef: 0x21e6, 0xf0: 0x21e8, 0xf1: 0x21e7, 0xf2: 0x21e9,
+  0xfb: 0x2717, 0xfc: 0x2713, 0xfd: 0x2612, 0xfe: 0x2611,
+};
+// (the zodiac signs, ① to ⑩ and ❶ to ❿ in a row)
+for (let i = 0; i < 12; i++) WINGDINGS[0x5e + i] = 0x2648 + i;
+for (let i = 0; i < 10; i++) { WINGDINGS[0x81 + i] = 0x2460 + i; WINGDINGS[0x8c + i] = 0x2776 + i; }
+
+/** Text in a symbol font (Wingdings) as the Unicode characters it shows, one for one; other fonts' text as it is. */
+export function symbolFontText(text: string, family: string): string {
+  if (!/^wingdings$/i.test(family.trim())) return text;
+  return [...text].map((ch) => {
+    const c = ch.codePointAt(0)!;
+    const u = WINGDINGS[c >= 0xf020 && c <= 0xf0ff ? c - 0xf000 : c];
+    return u ? String.fromCodePoint(u) : ch;
+  }).join('');
+}
+
+/**
+ * What draws nothing: a soft hyphen (the hyphen at a line break is a glyph of its own), the
+ * zero-width space, joiners and direction marks (U+200B to U+200F, U+2060), and the variation
+ * selectors (U+FE00 to U+FE0F, text or emoji style).
+ */
+const INVISIBLE = /^[\u00ad\u200b-\u200f\u2060\ufe00-\ufe0f]$/;
+
 /** Text cut into pieces that one font can write, with each piece's position along the line. */
 export function textPieces(text: string, widths: number[]): { symbol: boolean; codes: number[]; dx: number }[] {
   const out: { symbol: boolean; codes: number[]; dx: number }[] = [];
   let x = 0;
   [...text].forEach((ch, i) => {
     // a soft hyphen draws nothing (the hyphen at a line break is a glyph of its own)
-    if (ch === '\u00ad') { x += widths[i] ?? 0; return; }
+    if (INVISIBLE.test(ch)) { x += widths[i] ?? 0; return; }
     let code = winAnsi(ch), symbol = false;
     if (code === null && SYMBOL[ch] !== undefined) { code = SYMBOL[ch]; symbol = true; }
     // a narrow no-break space and other spaces count as spaces; anything else unknown shows as "?"
@@ -98,14 +142,15 @@ export function textPieces(text: string, widths: number[]): { symbol: boolean; c
 }
 
 /** Text cut into runs that one kept font can draw (the first that has each character), and runs that none can. */
-export function keptPieces(text: string, widths: number[], fonts: EmbeddedFont[]): { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] {
+export function keptPieces(text: string, widths: number[], fonts: EmbeddedFont[], fallback?: ReadonlyMap<string, EmbeddedFont>): { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] {
   const out: { font: EmbeddedFont | null; text: string; widths: number[]; dx: number }[] = [];
   let x = 0;
   [...text].forEach((ch, i) => {
     // a soft hyphen draws nothing (the hyphen at a line break is a glyph of its own)
-    if (ch === '\u00ad') { x += widths[i] ?? 0; return; }
+    if (INVISIBLE.test(ch)) { x += widths[i] ?? 0; return; }
     const c = ch.codePointAt(0)!;
-    const font = fonts.find((f) => f.font.glyph(c) !== 0) ?? null;
+    // (a fallback font only for the characters it was read for: a text's own fonts and the standard ones draw the rest)
+    const font = fonts.find((f) => f.font.glyph(c) !== 0) ?? fallback?.get(ch) ?? null;
     const last = out[out.length - 1];
     if (last && last.font === font) { last.text += ch; last.widths.push(widths[i] ?? 0); }
     else out.push({ font, text: ch, widths: [widths[i] ?? 0], dx: x });
@@ -348,6 +393,61 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
     }
     return f;
   };
+  // fonts for what a face can't draw (pdf-fallback.ts): each file read once, in the order asked for,
+  // so a file's place in the PDF is the same every time
+  const fallbacks = new Map<string, Promise<EmbeddedFont | null>>();
+  const fallbackFile = (file: FallbackFile): Promise<EmbeddedFont | null> => {
+    let f = fallbacks.get(file.key);
+    if (!f) {
+      f = file.load().then((data) => {
+        const tt = new TrueType(data);
+        if (!tt.embeddable) return null;
+        const e = new EmbeddedFont(tt, o.reserve(), subsetTag(kept.length));
+        kept.push(e);
+        return e;
+      }).catch(() => null);
+      fallbacks.set(file.key, f);
+    }
+    return f;
+  };
+  // (each character's, looked for once in the PDF: by itself, and in Japanese text)
+  const fallbackOf = new Map<string, Promise<EmbeddedFont | null>>();
+  /** For each character neither a face's files nor the standard fonts (Symbol among them) can draw, the first fallback font that has it. */
+  const fallbackFonts = async (text: string, fonts: EmbeddedFont[]): Promise<Map<string, EmbeddedFont>> => {
+    const out = new Map<string, EmbeddedFont>();
+    if (!opts.fallback) return out;
+    const kana = hasKana(text);
+    const missing = [...new Set(text)].filter((ch) => !/\s/.test(ch) && !INVISIBLE.test(ch) && winAnsi(ch) === null && SYMBOL[ch] === undefined && !fonts.some((f) => f.font.glyph(ch.codePointAt(0)!) !== 0));
+    for (const ch of missing) {
+      const key = `${ch}|${kana}`;
+      let found = fallbackOf.get(key);
+      if (!found) {
+        found = (async () => {
+          const files = await Promise.resolve().then(() => opts.fallback!(ch, text)).catch(() => [] as FallbackFile[]);
+          for (const file of files) {
+            const e = await fallbackFile(file);
+            if (e && e.font.glyph(ch.codePointAt(0)!) !== 0) return e;
+          }
+          return null;
+        })();
+        fallbackOf.set(key, found);
+      }
+      const e = await found;
+      if (e) out.set(ch, e);
+    }
+    return out;
+  };
+  // a stand-in's scale, once per face and family in the file (from the first text with a few letters),
+  // so the words of a justified line, drawn one by one, are scaled alike
+  const faceScales = new Map<string, number>();
+  const faceScaleOf = (f: EmbeddedFont, text: string, widths: number[], size: number): number => {
+    const key = String(f.id);
+    const known = faceScales.get(key);
+    if (known !== undefined) return known;
+    const sc = f.scaleFor(text, widths, size);
+    if ([...text].filter((ch) => !/\s/.test(ch) && f.font.glyph(ch.codePointAt(0)!)).length >= 6) faceScales.set(key, sc);
+    return sc;
+  };
   // each picture is stored once, however many times it shows
   const images = new Map<string, number | null>();
   const imageRef = async (src: string): Promise<number | null> => {
@@ -417,15 +517,39 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         ops.push(`${paint.v} rg`);
         // turned text (degrees anticlockwise): along the line, and up from it, on the page
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
-        const kept = await faceFonts(it.family, it.bold, it.italic);
-        const show = (f: string, dx: number, s: string) => {
+        const own = await faceFonts(it.family, it.bold, it.italic);
+        // (right-to-left text: its letters in the order they are seen, Arabic's joined, as the screen shows them)
+        const seenText = visualText(symbolFontText(it.text, it.family), it.widths, !!it.rtl);
+        const text = seenText.text;
+        const extra = await fallbackFonts(text, own);
+        // (letters scaled to the widths the text was laid out with: Tz, kept until changed within the item)
+        let tz = 100;
+        // a face drawn in place of the font the text was measured with: not one with published widths
+        // (Arial, Times, Calibri... whose stand-ins have the same), not the font itself, not a fallback
+        // font for characters the face lacks; its letters scaled once for the whole item
+        const ownFace = (f: EmbeddedFont) => own.includes(f);
+        const fam = it.family.toLowerCase().replace(/[^a-z0-9]/g, '');
+        // (a family named in other letters than Latin ones never matches a face's PostScript name)
+        const sameName = (f: EmbeddedFont) => !!fam && f.font.postScriptName.toLowerCase().replace(/[^a-z0-9]/g, '').startsWith(fam);
+        // (Carlito and Caladea have Calibri's and Cambria's widths)
+        const exact = (f: EmbeddedFont) => /^(calibri|cambria)$/i.test(it.family.trim()) && /^(carlito|caladea)/i.test(f.font.postScriptName);
+        const standIn = (f: EmbeddedFont) => ownFace(f) && fontKind(it.family) === null && !sameName(f) && !exact(f);
+        let itemScale: number | undefined;
+        const show = (f: string, dx: number, s: string, scale = 1) => {
           usedFonts.add(f);
           // the text matrix turns the letters the right way up again
           const m = `${num(cos)} ${num(-sin)} ${num(-sin)} ${num(-cos)} ${num(it.x + dx * cos)} ${num(it.y - dx * sin)}`;
-          ops.push(`BT /${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
+          const z = Math.round(scale * 1000) / 10;
+          const tzOp = z !== tz ? `${num(z)} Tz ` : '';
+          tz = z;
+          // (outlined letters: drawn by their outline, PDF's text rendering mode 1)
+          ops.push(`BT ${it.stroke ? `${paint.v} RG ${num(it.stroke)} w 1 j 1 Tr ` : ''}${tzOp}/${f} ${num(it.size)} Tf ${m} Tm ${s} ${s.startsWith('[') ? 'TJ' : 'Tj'} ET`);
         };
-        for (const piece of keptPieces(it.text, it.widths, kept)) {
-          if (piece.font) show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size));
+        for (const piece of keptPieces(text, seenText.widths, own, extra)) {
+          if (piece.font) {
+            const sc = standIn(piece.font) ? (itemScale ??= faceScaleOf(piece.font, text, seenText.widths, it.size)) : 1;
+            show(`F${piece.font.id}`, piece.dx, piece.font.show(piece.text, piece.widths, it.size, sc), sc);
+          }
           else for (const p of textPieces(piece.text, piece.widths)) show(fontRef(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic)), piece.dx + p.dx, pdfString(p.codes));
         }
         ops.push('Q');

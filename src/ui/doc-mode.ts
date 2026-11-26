@@ -6009,14 +6009,15 @@ export class DocumentMode {
     this.focus();
     if (!got || this.file !== f) return;
     const tv = (v: string) => (v === 'on' ? true : v === 'off' ? false : undefined);
-    const next: CharStyle = { id: s.id, name: got.name.trim() || s.name, custom: s.custom };
+    // (and what the dialog doesn't show: the style it is based on, its theme colour and font)
+    const next: CharStyle = { id: s.id, name: got.name.trim() || s.name, custom: s.custom, ...(s.basedOn ? { basedOn: s.basedOn } : {}), ...(s.wth ? { wth: s.wth } : {}) };
     if (got.font.trim()) next.font = got.font.trim();
     const size = Number(got.size);
     if (got.size.trim() && size > 0) next.size = size;
     const bold = tv(got.bold), italic = tv(got.italic);
     if (bold !== undefined) next.bold = bold;
     if (italic !== undefined) next.italic = italic;
-    if (got.underline === 'true') next.underline = true;
+    if (got.underline === 'true') { next.underline = true; if (s.ukind) next.ukind = s.ukind; }
     if (got.smallCaps === 'true') next.smallCaps = true;
     if (s.allCaps) next.allCaps = true;
     if (s.strike) next.strike = true;

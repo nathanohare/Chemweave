@@ -7,11 +7,13 @@ import { rNumberDigits, rNumberPrefs } from './chem/r-numbers';
 
 /** The colour Office gives links (kept here too, as links.ts builds on these functions). */
 const LINK_COLOUR = '#0563c1';
+/** Word's character styles for links (their look is the link's blue and underline). */
+export const LINK_STYLES: ReadonlySet<string> = new Set(['Hyperlink', 'FollowedHyperlink']);
 
 export type RunStyle = Omit<TextRun, 'text'>;
 export type Toggle = 'bold' | 'italic' | 'underline' | 'sub' | 'sup' | 'formula' | 'strike' | 'smallCaps' | 'allCaps';
 
-const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite', 'symbolFont'] as const;
+const KEYS = ['bold', 'italic', 'underline', 'sub', 'sup', 'formula', 'size', 'font', 'color', 'highlight', 'obj', 'strike', 'rev', 'cmt', 'link', 'smallCaps', 'allCaps', 'cstyle', 'spacing', 'fmt', 'hide', 'cc', 'noKern', 'kernAt', 'noFill', 'transparency', 'outline', 'outlineW', 'shadow', 'wfx', 'pfx', 'ukind', 'ucolor', 'dstrike', 'wrx', 'lang', 'field', 'noProof', 'raise', 'cite', 'symbolFont'] as const;
 /** Subscript, superscript and formula style change where characters sit, so only one applies. */
 const POSITION: Toggle[] = ['sub', 'sup', 'formula'];
 
@@ -135,7 +137,9 @@ export function typingStyle(runs: TextRun[], start: number, end: number, fallbac
   // typing just after a link isn't part of it (inside it, it is), as in Word
   if (s.link !== undefined && end === start && (start >= text.length || charStyle(runs, start)?.link !== s.link)) {
     const { link: _l, ...rest } = s;
-    s = rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
+    // (in Word's link style: out of it, and its look)
+    s = rest.cstyle && LINK_STYLES.has(rest.cstyle) ? { ...rest, cstyle: undefined, color: undefined, underline: undefined }
+      : rest.color?.toLowerCase() === LINK_COLOUR ? { ...rest, color: undefined, underline: undefined } : rest;
   }
   // typing next to a citation (slides) is ordinary text, not more of its number
   if (s.cite !== undefined) {

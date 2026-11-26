@@ -89,7 +89,7 @@ Pick slides in one deck's list and press Ctrl+C, then click in the list of anoth
 
 ### Hidden slides
 
-**Hide Slide** keeps a slide in the deck but leaves it out of the slide show: its picture in the list is grayed and its number struck through. The show skips it going forwards and back, and starting from the beginning starts at the first slide that isn't hidden. **From This Slide** on a hidden slide still shows it, and typing its number then Enter jumps to it, as in PowerPoint. Hidden slides stay hidden in the PowerPoint file. Click **Hide Slide** again to show it.
+**Hide Slide** keeps a slide in the deck but leaves it out of the slide show: its picture in the list is grayed and its number struck through. The show skips it going forwards and back, and starting from the beginning starts at the first slide that isn't hidden. **From This Slide** on a hidden slide still shows it, and typing its number then Enter jumps to it, as in PowerPoint. Hidden slides stay hidden in the PowerPoint file, and **Export PDF** leaves them out (printing still prints them). Click **Hide Slide** again to show it.
 
 ### Canvas slides
 
@@ -476,7 +476,7 @@ For handouts you can also pick the paper and **Frame the slides**. You pick the 
 - In PowerPoint, titles, text boxes and lists are ordinary PowerPoint text, tables are PowerPoint tables, and transitions and animations are PowerPoint's own. Structures show as sharp pictures.
 - Open the same .pptx here again (Ctrl+O) and the structures are editable drawings again, even after PowerPoint has saved the file.
 - The free fonts that come with the app are saved inside the file when you use them, so the deck looks the same on a computer that doesn't have them.
-- **File ▸ Export ▸ Export PDF…** makes a PDF with one page per slide.
+- **File ▸ Export ▸ Export PDF…** makes a PDF with one page per slide, leaving out hidden slides as PowerPoint does.
 - **File ▸ Export ▸ Export Picture…** saves the current slide as a PNG or TIFF at the dpi you choose, or as an SVG, EMF or EPS.
 
 Opening a deck made in PowerPoint works too:

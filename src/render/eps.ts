@@ -6,7 +6,7 @@
 // character set so accented letters and dashes come out right. Pictures inside are stored
 // LZW-compressed; EPS has no see-through colours, so those are blended with white.
 
-import { Item, Seg, parseColor } from './vector';
+import { Item, Seg, outlineOfPrevious, parseColor } from './vector';
 import type { EmfBox } from './emf';
 import { textPieces, standardFont, type PdfImage } from '../io/pdf';
 import { lzw } from './tiff';
@@ -83,7 +83,7 @@ export async function itemsToEps(items: Item[], box: EmfBox, image: (src: string
     if (!f) { f = `F${fonts.size + 1}`; fonts.set(name, f); }
     return f;
   };
-  for (const it of items) {
+  for (const [idx, it] of items.entries()) {
     const at = body.length;
     if (it.kind === 'path') {
       if (!it.segs.some((s) => s.k !== 'M')) continue;
@@ -97,7 +97,8 @@ export async function itemsToEps(items: Item[], box: EmfBox, image: (src: string
       }
     } else if (it.kind === 'text') {
       const paint = colour(it.color);
-      if (paint.a <= 0 || !it.text) continue;
+      // (an outline drawn over its own letters: left out, the letters alone)
+      if (paint.a <= 0 || !it.text || outlineOfPrevious(items, idx)) continue;
       body.push(`gsave ${paint.v} rg ${num(it.x)} ${num(it.y)} translate ${num(-(it.angle ?? 0))} rotate 1 -1 scale`);
       for (const p of textPieces(it.text, it.widths)) {
         const f = fontKey(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic));
