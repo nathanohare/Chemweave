@@ -208,6 +208,33 @@ describe('the template window', () => {
     expect((await slides[0].cards()).map((c) => c.name)).toEqual(['Blank presentation']);
   });
 
+  it('shows every category in one list under All, a labeled divider before each, the blank file first', async () => {
+    const picked: string[] = [];
+    const w = showTemplateWindow({
+      mode: 'slides', title: 'New Presentation', all: true, initial: 'all', initialCard: 'b1',
+      categories: [
+        { id: 'blank', name: 'Blank', cards: () => [card('b1', picked)] },
+        { id: 'a', name: 'Light', cards: () => [card('one', picked), card('two', picked)] },
+        { id: 'b', name: 'Mine', cards: () => [] },
+        { id: 'c', name: 'Dark', cards: () => [card('two', picked), card('three', picked)] },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const root = document.querySelector('.template-window') as HTMLElement;
+    expect([...root.querySelectorAll('.tw-cat')].map((b) => b.firstChild!.textContent)).toEqual(['All', 'Blank', 'Light', 'Mine', 'Dark']);
+    // (an empty category has no divider; a card in two categories shows once)
+    expect([...root.querySelectorAll('.tw-grid > *')].map((x) => x.classList.contains('tw-section') ? `— ${x.textContent}` : x.querySelector('strong')!.textContent))
+      .toEqual(['— Blank', 'B1', '— Light', 'ONE', 'TWO', '— Dark', 'THREE']);
+    expect(document.activeElement).toBe(root.querySelector('.tw-card'));
+    expect(root.querySelector('.tw-card')!.classList.contains('tw-default')).toBe(true);
+    // one category alone: its cards, no dividers
+    (root.querySelectorAll('.tw-cat')[2] as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(root.querySelectorAll('.tw-section').length).toBe(0);
+    expect([...root.querySelectorAll('.tw-card strong')].map((b) => b.textContent)).toEqual(['ONE', 'TWO']);
+    w.close();
+  });
+
   it('opens on the blank file, marked and focused so Enter keeps it; the arrows through the categories stay in the list', async () => {
     const picked: string[] = [];
     const w = showTemplateWindow({

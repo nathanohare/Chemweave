@@ -28,8 +28,9 @@ export async function pickTemplate(): Promise<TemplatePick> {
       { id: 'blank', name: 'Blank design', cards: () => blankCards(pick) },
       ...TEMPLATE_CATEGORIES.map((c) => ({ id: c.id, name: c.name, cards: () => DESIGN_TEMPLATES.filter((t) => t.category === c.id).map((t) => templateCard(t, pick)) })),
     ],
-    // a blank page, the first size, is chosen when the window opens
-    initial: 'blank',
+    // every category in one list, the blank pages first; the first size is chosen when the window opens
+    all: true,
+    initial: 'all',
     initialCard: `blank-${BLANK_SIZES[0]}`,
     modal: true,
   });

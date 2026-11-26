@@ -40,7 +40,7 @@ export interface TemplateWindowOptions {
   /** Help behind the "i" beside the title. */
   note?: string;
   categories: TemplateCategory[];
-  /** An "All" category first, with every category's cards. */
+  /** An "All" category first: every category's cards in one scrolling list, a labeled divider before each category. */
   all?: boolean;
   /** The category shown first (else the first). */
   initial?: string;
@@ -277,37 +277,54 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
       if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
       const cards = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
       const i = cards.indexOf(b);
-      const perRow = Math.max(1, cards.filter((c) => c.offsetTop === cards[0].offsetTop).length);
       e.preventDefault();
-      if (e.key === 'ArrowLeft' && i % perRow === 0) { tabs.get(showing)?.focus(); return; }
-      const j = i + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -perRow : perRow);
-      cards[Math.min(cards.length - 1, Math.max(0, j))]?.focus();
+      // (rows can be short where a section ends, so Up and Down go to the nearest card in the row above or below)
+      if (e.key === 'ArrowLeft' && (i === 0 || cards[i - 1].offsetTop !== b.offsetTop)) { tabs.get(showing)?.focus(); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { cards[Math.min(cards.length - 1, Math.max(0, i + (e.key === 'ArrowLeft' ? -1 : 1)))]?.focus(); return; }
+      const down = e.key === 'ArrowDown';
+      const rows = cards.filter((c) => down ? c.offsetTop > b.offsetTop : c.offsetTop < b.offsetTop);
+      if (!rows.length) return;
+      const top = down ? Math.min(...rows.map((c) => c.offsetTop)) : Math.max(...rows.map((c) => c.offsetTop));
+      const row = rows.filter((c) => c.offsetTop === top);
+      row.reduce((a, c) => Math.abs(c.offsetLeft - b.offsetLeft) < Math.abs(a.offsetLeft - b.offsetLeft) ? c : a).focus();
     });
     if (pic.draw) { if (io) io.observe(pic); else pic.draw(); }
     return b;
   };
 
-  type Cat = { id: string; name: string; cards: () => Promise<TemplateCard[]> };
+  /** A category's cards, or (All) every category's under its name. */
+  type Section = { name: string; cards: TemplateCard[] };
+  type Cat = { id: string; name: string; cards: () => Promise<TemplateCard[]>; sections?: () => Promise<Section[]> };
   const load = (c: TemplateCategory) => async () => c.cards();
   const cats: Cat[] = o.categories.map((c) => ({ id: c.id, name: c.name, cards: load(c) }));
   if (o.all) {
-    cats.unshift({
-      id: 'all', name: 'All', cards: async () => {
-        const seen = new Set<string>();
-        return (await Promise.all(o.categories.map((c) => c.cards()))).flat().filter((c) => !seen.has(c.id) && !!seen.add(c.id));
-      },
-    });
+    const sections = async (): Promise<Section[]> => {
+      const seen = new Set<string>();
+      const lists = await Promise.all(o.categories.map((c) => c.cards()));
+      return o.categories.map((c, i) => ({ name: c.name, cards: lists[i].filter((t) => !seen.has(t.id) && !!seen.add(t.id)) })).filter((x) => x.cards.length);
+    };
+    cats.unshift({ id: 'all', name: 'All', sections, cards: async () => (await sections()).flatMap((x) => x.cards) });
   }
+  /** The divider before a category's cards in All: its name and a line, across the whole row. */
+  const divider = (name: string): HTMLElement => {
+    const d = document.createElement('div');
+    d.className = 'tw-section';
+    d.setAttribute('role', 'separator');
+    d.setAttribute('aria-label', name);
+    d.textContent = name;
+    return d;
+  };
   const tabs = new Map<string, HTMLButtonElement>();
   let showing = '';
   const show = async (id: string, focus = false, opening = false) => {
     showing = id;
     for (const [k, b] of tabs) { b.setAttribute('aria-selected', String(k === id)); b.tabIndex = k === id ? 0 : -1; }
     if (focus) tabs.get(id)?.focus();
-    const cards = await cats.find((c) => c.id === id)!.cards();
+    const cat = cats.find((c) => c.id === id)!;
+    const parts = cat.sections ? await cat.sections() : [{ name: '', cards: await cat.cards() }];
     if (showing !== id || !isOpen) return;
     io?.disconnect();
-    grid.replaceChildren(...cards.map(makeCard));
+    grid.replaceChildren(...parts.flatMap((x) => [...(x.name ? [divider(x.name)] : []), ...x.cards.map(makeCard)]));
     // another category's templates fade in (Nate's note on Motion Choices)
     enter(grid, 'fade');
     grid.scrollTop = 0;
