@@ -1187,8 +1187,10 @@ export class SiMode {
       case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
       case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
       case 'color': look = value ? { color: value } : null; break;
+      case 'small-caps': look = { smallCaps: !pv.selectionHas('smallCaps') }; break;
+      case 'highlight': look = { highlight: pv.selectionHas('highlight') ? '' : '#ffff00' }; break;
       default:
-        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
+        this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Small Caps, Highlight, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
         return;
     }
     if (look) await pv.format(look);

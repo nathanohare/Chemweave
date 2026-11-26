@@ -14,7 +14,7 @@
 /** Why the SI tab's font, size, strikethrough and color controls are greyed. */
 export const SI_FONT_REASON = 'Text on the SI page takes its font, size and color from the journal style (Project Settings ▸ Output). To change them for some words, select them in the Live Preview.';
 /** The SI Font group controls SI text cannot hold. */
-export const SI_FONT_OFF: readonly string[] = ['font', 'size', 'grow', 'shrink', 'strike', 'color'];
+export const SI_FONT_OFF: readonly string[] = ['font', 'size', 'grow', 'shrink', 'strike', 'color', 'small-caps', 'highlight'];
 
 export type FontControl = 'font' | 'size' | 'grow' | 'shrink' | 'clear' | 'bold' | 'italic' | 'underline' | 'strike' | 'sub' | 'sup' | 'formula' | 'charges' | 'color';
 export type FontMode = 'document' | 'slides' | 'sheet' | 'si';
@@ -163,7 +163,9 @@ const MODES: Record<FontMode, ModeFont> = {
     },
     extra: [
       '',
-      '<button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing" aria-label="Symbol">Ω</button>',
+      '<button class="rb-sq" data-si-fmt="small-caps" title="Small Caps: lower-case letters as smaller capitals (the words selected in the Live Preview)">A<small>BC</small></button>'
+      + '<button class="rb-sq rb-hl" data-si-fmt="highlight" title="Highlight: a yellow background behind the words selected in the Live Preview (click again to remove it)" aria-label="Highlight"><span class="hl-ab">ab</span></button>'
+      + '<button class="rb-sq" data-si="symbol" title="Symbol: type °, Å, ±, Greek letters, arrows… where you are typing" aria-label="Symbol">Ω</button>',
     ],
     launcher: { attr: 'data-si-font', value: 'settings', tip: 'Project Settings ▸ Output: the journal style sets the font and size of SI text' },
   },
