@@ -10,7 +10,7 @@ import { chordOf } from './keymap';
 export const FIELD_FILE_KEYS: ReadonlySet<string> = new Set(['save', 'save-as', 'open', 'new', 'new-slides', 'print', 'close-tab', 'next-tab', 'prev-tab', 'autosave']);
 
 /** Places whose text boxes keep the file keys to themselves (or send them on their own). */
-const NOT_FROM = 'dialog, .menu, .menu-wrap, #sheet-pane, .doc-input';
+const NOT_FROM = 'dialog, .menu, .menu-wrap, #backstage, #sheet-pane, .doc-input';
 
 /** Is this a box being typed in (not a check box, button or slider)? */
 export function isTypingField(t: EventTarget | null): t is HTMLElement {

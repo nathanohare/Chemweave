@@ -70,7 +70,7 @@ export function iconSvg(tier, square = false) {
 
 // ---------------------------------------------------------------- the files
 /** Windows .ico: a directory of PNG pictures. */
-function ico(pngs) {
+export function ico(pngs) {
   const head = Buffer.alloc(6 + 16 * pngs.length); head.writeUInt16LE(1, 2); head.writeUInt16LE(pngs.length, 4);
   let off = head.length;
   pngs.forEach(([px, png], i) => {
@@ -82,7 +82,7 @@ function ico(pngs) {
   return Buffer.concat([head, ...pngs.map((p) => p[1])]);
 }
 /** macOS .icns: PNG pictures under their four-letter size names. */
-function icns(parts) {
+export function icns(parts) {
   const chunks = parts.map(([type, png]) => { const h = Buffer.alloc(8); h.write(type, 0, 'ascii'); h.writeUInt32BE(png.length + 8, 4); return Buffer.concat([h, png]); });
   const body = Buffer.concat(chunks), h = Buffer.alloc(8); h.write('icns', 0, 'ascii'); h.writeUInt32BE(body.length + 8, 4);
   return Buffer.concat([h, body]);

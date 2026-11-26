@@ -94,7 +94,8 @@ describe('clip in a vector picture (F-W-027)', () => {
 
     const svg = itemsToSvg(items, { x1: 0, y1: 0, x2: 200, y2: 200 });
     const id = /<clipPath id="([^"]+)"><rect x="10" y="20" width="100" height="30"\/><\/clipPath>/.exec(svg)![1];
-    expect(svg).toMatch(new RegExp(`<g clip-path="url\\(#${id}\\)">\\n<text[^>]*>cut off</text>\\n</g>`));
+    const svgCut = /<g clip-path="url\(#([^)]+)\)">\n<text[^>]*>cut off<\/text>\n<\/g>/.exec(svg);
+    expect(svgCut?.[1]).toBe(id);
     expect(svg).toMatch(/\n<text[^>]*>not cut<\/text>/);
 
     const eps = await itemsToEps(items, { x1: 0, y1: 0, x2: 200, y2: 200 }, async () => null);

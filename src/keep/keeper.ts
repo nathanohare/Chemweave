@@ -29,6 +29,8 @@ const TICK_MS = 2000;
 /** How often files are checked for changes made elsewhere, and for lock files. */
 const DISK_MS = 5000;
 const LOCK_MS = 15000;
+/** The web version's browser lock for a running session is this plus the session's id. */
+const SESSION_LOCK = 'chemweave-session:';
 
 /** Where a file's versions are filed: its path, or in a browser its name. */
 function versionKey(ref: FileRef, name: string): string | null {
@@ -75,6 +77,46 @@ export class Keeper {
     // the desktop app runs one copy at a time (its single-instance plugin)
     this.recovery.oneCopy = desktop;
     this.versions = new Versions(store);
+    if (!desktop) this.holdLock();
+  }
+
+  /**
+   * The web version holds a browser lock for as long as the page runs, so a start soon after a
+   * reload can tell at once that the page before it has stopped and offer its copies, instead of
+   * taking it for another window still running until its beat is two minutes old.
+   */
+  private holdLock(): void {
+    const locks = typeof navigator !== 'undefined' && 'locks' in navigator ? navigator.locks : null;
+    if (!locks?.request || !locks.query) return;
+    void locks.request(SESSION_LOCK + this.recovery.session, () => {
+      this.recovery.holdsLock = true;
+      return new Promise<void>(() => {}); // held until the page goes
+    }).catch(() => {});
+    this.recovery.heldNow = async () => {
+      const q = await locks.query();
+      return new Set((q.held ?? []).flatMap((l) => (l.name?.startsWith(SESSION_LOCK) ? [l.name.slice(SESSION_LOCK.length)] : [])));
+    };
+  }
+
+  /**
+   * Before the web version reloads itself for a new version: copy every tab with unsaved changes
+   * now, so the copies are offered as soon as the page is back. False when that can't be promised
+   * (recovery copies are switched off, or a copy failed): the browser's own "Leave site?" question
+   * then stays.
+   */
+  async keepForReload(): Promise<boolean> {
+    if (!this.ws.anyDirty) return true;
+    if (this.prefs.recoveryMinutes <= 0 || this.ended) return false;
+    try { await this.copyNow(); } catch { return false; }
+    if (!this.workKept()) return false;
+    // (offered straight after the reload even where the browser has no locks)
+    await this.recovery.stop().catch(() => {});
+    return true;
+  }
+
+  /** Every tab with unsaved changes has a recovery copy of it as it is now. */
+  workKept(): boolean {
+    return !this.ended && this.ws.fileTabs.every((t) => !t.dirty || this.recovery.copied(t.id, this.ws.token(t)));
   }
 
   private get ws(): Workspace {

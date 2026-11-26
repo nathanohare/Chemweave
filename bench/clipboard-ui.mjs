@@ -13,6 +13,8 @@ const logs = [];
 page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message));
 await page.goto(process.env.APP_URL || 'http://localhost:4173/');
 await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 20000 });
+// these check the menu bar's menus: the web app starts with them in the File tab, so show the bar
+await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
 const count = () => page.evaluate(() => ({ atoms: window.__app.doc.atoms.size, bonds: window.__app.doc.bonds.size, selected: window.__app.editor.sel.atoms.size }));
 const flash = () => page.evaluate(() => document.querySelector('#flash').textContent);
 const check = (name, ok, detail = '') => console.log(`${ok ? 'ok  ' : 'FAIL'} ${name}${detail ? ': ' + detail : ''}`);

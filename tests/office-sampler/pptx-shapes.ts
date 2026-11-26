@@ -169,7 +169,7 @@ const box2 = (s: SlideCtx, name: string, b: Box, fill = '8AB17D', g = 'rect') =>
   // z-order: three overlapping boxes, back to front A, B, C
   const z = gr('Z-order (Bring Forward / Send Backward): back to front A, B, C', 'supported', '§19.3.1.45 spTree order; Arrange ▸ Bring Forward', (v) => {
     const p = partOf(v, z); if (!p) return false;
-    const names = v.all(new RegExp(`^${p.replace('.', '\\.')}$`), 'p:sp').map((e) => nameOf(e) + ' ' + (kid(e, 'p:txBody')?.textContent ?? ''));
+    const names = v.inPart(p, 'p:sp').map((e) => nameOf(e) + ' ' + (kid(e, 'p:txBody')?.textContent ?? ''));
     const k = (x: string) => names.findIndex((nm) => nm.includes(`${z} ${x}`));
     return k('A') >= 0 && k('A') < k('B') && k('B') < k('C');
   }, 'pptx-read.ts or pptx-write.ts, not traced to a line: z-order kept');

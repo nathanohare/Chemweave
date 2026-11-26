@@ -321,6 +321,13 @@ export class View {
     return this.partsLike(part).flatMap((n) => Array.from(this.doc(n)!.getElementsByTagNameNS(NS[p], l)));
   }
 
+  /** Every element named `qname` (prefix:local) in the one part named exactly `part`. */
+  inPart(part: string, qname: string): Element[] {
+    const [p, l] = qname.split(':');
+    const d = this.parts[part] === undefined ? null : this.doc(part);
+    return d ? Array.from(d.getElementsByTagNameNS(NS[p], l)) : [];
+  }
+
   /** The first element named `qname` in the parts matching `part` whose text holds `id`. */
   holding(part: RegExp, qname: string, id: string): Element | undefined {
     return this.all(part, qname).find((e) => (e.textContent ?? '').includes(id));

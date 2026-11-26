@@ -15,6 +15,8 @@ const SHADE = { light: '45, 58, 82', dark: '225, 232, 245' };
 const DARK_LINE = '#a9b6cc';
 /** How much greyer the room to add pages is in the dark theme, so it reads as light grey paper against the dark surround. */
 const DARK_ROOM_EXTRA = 0.06;
+/** The same in Dark Gray: the room reads as the light grey of the shading at "light" (faint + this). */
+export const GRAY_ROOM_EXTRA = 0.025;
 
 function rgba(hex: string, a: number): string {
   const n = parseInt(hex.slice(1), 16);
@@ -43,12 +45,13 @@ function gridPath(ctx: CanvasRenderingContext2D, p: PageSetup, box: Rect): void 
 /**
  * Paint the page grid: `e` the drawing's pages, `used` those with something on them (page-grid.ts
  * usedPages). `dark`: the page is shown dark. `surround`: a solid colour for the space round the
- * pages (the dark theme's, so a white page does not sit in a glare of light grey), or null for the shading.
+ * pages (the dark or Dark Gray theme's, so a white page does not sit in a glare of light grey), or null for
+ * the shading. `roomExtra`: how much greyer the room to add pages is than the shading over that surround.
  */
 /** A screen pixel at 100% zoom, in drawing units (points): the fixed edge's sizes are given in these. */
 const EDGE_UNIT = 72 / 96;
 
-export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: OrientView, p: PageSetup, e: Extent, used: Set<string>, dark: boolean, surround: string | null = null): void {
+export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: OrientView, p: PageSetup, e: Extent, used: Set<string>, dark: boolean, surround: string | null = null, roomExtra = DARK_ROOM_EXTRA): void {
   if (!look.grid) return;
   const s = r.view.scale;
   if (!(s > 0)) return;
@@ -77,7 +80,7 @@ export function paintPages(ctx: CanvasRenderingContext2D, look: PageLook, r: Ori
     ctx.rect(keep.x1, keep.y1, keep.x2 - keep.x1, keep.y2 - keep.y1);
     ctx.fill('evenodd');
     if (room && out > 0) {
-      ctx.fillStyle = `rgba(${shade}, ${out + DARK_ROOM_EXTRA})`;
+      ctx.fillStyle = `rgba(${shade}, ${out + roomExtra})`;
       ctx.beginPath();
       ctx.rect(room.x1, room.y1, room.x2 - room.x1, room.y2 - room.y1);
       ctx.rect(grid.x1, grid.y1, grid.x2 - grid.x1, grid.y2 - grid.y1);

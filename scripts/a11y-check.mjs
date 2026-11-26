@@ -107,11 +107,26 @@ export async function a11yProblems(page, log = () => {}) {
       }
     }
     await tabFor('drawing', 'new');
-    // an open menu, and an open window
-    const file = page.locator('header > .menu-wrap > button').first();
-    await file.click();
-    await page.waitForTimeout(200);
-    await runAxe(look, 'the File menu open');
+    // an open menu (the File tab's page in the web app, which has no menu bar), and an open window
+    if (await page.evaluate(() => document.body.classList.contains('menus-in-file'))) {
+      await page.locator('.ribbon > .rb-tabs > .rb-file:visible').first().click();
+      await page.waitForTimeout(200);
+      await runAxe(look, 'the File tab open');
+      await esc();
+      // and the menu bar's File menu, as the desktop app (or anyone who shows the menu bar) has it
+      await cmd('menu-bar');
+      await page.waitForTimeout(150);
+      await page.locator('header > .menu-wrap > button').first().click();
+      await page.waitForTimeout(200);
+      await runAxe(look, 'the File menu open');
+      await esc();
+      await cmd('menu-bar');
+      await page.waitForTimeout(150);
+    } else {
+      await page.locator('header > .menu-wrap > button').first().click();
+      await page.waitForTimeout(200);
+      await runAxe(look, 'the File menu open');
+    }
     await esc();
     await cmd('preferences');
     await page.waitForTimeout(400);
@@ -127,7 +142,7 @@ export async function a11yProblems(page, log = () => {}) {
     const s = getComputedStyle(a);
     return {
       tag: a.tagName.toLowerCase(), cls: a.className && typeof a.className === 'string' ? a.className : '', text: (a.getAttribute('aria-label') || a.textContent || '').trim().slice(0, 40),
-      inHeader: !!a.closest('header'), inMenu: !!a.closest('[role="menu"]'), inToolbox: !!a.closest('.toolbox'), tool: a.getAttribute('data-tool'), inDialog: !!a.closest('dialog[open]'),
+      inHeader: !!a.closest('header'), inMenu: !!a.closest('[role="menu"]'), inToolbox: !!a.closest('.toolbox'), tool: a.getAttribute('data-tool'), inDialog: !!a.closest('dialog[open]'), inFileNav: !!a.closest('#backstage nav'), inFilePage: !!a.closest('#backstage .menu'),
       // a visible focus mark: an outline, or a ring drawn as a shadow
       ring: (s.outlineStyle !== 'none' && parseFloat(s.outlineWidth) > 0) || (s.boxShadow && s.boxShadow !== 'none'),
     };
@@ -137,9 +152,41 @@ export async function a11yProblems(page, log = () => {}) {
   await tabFor('drawing', 'new');
   await page.mouse.click(5, 300).catch(() => {});
 
+  // the File tab (the web app's menus): F10 opens it on the list of menus, Right goes into the menu's
+  // commands, Down moves, Left goes back to the list, Esc closes it
+  const menusInFile = await page.evaluate(() => document.body.classList.contains('menus-in-file'));
+  let f;
+  if (menusInFile) {
+    await key('F10', 200);
+    f = await focused();
+    if (!f?.inFileNav) found.add(`keyboard: F10 does not open the File tab on its list of menus (focus is on ${what(f)})`);
+    else {
+      if (!f.ring) found.add(`keyboard: the File tab's ${what(f)} shows no focus mark`);
+      await key('ArrowRight', 150);
+      f = await focused();
+      if (!f?.inFilePage) found.add(`keyboard: Right in the File tab's list does not go to the menu's commands (focus is on ${what(f)})`);
+      else {
+        const first = f.text;
+        await key('ArrowDown');
+        f = await focused();
+        if (!f?.inFilePage || f.text === first) found.add('keyboard: Down in the File tab does not move to the next command');
+        else if (!f.ring) found.add(`keyboard: File tab command ${what(f)} shows no focus mark`);
+        await key('ArrowLeft', 150);
+        f = await focused();
+        if (!f?.inFileNav) found.add(`keyboard: Left in the File tab's commands does not go back to the list (focus is on ${what(f)})`);
+      }
+      await key('Escape', 150);
+      if (await page.evaluate(() => !document.getElementById('backstage').hidden)) found.add('keyboard: Esc does not close the File tab');
+    }
+    // the menu bar's own keys below (the desktop app starts with it)
+    await cmd('menu-bar');
+    await page.waitForTimeout(150);
+    await page.mouse.click(5, 300).catch(() => {});
+  }
+
   // menus: F10 to the menu bar, Down opens, Down moves, Right goes to the next menu, Esc closes and stays on its button
   await key('F10', 150);
-  let f = await focused();
+  f = await focused();
   if (!f?.inHeader) found.add(`keyboard: F10 does not go to the menu bar (focus is on ${what(f)})`);
   else {
     if (!f.ring) found.add(`keyboard: the menu bar’s ${what(f)} shows no focus mark`);
@@ -240,6 +287,7 @@ export async function a11yProblems(page, log = () => {}) {
     if (!f && opener) found.add('keyboard: closing the Settings window leaves the focus nowhere (it should go back where it was)');
   }
   await esc();
+  if (menusInFile) await cmd('menu-bar');
   return [...found].sort();
 }
 

@@ -1,0 +1,202 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Added to the Mac app's Info.plist (tauri.macos.conf.json, infoPlist). Tauri writes the file
+     types from fileAssociations but has no place for a type's icon, and keys here replace its own,
+     so the whole list of types is here, kept in step with fileAssociations by
+     tests/file-icons.test.ts. SI project files (.chemsi) are Chemweave's own type: it is declared
+     here (UTExportedTypeDeclarations) with its icon, Resources/chemsi.icns, made by
+     scripts/make-file-icons.mjs. -->
+<plist version="1.0">
+<dict>
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>cdxml</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>ChemDraw XML drawing</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>cdx</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>ChemDraw drawing</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>cds</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>ChemDraw style sheet</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mol</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>MDL Molfile</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>sdf</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Structure-data file</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>rxn</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>MDL reaction file</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>mrv</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Marvin document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>ket</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Ketcher drawing</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>cml</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Chemical Markup Language file</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>docx</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Word document</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>pptx</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>PowerPoint presentation</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>xlsx</string>
+			</array>
+			<key>CFBundleTypeName</key>
+			<string>Excel workbook</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+		</dict>
+		<dict>
+			<key>CFBundleTypeExtensions</key>
+			<array>
+				<string>chemsi</string>
+			</array>
+			<key>CFBundleTypeIconFile</key>
+			<string>chemsi.icns</string>
+			<key>CFBundleTypeName</key>
+			<string>Chemweave SI project</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>io.github.nathanohare.chemweave.si-project</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTExportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>public.data</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeDescription</key>
+			<string>Chemweave SI project</string>
+			<key>UTTypeIconFile</key>
+			<string>chemsi.icns</string>
+			<key>UTTypeIdentifier</key>
+			<string>io.github.nathanohare.chemweave.si-project</string>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>chemsi</string>
+				</array>
+				<key>public.mime-type</key>
+				<string>application/x-chemweave-si</string>
+			</dict>
+		</dict>
+	</array>
+</dict>
+</plist>

@@ -9,6 +9,8 @@ page.on('console', (m) => { if (m.type() !== 'log') logs.push(m.type() + ': ' + 
 page.on('pageerror', (e) => logs.push('PAGEERROR: ' + e.message));
 await page.goto(process.env.APP_URL || 'http://localhost:4173/');
 await page.waitForFunction(() => window.__app?.chem.ready, null, { timeout: 20000 });
+// these check the menu bar's menus: the web app starts with them in the File tab, so show the bar
+await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
 await page.evaluate(() => window.__app.file.newDrawing());
 const box = await page.locator('#overlay').boundingBox();
 const toScreen = (p) => page.evaluate((p) => { const s = window.__app.renderer.toScreen(p); return s; }, p);

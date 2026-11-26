@@ -151,7 +151,7 @@ describe('toolbox grids in the settings', () => {
     expect(overflowOf({ ...defaultToolboxes(), overflow: { main: 'wrap' } }, 'main')).toBe('scroll');
     expect(overflowOf(defaultToolboxes(), 'arrange')).toBe('scroll');
     // a grid for a toolbox that isn't there, or can't be laid out, is dropped
-    expect(parseToolboxes({ grids: { nowhere: { cols: 1, rows: 1, cells: ['cmd:x'] }, templates: { cols: 1, rows: 1, cells: [] } } }).grids).toBeUndefined();
+    expect(parseToolboxes({ grids: { nowhere: { cols: 1, rows: 1, cells: ['cmd:x'] }, colours: { cols: 1, rows: 1, cells: [] }, highlight: { cols: 1, rows: 1, cells: [] } } }).grids).toBeUndefined();
   });
 
   it('closes up the cells of palettes and tools the app no longer has, leaving no empty rows', () => {

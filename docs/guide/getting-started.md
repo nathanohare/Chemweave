@@ -91,9 +91,11 @@ Chemweave is in **beta**: it is still being built, new features arrive often, an
 
 Along the top are the menus: **File**, **Edit**, **View**, **Insert**, **Format**, **Chemistry** and **Help**. Each menu shows the commands for the tab type you are in; a command for another kind of tab is left out (Insert ▸ Chart shows in a spreadsheet, not in a canvas). Under the menu bar every kind of tab has a ribbon of buttons, like Word, Excel and PowerPoint (see [The ribbon](#the-ribbon)).
 
+In the web version the menus are in the **File** tab at the start of the ribbon, as in Office, and there is no menu bar: the quick bar, the open files' tabs and Search sit in the ribbon's own row of tabs, so the ribbon starts at the top of the window. **File** opens a page over the window with the menus down the left; pick one to see all its commands, its submenus each under their name. **Alt** and a menu's underlined letter open its page (**Alt+F** File, **Alt+E** Edit…), the arrow keys move through it, and **Esc** or the ← button goes back to your work. **View ▸ Window and Colors ▸ Menu Bar** brings the menu bar back (and in the desktop app, clearing it moves the menus into the File tab and gives it the same single row, with the window's buttons at the right end of the ribbon's row of tabs; drag an empty part of that row to move the window).
+
 **Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
-To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
+To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). In the web version it sits just after the ribbon's tabs (after **View**) and starts with only **Save**, **Undo** and **Redo**. Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
 
 - click the **▾** at its end and check the ones you want (Print, Copy, Paste, Focus View and more);
 - right-click any menu command, or a ribbon button that runs one, and pick **Add to Quick Access Toolbar**; right-click a quick button to remove it;
@@ -105,7 +107,7 @@ The menus show each command's key beside it, so they are a good way to learn the
 
 ### Tabs
 
-Each open file has a tab in the menu bar, between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Bar** (clear it) puts the tabs back on a row of their own under the menu bar.
+Each open file has a tab in the top row (the menu bar, or in the web version the ribbon's row of tabs), between the quick bar and Search, with its own icon and color for its kind (teal for canvases, orange for presentations, green for spreadsheets, dark blue for documents, purple for designs). The open file's tab and the chosen ribbon tab are underlined in that color. Ctrl+Tab and Ctrl+Shift+Tab move between tabs, and Ctrl+W closes one. When many files are open the tabs get narrower, then show only their icons; rest the mouse on one for its name. **View ▸ Window and Colors ▸ File Tabs in Menu Bar** (clear it) puts the tabs back on a row of their own under the menu bar.
 
 New files are called **Canvas 1**, **Presentation 1**, **Spreadsheet 1** and so on, until they are saved with a name of their own. When there are more tabs than fit, **‹** and **›** scroll them (as does the mouse wheel over the tabs), and **▾** lists every open file to pick one. **+** at the end starts something new:
 
@@ -123,9 +125,9 @@ The same commands are in the **File** menu, under **File ▸ New** (**Blank canv
 
 <!-- index: Ribbon, Ribbon tabs -->
 
-The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry**, **Arrange** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
+The ribbon is the band of buttons under the menu bar. Its tabs run along its top, and each kind of file has its own: a canvas has **Home**, **Insert**, **Chemistry** and **View**. The buttons are in named groups, and the bigger commands carry their names; rest the mouse on any other button to see its name.
 
-In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come the chemistry groups: **Format Favorites**, **Schemes**, **Diagrams**, **Mechanism**, **Insert**, **NMR** (where NMR prediction is offered) and **Look Up**. Two boxes on the canvas ribbon report on the drawing:
+In a canvas, the **Home** tab starts as a spreadsheet's does, with **Clipboard** (Paste, Cut, Copy, Format Painter), **Font** and **Paragraph**. Then come **Format Favorites**, **Smart Clean** and **Number Compounds**, and **Align**, **Rotate**, **Order** and **Focal Point**, each a button that drops its commands down (see [The Canvas ribbon](drawing.md#the-canvas-ribbon)). **Insert** has the structure sources, **Schemes**, **Diagrams** (a pane of pictures to choose from), Mechanism and Lab; **Chemistry** has Structure, Reaction, **Predict NMR** and Look Up. The **Lab Calculator** sits at the right end of the tabs, on every tab. Two boxes on the canvas ribbon report on the drawing:
 
 - **Warnings**, at the right end of the row of tabs, says **No problems** or counts the possible problems in the structures, such as a carbon with five bonds. Click it for the list (see [Warnings](drawing.md#warnings)).
 - **Analysis**, at the right end of the buttons, shows the formula and masses of the selected structure. Click it for everything else (see [The Analysis panel](drawing.md#the-analysis-panel)).
@@ -163,6 +165,7 @@ The **×** at the top of the panel closes it all the way to give the drawing mor
 - **Shadows** under the menus and toolboxes: **Light**, **Strong** or **Off**.
 - **Icon Colors**: **Mode Color** draws icons gray with one part in the mode's color; **Color by Type** gives each kind of command its own color, as Office does. **Shapes in the Mode Color** colors the shapes in the Shapes menu too.
 - **Title Bar in Menu Bar** (desktop app) merges the title bar into the menu bar to save a row; drag an empty part of the menu bar to move the window.
+- **Menu Bar** shows the menus along the top; clear it to have them in the ribbon's **File** tab instead (the web version starts that way).
 - **File Tabs in Menu Bar**, **Mode Colors…** and **Reading Mode Colors…** are described under [Tabs](#tabs) and [Reading Mode](drawing.md#reading-mode).
 
 Two more switches are in the **View** menu itself. **Detailed Tooltips** shows what a tool does and what Alt, Shift and Ctrl change when you rest the mouse on it; turn it off for a one-line tip. **Scroll Bars** shows or hides the bars along the bottom and right of the drawing.
@@ -292,7 +295,7 @@ Presentations, spreadsheets, documents and designs save in their own formats; se
 | **Newman Projections** | How projections are drawn (Newman or sawhorse), which conformations a torsional energy chart pictures and how it names them (textbook or Klyne–Prelog), kcal/mol or kJ/mol, and barrier heights (see [Newman and sawhorse projections](drawing.md#newman-and-sawhorse-projections)). |
 | **Analysis** | Which rows the Analysis panel, the ribbon's Analysis box and attached descriptors show and in what order, the lab calculation rows (mass, volume, mmol, a solution's volume), significant figures and units (see [The Analysis panel](drawing.md#the-analysis-panel)). |
 | **NMR Prediction** (desktop app) | Predicting as soon as a structure is selected (off at first), the quality (Fast, Balanced or Accurate), solvent, spectrometer frequency, the ppm range of each spectrum, and how peaks are labeled (see [Predicted NMR](drawing.md#predicted-nmr)). |
-| **Toolboxes and Ribbon** | The Canvas ribbon as **Classic** (two rows of buttons) or **Simplified** (one row), the lines or raised look of button cells, and detailed tooltips. |
+| **Toolboxes and Ribbon** | The Canvas ribbon as **Classic** (two rows of buttons) or **Simplified** (one row), the lines or raised look of button cells, **Toolbox Button Size** (the toolboxes' buttons alone, in percent; at 100% they match the ribbon's small buttons), and detailed tooltips. |
 | **Navigation** | The Document Map (corner, size, hiding it while the whole drawing is on screen), edge arrows, the dot grid, the tint beyond the drawing, and the Go to Selection button. |
 | **Page Grid** | Page boundaries (dashed, dotted or solid; thickness, color and strength), how empty pages and fixed edges are shown, and what happens when you paste beyond a fixed edge. |
 | **Color Palettes**, **Mode Colors**, **Reading Mode** | Your rows of colors, the color of each tab type, and Reading Mode's colors. |

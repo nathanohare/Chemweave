@@ -140,6 +140,30 @@ function watchScreen(): void {
   void measure();
 }
 
+/**
+ * The row the window's buttons sit at the end of instead of the menu bar: the ribbon's row of tabs
+ * when the menus are in the File tab and there is no title row (main.ts placeOneRow), or null for
+ * the menu bar. That row then moves the window too, by its empty parts.
+ */
+let buttonsRow: HTMLElement | null = null;
+export function placeWindowButtons(row: HTMLElement | null): void {
+  if (buttonsRow && buttonsRow !== row) buttonsRow.removeAttribute('data-tauri-drag-region');
+  buttonsRow = row;
+  putButtons();
+}
+function putButtons(): void {
+  const header = document.querySelector('header');
+  if (!isTauri() || !controls || !header) return;
+  const own = place === 'app';
+  if (buttonsRow && own) {
+    buttonsRow.setAttribute('data-tauri-drag-region', '');
+    if (buttonsRow.lastElementChild !== controls) buttonsRow.append(controls);
+  } else {
+    buttonsRow?.removeAttribute('data-tauri-drag-region');
+    if (controls.parentElement !== header) header.append(controls);
+  }
+}
+
 /** Put the title bar where it goes. Only the desktop app has one; the web page leaves it alone. */
 export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
   place = where;
@@ -155,9 +179,15 @@ export async function placeTitleBar(where: TitleBarPlace): Promise<void> {
     else el.removeAttribute('data-tauri-drag-region');
   }
   windowButtons(header).hidden = !own;
+  putButtons();
   setModalTitleStrip(own ? modalStrip : null, own ? stripHeight(header) : 0);
   watchScreen();
   await getCurrentWindow().setDecorations(!own).catch(() => {});
 }
 
 export const titleBarPlace = (): TitleBarPlace => place;
+
+/** A copy of the window's buttons and the strip that moves the window, for a page that covers the row holding them (the File tab's), or null when the system's title bar shows or in the web app. */
+export function pageTitleStrip(): HTMLElement | null {
+  return isTauri() && place === 'app' && buttonsRow ? modalStrip() : null;
+}

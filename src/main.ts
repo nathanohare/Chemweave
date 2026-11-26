@@ -54,7 +54,7 @@ import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
-import { nmrAutoPredict, nmrRange, peakLabels, setNmrAutoPredict, setNmrRange, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
+import { nmrAutoPredict, nmrRange, nmrTraceColor, peakLabels, setNmrAutoPredict, setNmrRange, setNmrTraceColor, setPeakLabels, type PeakLabels } from './ui/nmr-settings';
 import { analysisPrefs, setAnalysisPrefs, onAnalysisPrefs, parseAnalysisPrefs, calcOf, nextCalcId, type AnalysisPrefs } from './chem/analysis-prefs';
 import { newCalc } from './chem/bench';
 import { dragRow } from './ui/row-drag';
@@ -150,7 +150,8 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar } from './ui/quick-bar';
+import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
 import { defaultHandout, handoutLayout, handoutPageSvg, notesPageSize, notesPageSvg, type HandoutSetup } from './deck/notes-pages';
@@ -165,7 +166,7 @@ import { fillTemplate, templateSize } from './design/templates';
 import { putDiagram, type DiagramData } from './design/diagrams';
 import type { EnergyData } from './design/energy';
 import { newDSplitPlate, newPlate, type PlateData, type PlateKind } from './design/plates';
-import { fitWidth, toRich, withLevel } from './design/mo';
+import { fitWidth, fromMolecule, toRich, withLevel } from './design/mo';
 import { editMoName } from './ui/mo-name-pop';
 import { refreshZooms, summaryParts, zoomGrid, zoomShape } from './deck/zoom';
 import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng, filmPng } from './deck/media';
@@ -180,6 +181,7 @@ import { SHEETS } from './io/cdxml-print';
 import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
+import { BOX_DEFAULTS } from './ui/toolbox-defaults';
 import { StylePanel, tidyStyle } from './ui/style-panel';
 import { installCombos } from './ui/combo';
 import { installFontList, registerBundledFonts, registerEmbeddedFont, bundledFaces, pdfFonts, pdfFallbackFonts } from './fonts';
@@ -193,7 +195,7 @@ import { TEMPLATES, Template, templateById, ownTemplates, setOwnTemplates, templ
 import { freeLigandFor, loadFullLigands, placeFreeLigand } from './chem/expand';
 import { centreEnd, haptoLook } from './chem/hapto';
 import { viewNow, viewRingOf, type RingView } from './chem/ring-views';
-import { countElectrons } from './chem/electrons';
+import { countElectrons, electronPrefs, ELECTRON_METHODS, type ElectronMethod } from './chem/electrons';
 import { addNicknames, removeNickname, isBuiltInNickname, builtInNicknames, labelPrefs, alkylPrefs, ALKYL_LOOKS, type AlkylLook, tokenize as tokenizeLabel } from './chem/labels';
 import { restyleAlkyl } from './text/alkyl-restyle';
 import { selectedGroup } from './chem/group-smiles';
@@ -220,7 +222,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions } from './settings';
+import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -242,7 +244,7 @@ import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page
 import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
-import { placeTitleBar, titleBarPlace } from './ui/title-bar';
+import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
 import { canScaleUi, setUiScale, stepUiScale, uiScale, UI_SCALES } from './ui/ui-scale';
 import { installTouchUi, keypadShowing, markSketch, setTouchMode, showKeypad, touchMode, touchOn } from './ui/touch-ui';
 import { FeedbackDialog } from './ui/feedback-dialog';
@@ -321,6 +323,7 @@ import { smilesPrefs } from './sheet/smiles-cells';
 import { showTemplateWindow, closeTemplateWindow } from './ui/template-window';
 import type { PastedRows } from './io/table-clip';
 import { Keeper } from './keep/keeper';
+import { WebUpdates } from './ui/web-update';
 import { choose as chooseButtons, notice } from './ui/keep-ui';
 import { runZoteroOn, type ZoteroCommand } from './document/zotero-live';
 import { DeckStore, type DeckZoteroHost } from './deck/zotero-deck';
@@ -334,7 +337,7 @@ import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
 import { type OrientPrefs, DEFAULT_ORIENT } from './orientation-prefs';
 import { type PageLook, type Side, DEFAULT_PAGE_LOOK, SIDES, SIDE_NAMES, pageExtent, extentRect, pageCount, pageKey, scrollBox, wallRect, wallsOf, setWall, usedPages, pagesToPrint, fixedCount, crossesWalls, clampMove, insetWalls, wrapPieces } from './page-grid';
-import { paintPages } from './ui/page-grid-view';
+import { paintPages, GRAY_ROOM_EXTRA } from './ui/page-grid-view';
 import { addRecent as addRecentSymbol } from './text/symbols';
 import type { CellBlock } from './sheet/workbook';
 import { DEFAULT_AI, type AiPrefs } from './ai/link';
@@ -386,6 +389,9 @@ const showLabCalculator = later(() => import('./ui/lab-calc-dialog'), 'showLabCa
 // Crash handling (src/diagnostics.ts): errors nothing else caught go to a log kept on this computer,
 // with a notice offering to report them through Send Feedback. The desktop app (not the iPad, whose
 // apps the system ends whenever it likes) also notices when it stopped without closing last time.
+/** The menus are in the File tab (the menu bar off), and its page once made (see "the File tab" below). */
+let menusInFile = false;
+let backstage: Backstage | null = null;
 const iPadApp = isTauri() && /Mac/.test(navigator.platform) && navigator.maxTouchPoints > 1;
 // NMR prediction is a desktop feature: its data (about 48 MB) is past what the browser version may
 // download, and the iPad app leaves it out (the builds for both drop public/nmr).
@@ -833,7 +839,7 @@ const toolbar = new Toolbar($<HTMLDivElement>('#tools'), TOOL_GROUPS, (name) => 
 let canvasTextRows: { font: HTMLElement; paragraph: HTMLElement } | null = null;
 let canvasFont: { refresh(): void } | null = null;
 // (NMR prediction is desktop only: its ribbon groups are left out elsewhere)
-if (!nmrHere) for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR');
+if (!nmrHere) { for (const t of CANVAS_TABS) t.groups = t.groups.filter((g) => g.name !== 'NMR'); document.getElementById('nmr-submenu')?.remove(); }
 /** Focal point settings (Preferences, the Distribute menu's choice). */
 const focalPrefs: FocalPrefs = { ...DEFAULT_FOCAL_PREFS };
 
@@ -853,8 +859,29 @@ async function pasteTextOnly(): Promise<void> {
 for (const b of document.querySelectorAll<HTMLButtonElement>('#ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'slides'));
 for (const b of document.querySelectorAll<HTMLButtonElement>('#design-ribbon [data-paste-menu]')) b.addEventListener('click', () => pasteOptions(b.getBoundingClientRect(), 'design'));
 
+/** A template pane's ready-made MO diagram (`molecule`: an MO_MOLECULES id; none: two atoms), or a d-orbital splitting diagram. */
+function moTemplate(cmd: string, molecule?: string): PlateData {
+  const L = doc.style.bondLength;
+  if (cmd === 'd-orbital-splitting') return newDSplitPlate(L);
+  const plate = newPlate('mo', L);
+  const spec = molecule ? fromMolecule(molecule) : null;
+  return spec ? { ...plate, mo: { ...spec, labelBack: 'white' } } : plate;
+}
+
 const canvasRibbon = new CanvasRibbon({
-  command: (cmd) => { command(cmd); },
+  // (a template pane's ready-made MO diagram is put on the page as MO Diagram puts its own, in one step)
+  command: (cmd, arg) => {
+    if (cmd === 'mo-diagram' && arg) { finishTyping(); editor.putPlateAt(moTemplate(cmd, arg), pasteCentre(), undefined, deckNow()?.size); return; }
+    command(cmd);
+  },
+  // (the on-or-off commands in the flyouts' lists)
+  checked: (cmd) => (cmd === 'show-roles' ? editor.showAllRoles : cmd === 'show-focal-points' ? editor.showFocal
+    : cmd === 'nmr-marks' ? document.querySelector('#analysis-section .nmr-marks')?.getAttribute('aria-pressed') === 'true' : false),
+  // the Diagrams pane's MO and d-orbital pictures, drawn by the drawing code at small size
+  thumb: (it) => {
+    if (it.cmd !== 'mo-diagram' && it.cmd !== 'd-orbital-splitting') return undefined;
+    try { return drawingSvg(editor.platePreview(moTemplate(it.cmd, it.arg)).doc, null) ?? undefined; } catch { return undefined; }
+  },
   pickTool: (name) => pickTool(name),
   hasTool: (name) => name in TOOLS,
   icon: (it) => ('cmd' in it ? commandIcon(it.cmd) ?? RIBBON_ONLY_ICONS[it.cmd] ?? ICONS[it.cmd] : ICONS[it.tool]),
@@ -868,6 +895,8 @@ const warningsBox = new WarningsBox($('#warnings-section'));
 canvasRibbon.bodyEnd.append(analysisBox.el);
 canvasRibbon.tabEnd.append(warningsBox.button);
 canvasRibbon.el.addEventListener('cr-tab', () => { fitRibbons(); refreshCanRun(); });
+// a flyout's commands are greyed as the ribbon's are, once it opens (its list was hidden till now)
+canvasRibbon.el.addEventListener('rb-fly-open', () => requestAnimationFrame(refreshCanRun), true);
 
 // (the Canvas ribbon's tabs stay put; what is selected brings out its context toolbox)
 const showRibbonContext = () => { contextBoxes.follow(); };
@@ -1180,7 +1209,7 @@ function showAllRoles(on: boolean): void {
   editor.requestScene();
 }
 
-/** Arrange ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
+/** Home ▸ Focal Point ▸ Show Focal Points: every structure's own focal point marked, on screen only. */
 function showFocalPoints(on: boolean): void {
   editor.showFocal = on;
   for (const b of document.querySelectorAll('[data-cmd="show-focal-points"]')) b.setAttribute(b.getAttribute('role')?.startsWith('menuitem') ? 'aria-checked' : 'aria-pressed', String(on));
@@ -1535,7 +1564,8 @@ const NEW_CYCLE_LOOK: CycleLook = { names: 'short', reagentArrows: true };
  */
 async function smartGallery(): Promise<void> {
   finishTyping();
-  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"]')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
+  // (from the Schemes flyout, under its button: the list has closed)
+  const anchor = [...document.querySelectorAll<HTMLElement>('.ribbon button[data-cmd="smart-scheme"], .toolbox button[data-cmd="smart-scheme"], .ribbon .rb-fly:has(.rb-fly-menu [data-cmd="smart-scheme"]) > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0) ?? null;
   const work = $('#work').getBoundingClientRect();
   const { showSmartGallery } = await import('./ui/smart-gallery');
   const pick = await showSmartGallery({
@@ -2877,6 +2907,8 @@ const nmrPanel = new NmrPanel({
     const c = compoundBySmiles((await useLibrary()).now, w.smiles);
     return (c?.spectra ?? []).filter((x) => x.kind === 'measured').sort((a, b) => b.saved - a.saved).map((x) => x.text);
   },
+  openSettings: () => command('nmr-settings'),
+  showPanel: () => showAnalysisList(),
 });
 
 /** NMR ▸ Save to Library: adds the structure to the Compound Library if needed and keeps the peak reports with it. */
@@ -4434,6 +4466,8 @@ function showDevTools(on: boolean): void {
   for (const el of document.querySelectorAll<HTMLElement>('.dev-only')) el.hidden = !on;
   $('[data-cmd="dev-tools"]')?.setAttribute('aria-checked', String(on));
   if (on) { updatePanels(); renderErrorLog(); }
+  // the File tab's list gains or loses Developer
+  if (backstage?.isOpen) backstage.openAt(Math.min(backstage.current, shownMenus().length - 1), false, true);
 }
 
 function align(how: Align): void {
@@ -4443,7 +4477,7 @@ function align(how: Align): void {
   if (tip) {
     focalPrefs.tipShown = true;
     storeSettings();
-    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Arrange ▸ Match Focal Points.', 9000);
+    flash('Tip: these structures share a ring. To line them up on it, right-click inside the ring ▸ Set Ring as Focal Point, then Home ▸ Focal Point ▸ Match Focal Points.', 9000);
   }
 }
 
@@ -4701,6 +4735,16 @@ const keeper = new Keeper({
   flash,
   refresh: () => { renderTabs(); updateTitle(); tickAutoSave(); },
 });
+// The web version: a notice when a newer version is published, and a reload that keeps unsaved work
+/** The page is reloading for a new version with every unsaved tab copied: no "Leave site?" question. */
+let webReloading = false;
+const webUpdates = new WebUpdates({
+  finishTyping: () => finishTyping(),
+  anyDirty: () => ws.anyDirty,
+  recoveryOn: () => keepPrefs.recoveryMinutes > 0,
+  keepForReload: () => keeper.keepForReload(),
+  reloading: () => { webReloading = true; },
+});
 /** File > AutoSave shows whether the tab showing saves itself. */
 function tickAutoSave(): void {
   const b = document.querySelector<HTMLElement>('[data-cmd="autosave"]');
@@ -4832,6 +4876,8 @@ function enterTab(tab: Tab, opened: boolean): void {
   docMode?.show(words ? tab : null);
   if (siTab && !siMode) void loadSiMode().catch(modeFailed);
   siMode?.show(siTab ? tab : null);
+  // (each kind's ribbon shows only now: the one row goes into the one showing)
+  if (menusInFile) placeOneRow();
   renderer.screen = !!deck;
   renderer.page = deck ? slidePage : drawingBackdrop;
   editor.slideKeys = slides;
@@ -6075,7 +6121,7 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
 }
 
 /**
- * Arrange ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
+ * Home ▸ Focal Point ▸ Match Focal Points: the selected structures (or all of them, with nothing selected)
  * take the focal point of the one that has its own (the first in reading order if several do), on
  * the same atom, bond or ring of the part they share with it (largest common substructure).
  */
@@ -6193,7 +6239,7 @@ function refreshHistory(): void {
     for (const [cmd, verb] of [['undo', 'Undo'], ['redo', 'Redo']] as const) {
       const step = historyStep(cmd === 'redo');
       const name = step ? `${verb} ${step}` : verb;
-      for (const item of document.querySelectorAll<HTMLButtonElement>(`header .menu [data-cmd="${cmd}"]`)) {
+      for (const item of document.querySelectorAll<HTMLButtonElement>(`:is(header, #backstage) .menu [data-cmd="${cmd}"]`)) {
         item.disabled = step === null;
         const label = item.firstChild;
         if (label?.nodeType === Node.TEXT_NODE) label.textContent = name;
@@ -6330,7 +6376,8 @@ new ResizeObserver(() => fitTabs()).observe(tabsEl);
 let tabsInMenu = true;
 function placeTabs(inMenu: boolean): void {
   tabsInMenu = inMenu;
-  if (inMenu) $('header').insertBefore(tabsEl, $('#btn-search'));
+  // (beside Search, wherever it is: the title row, or the ribbon's row of tabs in the web app)
+  if (inMenu) $('#btn-search').before(tabsEl);
   else $('header').after(tabsEl);
   document.body.classList.toggle('tabs-in-menu', inMenu);
   $('[data-cmd="tabs-in-menu"]')?.setAttribute('aria-checked', String(inMenu));
@@ -8598,6 +8645,9 @@ function showSheetParts(): void {
     el.hidden = (c.contains('sheet-only') && !sheet) || (c.contains('no-sheet') && sheet) || (c.contains('doc-only') && !words)
       || (c.contains('no-doc') && words);
   }
+  // another file's tab: the File tab's page closes (its menus were for the last one), and a ribbon made since (an SI project's) gets its File tab
+  if (backstage?.isOpen) backstage.close(false);
+  if (menusInFile) { addFileTabs(() => openBackstage()); placeOneRow(); }
   tickMenuModes();
 }
 
@@ -8948,7 +8998,7 @@ host.addEventListener('pointerdown', (e) => {
 // last drawn, text being typed); then Cancel, asking first when something was drawn (ui/in-place.ts)
 let askingDiscard = false;
 window.addEventListener('keydown', (e) => {
-  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (!cellEdit || e.key !== 'Escape' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const act = escapeAction({ toolsBusy: editor.escapeHasWork(), changed: doc.canUndo() });
   if (act === 'tools') return;
   e.preventDefault();
@@ -8976,7 +9026,7 @@ window.addEventListener('keydown', (e) => {
 window.addEventListener('keydown', (e) => {
   if (!sheetActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #sheet-pane, select')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, #sheet-pane, select')) return;
   if (sheetKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) sheetMode.focus();
 });
@@ -9234,7 +9284,10 @@ function loadSiMode(): Promise<SiMode> {
       },
     });
     applyIconSet(document.querySelector('#si-ribbon') ?? document);
+    // the SI Project ribbon, made only now, leads with the File tab too
+    if (menusInFile) addFileTabs(() => openBackstage());
     if (ws.active.mode === 'si') siMode.show(ws.active);
+    if (menusInFile) placeOneRow();
     return siMode;
   }, (err: unknown) => {
     siModeLoading = null;
@@ -10285,13 +10338,13 @@ const DOC_ANY = new Set(['export-pdf', 'print']);
 window.addEventListener('keydown', (e) => {
   if (!docActive() || e.defaultPrevented) return;
   const t = e.target as HTMLElement | null;
-  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, select, aside, .ribbon')) return;
+  if (isTyping(t) || t?.closest?.('dialog, .menu, .menu-wrap, #backstage, select, aside, .ribbon')) return;
   if (docKey(e)) { e.preventDefault(); return; }
   if (!t || t === document.body) docMode.focus();
 });
 
 /** Menu commands that work the same whatever shows. */
-const ANY_TAB = new Set(['references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
+const ANY_TAB = new Set(['menu-bar', 'tabs-in-menu', 'references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'open', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
   'drawing-style', 'navigation-settings', 'dark-page', 'dark-colours', 'hotkeys', 'typing-spelling', 'mode-colours', 'dev-tools', ...STRESS_SIZES.map((n) => `stress-${n}`), 'scroll-bars', 'title-bar-in-menu', 'collapse-ribbon', 'ui-scale-in', 'ui-scale-out', 'ui-scale-reset', ...UI_SCALES.map((v) => `ui-scale-${Math.round(v * 100)}`), 'text-bar-docked', 'text-bar-floating', 'text-bar-hidden', 'theme-system', 'theme-light', 'theme-dark', 'theme-darkgray', 'density-snug', 'density-cozy', 'density-normal', 'density-standard', 'density-large', 'shadows-light', 'shadows-strong', 'shadows-off', 'icons-mode', 'icons-kind', 'shape-ink-accent', 'focus-view', 'one-column-tools', 'group-tips', 'tool-tips', 'touch-mode-auto', 'touch-mode-on', 'touch-mode-off', 'atom-keypad', 'pen-sketch', 'show-stereo', 'clipboard-formats', 'split-view', 'command-search', 'next-region', 'prev-region', 'print',
   'assistant', 'help', 'about', 'user-guide', 'help-here', 'send-feedback', 'report-problem', 'support-project', 'copy-diagnostics', 'open-log-folder', 'open-inspector', 'check-updates', 'whats-new']);
 
@@ -10549,6 +10602,8 @@ async function compareSlides(): Promise<void> {
 
 /** Run a menu command in the way that suits the tab showing. False when it doesn't apply there. */
 function command(name: string): boolean {
+  // a command run while the File tab's page shows (a shortcut, Search, a file tab) closes the page first
+  if (backstage?.isOpen) { backstage.close(false); if (!document.activeElement || document.activeElement === document.body) focusWork(); }
   // View > Toolboxes: one of your own
   if (name.startsWith('toolbox-own-')) { toolboxes.toggle(name.slice('toolbox-'.length)); return true; }
   if (sheetActive()) {
@@ -11052,6 +11107,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
+  'menu-bar': () => { setMenusInFile(!menusInFile); storeSettings(); },
   'ui-scale-in': () => sizeInterface(stepUiScale(uiScale(), 1)),
   'ui-scale-out': () => sizeInterface(stepUiScale(uiScale(), -1)),
   'ui-scale-reset': () => sizeInterface(1),
@@ -11289,7 +11345,6 @@ const COMMANDS: Record<string, () => unknown> = {
   'diagram-to-shapes': () => editor.ungroupSelectedDiagram() || flash('Select a diagram first.'),
   'edit-energy': () => { const id = editor.selectedEnergy(); if (id === null) flash('Select an energy diagram first.'); else void energyDiagram(id); },
   'animate-reaction': () => animateDialog.open(),
-  'nmr-menu': () => nmrMenu(),
   'predict-nmr': () => nmrRibbon('predict'),
   'nmr-1h': () => nmrRibbon('1H'),
   'nmr-13c': () => nmrRibbon('13C'),
@@ -11459,6 +11514,7 @@ function fitMenu(list: HTMLElement): void {
   if (r.right > innerWidth - 4 || r.left < 4) list.style.translate = `${Math.max(4, innerWidth - 4 - r.width) - r.left}px 0`;
 }
 function showMenu(m: Menu | null, focus = true): void {
+  if (!m && backstage?.isOpen) { backstage.close(false); return; }
   openMenu = m;
   for (const x of menus) {
     if (x !== m) closeSubs(x.list);
@@ -11479,8 +11535,9 @@ for (const m of menus) {
   // sliding along the menu bar opens each menu in turn (a mouse only: a tap's pointerenter would
   // open the menu and its click shut it again)
   m.btn.addEventListener('pointerenter', (e) => { if (e.pointerType === 'mouse' && openMenu && openMenu !== m) showMenu(m, false); });
-  m.list.addEventListener('scroll', () => closeSubs(m.list));
+  m.list.addEventListener('scroll', () => { if (!backstage?.isOpen) closeSubs(m.list); });
   m.list.addEventListener('pointerover', (e) => {
+    if (backstage?.isOpen) return;
     const item = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!item || item.disabled) return;
     if (item.classList.contains('has-sub')) { if (item.getAttribute('aria-expanded') !== 'true') openSub(item, false); }
@@ -11489,7 +11546,7 @@ for (const m of menus) {
   m.list.addEventListener('click', (e) => {
     const b = (e.target as HTMLElement).closest<HTMLButtonElement>('button');
     if (!b || b.disabled) return;
-    if (b.classList.contains('has-sub')) { openSub(b, false); return; }
+    if (b.classList.contains('has-sub')) { if (!backstage?.isOpen) openSub(b, false); return; }
     const recent = b.dataset.recent;
     if (recent !== undefined) { showMenu(null); void openRecent(recent); return; }
     const cmd = b.dataset.cmd;
@@ -11497,10 +11554,14 @@ for (const m of menus) {
     // a greyed command says why and the menu stays open on it, for the keys to go on from (F5b-R09)
     const why = cantRun(b) ? whyCannotRun(cmd) : null;
     if (why) { flash(why); b.focus(); return; }
+    const fromPage = !!backstage?.isOpen;
     showMenu(null);
     command(cmd);
+    // the keys go back to the work, unless the command opened a window or put them somewhere
+    if (fromPage && (!document.activeElement || document.activeElement === document.body)) focusWork();
   });
   m.list.addEventListener('keydown', (e) => {
+    if (backstage?.isOpen) { backstageKeys(e, m); return; }
     const here = (document.activeElement as HTMLElement | null)?.closest<HTMLElement>('.menu') ?? m.list;
     const items = menuItems(here);
     const now = document.activeElement as HTMLButtonElement;
@@ -11527,7 +11588,110 @@ for (const m of menus) {
     }
   });
 }
-addEventListener('resize', () => { if (openMenu) showMenu(null); });
+addEventListener('resize', () => { if (openMenu && !backstage?.isOpen) showMenu(null); });
+
+// ---------------------------------------------------------------- the File tab (menu bar off)
+
+// With the menu bar off (the web app's start), a File tab leads each ribbon's tabs and opens the
+// menus as a page over the window, as Office's File tab does (src/ui/backstage.ts). The page is the
+// menu itself (.bs-page), so it greys, ticks and runs its commands just as the menu bar's does.
+/** Every command in the page, top to bottom, for the arrow keys (the submenus' headings are not commands). */
+const pageItems = (list: HTMLElement) =>
+  [...list.querySelectorAll<HTMLButtonElement>('button')].filter((b) => !b.classList.contains('has-sub') && !b.hidden && !b.disabled && b.getClientRects().length > 0);
+function backstageKeys(e: KeyboardEvent, m: Menu): void {
+  // a shortcut (Ctrl+N, Alt+Q…) runs as it would anywhere else; command() closes the page
+  if (e.ctrlKey || e.metaKey || e.altKey) {
+    const chord = chordOf(e);
+    const action = chord ? keymap.lookup('command', chord) : null;
+    const a = action ? parseAction(action) : null;
+    if (a?.verb === 'command') { e.preventDefault(); e.stopPropagation(); command(a.arg); }
+    return;
+  }
+  const items = pageItems(m.list);
+  const i = items.indexOf(document.activeElement as HTMLButtonElement);
+  if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); backstage!.close(); }
+  else if (e.key === 'ArrowDown') { e.preventDefault(); items[(i + 1) % items.length]?.focus(); }
+  else if (e.key === 'ArrowUp') { e.preventDefault(); items[(i - 1 + items.length) % items.length]?.focus(); }
+  else if (e.key === 'ArrowLeft') { e.preventDefault(); backstage!.focusNav(); }
+}
+/** A menu shown as the File tab's page goes back to its place on the menu bar. */
+function putBack(m: Menu): void {
+  m.list.classList.remove('bs-page');
+  for (const head of m.list.querySelectorAll<HTMLButtonElement>('button.has-sub')) head.removeAttribute('tabindex');
+  if (m.list.parentElement !== m.btn.parentElement) m.btn.after(m.list);
+}
+function openBackstage(m: Menu = menus[0], focusPage = false): void {
+  backstage ??= new Backstage({
+    titleStrip: pageTitleStrip,
+    menus: () => shownMenus().map((x) => ({ name: x.btn.textContent!.trim() })),
+    show: (i, focus) => {
+      const x = shownMenus()[i];
+      for (const y of menus) if (y !== x) putBack(y);
+      x.list.classList.add('bs-page');
+      backstage!.pane.append(x.list);
+      showMenu(x, false);
+      // the submenus open in the page, each under its name
+      for (const sub of x.list.querySelectorAll<HTMLElement>('.menu.sub')) {
+        sub.hidden = false;
+        sub.style.removeProperty('left');
+        sub.style.removeProperty('top');
+        const head = sub.parentElement!.querySelector<HTMLButtonElement>(':scope > button')!;
+        head.setAttribute('aria-expanded', 'true');
+        // (a submenu's name is its heading here, not a command: out of the Tab order)
+        head.tabIndex = -1;
+        paintCanRun(sub.querySelectorAll<HTMLButtonElement>(':scope > button[data-cmd]'), 'cmd', (c) => whyCannotRun(c));
+      }
+      backstage!.pane.scrollTop = 0;
+      if (focus) pageItems(x.list)[0]?.focus();
+    },
+    closed: () => {
+      for (const y of menus) putBack(y);
+      showMenu(null);
+    },
+  });
+  if (backstage.isOpen && backstage.current === shownMenus().indexOf(m) && !focusPage) { backstage.close(); return; }
+  backstage.openAt(Math.max(0, shownMenus().indexOf(m)), focusPage);
+}
+/** The menu bar on (the menus as in other desktop programs) or off (the menus in the File tab). View ▸ Window and Colors. */
+function setMenusInFile(on: boolean): void {
+  menusInFile = on;
+  document.body.classList.toggle('menus-in-file', on);
+  if (on) addFileTabs(() => openBackstage());
+  else backstage?.close(false);
+  $('[data-cmd="menu-bar"]')?.setAttribute('aria-checked', String(!on));
+  placeOneRow();
+  fitRibbons();
+}
+
+// With the menus in the File tab there is no title row (Nate, 2026-11-25; the web app as it comes,
+// the desktop app when Menu Bar is cleared): Quick Access, the file tabs and Search go after the
+// ribbon's tabs in the ribbon's row, and in the desktop app the window's buttons go at its end, the
+// row's empty parts moving the window (title-bar.ts). In Focus View, with no ribbon, the title row is back.
+const qaHome = document.createComment('quick bar');
+const searchHome = document.createComment('search');
+$('#quick-bar').before(qaHome);
+$('#btn-search').before(searchHome);
+function placeOneRow(): void {
+  const on = menusInFile;
+  document.body.classList.toggle('one-row', on);
+  const row = on ? [...document.querySelectorAll<HTMLElement>('.ribbon > .rb-tabs')].find((r) => !(r.parentElement as HTMLElement).hidden && r.offsetParent) : null;
+  placeWindowButtons(row && !focusView ? row : null);
+  const qa = $('#quick-bar'), search = $('#btn-search');
+  if (!row || focusView) {
+    // (the title row, as it was, and in Focus View, which shows it in place of the ribbon; while no
+    // ribbon shows for another reason, such as a tab's ribbon still loading, they stay where they were)
+    if (on && !focusView) return;
+    qaHome.after(qa);
+    searchHome.after(search);
+  } else {
+    // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
+    const tablist = row.querySelector(':scope > .rb-tablist')!;
+    if (qa.previousElementSibling !== tablist) tablist.after(qa);
+    if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
+  }
+  if (tabsInMenu) search.before(tabsEl);
+  fitTabs();
+}
 
 // ---------------------------------------------------------------- the keyboard round the window
 
@@ -11555,6 +11719,7 @@ let beforeMenus: HTMLElement | null = null;
 function enterMenuBar(): void {
   const a = document.activeElement as HTMLElement | null;
   if (!a?.closest('header')) beforeMenus = a;
+  if (menusInFile) { document.body.classList.remove('show-mnemonics'); openBackstage(menus[0]); return; }
   menus[0].btn.focus();
 }
 function leaveMenuBar(): void {
@@ -11578,7 +11743,7 @@ function focusWork(): void {
  * it (null when that part isn't showing).
  */
 const REGIONS: { inside: string; first: () => HTMLElement | null }[] = [
-  { inside: 'header', first: () => menus[0].btn },
+  { inside: 'header', first: () => (menusInFile ? $('#quick-bar').querySelector<HTMLElement>('button') : menus[0].btn) },
   { inside: '#tabs', first: () => $('#tabs').querySelector<HTMLElement>('[aria-selected="true"]') ?? $('#tabs').querySelector<HTMLElement>('[role="tab"], button') },
   { inside: '.ribbon', first: () => [...document.querySelectorAll<HTMLElement>('.ribbon')].find(onScreenEl)?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"], button:not([disabled])') ?? null },
   { inside: '#tools', first: () => onScreenEl($('#tools')) ? $('#tools').querySelector<HTMLElement>('button.tool.active') ?? $('#tools').querySelector<HTMLElement>('button.tool') : null },
@@ -11616,25 +11781,29 @@ window.addEventListener('keydown', (e) => {
   // Escape shuts an open menu wherever the keys are (one with every item greyed out never takes them)
   if (e.key === 'Escape' && openMenu && !openMenu.list.contains(e.target as Node | null)) {
     e.preventDefault(); e.stopImmediatePropagation();
-    showMenu(null);
+    // the File tab's page closes with the keys going back where they were
+    if (backstage?.isOpen) backstage.close();
+    else showMenu(null);
     return;
   }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
   if (e.key === 'F10' && !e.ctrlKey && !e.altKey && !e.metaKey && !e.shiftKey) {
     e.preventDefault();
-    if (inMenuBar() || openMenu) leaveMenuBar();
+    if (backstage?.isOpen) backstage.close();
+    else if (inMenuBar() || openMenu) leaveMenuBar();
     else { document.body.classList.add('show-mnemonics'); enterMenuBar(); }
     return;
   }
   // Alt and a menu's letter (by the key's place, so it works whatever the keyboard writes)
   if (e.altKey && !e.ctrlKey && !e.metaKey && !e.shiftKey && /^Key[A-Z]$/.test(e.code)) {
     const m = MNEMONICS.get(e.code.slice(3));
-    if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
+    if (m && menusInFile) { e.preventDefault(); e.stopImmediatePropagation(); openBackstage(m, true); }
+    else if (m) { e.preventDefault(); e.stopImmediatePropagation(); if (!inMenuBar()) beforeMenus = document.activeElement as HTMLElement | null; showMenu(m); }
   }
 }, true);
 // Undo and Redo in the SI Project tab, on the keys set for them (a text box keeps its own undo while typing)
 window.addEventListener('keydown', (e) => {
-  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu')) return;
+  if (ws.active.mode !== 'si' || e.defaultPrevented || isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog, .menu, #backstage')) return;
   const chord = chordOf(e);
   const action = chord ? keymap.lookup('command', chord) : null;
   const verb = action ? parseAction(action).arg : '';
@@ -11649,7 +11818,8 @@ window.addEventListener('keyup', (e) => {
   if (!alone || pointerHeld) { if (!inMenuBar()) document.body.classList.remove('show-mnemonics'); return; }
   if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) { document.body.classList.remove('show-mnemonics'); return; }
   e.preventDefault();
-  if (inMenuBar() || openMenu) leaveMenuBar();
+  if (backstage?.isOpen) { backstage.close(); document.body.classList.remove('show-mnemonics'); }
+  else if (inMenuBar() || openMenu) leaveMenuBar();
   else enterMenuBar();
 });
 window.addEventListener('pointerdown', () => { altAlone = false; pointerHeld = true; }, true);
@@ -11668,8 +11838,9 @@ function tickMenuModes(): void {
   const mode = menuMode();
   // (a command greyed for the last mode is given back; showMenu greys it again if it still cannot run)
   clearCanRun(document.querySelector('header')!);
+  if (backstage?.isOpen) clearCanRun(backstage.pane);
   // what belongs to another mode is left out of the menus (marked, so what is hidden for other reasons stays hidden)
-  for (const el of document.querySelectorAll<HTMLElement>('header .menu > button, header .menu > .submenu, header .menu.sub > button')) {
+  for (const el of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu > button, :is(header, #backstage) .menu > .submenu, :is(header, #backstage) .menu.sub > button')) {
     const modes = el.dataset.modes ?? el.closest<HTMLElement>('[data-item-modes]')?.dataset.itemModes;
     if (!modes) continue;
     const on = modes.split(' ').includes(mode);
@@ -11678,7 +11849,7 @@ function tickMenuModes(): void {
     if (on && el.dataset.modeHid) { el.hidden = false; delete el.dataset.modeHid; }
     else if (!on && !el.hidden) { el.hidden = true; el.dataset.modeHid = '1'; }
   }
-  for (const menu of document.querySelectorAll<HTMLElement>('header .menu')) {
+  for (const menu of document.querySelectorAll<HTMLElement>(':is(header, #backstage) .menu')) {
     const items = [...menu.children].filter((c): c is HTMLElement => c instanceof HTMLElement && c.tagName !== 'HR');
     // a menu with nothing for this mode (Chemistry beside a sheet) shows its commands greyed out, so it is never empty
     if (items.length && items.every((c) => c.hidden)) {
@@ -11707,7 +11878,7 @@ function tickMenuModes(): void {
 tickMenuModes();
 // (in the capture phase: the drawing takes a finger's press for itself, so it never bubbles up)
 document.addEventListener('pointerdown', (e) => {
-  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap')) showMenu(null);
+  if (openMenu && !(e.target as HTMLElement).closest('.menu-wrap, #backstage, .rb-file')) showMenu(null);
 }, true);
 // listing the clipboard's formats needs the Windows app
 for (const b of document.querySelectorAll<HTMLButtonElement>('[data-cmd="clipboard-formats"]')) b.hidden = !nativeClipboard;
@@ -12729,6 +12900,14 @@ function setToolCells(v: Settings['toolCells']): void {
   window.dispatchEvent(new Event('resize'));
 }
 
+/** Settings ▸ Toolboxes and Ribbon ▸ Toolbox Button Size: the toolboxes' buttons alone, in percent (100: the size of the ribbon's small buttons). */
+let toolboxScale = 100;
+function setToolboxScale(v: number): void {
+  toolboxScale = toolboxScaleOf(v);
+  document.documentElement.style.setProperty('--tb-scale', String(toolboxScale / 100));
+  window.dispatchEvent(new Event('resize'));
+}
+
 /** Settings ▸ Toolboxes: how the toolboxes' buttons look and what their tips say. */
 let ribbonLook: Settings['canvasRibbon'] = 'classic';
 function setRibbonLook(look: Settings['canvasRibbon']): void {
@@ -12745,6 +12924,8 @@ async function toolboxPreferences(): Promise<void> {
       help: 'Both keep the tabs. View ▸ Ribbon ▸ Simplified Ribbon also switches between them; the ▴ at the right end of the tabs (or Ctrl+F1) collapses the ribbon to its tabs.' },
     { name: 'cells', label: 'Button cells', value: toolCells, options: [{ value: 'off', label: 'None' }, { value: 'grid', label: 'Grid lines' }, { value: 'raised', label: 'Raised buttons' }, { value: 'both', label: 'Grid lines and raised buttons' }],
       help: 'Gives each toolbox button a cell of its own, so the buttons are easier to tell apart and to hit.' },
+    { name: 'scale', label: 'Toolbox Button Size', type: 'number', unit: '%', value: String(toolboxScale),
+      help: `The size of the toolboxes' buttons alone, from ${TOOLBOX_SCALE_MIN} to ${TOOLBOX_SCALE_MAX}%. At 100% they match the ribbon's small buttons. View ▸ Window and Colors ▸ Interface Size changes everything together.` },
     { name: 'tips', label: 'Detailed tooltips', type: 'checkbox', value: String(toolTip.enabled) },
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => toolboxPreview(v.look === 'simple' ? 'simple' : 'classic', (['grid', 'raised', 'both'].includes(v.cells) ? v.cells : 'off') as ToolCells, {
     ribbon: [...document.querySelectorAll('.canvas-ribbon > .rb-panel svg.ci-ic')].slice(0, 12),
@@ -12752,6 +12933,7 @@ async function toolboxPreferences(): Promise<void> {
   }) } });
   if (!r) return;
   setToolCells((['grid', 'raised', 'both'].includes(r.cells) ? r.cells : 'off') as Settings['toolCells']);
+  setToolboxScale(toolboxScaleOf(r.scale));
   setRibbonLook(r.look === 'simple' ? 'simple' : 'classic');
   showToolTips(r.tips === 'true');
   storeSettings();
@@ -12776,12 +12958,13 @@ function nmrSettingsPreview(v: Record<string, string>, was: PeakLabels): HTMLEle
     size: size >= 6 && size <= 24 ? size : was.size, place: v.plPlace === 'top' || v.plPlace === 'upright' ? v.plPlace : 'above' };
   const sf = Number(v.mhz) > 0 ? Number(v.mhz) : 400;
   const compare: CompareMode = v.compare === 'stacked' || v.compare === 'overlay' ? v.compare : 'inverted';
+  const trace = v.trace === 'blue' ? 'blue' : 'maroon';
   const box = document.createElement('div');
   box.className = 'nmr-set-preview';
   const pic = (title: string, svg: string) => { const f = document.createElement('figure'); const c = document.createElement('figcaption'); c.textContent = title; f.innerHTML = svg; f.append(c); f.setAttribute('aria-label', title); return f; };
   box.append(
-    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl })),
-    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare })),
+    pic('Peak labels (ethyl acetate)', spectrumSvg(sampleSpectrumData(sf, false), { w: 240, h: 170, hi: 4.6, lo: 0.8, labels: true, hotRow: null, peakLabels: pl, trace })),
+    pic('A pasted report against the prediction', spectrumSvg(sampleSpectrumData(sf, true), { w: 240, h: 150, hi: 4.6, lo: 0.8, labels: false, hotRow: null, overlay: true, compare, trace })),
   );
   return box;
 }
@@ -12802,6 +12985,8 @@ async function nmrSettings(): Promise<void> {
     { name: 'c13lo', label: '¹³C spectrum from', type: 'number', value: String(r13.lo), unit: 'ppm',
       help: 'The spectrum is drawn over this range (−5 to 200 ppm unless you change it) and widens automatically when a peak falls outside it.' },
     { name: 'c13hi', label: '¹³C spectrum to', type: 'number', value: String(r13.hi), unit: 'ppm' },
+    { name: 'trace', label: 'Spectrum color', value: nmrTraceColor(), options: [{ value: 'maroon', label: 'Maroon' }, { value: 'blue', label: 'Blue' }],
+      help: 'The color of the spectrum in the Analysis panel and the Spectrum window (lighter in the Dark theme), and in its pictures.' },
     { name: 'compare', label: 'Show a pasted report against the prediction', value: compareMode(), options: [
       { value: 'inverted', label: 'Inverted' }, { value: 'stacked', label: 'Stacked' }, { value: 'overlay', label: 'Overlay' }],
       help: 'How Check Data in the Spectrum window compares them. Inverted: measured above, predicted mirrored below. Stacked: one above the other, both upright. Overlay: both on one baseline. Its Inverted, Stacked and Overlay buttons change the same setting.' },
@@ -12819,6 +13004,7 @@ async function nmrSettings(): Promise<void> {
   ], { ok: 'Save', preview: { title: 'Preview', draw: (v) => nmrSettingsPreview(v, pk) } });
   if (!r) return;
   setNmrAutoPredict(r.auto === 'true');
+  setNmrTraceColor(r.trace === 'blue' ? 'blue' : 'maroon');
   if (r.compare === 'inverted' || r.compare === 'stacked' || r.compare === 'overlay') setCompareMode(r.compare);
   if (r.quality === 'fast' || r.quality === 'balanced' || r.quality === 'accurate') setNmrQuality(r.quality);
   if ((NMR_SOLVENTS as readonly string[]).includes(r.solvent)) nmrPanel.solvent = r.solvent;
@@ -12844,6 +13030,8 @@ async function personalPreferences(): Promise<void> {
       help: 'Everywhere you draw: Canvas, structures in documents and spreadsheets, and text boxes on slides. Ctrl+Enter always finishes, and Shift+Enter always breaks the line.' },
     { name: 'alkylLook', label: 'AutoFormat alkyl isomer prefixes', value: alkylPrefs.look, options: ALKYL_LOOK_CHOICES, short: true, inline: (v) => alkylSwatch(parseAlkylLook(v)),
       help: 'How n-, i-, s- and t- are written on Pr and Bu in labels and text (OtBu, N(iPr)₂, nBu, P(t-Bu)₂). New labels follow it when you finish typing; you\'ll be asked about existing ones. A dash is never added or removed where it would read as an element (PtBu₃).' },
+    { name: 'electronMethod', label: 'Electron Counting Method', value: electronPrefs.method, short: true, options: [{ value: 'both', label: 'Both' }, { value: 'neutral', label: 'Neutral Ligand' }, { value: 'ionic', label: 'Donor Pair (Ionic)' }],
+      help: 'How the electron count of a metal complex is shown in the Side Panel, the Analysis panel and Insert as Table. Both shows the two columns side by side, which give the same total. Neutral Ligand starts from the metal atom\'s own electrons and adds what each ligand shares. Donor Pair (Ionic) starts from the metal ion\'s d electrons and adds the pair each ligand donates.' },
     { name: 'warnLook', label: 'Mark problems on the drawing with', value: renderer.warnLook, short: true, inline: (v) => problemSwatch((WARN_LOOKS as readonly string[]).includes(v) ? v as WarnLook : 'box', doc.style), options: [
       { value: 'box', label: 'A thin red box' }, { value: 'soft', label: 'A soft red disc' }, { value: 'circle', label: 'A red circle' },
       { value: 'dashed', label: 'A dashed red circle' }, { value: 'corners', label: 'Red corner marks' }],
@@ -12923,6 +13111,9 @@ async function personalPreferences(): Promise<void> {
   setFocalDefault(focalPrefs.dflt);
   editor.requestOverlay();
   editor.aids = { ...editor.aids, angle: r.aidAngle === 'true', length: r.aidLength === 'true', hints: r.aidHints === 'true', look: r.aidLook === 'box' || r.aidLook === 'solid' ? r.aidLook : 'plain', units: r.aidUnits === 'px' || r.aidUnits === 'mm' ? r.aidUnits : 'in' };
+  electronPrefs.method = ELECTRON_METHODS.includes(r.electronMethod as ElectronMethod) ? r.electronMethod as ElectronMethod : 'both';
+  stylePanel.refresh(true);
+  scheduleAnalysis(true);
   const look = parseAlkylLook(r.alkylLook);
   const changed = look !== alkylPrefs.look;
   alkylPrefs.look = look;
@@ -13027,6 +13218,7 @@ function currentSettings(): Settings {
     ribbonCollapsed: ribbonChosen,
     ribbonAutoFold,
     tabsInMenu,
+    menusInFile,
     uiScale: uiScale(),
     textBar: CaptionEditor.barPlace,
     appTheme,
@@ -13081,6 +13273,9 @@ function currentSettings(): Settings {
     arrowEndGap: arrowGaps.end,
     cursorAids: { ...editor.aids },
     haptoDelocalized: haptoLook.delocalized,
+    electronMethod: electronPrefs.method,
+    webLook: WEB_LOOK,
+    toolboxScale,
     superscriptR: labelPrefs.superscriptR,
     superscriptRText: labelPrefs.plainText,
     alkylLook: alkylPrefs.look,
@@ -13275,6 +13470,7 @@ function applySettings(s: Settings): void {
   ribbonAutoFold = s.ribbonAutoFold;
   autoFoldRibbon(true);
   placeTabs(s.tabsInMenu);
+  setMenusInFile(s.menusInFile);
   void setUiScale(s.uiScale);
   defaultPage = s.page;
   welcomed = s.welcomed;
@@ -13289,6 +13485,7 @@ function applySettings(s: Settings): void {
   setShapesInk(s.shapeInk);
   setOneColumnTools(s.oneColumnTools);
   setToolCells(s.toolCells);
+  setToolboxScale(s.toolboxScale);
   setRibbonLook(s.canvasRibbon);
   startView = s.startView;
   templatesOnNew = { ...s.templatesOnNew };
@@ -13330,6 +13527,7 @@ function applySettings(s: Settings): void {
   arrowGaps.end = s.arrowEndGap;
   editor.aids = { ...s.cursorAids };
   haptoLook.delocalized = s.haptoDelocalized;
+  electronPrefs.method = s.electronMethod;
   labelPrefs.superscriptR = s.superscriptR;
   labelPrefs.plainText = s.superscriptRText;
   alkylPrefs.look = s.alkylLook;
@@ -13420,6 +13618,7 @@ void loadSettings((msg) => flash(msg, 12000)).then((s) => {
   applySettings(s);
   settingsLoaded = true;
   void keeper.start();
+  webUpdates.start();
   void lastClose.then((c) => { if (c) unexpectedCloseNotice(c); });
   void openOutsideFiles();
   void startWordObjects();
@@ -13511,6 +13710,9 @@ if (isTauri()) {
 } else {
   window.addEventListener('beforeunload', (e) => {
     finishTyping();
+    // reloading for a new version: the unsaved tabs were just copied, and are offered when the page is back
+    // (anything changed after the copy, and the question asks again)
+    if (webReloading && keeper.workKept()) { void diagnostics.write(); return; }
     if (ws.anyDirty) e.preventDefault();
     // with nothing unsaved the copies can go; otherwise they stay, in case the page is left
     else void keeper.end();
@@ -13784,16 +13986,12 @@ function nmrRibbon(act: Parameters<NmrPanel['ribbon']>[0]): void {
   go();
 }
 
-/** Home > NMR: its commands in a menu under the button. */
-function nmrMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-menu"]');
-  const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
-  popupMenu(r.left, r.bottom + 2, [['Predict NMR', () => nmrRibbon('predict')], ['Spectrum Window', () => nmrRibbon('window')], ['Show on Drawing', () => nmrRibbon('marks')], ['Check Data…', () => nmrRibbon('check')], null, ['NMR Settings…', () => command('nmr-settings')]]);
-}
+/** Where an NMR menu drops from: under the ribbon's Predict NMR button (or at the top left of the drawing). */
+const nmrAnchor = () => [...document.querySelectorAll<HTMLElement>('#canvas-ribbon [data-cr-fly="nmr"] > .rb-fly-btn')].find((b) => b.getBoundingClientRect().width > 0);
 
-/** Chemistry > NMR > Solvent…: the solvents in a menu under the button. */
+/** Chemistry ▸ NMR ▸ Solvent…: the solvents in a menu, under the ribbon's Predict NMR button. */
 function nmrSolventMenu(): void {
-  const b = document.querySelector<HTMLElement>('#canvas-ribbon [data-cmd="nmr-solvent"]');
+  const b = nmrAnchor();
   const r = b?.getBoundingClientRect() ?? new DOMRect(200, 120, 0, 0);
   popupMenu(r.left, r.bottom + 2, NMR_SOLVENTS.map((x) => [`${x === nmrPanel.solvent ? '✓ ' : ''}${solventLabel(x)}`, () => nmrRibbon({ solvent: x })] as [string, () => void]));
 }
@@ -15347,7 +15545,7 @@ editor.onFocalPicked = (kind) => {
   else $('#flash').classList.remove('show');
 };
 
-/** Arrange ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
+/** Home ▸ Focal Point ▸ Set as Focal Point with nothing to set it on: the next click on the drawing names the spot. */
 function startFocalPick(): void {
   editor.startFocalPick();
   flash('Click an atom, a bond or inside a ring to make it its structure\'s focal point. Esc cancels.', 60000);
@@ -15758,23 +15956,16 @@ const BOX_TITLES: Record<string, string> = {
   main: 'Drawing Tools', structure: 'Structure', arrange: 'Object', templates: 'Templates', colours: 'Colors', highlight: 'Highlight', text: 'Text Formatting', guides: 'Guides', custom: 'My Toolbox', smart: 'Smart Scheme Species Table', details: 'Side Panel',
   schemes: 'Smart Schemes', diagrams: 'Diagrams', tables: 'Tables and Charts', biopolymers: 'Biopolymers', perspective: 'Perspective and 3-D',
 };
-/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"). */
-const cmds = (list: (string | null)[]) => list.map((c) => (c ? `cmd:${c}` : 'sep'));
+/** What the toolboxes of buttons come with ("cmd:", "tool:", "pal:", "w:looks", "sep"): see toolbox-defaults.ts. */
 const BOX_ITEMS: Record<string, readonly string[]> = {
+  ...BOX_DEFAULTS,
   main: MAIN_ITEMS,
-  structure: cmds(['clean-up', 'clean-up-options', 'add-frame', 'fill-rings', 'highlight', 'remove-highlight', null, 'aromatic-circles', 'stereo-labels', null, 'add-id-label', 'add-caption', 'attach-descriptors', 'number-compounds', null, 'contract-label', 'expand-label', 'expand-label-full', 'hapto-bond', 'name-to-structure']),
-  arrange: [...cmds(['align-left', 'align-hcenter', 'align-right', 'align-top', 'align-vcenter', 'align-bottom', null, 'distribute-h', 'distribute-v', 'arrange-row', 'arrange-column', 'arrange-grid', null, 'flip-h', 'flip-v', 'rotate-cw', 'rotate-ccw']), 'pal:perspective', 'cmd:turn-3d', ...cmds([null, 'shape-front', 'shape-back'])],
-  highlight: [...cmds(['highlight', 'remove-highlight', null, 'smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight', null, 'save-highlight-look']), 'w:looks'],
+  templates: TOOL_GROUPS.flat().filter((i): i is PaletteDef => 'palette' in i && i.palette.startsWith('tpl-')).map((i) => `pal:${i.palette}`),
   custom: defaultToolboxes().custom,
-  schemes: cmds(['smart-scheme', 'convert-smart-scheme', 'ungroup-smart-scheme', null, 'arrange-scheme', 'clean-up-cycle', 'scheme-settings', null, 'stoichiometry-table', 'check-balance', 'map-atoms', 'animate-reaction']),
-  diagrams: cmds(['energy-diagram', 'edit-energy', 'mo-diagram', 'd-orbital-splitting', 'orbital', 'p-orbitals', 'ts-brackets', null, 'torsion-chart', 'edit-torsion', 'copy-torsion-data', null, 'newman-projection', 'edit-newman', 'unlink-newman', null, 'insert-diagram', 'edit-diagram', 'diagram-to-shapes']),
-  tables: cmds(['insert-table', 'rgroup-table', 'stoichiometry-table', null, 'insert-chart', 'edit-chart', null, 'tlc-plate', 'gel', 'edit-plate']),
-  biopolymers: ['cmd:sequence-to-structure', 'sep', 'pal:tpl-amino', 'pal:tpl-sugars', 'pal:tpl-nucleic'],
-  perspective: ['tool:perspective', 'tool:perspective-3d', 'sep', ...cmds(['turn-3d', 'flatten-3d', 'model-3d', null, 'depth-shading', 'depth-shading-settings', null, 'ring-chair', 'ring-chair-flip', 'newman-projection', 'crystal-structure']), 'sep', 'pal:tpl-perspective', 'pal:tpl-conformers', 'pal:tpl-projections'],
 };
-/** Short names on toolbox buttons for commands with no icon. */
+/** Short names on the Highlight toolbox's buttons. */
 const SHORT_LABEL: Record<string, string> = {
-  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline only',
+  'smooth-highlight': 'Smooth', 'centre-highlight': 'Center', 'soft-highlight': 'Soft', 'outline-highlight': 'Outline',
   'shadow-highlight': 'Shadow', 'glow-highlight': 'Glow', 'save-highlight-look': 'Save Style…',
 };
 
@@ -15815,7 +16006,7 @@ function buildBox(body: HTMLElement, id: string, vertical: boolean): void {
   const s = shownGrid(g, dock);
   const cells = document.createElement('div');
   cells.className = 'tb-cells';
-  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(34px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${s.cols}, minmax(var(--tbw), var(--tb-track, auto)))`;
   const make = (k: string): HTMLElement | null => {
     const name = k.slice(k.indexOf(':') + 1);
     // the drawing tools' buttons are the tool bar's own (it shows the one in use, and each palette's last pick)
@@ -15854,19 +16045,21 @@ function sideFold(): HTMLButtonElement {
 }
 /** The toolboxes laid out by the app itself (the rest show buttons chosen in Customize Toolboxes). */
 const SPECIAL_BOXES: Record<string, (body: HTMLElement, vertical: boolean) => void> = {
-  templates: (body, vertical) => {
-    // (many templates: the box scrolls rather than run off the window)
-    body.classList.add('tb-grid', 'tb-scroll');
-    body.style.setProperty('--cols', vertical ? '2' : '12');
-    for (const group of TOOL_GROUPS) for (const item of group) {
-      if (!('palette' in item) || !item.palette.startsWith('tpl-') || item.palette === 'tpl-own') continue;
-      // a heading over each palette's buttons, so the families are easy to find
-      const head = document.createElement('div');
-      head.className = 'tb-heading';
-      head.textContent = head.title = item.title;
-      body.append(head);
-      for (const t of item.items) { const b = toolButton(t.name); if (b) body.append(b); }
-    }
+  // Highlight: the two commands, what a highlight is made of as switches, then the saved styles
+  highlight: (body, vertical) => {
+    body.classList.add('tb-hl');
+    const row = (cls: string, names: string[]) => {
+      const r = document.createElement('div');
+      r.className = cls;
+      for (const n of names) {
+        const b = commandButton(n, runFromToolbox, SHORT_LABEL[n]);
+        if (!b.classList.contains('tb-icon')) b.classList.add('tb-chip');
+        r.append(b);
+      }
+      return r;
+    };
+    body.append(row('tb-hl-row', ['highlight', 'remove-highlight', 'save-highlight-look']),
+      row('tb-hl-chips', ['smooth-highlight', 'centre-highlight', 'soft-highlight', 'outline-highlight', 'shadow-highlight', 'glow-highlight']), looksList(vertical));
   },
   colours: (body, vertical) => {
     const modes = document.createElement('div');
@@ -16028,8 +16221,8 @@ function layCells(cells: HTMLElement, fit?: number): void {
   const blocks = starts.length;
   // the longest block sets how many rows (columns, along the top or bottom) there are
   const len = Math.max(...starts.map((st, b) => (starts[b + 1] ?? full) - st));
-  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(34px, auto))`;
-  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(32px, auto))`;
+  cells.style.gridTemplateColumns = `repeat(${across ? len : s.cols * blocks}, minmax(var(--tbw), var(--tb-track, auto)))`;
+  cells.style.gridTemplateRows = `repeat(${across ? s.rows * blocks : len}, minmax(var(--tbh), auto))`;
   cells.querySelectorAll('.tb-line').forEach((l) => l.remove());
   // a line where a block starts is not needed: the blocks stand apart
   const lineRows = new Set(across ? s.lineRows : s.lineRows.filter((r) => !starts.includes(r)));
@@ -16219,7 +16412,7 @@ let toolboxMenuTop: Element | null = null;
 
 /** View > Toolboxes: a ticked entry for each toolbox there is now, named and in the order Customize Toolboxes has them. */
 function fillToolboxMenu(): void {
-  const first = document.querySelector<HTMLElement>('header .menu [data-cmd^="toolbox-"]');
+  const first = document.querySelector<HTMLElement>(':is(header, #backstage) .menu [data-cmd^="toolbox-"]');
   if (!first) return;
   toolboxMenuTop ??= first.previousElementSibling;
   const menu = first.parentElement!;
@@ -16364,13 +16557,15 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
+  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
+  defaults: isTauri() ? undefined : QUICK_WEB,
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,
   key: (cmd) => commandKey(cmd),
   icon: (cmd) => (cmd === 'lock-toolboxes' ? lockIcon(toolboxState.locked) : commandIcon(cmd)),
   state: (cmd) => {
-    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"]`);
+    const item = document.querySelector<HTMLButtonElement>(`header .menu-wrap [data-cmd="${cmd}"], #backstage .menu [data-cmd="${cmd}"]`);
     const e = topMenuEntry(cmd);
     return { enabled: !item || (!item.disabled && !item.closest('[data-mode-hid]')), on: e?.checked ?? null };
   },
@@ -16378,7 +16573,7 @@ quickBar = new QuickBar($('#quick-bar'), {
 });
 // right-click a menu item, or a ribbon button that runs a menu command, to put it on the quick bar (or take it off)
 document.addEventListener('contextmenu', (e) => {
-  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], .ribbon button[data-cmd]');
+  const b = (e.target as Element).closest<HTMLButtonElement>('header .menu [data-cmd], #backstage .menu [data-cmd], .ribbon button[data-cmd]');
   if (!b || !quickBar) return;
   e.preventDefault();
   const qb = quickBar;
@@ -16392,7 +16587,7 @@ const onScreen = (el: Element) => el.getClientRects().length > 0;
 /** A ribbon button's name: its own words, or its tool tip's first phrase when it only shows a sign. */
 function ribbonLabel(b: HTMLElement): string {
   const t = b.cloneNode(true) as HTMLElement;
-  t.querySelectorAll('.rb-icon, .sw, svg, kbd').forEach((x) => x.remove());
+  t.querySelectorAll('.rb-icon, .sw, svg, kbd, .cr-caret, .cr-drop').forEach((x) => x.remove());
   const own = t.textContent!.replace(/\s+/g, ' ').trim();
   const tip = (b.dataset.tip ?? b.title ?? b.getAttribute('aria-label') ?? '').replace(/\s*\(.*?\)/g, '').split(/[.:;,] /)[0].trim();
   return own.length > 2 ? own : tip || own;
@@ -16416,9 +16611,10 @@ function commandItems(): CommandItem[] {
     finishTyping();
     if (!command(cmd)) flash(`${label} isn't available here.`);
   };
-  for (const wrap of document.querySelectorAll<HTMLElement>('header .menu-wrap')) {
-    const menu = wrap.querySelector<HTMLElement>(':scope > button')?.textContent?.trim() ?? '';
-    for (const b of wrap.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
+  // (by the menus themselves: one may be in the File tab's page just now)
+  for (const { btn, list } of menus) {
+    const menu = btn.textContent?.trim() ?? '';
+    for (const b of list.querySelectorAll<HTMLButtonElement>('[data-cmd]')) {
       if (b.hidden || b.disabled || getComputedStyle(b).display === 'none') continue;
       // the submenus it is in, outermost first (File ▸ Export)
       const subs: HTMLButtonElement[] = [];
@@ -16437,14 +16633,16 @@ function commandItems(): CommandItem[] {
   for (const rib of document.querySelectorAll<HTMLElement>('.ribbon')) {
     if (rib.hidden || !onScreen(rib)) continue;
     for (const b of rib.querySelectorAll<HTMLButtonElement>('button')) {
-      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel)')) continue;
+      // (a flyout's commands are found too, though its list is closed)
+      if (b.getAttribute('role') === 'tab' || b.hidden || b.disabled || b.closest('[hidden]:not(.rb-panel, .rb-fly-menu)')) continue;
       const panel = b.closest<HTMLElement>('.rb-panel');
       const tabAttr = panel && [...panel.attributes].find((a) => /^data-.*-panel$/.test(a.name));
       const tab = tabAttr ? rib.querySelector<HTMLButtonElement>(`[${tabAttr.name.replace(/-panel$/, '-tab')}="${tabAttr.value}"]`) : null;
       if (tab?.hidden) continue; // a tab shown only now and then (Table Design, Chart)
       const label = ribbonLabel(b);
       if (!label) continue;
-      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
+      // (a ready-made form of a command, a template pane's MO Diagram: H₂O, is found on its own)
+      const name = b.dataset.cmd ? `cmd:${b.dataset.cmd}${b.dataset.arg ? `:${b.dataset.arg}` : ''}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : b.id ? `id:${b.id}` : `rb:${rib.id}:${label}`;
       const code = b.dataset.cmd ?? b.dataset.sh ?? b.dataset.doc;
       out.push({
         id: name, label, place: tab ? `${tab.textContent!.trim()} tab` : `${rib.getAttribute('aria-label')} ribbon`, more: b.dataset.tip ?? b.title,
@@ -16508,7 +16706,7 @@ const SETTINGS_PAGES: SettingsPage[] = [
   { id: 'schemes', group: 'Drawing', title: 'Schemes', words: 'scheme arrow gap plus text reagents conditions boxes', open: schemeSettings },
   { id: 'newman', group: 'Drawing', title: 'Newman Projections', words: 'newman sawhorse projection conformation torsion dihedral gauche anti eclipsed color largest middle smallest group strain a-value energy chart rotation barrier kcal kj', open: () => newmanSettingsPage() },
   { id: 'analysis', group: 'Drawing', title: 'Analysis', words: 'analysis panel rows reorder hide show bench properties density boiling melting point vapor pressure flash refractive index lab calculation calculations mmol mass volume solution molarity ribbon box attached descriptors decimal places units celsius fahrenheit kelvin pubchem name hrms elemental', open: () => analysisSettingsPage(analysisHost) },
-  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection', open: nmrSettings }] : [],
+  ...nmrHere ? [{ id: 'nmr', group: 'Drawing', title: 'NMR Prediction', words: 'nmr prediction predict spectrum spectra proton carbon 1h 13c ppm range width solvent cdcl3 spectrometer frequency mhz quality fast balanced accurate automatic selection color trace blue maroon', open: nmrSettings }] : [],
   { id: 'toolboxes', group: 'Appearance', title: 'Toolboxes and Ribbon', words: 'toolbox ribbon classic simplified one row two rows buttons cells grid lines raised bevel borders tooltips hints keys modifiers shortcuts', open: toolboxPreferences },
   { id: 'navigation', group: 'Appearance', title: 'Navigation', words: 'document map navigator minimap map overview edge arrows off screen lost find dot grid dots tint outside fit go to selection orientation zoom', open: navigationSettings },
   { id: 'page-grid', group: 'Appearance', title: 'Page Grid', words: 'pages page grid boundaries dashed dotted lines paper fixed edges hatched wall empty gray print chemdraw paste wrap', open: pageGridSettings },
@@ -16637,7 +16835,7 @@ editor.underlay = (ctx) => {
   if (!drawingShown() || cellEdit) return;
   const p = gridPage();
   // with the page grid, whole pages show what is in use, so the tint round the drawing is left off
-  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround);
+  if (p && pageLook.grid) paintPages(ctx, pageLook, renderer, p, pageExtent(p, doc.bounds()), pagesInUse(p), dark.on, dark.on ? null : darkSurround, graySurround ? GRAY_ROOM_EXTRA : undefined);
   else paintTint(ctx, orientPrefs, renderer, doc.bounds(), doc.style.labelSize * 1.5 + doc.style.bondLength);
 };
 editor.overlayTop = (ctx) => nmrPanel.drawMarks(ctx, renderer.view.scale, (id) => doc.atoms.get(id), (id) => doc.neighbors(id), getComputedStyle(document.documentElement).getPropertyValue('--accent').trim() || '#0e7c86');
@@ -17061,13 +17259,16 @@ function setShapesInk(ink: Settings['shapeInk']): void {
   $('[data-cmd="shape-ink-accent"]')?.setAttribute('aria-checked', String(ink === 'accent'));
 }
 
-/** The space round the drawing's pages in the dark theme (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
+/** The space round the drawing's pages in the dark and Dark Gray themes (app.css --surround), or null in the light theme, where the page grid's light shading shows. */
 let darkSurround: string | null = null;
+/** Dark Gray: the room to add pages is a light grey against its dark surround (Nate's pick, 2026-11-25). */
+let graySurround = false;
 const darkScheme = matchMedia('(prefers-color-scheme: dark)');
 function themeChanged(): void {
   const t = document.documentElement.dataset.theme;
   const isDark = t === 'dark' || (t !== 'light' && darkScheme.matches);
-  darkSurround = isDark ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
+  graySurround = !isDark && 'gray' in document.documentElement.dataset;
+  darkSurround = isDark || graySurround ? getComputedStyle(document.documentElement).getPropertyValue('--surround').trim() || null : null;
   // the slide's and the document's canvases paint the space round the page themselves
   dispatchEvent(new CustomEvent('surround-changed', { detail: darkSurround }));
   renderer.repaintAll();
@@ -17081,6 +17282,8 @@ function setFocusView(on: boolean): void {
   focusView = on;
   document.body.classList.toggle('focus-view', on);
   $('[data-cmd="focus-view"]')?.setAttribute('aria-checked', String(on));
+  // (the desktop app's window buttons go back to the title row, which Focus View shows, and out again)
+  if (menusInFile) placeOneRow();
   dispatchEvent(new Event('resize'));
   if (on) flash(`Focus view: toolboxes, side panel and ribbon hidden. ${commandKey('focus-view') || 'View > Focus View'} brings them back.`, 6000);
 }

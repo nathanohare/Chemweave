@@ -3,6 +3,8 @@
 // and commands. Unlocked, a toolbox is dragged by its title to float anywhere, or to an edge of
 // the drawing to dock there. Where each one is, and what is in your own, is kept with the settings.
 
+import { isTauri } from '@tauri-apps/api/core';
+import { BOX_COLS, fullCols } from './toolbox-defaults';
 import { showContextMenu, topMenuEntry, type MenuItem } from './context-menu';
 import { commandIcon } from './command-icons';
 import { COMMAND_NAMES } from '../editor/keymap';
@@ -18,8 +20,8 @@ export interface BoxPlace {
   collapsed?: boolean;
   /** Locked where it is (its own padlock); unset follows the big Locked button. */
   locked?: boolean;
-  /** Floating at the top right of the drawing, whatever the window's size, until it is moved (the side panel starts so). */
-  corner?: boolean;
+  /** Floating at the top right of the drawing (true), or its top left ('left'), whatever the window's size, until it is moved (the side panel starts at the right; the web app's Drawing Tools at the left). */
+  corner?: boolean | 'left';
 }
 
 export interface ToolboxState {
@@ -87,8 +89,8 @@ const OWN_ID = /^own-[a-z0-9]{1,16}$/;
 /** A fly-out of your own: its palette name. */
 const OWN_FLY = /^fly-[a-z0-9]{1,16}$/;
 export const isOwnFlyout = (name: string): boolean => OWN_FLY.test(name);
-/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: templates, colours, the side panel). */
-export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'highlight', 'custom'];
+/** The toolboxes whose buttons can be chosen (the rest are laid out by the app: highlight, colours, the side panel). */
+export const EDITABLE: readonly string[] = ['main', 'structure', 'arrange', 'templates', 'custom'];
 /** Toolboxes that can't be deleted (they can still be hidden, except the side panel). */
 export const KEEP: readonly string[] = ['main', 'details'];
 
@@ -150,9 +152,16 @@ export const NOT_IN_TOOLBOX_MENU: readonly string[] = ['details', 'smart'];
 export const CONTEXT_BOXES = ['schemes', 'diagrams', 'tables', 'biopolymers', 'perspective'] as const;
 export type ContextBox = (typeof CONTEXT_BOXES)[number];
 
+/** The web version (not the desktop app). */
+function webToolboxes(): boolean {
+  try { return !isTauri(); } catch { return true; }
+}
+
 export function defaultToolboxes(): ToolboxState {
   const places: Record<string, BoxPlace> = {};
   TOOLBOX_IDS.forEach((id, i) => { places[id] = { shown: id === 'main', dock: id === 'main' ? 'left' : 'float', x: 110 + i * 24, y: 90 + i * 64 }; });
+  // the web app's Drawing Tools float at the top left of the drawing, with no dock beside it (Nate, 2026-11-25)
+  if (webToolboxes()) places.main = { ...places.main, dock: 'float', x: 70, y: 90, corner: 'left' };
   // the side panel (Style, Warnings, Analysis) is always shown, floating at the top right of the drawing to start with
   places.details = { shown: true, dock: 'float', x: 900, y: 90, corner: true };
   // the Smart Scheme species list floats beside its scheme until docked (then it is a toolbox, at the right to start with)
@@ -196,7 +205,7 @@ export function parseToolboxes(raw: unknown): ToolboxState {
         x: num(p.x, s.places[id].x), y: num(p.y, s.places[id].y),
         ...(p.collapsed === true ? { collapsed: true } : {}),
         ...(typeof p.locked === 'boolean' ? { locked: p.locked } : {}),
-        ...(p.corner === true && p.dock === 'float' ? { corner: true } : {}),
+        ...((p.corner === true || p.corner === 'left') && p.dock === 'float' ? { corner: p.corner } : {}),
       };
     }
   }
@@ -526,6 +535,15 @@ export class Toolboxes {
       top: document.getElementById('dock-top')!, bottom: document.getElementById('dock-bottom')!,
     };
     window.addEventListener('resize', () => this.keepOnScreen());
+    // (and when the drawing's area changes without the window doing so: another kind of tab, whose
+    // ribbon is taller, the menu bar or the file tabs' row turned on, so a toolbox kept at a corner
+    // never sits over the ribbon)
+    if (typeof ResizeObserver !== 'undefined') {
+      queueMicrotask(() => {
+        const w = this.hooks.work();
+        if (w) new ResizeObserver(() => this.keepOnScreen()).observe(w);
+      });
+    }
   }
 
   /** Show every toolbox where the settings say (building them again, so their contents are up to date). */
@@ -586,7 +604,9 @@ export class Toolboxes {
   /** Put a floating toolbox at the top right of the drawing (where the side panel starts). */
   private toCorner(f: HTMLElement): void {
     const w = this.hooks.work().getBoundingClientRect();
-    f.style.left = `${Math.max(w.left, Math.round(w.right - f.offsetWidth - 6))}px`;
+    const id = [...this.frames].find(([, g]) => g === f)?.[0];
+    const left = id ? this.hooks.get().places[id]?.corner === 'left' : false;
+    f.style.left = `${left ? Math.round(w.left + 6) : Math.max(w.left, Math.round(w.right - f.offsetWidth - 6))}px`;
     f.style.top = `${Math.round(w.top + 6)}px`;
   }
 
@@ -943,7 +963,11 @@ export function boxGrid(st: ToolboxState, id: string, given: readonly string[] =
   const list = boxItems(st, id, given);
   // a new toolbox of your own starts as an empty 4 × 3
   if (!list.length) return { cols: 4, rows: 3, cells: Array(12).fill(null) };
-  return listToGrid(list, LIST_COLS[id]);
+  // (as wide as the toolbox comes, or the nearest width that leaves no cell empty when buttons were added or taken away)
+  // a list you chose yourself before toolboxes had grids keeps the width it had: as wide as its longest group
+  const own = id === 'custom' ? st.custom.join() !== defaultToolboxes().custom.join() : !!st.items?.[id];
+  const cols = own ? LIST_COLS[id] : BOX_COLS[id] && !list.includes('sep') ? fullCols(list.length, BOX_COLS[id]) : LIST_COLS[id];
+  return listToGrid(list, cols);
 }
 
 /** A toolbox's grid changed. */

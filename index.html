@@ -506,6 +506,7 @@
     </div>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="title-bar-in-menu" class="desktop-only" hidden title="Desktop app: merge the title bar into the menu bar. Drag an empty part of the menu bar to move the window"><span>Title Bar in Menu Bar</span></button>
     <button role="menuitemcheckbox" aria-checked="true" data-cmd="tabs-in-menu" title="Show file tabs in the menu bar to save a row of space. With many files open, tabs show only icons; hover for the name"><span>File Tabs in Menu Bar</span></button>
+    <button role="menuitemcheckbox" aria-checked="true" data-cmd="menu-bar" title="Show the menus (File, Edit, View…) along the top, as in other desktop programs. Off: they are in the File tab at the start of the ribbon, as in Office, and the top row joins the ribbon's row of tabs"><span>Menu Bar</span></button>
     <hr />
     <button role="menuitem" data-cmd="dark-colours" title="Choose Reading Mode's colors (Graphite, Slate, Warm dark) or make a custom one">Reading Mode Colors…</button>
     <button role="menuitem" data-cmd="mode-colours" title="Choose each mode's accent color and how much of the window it colors">Mode Colors…</button>
@@ -747,6 +748,20 @@
     <button role="menuitem" data-cmd="torsion-chart" title="Scan rotation about the selected single bond (MMFF94s or xTB) and chart the torsional energy, with Newman projections at each minimum and maximum">Torsional Energy Chart…</button>
     <button role="menuitem" data-cmd="pubchem-lookup" title="Look up the selected structure on PubChem (sends the SMILES) and show its name, CAS RN, hazards and measured properties in the Analysis panel">Look Up on PubChem</button>
     <button role="menuitem" data-cmd="periodic-table">Periodic Table…</button>
+    </div>
+    </div>
+    <div class="submenu" id="nmr-submenu" data-modes="drawing">
+    <button role="menuitem" class="has-sub" aria-haspopup="menu" aria-expanded="false">NMR</button>
+    <div class="menu sub" role="menu" hidden>
+    <button role="menuitem" data-cmd="predict-nmr" title="Predict the NMR spectrum of the selected structure, in the Analysis panel">Predict NMR</button>
+    <button role="menuitem" data-cmd="nmr-1h" title="Predict the ¹H NMR spectrum of the selected structure">Predict ¹H NMR</button>
+    <button role="menuitem" data-cmd="nmr-13c" title="Predict the ¹³C NMR spectrum of the selected structure">Predict ¹³C NMR</button>
+    <button role="menuitem" data-cmd="nmr-marks" title="Show the predicted shifts on the drawing, by each atom">Show on Drawing</button>
+    <button role="menuitem" data-cmd="nmr-window" title="Open the predicted spectrum in a window you can move, resize and zoom">Spectrum Window</button>
+    <hr />
+    <button role="menuitem" data-cmd="nmr-solvent" title="The solvent the shifts are predicted in">Solvent…</button>
+    <button role="menuitem" data-cmd="nmr-check" title="Check measured NMR data against the prediction for the selected structure">Check Data…</button>
+    <button role="menuitem" data-cmd="nmr-settings" title="Quality, solvent, spectrometer frequency and the ppm ranges spectra are drawn over">NMR Settings…</button>
     </div>
     </div>
     <div class="submenu">
