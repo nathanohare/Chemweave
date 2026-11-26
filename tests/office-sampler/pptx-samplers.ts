@@ -10,7 +10,7 @@ import { pptxShow } from './pptx-show';
 export const PPTX_SAMPLERS: Sampler[] = [pptxMasters, pptxText, pptxShapes, pptxFormat, pptxObjects, pptxShow];
 
 /** Chemweave's own tags differ between two saves of the same file (see F-P-001). */
-const TAGS = 'the second save differs only in Chemweave\'s own tag parts (ppt/tags/*.xml, CHEMILLUSTRATOR_TEXT/SHAPE/GEO): unrounded caption positions (y 75.10000000000001 against 75.1), the shape JSON\'s key order ("kind" first, then not) and the shapes\' sid numbers';
+const TAGS = 'the second save differs only in Chemweave\'s own tag parts (ppt/tags/*.xml, CHEMILLUSTRATOR_TEXT/SHAPE/GEO): the shapes\' and text boxes\' sid numbers, their ids as read, which a PowerPoint file and a file saved here hand out in different orders (caption positions, key order and chart ids match since the first F-P-001 fix)';
 
 export const PPTX_FINDINGS: Record<string, Finding> = {
   // masters, layouts, presentation
