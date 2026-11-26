@@ -18,6 +18,8 @@ import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesB
 import type { FlagChange, SiPreview } from './si-preview';
 import { addFlagComments } from '../si/flag-comments';
 import { mentionPicker, threadCard } from './comment-cards';
+import { EDIT_KEY, NO_CROP, editRecord, editedName, isPlain, pictureEditOf, turned, type PictureEdit, type Turn } from '../si/picture-edit';
+import { askCrop, editableKind, renderEdited } from './si-crop';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
@@ -356,7 +358,12 @@ const RIBBON = `
         <button class="rb-labelled" data-si-place="reset" data-ic="picture-reset" title="Back to the Position and Wrap Text of Project Settings ▸ Layout"><span class="rb-lead"></span>Reset to Project Default</button>
         <button class="rb-labelled" data-si-place="apply-all" data-ic="format-painter" title="Use these Position and Wrap Text for every one of its kind (Project Settings ▸ Layout); those with their own go back to it"><span class="rb-lead"></span><span data-si-place-all>Apply to All Structures</span></button>
       </div>
+      <button class="rb-big" data-si-place="rotate" data-si-place-for="figures" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: a quarter turn right or left, or flipped. Saved as a copy beside the original, so SI Assistant shows it turned too"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
+    <div class="rb-group" data-si-place-for="figures"><div class="rb-row">
+      <button class="rb-big" data-si-place="crop" data-ic="crop" title="Crop: cut the picture's sides. Saved as a copy beside the original, so SI Assistant shows it cropped too"><span class="rb-icon"></span>Crop</button>
+      <button class="rb-big" data-si-place="reset-picture" data-ic="picture-reset" title="Reset Picture: the original picture again, without its crop or rotation"><span class="rb-icon"></span>Reset Picture</button>
+    </div><div class="rb-label">Picture</div></div>
   </div>
   <div class="rb-panel" data-si-panel="figure" hidden>
     <div class="rb-group"><div class="rb-row">
@@ -364,9 +371,11 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si-fig="paste-picture" title="The copied picture or drawing in place of the figure's">Paste Picture</button>
         <button data-si-fig="compound" title="A compound's structure in place of the figure's">Compound…</button>
+        <button class="rb-labelled" data-si-fig="reset-picture" data-ic="picture-reset" title="Reset Picture: the original picture again, without its crop or rotation"><span class="rb-lead"></span>Reset Picture</button>
       </div>
     </div><div class="rb-label">Picture</div></div>
     <div class="rb-group"><div class="rb-row">
+      <button class="rb-big" data-si-fig="crop" data-ic="crop" title="Crop: cut the picture's sides. Saved as a copy beside the original, so SI Assistant shows it cropped too"><span class="rb-icon"></span>Crop</button>
       <div class="rb-col">
         <label class="rb-field" title="The figure's printed width (empty: its own size, never wider than the text)">Custom width <input type="number" class="rb-num" data-si-field="fig-width" min="0" step="0.1" /> cm</label>
       </div>
@@ -378,6 +387,7 @@ const RIBBON = `
           <option value="square">Square</option>
           <option value="topBottom">Top and Bottom</option>
         </select></div>
+      <button class="rb-big" data-si-fig="rotate" data-ic="rotate-cw" aria-haspopup="true" title="Rotate: a quarter turn right or left, or flipped. Saved as a copy beside the original, so SI Assistant shows it turned too"><span class="rb-icon"></span>Rotate ▾</button>
     </div><div class="rb-label">Arrange</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-fig="remove-figure" data-ic="delete" title="Take the figure and its caption out of the text (its picture stays in images/)"><span class="rb-icon">✕</span>Delete Figure</button>
@@ -853,7 +863,12 @@ export class SiMode {
       const da = t.closest<HTMLElement>('button[data-si-dash]');
       if (da) { void this.dashCommand(da.dataset.siDash!); return; }
       const fig = t.closest<HTMLElement>('[data-si-fig]');
-      if (fig) { void this.activeFigure?.command(fig.dataset.siFig!); return; }
+      if (fig) {
+        const cmd = fig.dataset.siFig!, f = this.activeFigure;
+        if (f && ['crop', 'rotate', 'reset-picture'].includes(cmd)) { this.pictureCommand(f.id, cmd, fig); return; }
+        void f?.command(cmd);
+        return;
+      }
       const pl = t.closest<HTMLElement>('[data-si-place]');
       if (pl) { this.placeCommand(pl.dataset.siPlace!, pl); return; }
       const fp = t.closest<HTMLElement>('[data-si-figplace="position"]');
@@ -1097,6 +1112,79 @@ export class SiMode {
       else await p.deleteFlag(anchor);
     }, true, undefined, undefined, label);
     this.liveDirty = true;
+    this.liveSoon(0);
+  }
+
+  /** Picture Format ▸ Crop, Rotate (its menu) or Reset Picture on a figure (by its id). */
+  private pictureCommand(id: string, cmd: string, from: HTMLElement | null): void {
+    const fail = (e: unknown): void => this.host.flash(e instanceof Error ? e.message : String(e), 8000);
+    if (cmd === 'rotate') {
+      const r = (from ?? this.ribbon).getBoundingClientRect();
+      const run = (how: Turn) => () => void this.editPicture(id, how).catch(fail);
+      showContextMenu(r.left, r.bottom, [
+        { label: 'Rotate Right 90°', run: run('right') },
+        { label: 'Rotate Left 90°', run: run('left') },
+        { label: 'Flip Vertical', run: run('flipV') },
+        { label: 'Flip Horizontal', run: run('flipH') },
+      ], { run: () => {} });
+      return;
+    }
+    void this.editPicture(id, cmd === 'crop' ? 'crop' : 'reset').catch(fail);
+  }
+
+  /**
+   * Crop or turn a figure's picture, or put the original back: the picture is made again from the
+   * original and saved as a copy beside it ("(edited)"), which the figure then uses, so SI
+   * Assistant prints it the same. One step of Undo.
+   */
+  private async editPicture(id: string, how: Turn | 'crop' | 'reset'): Promise<void> {
+    const p = this.project;
+    if (!p) return;
+    if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    // (what is being typed in the figure's label is written first)
+    await this.activeFigure?.settled();
+    const found = await p.figureOwnerOf(id);
+    if (!found) { this.host.flash('This figure is no longer in the project.'); return; }
+    const file = typeof found.entry.file === 'string' ? found.entry.file : '';
+    const was = pictureEditOf(found.entry);
+    const original = was?.original ?? file;
+    if (!original) { this.host.flash('This figure has no picture yet.'); return; }
+    if (how === 'reset') {
+      if (!was) { this.host.flash('This picture is the original already.'); return; }
+    } else if (!editableKind(original)) { this.host.flash('A PDF picture can’t be cropped or rotated here: crop or rotate it before adding it, or paste it as a picture.'); return; }
+    const bytes = how === 'reset' ? null : await p.folder.readBytes([found.folder, original].filter(Boolean).join('/'));
+    if (how !== 'reset' && !bytes) { this.host.flash(`${original.slice(original.lastIndexOf('/') + 1)} is no longer in the project.`); return; }
+    let next: PictureEdit | null = was ?? { original, rotate: 0, flip: false, crop: { ...NO_CROP } };
+    if (how === 'reset') next = null;
+    else if (how === 'crop') {
+      // (the window shows the picture turned as it is, uncropped)
+      const whole = await renderEdited(original, bytes!, { ...next, crop: { ...NO_CROP } });
+      if (!whole) { this.host.flash('This picture could not be read.'); return; }
+      const url = URL.createObjectURL(new Blob([whole.bytes as BlobPart], { type: whole.svg ? 'image/svg+xml' : 'image/png' }));
+      try {
+        const dims = await new Promise<{ w: number; h: number } | null>((ok) => { const im = new Image(); im.onload = () => ok({ w: im.naturalWidth || 1, h: im.naturalHeight || 1 }); im.onerror = () => ok(null); im.src = url; });
+        if (!dims) { this.host.flash('This picture could not be read.'); return; }
+        const got = await askCrop(url, dims.w, dims.h, next.crop);
+        if (!got) return;
+        next = { ...next, crop: got };
+      } finally { URL.revokeObjectURL(url); }
+    } else next = turned(next, how);
+    if (this.project !== p || p.readOnly) return;
+    const edit = next;
+    const label = how === 'crop' ? 'Crop' : how === 'reset' ? 'Reset Picture' : 'Rotate';
+    await this.act(async () => {
+      const entry: Json = { ...found.entry };
+      if (!edit || isPlain(edit)) {
+        entry.file = original;
+        delete entry[EDIT_KEY];
+      } else {
+        const made = await renderEdited(original, bytes!, edit);
+        if (!made) throw new Error('This picture could not be read.');
+        entry.file = await p.writeEditedPicture(found.folder, editedName(original, made.svg), made.bytes, file);
+        entry[EDIT_KEY] = editRecord(edit);
+      }
+      await p.setFigureEntry(found.owner, id, entry);
+    }, true, undefined, undefined, label);
     this.liveSoon(0);
   }
 
@@ -1365,6 +1453,7 @@ export class SiMode {
     if (!key || !p) return;
     if (cmd === 'edit') { const c = p.compounds.find((x) => structureKey(x.id) === key); if (c) this.editStructure(c); return; }
     if (cmd === 'position' && from) { const r = from.getBoundingClientRect(); showContextMenu(r.left, r.bottom, this.positionItems(key), { run: () => {} }); return; }
+    if (['crop', 'rotate', 'reset-picture'].includes(cmd) && key.startsWith('f:')) { this.pictureCommand(key.slice(2), cmd, from); return; }
     if (cmd === 'reset') { void this.placeChange(() => storeOwnPlacement(p.settings, key, null)); return; }
     if (cmd === 'apply-all') {
       const pl = placementOf(p.settings, key), kind = kindOfKey(key);

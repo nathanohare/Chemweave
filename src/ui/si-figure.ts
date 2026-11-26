@@ -4,6 +4,7 @@
 // printed size and its label; the ribbon's Figure tab changes its picture (a file, the
 // clipboard, the drawing tools or a compound), its width, or removes it.
 
+import { EDIT_KEY, pictureEditOf } from '../si/picture-edit';
 import type { Json } from '../si/project';
 import { SiPictures, type SiPictureHost } from './si-picture';
 import { addInfo } from './info-tip';
@@ -127,9 +128,11 @@ export class SiFigureEditor {
     let rel: string | null = null;
     if (cmd === 'picture') rel = await this.pics.fromFile('Picture for the figure');
     else if (cmd === 'paste-picture') rel = await this.pics.fromClipboard();
-    else if (cmd === 'draw-structure') rel = await this.pics.draw(this.state.file, 'Figure');
+    // (a cropped or turned picture is drawn again from its original: the new drawing replaces both)
+    else if (cmd === 'draw-structure') rel = await this.pics.draw(pictureEditOf(this.entry)?.original ?? this.state.file, 'Figure');
     else if (cmd === 'compound') rel = (await this.pics.fromCompound())?.rel ?? null;
     else if (cmd === 'remove-figure') { await this.host.remove(this); return; }
-    if (rel) await this.save({ file: rel });
+    // (a new picture: the old one's crop and rotation go with it)
+    if (rel) await this.save({ file: rel, [EDIT_KEY]: undefined });
   }
 }

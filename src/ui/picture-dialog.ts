@@ -35,7 +35,7 @@ const RECOLORS: [string, string][] = [
 ];
 
 /** Proportions to crop to, as width over height ('' leaves the crop alone, 'own' the picture's own). */
-const ASPECTS: [string, string][] = [
+export const ASPECTS: [string, string][] = [
   ['', 'Leave as cropped'], ['own', 'Whole picture'], ['1', 'Square (1:1)'], ['1.3333', '4:3'], ['0.75', '3:4'],
   ['1.7778', '16:9'], ['0.5625', '9:16'], ['1.5', '3:2'], ['0.6667', '2:3'], ['1.25', '5:4'], ['0.8', '4:5'],
 ];

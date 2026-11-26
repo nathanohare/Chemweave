@@ -982,6 +982,44 @@ export class SiProject {
     return isObj(data.figures) ? data.figures : {};
   }
 
+  /** Which text a figure is in (a section's, or General Information's), with its entry; null when none has it. */
+  async figureOwnerOf(id: string): Promise<{ owner: SiSection | 'general'; folder: string; entry: Json } | null> {
+    for (const s of this.sections) {
+      const figs = isObj(s.data.figures) ? s.data.figures : null;
+      if (figs && isObj(figs[id])) return { owner: s, folder: s.folder, entry: figs[id] as Json };
+    }
+    const front = await this.frontData();
+    const figs = isObj(front.figures) ? front.figures : null;
+    return figs && isObj(figs[id]) ? { owner: 'general', folder: 'front', entry: figs[id] as Json } : null;
+  }
+
+  /** A figure's entry changed (its picture, or how its picture was edited), saved with its text's file. */
+  async setFigureEntry(owner: SiSection | 'general', id: string, entry: Json): Promise<void> {
+    this.checkWritable();
+    if (owner === 'general') {
+      const data = await this.frontData();
+      const figs = isObj(data.figures) ? data.figures : (data.figures = {});
+      figs[id] = entry;
+      await this.writeJson('front/front.json', data);
+      return;
+    }
+    const figs = isObj(owner.data.figures) ? owner.data.figures : (owner.data.figures = {});
+    figs[id] = entry;
+    await this.saveSection(owner);
+  }
+
+  /**
+   * An edited picture of a figure's (Crop, Rotate) written as `name` in the text's images/,
+   * over the one it had made before (`was`); under a name no other picture has otherwise, so a
+   * picture of the person's own is never written over.
+   */
+  async writeEditedPicture(folder: string, name: string, bytes: Uint8Array, was: string): Promise<string> {
+    this.checkWritable();
+    const rel = `images/${safeFilename(name)}`;
+    if (rel === was || !(await this.folder.exists(join(folder, rel)))) { await this.folder.writeBytes(join(folder, rel), bytes); return rel; }
+    return this.addPictureIn(folder, name, bytes);
+  }
+
   private async frontData(): Promise<Json> {
     const got = await this.readJson('front/front.json');
     return got.ok && isObj(got.data) ? got.data : {};
