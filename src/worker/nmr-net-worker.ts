@@ -2,6 +2,7 @@
 // per structure, which would freeze the drawing if they ran on the main thread. The network file
 // is fetched and unpacked here once; the panel gets the raw network shifts and blends them itself.
 
+import '../old-webkit';
 import type { EnvGraph } from '../chem/nmr/env';
 import { ShiftNet, type NetBlend, type NetShift } from '../chem/nmr/net';
 

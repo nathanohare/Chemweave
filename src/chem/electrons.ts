@@ -24,6 +24,7 @@ import { labelDonates, labelGraph } from './labels';
 import { metalCarbonyl } from './hapto';
 import { ligandByAbbr } from './ligands';
 import { parseType, sanitizeEcount, typeKey } from './ecount-settings';
+import { after } from '../regex-behind';
 
 export type LigandKind = 'L' | 'X' | 'Z' | 'M–M';
 
@@ -419,7 +420,7 @@ export function selectedComplex(doc: Doc, atomIds: Iterable<number>): MetalCount
 
 /** A ligand's name as shown: the digits of a formula written low (PPh₃), with ×n for repeats. */
 export function ligandText(r: LigandCount): string {
-  return r.name.replace(/(?<=[A-Za-z)\]])(\d+)/g, (d) => sub(Number(d))) + (r.count > 1 ? ` ×${r.count}` : '');
+  return r.name.replace(after(/(\d+)/g, /[A-Za-z)\]]/), (d) => sub(Number(d))) + (r.count > 1 ? ` ×${r.count}` : '');
 }
 
 /** The one-line summary: Rh(I), d⁸, 16 electrons · ML₃X. */

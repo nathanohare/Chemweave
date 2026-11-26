@@ -2,16 +2,35 @@
 // the same: Python's regular expressions (Unicode \w and \b, named groups, case-insensitive
 // groups), str.strip with characters, isalnum/isupper/islower, and difflib's matching blocks.
 
+import { GuardedRegExp, reflag, type Guard } from '../regex-behind';
+
 const W = '\\p{L}\\p{N}_';
+// Python's \b and \B (Unicode words) need lookbehind. WebKit older than Safari 16.4 has none, and
+// there JavaScript's own \b and \B stand in: the same except next to letters such as µ or α.
+const BEHIND = '(?<';
+const canLookBehind = ((): boolean => { try { new RegExp('(?<=a)'); return true; } /* old-webkit-ok: only tried */ catch { return false; } })();
+const B = canLookBehind ? `(?:${BEHIND}=[${W}])(?![${W}])|${BEHIND}![${W}])(?=[${W}]))` : '\\b';
+const NOT_B = canLookBehind ? `(?:${BEHIND}=[${W}])(?=[${W}])|${BEHIND}![${W}])(?![${W}]))` : '\\B';
+
+/**
+ * The text a pattern is run on. The same engines that lack lookbehind can crash on a Unicode pattern
+ * with a lazy part and a character outside the basic plane (𝑛, an emoji), so there each such
+ * character is stood in for by two plain ones (letters for a letter), keeping every position.
+ */
+export const safeText = (s: string, old = !canLookBehind): string =>
+  (old ? s.replace(/[\uD800-\uDBFF][\uDC00-\uDFFF]/g, (c) => (/^\p{L}/u.test(c) ? 'ªª' : '☐☐')) : s);
 const cache = new Map<string, RegExp>();
 
 /** A Python pattern as a JS RegExp ('u' always; Python flags I, S, M as 'i', 's', 'm'). */
-export function rx(src: string, flags = ''): RegExp {
+export function rx(src: string, flags = '', ok?: Guard, early = true): RegExp {
+  // (`ok` stands for a Python lookbehind, which old WebKit can't read; a guarded one isn't kept)
   const key = flags + '\u0000' + src;
-  let r = cache.get(key);
+  let r = ok ? undefined : cache.get(key);
   if (!r) {
     r = new RegExp(convert(src), [...new Set(('u' + flags.replace(/[gy]/g, '')).split(''))].join(''));
-    cache.set(key, r);
+    // (`early`: the guard reads only the position, and is asked before the pattern is tried there)
+    if (ok) r = new GuardedRegExp(r.source, r.flags, ok, early);
+    else cache.set(key, r);
   }
   return r;
 }
@@ -34,8 +53,8 @@ function convert(src: string): string {
       i++;
       if (nx === 'w') out += inClass ? W : `[${W}]`;
       else if (nx === 'W') out += inClass ? '' : `[^${W}]`;
-      else if (nx === 'b') out += inClass ? '\\x08' : `(?:(?<=[${W}])(?![${W}])|(?<![${W}])(?=[${W}]))`;
-      else if (nx === 'B') out += `(?:(?<=[${W}])(?=[${W}])|(?<![${W}])(?![${W}]))`;
+      else if (nx === 'b') out += inClass ? '\\x08' : B;
+      else if (nx === 'B') out += NOT_B;
       else if (nx === 'Z') out += '$(?![\\s\\S])';
       else if (nx === 'A') out += '^';
       else if (/[dDsSnrtfv0-9]/.test(nx)) out += '\\' + nx;
@@ -99,6 +118,13 @@ export interface Match {
 function wrap(m: RegExpExecArray, src: string): Match {
   const index = m.index;
   const r = m as unknown as Match & RegExpExecArray;
+  // (matched on stand-ins: the groups are cut from the text as it is)
+  if (m.input !== src) {
+    const at = (m as unknown as { indices: (number[] | undefined)[] & { groups?: Record<string, number[] | undefined> } }).indices;
+    const cut = (i: number[] | undefined) => (i ? src.slice(i[0], i[1]) : undefined);
+    for (let g = 0; g < m.length; g++) m[g] = cut(at[g])!;
+    for (const name of Object.keys(m.groups ?? {})) m.groups![name] = cut(at.groups?.[name])!;
+  }
   const indices = (m as unknown as { indices?: (number[] | undefined)[] & { groups?: Record<string, number[] | undefined> } }).indices;
   return Object.assign(r, {
     index,
@@ -117,8 +143,15 @@ function wrap(m: RegExpExecArray, src: string): Match {
   });
 }
 
+const guardedCopies = new WeakMap<RegExp, Map<string, RegExp>>();
+
 const withFlags = (re: RegExp, add: string): RegExp => {
   const f = [...new Set((re.flags.replace(/[gy]/g, '') + add).split(''))].join('');
+  if (re instanceof GuardedRegExp) {
+    let g = guardedCopies.get(re)?.get(f);
+    if (!g) { g = reflag(re, f); guardedCopies.set(re, (guardedCopies.get(re) ?? new Map()).set(f, g)); }
+    return g;
+  }
   const k = re.source + '\u0000' + f;
   let r = cache.get(k);
   if (!r) { r = new RegExp(re.source, f); cache.set(k, r); }
@@ -129,7 +162,7 @@ const withFlags = (re: RegExp, add: string): RegExp => {
 export function match(re: RegExp, s: string, pos = 0): Match | null {
   const r = withFlags(re, 'yd');
   r.lastIndex = pos;
-  const m = r.exec(s);
+  const m = r.exec(safeText(s));
   return m ? wrap(m, s) : null;
 }
 
@@ -137,17 +170,19 @@ export function match(re: RegExp, s: string, pos = 0): Match | null {
 export function search(re: RegExp, s: string, pos = 0): Match | null {
   const r = withFlags(re, 'gd');
   r.lastIndex = pos;
-  const m = r.exec(s);
+  const m = r.exec(safeText(s));
   return m ? wrap(m, s) : null;
 }
 
 /** re.fullmatch. */
 export function fullmatch(re: RegExp, s: string): Match | null {
+  // (a guarded pattern is only ever searched for)
+  if (re instanceof GuardedRegExp) throw new Error('fullmatch of a guarded pattern');
   const k = '^(?:' + re.source + ')$(?![\\s\\S])';
   const f = [...new Set((re.flags.replace(/[gymd]/g, '') + 'd').split(''))].join('');
   let r = cache.get(k + '\u0000' + f);
   if (!r) { r = new RegExp(k, f); cache.set(k + '\u0000' + f, r); }
-  const m = r.exec(s);
+  const m = r.exec(safeText(s));
   return m ? wrap(m, s) : null;
 }
 
@@ -156,8 +191,11 @@ export function* finditer(re: RegExp, s: string): Generator<Match> {
   const r = withFlags(re, 'gd');
   r.lastIndex = 0;
   let m: RegExpExecArray | null;
-  while ((m = r.exec(s))) {
-    if (m[0] === '') r.lastIndex++;
+  const t = safeText(s);
+  while ((m = r.exec(t))) {
+    // (past the whole character: a Unicode pattern asked for the middle of one starts before it,
+    // and an empty match there would be found for ever)
+    if (m[0] === '') r.lastIndex += (r.lastIndex < t.length && t.codePointAt(r.lastIndex)! > 0xffff) ? 2 : 1;
     yield wrap(m, s);
   }
 }

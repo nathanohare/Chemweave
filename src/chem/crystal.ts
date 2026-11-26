@@ -14,6 +14,7 @@
 //   in the CIF are left out.
 
 import { CifBlock, cifMarked, cifNumber, cifPlain } from './cif';
+import { notAfter } from '../regex-behind';
 
 export type V3 = [number, number, number];
 export type M3 = [V3, V3, V3];
@@ -357,7 +358,7 @@ function formulaMarked(text: string): string {
 export function spaceGroupMarked(text: string): string {
   let parts = cifPlain(text).replace(/_/g, ' ').split(/\s+/).filter(Boolean);
   if (parts.length === 4 && parts.filter((p) => p === '1').length === 2) parts = [parts[0], ...parts.slice(1).filter((p) => p !== '1')];
-  return parts.map((p) => p.replace(/-(\d)/g, '$1̅').replace(/(?<![\d_])(\d)(\d)(?!\d)/g, '$1_{$2}').replace(/([A-Za-z])/g, '*$1*')).join('').replace(/\*\*/g, '');
+  return parts.map((p) => p.replace(/-(\d)/g, '$1̅').replace(notAfter(/(\d)(\d)(?!\d)/g, /[\d_]/), '$1_{$2}').replace(/([A-Za-z])/g, '*$1*')).join('').replace(/\*\*/g, '');
 }
 
 /** [key, label, value] rows of the crystal data and structure refinement table (see the module's text); `keepEmpty`: rows the CIF has no value for too, with ''. */

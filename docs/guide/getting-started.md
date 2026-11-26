@@ -38,7 +38,7 @@ On macOS and Linux, a folder named **Chemweave Data** next to the app (or the Ap
 
 ### macOS
 
-Works on Apple silicon and Intel Macs, macOS 11 or newer.
+Works on Apple silicon and Intel Macs, macOS 12.3 or newer. On macOS 12, Structure to Name and reading structures or text from pictures don't work: that system lacks what they need.
 
 1. Download the file ending in `universal.dmg`, open it, and drag **Chemweave** into **Applications**.
 2. Open it from **Applications**. The app is signed with an Apple Developer ID and notarized by Apple, so macOS opens it immediately, with no warning.

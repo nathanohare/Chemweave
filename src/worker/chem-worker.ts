@@ -3,6 +3,7 @@
 // E/Z labels, SMILES in and out, and the properties and substructure searches of Sheet mode.
 
 /// <reference lib="webworker" />
+import '../old-webkit';
 import type { StereoTags } from '../chem/stereo';
 import type { PanelProps, MassFragment } from '../chem/props';
 import type { MolProps } from '../sheet/properties';

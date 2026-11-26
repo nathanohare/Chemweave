@@ -1361,7 +1361,7 @@ export class SheetView {
     const out: string[] = [];
     for (const para of text.split('\n')) {
       let line = '';
-      for (const word of para.split(/(?<=\s)/)) {
+      for (const word of (para.match(/\S*\s|\S+$/g) ?? [para])) {
         if (line && this.textWidth(line + word, font) > width) { out.push(line.trimEnd()); line = word; }
         else line += word;
       }

@@ -278,6 +278,12 @@ label.check { display: inline-flex; align-items: center; gap: 4px; color: var(--
 .toolbox.locked:not(.floating) + .toolbox { padding-top: 6px; }
 /* docked down a side, the title bar takes the toolbox's width rather than widening it: the name on its own line */
 .toolbox.vertical:not(.floating) > .tb-head, .toolbox.floating.upright:not(.collapsed) > .tb-head { contain: inline-size; flex-wrap: wrap; row-gap: 0; }
+/* older WebKit (macOS 12) ignores that containment: a head of no width of its own, stretched to the box, adds none either */
+@supports not (contain: inline-size) {
+  .toolbox.vertical:not(.floating) > .tb-head, .toolbox.floating.upright:not(.collapsed) > .tb-head { width: 0; min-width: 100%; }
+  html:not(.touch-ui) .toolbox.toolbox.floating.upright:not(.collapsed) > .tb-head { min-width: 100%; }
+  html:not(.touch-ui) .toolbox.floating.upright:not(.collapsed) { min-width: 66px; }
+}
 .toolbox.vertical:not(.floating) > .tb-head > .tb-title, .toolbox.floating.upright:not(.collapsed) > .tb-head > .tb-title { order: -1; flex-basis: 100%; white-space: normal; line-height: 1.2; }
 /* two columns wide: the grip, padlock, fold and close fit on one line under the title (and still have
    their room when the box is one column wide) */
@@ -5589,6 +5595,8 @@ dialog.template-window.tw-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0p
 /* ---- Side panel: one header row (grip, the sections as tabs, padlock, close) wherever it sits ----
    (the class is tripled to outrank the title-bar rules for docked and upright toolboxes above) */
 .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { display: flex; flex-wrap: nowrap; contain: inline-size; align-items: stretch; gap: 2px; min-width: 0; height: 24px; padding: 0 0 0 2px; border-bottom: 1px solid var(--line); font-size: var(--fs-sm); }
+/* (as above, for WebKit without inline-size containment) */
+@supports not (contain: inline-size) { .toolbox.toolbox.toolbox[data-id='details'] > .tb-head { width: 0; min-width: 100%; } }
 .toolbox[data-id='details'] { gap: 3px; flex-direction: column !important; align-items: stretch !important; }
 .toolbox[data-id='details'].ss-bare { gap: 0; }
 .toolbox[data-id='details'].ss-bare > .tb-head { border-bottom-color: transparent; }

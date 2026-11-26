@@ -8,7 +8,7 @@ import type { ObjectPicture } from './object-picture';
 export async function pdfFirstPage(bytes: Uint8Array): Promise<ObjectPicture | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   const task = pdfjs.getDocument({ data: bytes.slice() });
   try {
@@ -48,7 +48,7 @@ export interface PdfPagePicture extends ObjectPicture { of: number }
 export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPagePicture[] | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   const task = pdfjs.getDocument({ data: bytes.slice() });
   try {
@@ -127,7 +127,7 @@ function sameBytes(a: Uint8Array, b: Uint8Array): boolean {
 export async function pdfText(bytes: Uint8Array): Promise<string> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   const task = pdfjs.getDocument({ data: bytes.slice() });
   try {
@@ -248,7 +248,7 @@ export interface PdfPageReader {
 export async function openPdf(bytes: Uint8Array): Promise<PdfPageReader | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
-    pdfjs.GlobalWorkerOptions.workerSrc = (await import('pdfjs-dist/legacy/build/pdf.worker.min.mjs?url')).default;
+    pdfjs.GlobalWorkerOptions.workerSrc = (await import('../pdf-worker?worker&url')).default;
   }
   const task = pdfjs.getDocument({ data: bytes.slice() });
   let doc: Awaited<typeof task.promise>;

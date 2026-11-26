@@ -12,6 +12,7 @@ import { parseMarkup } from './markup';
 import { findSolvent } from './nmr';
 import { fieldDef } from './fields';
 import { markFloat } from './pyjson';
+import { notAfter } from '../regex-behind';
 
 export const PER_PAGE = [1, 2, 4] as const;
 export const CORNERS = ['top-left', 'top-right', 'bottom-left', 'bottom-right'] as const;
@@ -208,7 +209,7 @@ export function nmrNucleus(item: Json, c?: SiCompound): string | null {
   const others = (NUCLEI as readonly string[]).filter((n) => !own.has(n));
   const file = String(item.file ?? '');
   const stem = file.replace(/^.*[\\/]/, '').replace(/\.[^.]*$/, '');
-  for (const n of [...others].sort((a, b) => b.length - a.length)) if (new RegExp(`(?<![0-9A-Za-z])${n}(?![a-z])`).test(stem)) return n;
+  for (const n of [...others].sort((a, b) => b.length - a.length)) if (notAfter(new RegExp(`${n}(?![a-z])`), /[0-9A-Za-z]/).test(stem)) return n;
   if (c) {
     const found = [...new Set(listValue(c, 'nmr').map((r) => (r && typeof r === 'object' ? String((r as Json).nucleus ?? '') : '')))].filter((n) => n && !own.has(n) && isNucleus(n)).sort();
     if (found.length === 1) return found[0];

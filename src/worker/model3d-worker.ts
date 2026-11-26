@@ -2,6 +2,7 @@
 // torsion library and relaxes them with the MMFF94s+ force field. It starts only when a 3-D
 // model is first asked for, as its tables are large.
 
+import '../old-webkit';
 import { Resources } from 'openchemlib';
 import { buildModel, searchModel, type Model3d } from '../chem/model3d-build';
 import type { SearchOptions } from '../chem/conformer-rank';

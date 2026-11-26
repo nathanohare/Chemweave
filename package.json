@@ -7,7 +7,7 @@
     "predev": "node scripts/copy-rdkit.mjs && node scripts/build-icons.mjs",
     "dev": "vite",
     "prebuild": "node scripts/copy-rdkit.mjs && node scripts/build-icons.mjs",
-    "build": "tsc --noEmit -p . && vite build",
+    "build": "tsc --noEmit -p . && vite build && node scripts/check-old-webkit.mjs",
     "preview": "vite preview --port 4173",
     "pretest": "node scripts/build-icons.mjs",
     "test": "vitest run",

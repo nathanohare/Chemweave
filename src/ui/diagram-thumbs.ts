@@ -28,7 +28,7 @@ export const DIAGRAM_THUMBS: Record<string, string> = {
   // five d orbitals as one level, split into three below and two above
   dsplit: pic(`<path d="M6 25h7M15 25h7M24 25h7"/><path ${A} stroke-width="1.6" d="M44 33h7M53 33h7M62 33h7M49 15h7M58 15h7"/><path d="M31 25l13 8M31 25l18-10" stroke-dasharray="1.6 1.6" stroke-width="0.9"/>`),
   // a p orbital: two lobes, one shaded
-  orbital: pic(`<path ${A} d="M40 25c-9-4-10-20 0-20s9 16 0 20z" fill="color-mix(in srgb, var(--accent) 30%, transparent)"/><path d="M40 25c-9 4-10 20 0 20s9-16 0-20z"/><circle cx="40" cy="25" r="1.4" fill="currentColor"/>`),
+  orbital: pic(`<path ${A} d="M40 25c-9-4-10-20 0-20s9 16 0 20z" fill="var(--accent)" fill-opacity="0.3"/><path d="M40 25c-9 4-10 20 0 20s9-16 0-20z"/><circle cx="40" cy="25" r="1.4" fill="currentColor"/>`),
   // three boxes in a process with arrows between them
   diagram: pic(`<rect ${A} x="5" y="17" width="18" height="16" rx="2"/><rect ${A} x="31" y="17" width="18" height="16" rx="2"/><rect ${A} x="57" y="17" width="18" height="16" rx="2"/><path d="M24.5 25h5M27.5 23l2 2-2 2M50.5 25h5M53.5 23l2 2-2 2"/>`),
 };

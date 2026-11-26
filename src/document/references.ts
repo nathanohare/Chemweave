@@ -12,6 +12,7 @@
 import type { TextRun } from '../model';
 import { DEFAULT_STYLE, citeFormat, type CiteFormat } from './cite-styles';
 import type { RefLink } from './live-cites';
+import { after } from '../regex-behind';
 
 export type RefType = 'article' | 'book' | 'chapter' | 'thesis' | 'web' | 'misc';
 
@@ -88,7 +89,7 @@ export function cleanRef(r: Partial<Record<keyof Reference, unknown>>): Referenc
     out[f] = v === null || v === undefined || typeof v === 'object' ? '' : String(v).trim();
   }
   out.doi = normaliseDoi(out.doi);
-  out.pages = out.pages.replace(/(?<=\d)\s*-+\s*(?=\d)/g, '–');
+  out.pages = out.pages.replace(after(/\s*-+\s*(?=\d)/g, /\d/), '–');
   if (typeof r.typed === 'string') out.typed = r.typed;
   const live = r.live as RefLink | undefined;
   if (live && typeof live === 'object' && typeof live.app === 'string' && (typeof live.id === 'string' || typeof live.id === 'number')) out.live = { ...live, id: String(live.id) };
@@ -593,7 +594,7 @@ function nameAs(a: string, f: CiteFormat): string {
   if (n.literal) return n.family;
   let ini = initials(n.given);
   if (f.initials === 'G.R.') ini = ini.replace(/\.\s+(?=\p{Lu})/gu, '.');
-  else if (f.initials === 'GR') ini = ini.replace(/\./g, '').replace(/(?<=\p{Lu})\s+(?=\p{Lu})/gu, '');
+  else if (f.initials === 'GR') ini = ini.replace(/\./g, '').replace(after(/\s+(?=\p{Lu})/gu, /\p{Lu}/u), '');
   if (f.familyFirst) return [n.family, ini, n.suffix].filter(Boolean).join(f.initials === 'GR' ? ' ' : ', ');
   return [ini, n.family, n.suffix].filter(Boolean).join(' ');
 }

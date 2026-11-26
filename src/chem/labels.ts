@@ -8,6 +8,7 @@ import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, lowestValence,
 import { LIGANDS } from './ligands';
 import { rNumberDigits, rNumberPrefs } from './r-numbers';
 import { anyMarks, readMark, withMark } from './label-marks';
+import { notAfter } from '../regex-behind';
 
 /**
  * Abbreviations, each written as SMILES whose first atom is the one bonded to the structure.
@@ -300,7 +301,7 @@ export function alkylWants(look: AlkylLook = alkylPrefs.look): { italic: boolean
  */
 export function alkylPrefixes(text: string): { at: number; dash: boolean }[] {
   const out: { at: number; dash: boolean }[] = [];
-  for (const m of text.matchAll(/(?<![a-z])([nist])(-?)(?=(?:Pr|Bu)(?![a-z]))/g)) out.push({ at: m.index!, dash: !!m[2] });
+  for (const m of text.matchAll(notAfter(/([nist])(-?)(?=(?:Pr|Bu)(?![a-z]))/g, /[a-z]/))) out.push({ at: m.index!, dash: !!m[2] });
   return out;
 }
 

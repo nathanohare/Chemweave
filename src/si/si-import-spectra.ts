@@ -17,23 +17,26 @@
 import { cdxToCdxml } from '../io/cdx';
 import type { MolFacts } from './chem';
 import { peaks as reportPeaks } from './nmr';
-import { STEREO, type ImportedCompound, type ImportPlan } from './si-import';
+import { type ImportedCompound, type ImportPlan } from './si-import';
 import type { ImportedSpectrum } from './si-import-apply';
 import { drawingLabels, drawingStructures, type StructureTools } from './si-import-structures';
 import { linePlain, toLines, type DocObject } from './si-import-read';
 import type { PdfPages } from './si-import-pdf';
+import { guarded, guardedAt, notAfter } from '../regex-behind';
 
 // a nucleus or another spectrum type named in a header or title
-const NUCLEUS_SRC = String.raw`(?<![\w{])(?<mass>\d{1,3})\s*(?<el>[A-Z][a-z]?)(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*-?\s*NMR\b`;
+const NUCLEUS_SRC = String.raw`(?<mass>\d{1,3})\s*(?<el>[A-Z][a-z]?)(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*-?\s*NMR\b`;
 const TWO_D_SRC = String.raw`\b(?:2D\s+NMR|COSY|HSQC|HMBC|HMQC|NOESY|ROESY|TOCSY)\b`;
 const HPLC_SRC = String.raw`\b(?:HPLC|SFC|chromatogram)\b`;
 const IR_SRC = String.raw`\bIR\s+spectrum\b|\bFT-?IR\b`;
-const NUCLEUS = new RegExp(NUCLEUS_SRC);
+// (a nucleus does not start inside a word or a brace)
+const NUCLEUS = notAfter(new RegExp(NUCLEUS_SRC), /[\w{]/);
 const TWO_D = new RegExp(TWO_D_SRC);
 const HPLC = new RegExp(HPLC_SRC, 'i');
 const IR = new RegExp(IR_SRC);
 /** A spectrum's header line (any of the above). */
-export const HEADER = new RegExp(`${NUCLEUS_SRC}|${TWO_D_SRC}|${HPLC_SRC}|${IR_SRC}`, 'i');
+export const HEADER = guarded(new RegExp(`${TWO_D_SRC}|${NUCLEUS_SRC}|${HPLC_SRC}|${IR_SRC}`, 'i'),
+  (m, s) => m.groups!.mass === undefined || m.index === 0 || !/[\w{]/.test(s[m.index - 1]));
 const OWN_TYPES = ['1H', '13C', '19F', '31P', '11B'];
 
 export const newSpectrum = (kind: ImportedSpectrum['kind'], data: Uint8Array, type: string, extra: Partial<ImportedSpectrum> = {}): ImportedSpectrum =>
@@ -355,8 +358,8 @@ function settle(spectra: ImportedSpectrum[]): void {
 // ---------------------------------------------------------------------- PDF
 
 const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-/** A stereo prefix (STEREO, not optional here). */
-const STEREO_PREFIX = STEREO.replace(/\?$/, '');
+// STEREO (si-import.ts) without its "?", ending the text before the ID, itself not inside a word
+const STEREO_BEFORE = /(?:^|[^\w-])(?:\((?:[RSEZ](?:,\s*[RSEZ])*|rac|ent|±|[+−-])\)-|rac-|ent-|\(±\)-)$/;
 
 /** The first compound ID in a header ("2a — 1H NMR…", "1H NMR of 2", "9a13C NMR"). */
 export function findId(text: string, ids: string[]): string {
@@ -364,7 +367,8 @@ export function findId(text: string, ids: string[]): string {
   for (const cid of ids) {
     if (!cid) continue;
     // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
-    const re = new RegExp(`(?:(?<![\\w-])|(?<=(?<![\\w-])${STEREO_PREFIX}))${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g');
+    const re = guardedAt(new RegExp(`${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g'),
+      (at, s) => at === 0 || !/[\w-]/.test(s[at - 1]) || STEREO_BEFORE.test(s.slice(Math.max(0, at - 40), at)));
     for (const m of text.matchAll(re)) {
       const end = m.index + m[0].length;
       // not the nucleus itself ("1H", "13C": an ID "1" or "13" must not match there)
