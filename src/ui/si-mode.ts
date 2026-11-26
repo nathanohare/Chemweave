@@ -429,11 +429,11 @@ const RIBBON = `
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si="page-setup" data-ic="page-size" title="Page Setup: the paper, the header and footer, and the page numbers of the compiled SI (Project Settings ▸ Page; the journal style chooses the paper)"><span class="rb-icon">▭</span>Page Setup</button>
       <div class="rb-col">
-        <div class="rb-fly rb-selgal" data-size="small" data-name="Orientation" data-ic="page-orientation" data-pic="orient" title="Orientation: the pages of the section picked upright (portrait) or on their side (landscape); the pages after it turn back"><select data-si-page="orient">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Orientation" data-ic="page-orientation" data-pic="orient" title="Orientation: the pages of the selected section upright (portrait) or on their side (landscape); the pages after it turn back"><select data-si-page="orient">
           <option value="portrait">Portrait</option>
           <option value="landscape">Landscape</option>
         </select></div>
-        <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Breaks: start the compound or section picked on a new page (Next Page), or straight after what comes before it (Continuous)"><select data-si-page="break">
+        <div class="rb-fly rb-selgal" data-size="small" data-name="Breaks" data-ic="page-breaks" data-pic="breaks" title="Breaks: start the selected compound or section on a new page (Next Page), or straight after what comes before it (Continuous)"><select data-si-page="break">
           <option value="nextPage">Section: Next Page</option>
           <option value="continuous">Section: Continuous</option>
         </select></div>
