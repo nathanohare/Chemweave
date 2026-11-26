@@ -20,7 +20,7 @@ import { COMMENT_REL, readCommentAuthors, readLegacyComments, readModernComments
 import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, Contents, Placeholder, Justify, stripBase, type TableCell, type TableData, type PictureFx, type BackgroundRemoval, type PictureLook, type Frame, type ShapeMath, type Media, type OleMark } from '../model';
 import { layoutTable, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, slideCellLook, unstyledRuns } from '../deck/table-styles';
-import { linesFromBorders, commonBorderWidth, tableBorders, tableShapeKey, type Borders } from './cdxml-table';
+import { linesFromBorders, commonBorderWidth, tableBorders, tableShapeKey, sharedBorders, type Borders } from './cdxml-table';
 import { turnAbout, normDegrees, DEG, type Vec, type Rect } from '../geom';
 import { POINTS, rotation, snapshot, transform, mirrorX, mirrorY } from '../editor/arrange';
 import { BULLETS, autoNumLabel, listInfo } from '../text/paragraphs';
@@ -2289,11 +2289,12 @@ class Reader {
         if (w !== undefined && read.lines !== 'none') {
           // (the drawing's width: none of its own, so it follows the drawing's)
           if (Math.abs(w - this.masterOut.drawing.lineWidth) > 0.01) read.lineW = w;
-          // and each cell's own, where they aren't all that width or the kind's lines; a place
-          // covered by a joined cell has the kind's (the file gives it none of its own)
-          const plain = tableBorders(read, w);
+          // and each cell's own, where the lines they draw aren't the kind's at that width (a line
+          // two cells share counted once, at the heavier); a joined cell and the places it covers
+          // have the kind's (the file gives a covered place none of its own)
+          const plain = sharedBorders(tableBorders(read, w));
           const joined = (r: number, c: number) => covered.has(`${r},${c}`) || (read.rows[r]?.[c]?.span ?? 1) > 1 || (read.rows[r]?.[c]?.rowSpan ?? 1) > 1;
-          const own = borders.map((row, r) => row.map((b, c) => (joined(r, c) ? plain[r]?.[c] ?? b : b)));
+          const own = sharedBorders(borders.map((row, r) => row.map((b, c) => (joined(r, c) ? plain[r]?.[c] ?? b : b))));
           if (own.some((row, r) => row.some((b, c) => (['left', 'top', 'bottom', 'right'] as const).some((k) => Math.abs(b[k] - (plain[r]?.[c]?.[k] ?? 0)) > 0.01)))) {
             read.lineW = w;
             read.edges = own;

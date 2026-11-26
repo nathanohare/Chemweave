@@ -88,7 +88,11 @@ export function tableBorders(t: TableData, lw: number): Borders[][] {
  */
 export function savedBorders(t: TableData, lw: number): Borders[][] {
   const e = t.edges;
-  if (e && t.edgesKey === tableShapeKey(t) && e.length === t.rows.length && e.every((row) => row.length === t.cols.length)) return e.map((row) => row.map((b) => ({ ...b })));
+  if (e && t.edgesKey === tableShapeKey(t) && e.length === t.rows.length && e.every((row) => Array.isArray(row) && row.length === t.cols.length)) {
+    // (each side a width of 0 or more, whatever a pasted table holds)
+    const w = (v: unknown) => Math.max(0, Number(v) || 0);
+    return e.map((row) => row.map((b) => ({ left: w(b?.left), top: w(b?.top), bottom: w(b?.bottom), right: w(b?.right) })));
+  }
   return tableBorders(t, t.lineW ?? lw);
 }
 
@@ -98,6 +102,20 @@ export function savedBorders(t: TableData, lw: number): Borders[][] {
  */
 export function tableShapeKey(t: TableData): string {
   return JSON.stringify([t.rows.length, t.cols.length, t.lines, t.head, t.style ?? null, t.rows.map((row) => row.map((c) => [c.span ?? 1, c.rowSpan ?? 1]))]);
+}
+
+/**
+ * A table's borders with each line two cells share given to both, at the heavier of the two (as
+ * PowerPoint and this program write them), to compare two sets of borders by the lines they draw.
+ */
+export function sharedBorders(b: Borders[][]): Borders[][] {
+  const out = b.map((row) => row.map((x) => ({ ...x })));
+  for (let r = 0; r < out.length; r++) for (let c = 0; c < out[r].length; c++) {
+    const x = out[r][c], right = out[r][c + 1], below = out[r + 1]?.[c];
+    if (right) { const w = Math.max(x.right, right.left); x.right = right.left = w; }
+    if (below) { const w = Math.max(x.bottom, below.top); x.bottom = below.top = w; }
+  }
+  return out;
 }
 
 /** The width most of a table's cell borders have (to a thousandth of a point), or undefined when it has none. */

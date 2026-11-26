@@ -341,6 +341,22 @@ describe('a PowerPoint table\'s cell borders', () => {
     expect(covered).toMatch(/<a:lnT w="12700"/);
   });
 
+  it('gives an ACS table PowerPoint wrote at the drawing\'s width no borders or width of its own (re-check)', async () => {
+    const bytes = await save(sample());
+    const xml = slideXml(bytes).replace(/<p:custDataLst>.*?<\/p:custDataLst>/gs, '');
+    const { table } = tableOf(withSlide(bytes, xml));
+    expect(table.lines).toBe('acs');
+    expect(table.edges).toBeUndefined();
+    expect(table.lineW).toBeUndefined();
+  });
+
+  it('saves a pasted table\'s odd cell borders as widths of 0 or more (re-check)', async () => {
+    const { savedBorders, tableShapeKey } = await import('../src/io/cdxml-table');
+    const t: TableData = { cols: [10], rows: [[R('a')]], head: 0, lines: 'grid' };
+    const odd = { ...t, edges: [[{ left: -5 } as never]], edgesKey: tableShapeKey(t) };
+    expect(savedBorders(odd, 1)).toEqual([[{ left: 0, top: 0, bottom: 0, right: 0 }]]);
+  });
+
   it('leaves a table without its own width at the drawing\'s line width', async () => {
     const { table } = tableOf(await save(sample()));
     const xml = slideXml(await save({ ...table, lineW: undefined }));
