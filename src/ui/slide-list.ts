@@ -14,6 +14,7 @@
 // right-click to take it away.
 
 import { clockText } from '../deck/show-link';
+import { EASE_OUT, enter, motionMs, moving } from './motion';
 import type { Deck } from '../deck/deck';
 import { paintSlide } from '../deck/slide-view';
 import { MASTER_PAGE } from '../deck/master-view';
@@ -162,11 +163,33 @@ export class SlideList {
         if (keys) kids.push(keys);
       }
     }
+    // where each slide was, to move the rest smoothly when slides are reordered, and fade in the ones added
+    const before = this.shownDeck === deck ? this.shownAt : null;
+    const was = new Map<string, DOMRect>();
+    if (before && moving()) for (const [id, el] of before) if (el.isConnected) was.set(id, el.getBoundingClientRect());
     this.list.replaceChildren(...kids, this.dropMark);
     this.mark();
     for (let i = 0; i < deck.slides.length; i++) this.paint(i);
     this.items[deck.index]?.scrollIntoView({ block: 'nearest' });
+    const now = new Map<string, HTMLElement>();
+    deck.slides.forEach((sl, i) => { if (this.items[i]) now.set(String(sl.id), this.items[i]); });
+    if (before && was.size) {
+      const sameSlides = now.size === before.size && [...now.keys()].every((id) => before.has(id));
+      for (const [id, el] of now) {
+        const a = was.get(id);
+        if (!a) { enter(el, 'fade'); continue; }
+        if (!sameSlides) continue;
+        const b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
+        if (dx || dy) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: motionMs('std'), easing: EASE_OUT });
+      }
+    }
+    this.shownDeck = deck;
+    this.shownAt = now;
   }
+
+  /** The deck last listed and each of its slides' items (by slide id), for the moves above. */
+  private shownDeck: Deck | null = null;
+  private shownAt = new Map<string, HTMLElement>();
 
   private heading(id: number, name: string, count: number, folded: boolean, start: number): HTMLDivElement {
     const head = document.createElement('div');

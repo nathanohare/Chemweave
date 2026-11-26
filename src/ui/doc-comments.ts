@@ -153,11 +153,18 @@ export class DocComments {
         const c = col.cards[i];
         if (extras.has(c)) {
           // (fixed on the page, over the drawing layer: placed in the window's pixels)
-          c.style.top = `${host.top + tops[k]}px`;
+          c.style.top = '0px';
+          c.style.translate = `0 ${host.top + tops[k]}px`;
           c.style.left = `${host.left + col.left}px`;
           return;
         }
-        c.style.top = `${tops[k]}px`;
+        // (moved by translate, not top, so a card gliding to its place never lays the page out again: S92)
+        c.style.top = '0px';
+        // (a card placed for the first time appears where it goes; only a move glides)
+        const first = !c.style.translate;
+        if (first) c.style.transition = 'none';
+        c.style.translate = `0 ${tops[k]}px`;
+        if (first) { void c.offsetWidth; c.style.transition = ''; }
         c.style.left = `${col.left}px`;
         c.style.width = `${COLUMN - 24}px`;
       });

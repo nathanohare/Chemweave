@@ -69,7 +69,8 @@ export function compileProgress(title: string, steps: string[]): CompileProgress
     const known = total > 0;
     bar.classList.toggle('busy', !known);
     const p = known ? Math.max(0, Math.min(100, Math.floor((100 * done) / total))) : 0;
-    fill.style.width = known ? `${p}%` : '';
+    // (drawn by scale, not width, so moving it never lays the window out again: S93)
+    fill.style.setProperty('--done', known ? String(p / 100) : '0');
     pct.textContent = known ? `${p}%` : '';
     if (known) bar.setAttribute('aria-valuenow', String(p)); else bar.removeAttribute('aria-valuenow');
   };

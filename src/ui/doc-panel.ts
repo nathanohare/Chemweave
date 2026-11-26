@@ -64,6 +64,7 @@ type Field = HTMLInputElement | HTMLSelectElement;
 /** The settings boxes: each floats (opened from its ribbon group's corner button) or is pinned in the panel. */
 export { DOC_BOXES, docBoxPrefs, parseDocPins, type DocBoxKey } from './mode-prefs';
 import { DOC_BOXES, docBoxPrefs, type DocBoxKey } from './mode-prefs';
+import { scrollToItem } from './motion';
 const BOX_TITLES: Record<DocBoxKey, string> = { para: 'Paragraph', style: 'Style', page: 'Page Setup', hf: 'Header, footer and page numbers' };
 
 export class DocPanel {
@@ -163,7 +164,7 @@ export class DocPanel {
 
   private reveal(key: DocBoxKey): void {
     const sec = this.sections[key];
-    sec.scrollIntoView({ block: 'nearest' });
+    scrollToItem(sec);
     sec.classList.remove('dp-flash');
     void sec.offsetWidth;
     sec.classList.add('dp-flash');
