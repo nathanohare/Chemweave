@@ -12,6 +12,9 @@ public/ort-wasm-simd-threaded.mjs
 public/ocl-resources.json
 public/pyodide/
 
+# Native ONNX Runtime for the structure reader, put there by scripts/fetch-onnxruntime.mjs
+src-tauri/ort/
+
 # Made from @mdi/svg by scripts/build-icons.mjs
 src/design/icons/mdi.json
 

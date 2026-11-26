@@ -17888,6 +17888,17 @@ async function desktopSelfTest(): Promise<void> {
     const nr = await names.read('(2R)-butan-2-ol');
     report.nameToStructure = { ok: nr.ok, smiles: nr.smiles, message: nr.message, ms: Math.round(performance.now() - n0) };
     ok = ok && nr.ok && nr.smiles === 'C[C@H](CC)O';
+    // The structure reader, when its model pack is on this computer (never on the build machines):
+    // the sample structure drawn as a picture, read with the native encoder and with the
+    // WebAssembly one, so a laptop run of the self-test gives both times in this web view.
+    report.structureReader = await selfTestReader();
+    // the native ONNX Runtime bundled with the app loads (no model pack needed): a copy that is
+    // there but won't load fails the self-test; a build without one (a local build) doesn't
+    const rt = await invoke('recognise_native_runtime').then(() => ({ ok: true, problem: '' }), (e) => ({ ok: false, problem: String(e) }));
+    report.nativeRuntime = rt;
+    if (!rt.ok && !rt.problem.startsWith('This copy of the app has no')) ok = false;
+    // with the pack here, the native and WebAssembly encoders must read the sample alike
+    if ((report.structureReader as { sameReading?: boolean }).sameReading === false) ok = false;
     // Redraw speed on a large drawing, in this web view.
     const s0 = performance.now();
     stressTest(2000);
@@ -17901,4 +17912,49 @@ async function desktopSelfTest(): Promise<void> {
     ok = false;
   }
   await invoke('selftest_report', { report: JSON.stringify(report, null, 2), ok });
+}
+
+/** The self-test's structure-reader timings (see desktopSelfTest); its problems are reported, not failed. */
+async function selfTestReader(): Promise<Record<string, unknown>> {
+  try {
+    const { LocalReader, packReady } = await import('./recognise/reader');
+    if (!(await packReady())) return { pack: false };
+    const p = recordPicture(doc, 0);
+    if (!p) return { pack: true, error: 'no picture of the sample' };
+    const canvas = pictureCanvas(doc, p, 300).canvas;
+    const img = canvas.getContext('2d')!.getImageData(0, 0, canvas.width, canvas.height);
+    const pixels = { width: img.width, height: img.height, data: img.data };
+    const out: Record<string, unknown> = { pack: true, picture: [img.width, img.height] };
+    for (const native of [true, false]) {
+      const reader = new LocalReader({ native });
+      try {
+        const runs: { ms: number; modelMs?: number; smiles: string }[] = [];
+        let firstMs = 0;
+        for (let i = 0; i < 4; i++) {
+          const t0 = performance.now();
+          const r = await reader.read(pixels);
+          // the first picture's whole wait, model loading included
+          if (i === 0) firstMs = performance.now() - t0;
+          if (r.kind === 'graph') runs.push({ ms: r.ms, modelMs: r.modelMs, smiles: r.graph.smiles });
+        }
+        const warm = runs.slice(1);
+        out[native ? 'native' : 'wasm'] = {
+          engine: reader.engine,
+          problem: reader.nativeProblem || undefined,
+          firstReadWithLoadMs: Math.round(firstMs),
+          readMedianMs: stat(warm.map((r) => r.ms)).med,
+          // natively the encoder and decoder; in WebAssembly the encoder only
+          modelMedianMs: stat(warm.map((r) => r.modelMs ?? 0)).med,
+          smiles: runs[0]?.smiles,
+        };
+      } finally {
+        reader.dispose();
+      }
+    }
+    const n = out.native as { smiles?: string }, w = out.wasm as { smiles?: string };
+    out.sameReading = !!n.smiles && n.smiles === w.smiles;
+    return out;
+  } catch (e) {
+    return { error: String(e) };
+  }
 }

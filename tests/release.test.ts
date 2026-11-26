@@ -37,6 +37,13 @@ describe('releases', () => {
     expect(strFromU8(files['Chemweave/Chemweave Data/About this folder.txt'])).toContain('\r\nChemweave.exe');
   });
 
+  it('puts native ONNX Runtime in the portable zip where the app looks for it', async () => {
+    const files = unzipSync(await portableZip(new Uint8Array([77, 90]), { 'onnxruntime.dll': new Uint8Array([1, 2, 3]), 'LICENSE.txt': new Uint8Array([4]) }));
+    expect([...files['Chemweave/ort/onnxruntime.dll']]).toEqual([1, 2, 3]);
+    expect(files['Chemweave/ort/LICENSE.txt']).toBeTruthy();
+    expect(files['Chemweave/Chemweave.exe']).toBeTruthy();
+  });
+
   it('lists only the platforms that were built', () => {
     const all = installers('0.1.91');
     const m = manifest('0.1.91', '', { [all.windows.files[0].as]: 'WIN' });

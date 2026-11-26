@@ -62,7 +62,15 @@ export function imageTensor(rgba: Uint8ClampedArray, size: number): Float32Array
   return out;
 }
 
+/** What the decoder wrote: its tokens, each one's log-probability, and its hidden state after each (dim floats each, one after another). */
+export interface Decoded { seq: number[]; scores: number[]; hidden: Float32Array; dim: number }
+
 export async function readStructure(run: Runner, v: Vocab, image: Float32Array): Promise<ReadGraph> {
+  return graphFrom(run, v, await decodeTokens(run, v, image));
+}
+
+/** The encoder, then the decoder step by step (greedy). The desktop app does the same natively (src-tauri/src/recognise_model.rs). */
+export async function decodeTokens(run: Runner, v: Vocab, image: Float32Array): Promise<Decoded> {
   const isX = (t: number) => t >= v.offset && t < v.offset + v.maxx;
   const isY = (t: number) => t >= v.offset + v.maxx;
   const { ck, cv } = await run.encode(image);
@@ -88,6 +96,15 @@ export async function readStructure(run: Runner, v: Vocab, image: Float32Array):
     tok = best;
     if (best === EOS) break;
   }
+  const dim = hidden[0]?.length ?? 0;
+  const flat = new Float32Array(hidden.length * dim);
+  hidden.forEach((h, i) => flat.set(h, i * dim));
+  return { seq, scores, hidden: flat, dim };
+}
+
+/** The structure the decoder's tokens describe: atoms and their places, how sure it was, and the bond reader's bonds. */
+export async function graphFrom(run: Pick<Runner, 'edges'>, v: Vocab, d: Decoded): Promise<ReadGraph> {
+  const { seq, scores, hidden, dim } = d;
   const g = parseSequence(v, seq);
   const tokenScore = Math.exp(scores.reduce((s, x) => s + x, 0) / Math.max(1, scores.length));
   const atomScores = g.indices.map((ix, i) => {
@@ -98,9 +115,8 @@ export async function readStructure(run: Runner, v: Vocab, image: Float32Array):
   });
   const k = g.symbols.length;
   if (!k) return { smiles: g.smiles, symbols: [], coords: [], edges: [], atomScores: [], confidence: 0 };
-  const dim = hidden[0].length;
   const h = new Float32Array(k * dim);
-  g.indices.forEach((ix, i) => h.set(hidden[ix], i * dim));
+  g.indices.forEach((ix, i) => h.set(hidden.subarray(ix * dim, (ix + 1) * dim), i * dim));
   const P = await run.edges(h, k);
   const { edges, edgeScores } = bondsFrom(P, k);
   let prod = 1;

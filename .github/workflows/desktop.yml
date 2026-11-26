@@ -33,6 +33,8 @@ on:
       - scripts/sign-windows.mjs
       - scripts/release.mjs
       - scripts/retry.mjs
+      - scripts/fetch-onnxruntime.mjs
+      - src-tauri/tauri.ort.conf.json
 
 # a new push to a pull request stops the try-out builds still going for its previous commit
 concurrency:
@@ -179,8 +181,27 @@ jobs:
           else
             echo "No App Store Connect API key in the secrets: the Mac app is signed but not notarised."
           fi
+      - name: Get ONNX Runtime for the structure reader
+        # The structure reader's picture encoder runs in native ONNX Runtime
+        # (src-tauri/src/recognise_native.rs), loaded from ort/ beside the app; the build bundles
+        # it through tauri.ort.conf.json. Microsoft's CPU build from its NuGet package (MIT),
+        # checked against the SHA-256 in the script. Not on Macs yet (the package has no Intel Mac
+        # build, and the copy would need signing for notarisation): they keep the WebAssembly encoder.
+        if: matrix.platform != 'macos'
+        shell: bash
+        run: |
+          node scripts/fetch-onnxruntime.mjs ${{ matrix.platform }}
+          echo "ORT_CONFIG=--config src-tauri/tauri.ort.conf.json" >> "$GITHUB_ENV"
       - name: Build the app and its installers
-        run: npm run desktop:build -- ${{ matrix.args }}
+        run: npm run desktop:build -- ${{ matrix.args }} ${{ env.ORT_CONFIG }}
+      - name: Check ONNX Runtime went in beside the app
+        # without it the reader silently falls back to WebAssembly, so a broken bundling step must fail here
+        if: matrix.platform != 'macos'
+        shell: bash
+        run: |
+          if [ "${{ matrix.platform }}" = windows ]; then files="onnxruntime.dll msvcp140.dll msvcp140_1.dll vcruntime140.dll vcruntime140_1.dll"; else files="libonnxruntime.so"; fi
+          for f in $files LICENSE.txt ThirdPartyNotices.txt; do test -s "src-tauri/target/release/ort/$f" || { echo "::error::src-tauri/target/release/ort/$f is missing"; exit 1; }; done
+          ls -l src-tauri/target/release/ort
       - name: Show what the Windows signing tool said
         if: failure() && matrix.platform == 'windows'
         shell: bash

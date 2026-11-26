@@ -14,6 +14,9 @@ mod open_dialog;
 mod portable;
 mod print;
 mod recognise;
+#[cfg(not(any(target_os = "android", target_os = "ios")))]
+mod recognise_model;
+mod recognise_native;
 mod si_file;
 mod web;
 mod xtb;
@@ -561,6 +564,10 @@ pub fn run() {
             recognise::pack_download,
             recognise::pack_cancel,
             recognise::pack_read,
+            recognise_native::recognise_native_ready,
+            recognise_native::recognise_decode,
+            recognise_native::recognise_native_runtime,
+            recognise_native::recognise_native_release,
             print::printers,
             print::print_page,
             xtb::xtb_version,

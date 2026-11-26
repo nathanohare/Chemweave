@@ -5,7 +5,7 @@ description = "Chemweave: fast chemical structure drawing"
 repository = "https://github.com/nathanohare/Chemweave"
 license = "GPL-3.0-or-later"
 edition = "2021"
-rust-version = "1.77.2"
+rust-version = "1.92"
 
 [lib]
 name = "chem_illustrator_lib"
@@ -38,6 +38,10 @@ zip = { version = "9.1", default-features = false, features = ["deflate-flate2-z
 tauri-plugin-process = "2"
 tauri-plugin-updater = "2.14.1"
 tauri-plugin-single-instance = "2"
+# the structure reader's picture encoder in native ONNX Runtime (src/recognise_native.rs), loaded
+# when first needed from the copy the desktop build puts beside the app (ort/), never linked in:
+# without that copy the page keeps its WebAssembly encoder
+ort = { version = "=2.0.0-rc.15", default-features = false, features = ["std", "load-dynamic"] }
 
 # View > Developer Tools > Inspector: the web inspector in the Windows and Linux apps (it uses
 # private APIs on a Mac, which the App Store refuses)
@@ -49,7 +53,7 @@ tauri = { version = "2.12", features = ["devtools"] }
 objc2 = "0.6"
 
 [target.'cfg(windows)'.dependencies]
-windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_DataExchange", "Win32_System_Memory", "Win32_System_Registry", "Win32_UI_Shell"] }
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Graphics_Gdi", "Win32_System_DataExchange", "Win32_System_LibraryLoader", "Win32_System_Memory", "Win32_System_Registry", "Win32_UI_Shell"] }
 windows-core = "0.62"
 # File > Print through WebView2's print settings (src/print.rs); the version Tauri uses
 webview2-com = "0.39"

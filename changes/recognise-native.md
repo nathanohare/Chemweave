@@ -1,0 +1,1 @@
+Changed: Reading structures from pictures and PDFs (Import Structures, Make Editable) is about three times faster in the Windows and Linux apps: the slow part now runs natively on all the computer's cores instead of one. Macs keep the earlier speed for now, and a portable copy that updates itself gets the speed-up after downloading the portable zip once more.
