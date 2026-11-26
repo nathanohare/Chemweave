@@ -10,6 +10,8 @@ import { Doc } from '../src/model';
 import { defaultMaster } from '../src/deck/deck';
 import { writePptx, type PptxOptions } from '../src/io/pptx-write';
 import { readPptx } from '../src/io/pptx-read';
+import { newChartBox } from '../src/sheet/chart-box';
+import { chartBoxPng } from '../src/render/chart-box-paint';
 
 const opts: PptxOptions = { async picture() { return null; }, async svgToPng() { return new Uint8Array(); } };
 
@@ -46,7 +48,32 @@ describe('Chemweave\'s tags on a second save (F-P-001)', () => {
     const thrice = await again(twice);
     expect(tags(twice)).toEqual(tags(once));
     expect(tags(thrice)).toEqual(tags(twice));
-    // (no float noise in a place)
-    expect(tags(once).join('')).not.toMatch(/\d\.\d*0000000\d/);
+    // (no float noise in a text box's place, and the tag objects' fields in name order)
+    for (const v of tagValues(once)) {
+      const o = JSON.parse(v) as { c?: Record<string, unknown>; s?: Record<string, unknown> };
+      if (o.c) for (const k of ['x', 'y']) expect(String(o.c[k])).not.toMatch(/0000000\d|9999999\d/);
+      for (const inner of [o.c, o.s]) if (inner) expect(Object.keys(inner)).toEqual([...Object.keys(inner)].sort());
+    }
+  });
+
+  it('leaves a chart\'s id out of its tag, as a read gives the chart a new one', async () => {
+    const doc = new Doc();
+    doc.style = { ...defaultMaster().drawing } as Doc['style'];
+    const chart = newChartBox('column');
+    doc.edit('make', () => { doc.addShape({ kind: 'picture', x1: 100, y1: 100, x2: 460, y2: 316, src: chartBoxPng(chart, 360, 216), px: { w: chart.chart.w, h: chart.chart.h }, chart }); });
+    const once = await saveDoc(doc);
+    const chartTag = (b: Uint8Array) => tags(b).find((t) => t.includes('CHEMILLUSTRATOR_CHART'))!;
+    expect(chartTag(once)).toBeDefined();
+    expect(chartTag(once)).not.toContain('&quot;id&quot;');
+    expect(chartTag(await again(once))).toEqual(chartTag(once));
   });
 });
+
+/** The values of the slide's Chemweave tags (shape, design shape, text). */
+function tagValues(bytes: Uint8Array): string[] {
+  const out: string[] = [];
+  for (const t of Object.entries(unzipSync(bytes)).filter(([n]) => /^ppt\/tags\/tag\d+\.xml$/.test(n)).map(([, b]) => strFromU8(b))) for (const m of t.matchAll(/name="CHEMILLUSTRATOR_(?:TEXT|SHAPE|GEO)" val="([^"]*)"/g)) {
+    out.push(m[1].replaceAll('&quot;', '"').replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&'));
+  }
+  return out;
+}
