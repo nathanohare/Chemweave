@@ -4403,6 +4403,33 @@ async function pasteSmiles(): Promise<void> {
   await pasteChemistry(text);
 }
 
+/** Help ▸ Copy Guide for AI Assistants: the starting message and the guide for an AI that imports an SI (si/ai-guide.ts). */
+async function copyAiGuide(): Promise<void> {
+  let text: string;
+  try {
+    const { guideToCopy, loadAiGuide } = await import('./si/ai-guide');
+    text = guideToCopy(await loadAiGuide());
+  } catch (e) {
+    flash(`The guide could not be loaded: ${e instanceof Error ? e.message : String(e)}. Reload Chemweave and try again.`, 8000);
+    return;
+  }
+  await copyText(text, `Copied the guide for AI assistants: paste it into your AI’s chat, then fill in where your files are.${isTauri() ? '' : ' (SI projects open in the desktop app.)'}`);
+}
+
+/** Help ▸ Save Guide for AI Assistants…: the same as a Markdown file, for an AI that takes files. */
+async function saveAiGuide(): Promise<void> {
+  const MARKDOWN: FileType = { description: 'Markdown text', extension: 'md', mime: 'text/markdown' };
+  try {
+    const { guideToCopy, loadAiGuide, AI_GUIDE_FILE_NAME } = await import('./si/ai-guide');
+    const target = await saveFileDialog(AI_GUIDE_FILE_NAME, MARKDOWN);
+    if (!target) return;
+    await writeFile(target.ref, target.name, guideToCopy(await loadAiGuide()), MARKDOWN);
+    flash(`Saved ${target.name}: give it to your AI assistant, with where your files are.`);
+  } catch (e) {
+    await showError(`The guide could not be saved: ${e instanceof Error ? e.message : String(e)}`);
+  }
+}
+
 function copyText(text: string, done: string): Promise<void> {
   return navigator.clipboard.writeText(text).then(() => flash(done), () => flash('Could not use the clipboard.'));
 }
@@ -9754,6 +9781,8 @@ async function openSiWorking(w: SiWorkingT, file: string | null, opts: { create?
       // every project has a Spectra section, as SI Assistant adds it; a new project's links on
       // (an older project's are left off, as SI Assistant's default, so opening it changes nothing it prints)
       await project.ensureSpectraSection(opts.create !== undefined ? SPECTRA_START : {}).catch((e: unknown) => flash(`The Spectra section could not be added, so the spectra print at the end of the SI as before (${e instanceof Error ? e.message : String(e)}).`, 8000));
+      // a new project gets the note for AI assistants (AGENTS.md: si/ai-guide.ts), before the Undo history starts
+      if (opts.create !== undefined) await import('./si/ai-guide').then(async (g) => g.writeAiNotes(project, await g.loadAiGuide())).catch(() => {});
       await journalOf(project.folder)?.clear().catch(() => {});
     }
   } catch (e) {
@@ -10567,7 +10596,7 @@ window.addEventListener('keydown', (e) => {
 /** Menu commands that work the same whatever shows. */
 const ANY_TAB = new Set(['menu-bar', 'tabs-in-menu', 'references', 'compound-library', 'knowledge-base', 'ligand-library', 'toolbox-text', 'toolbox-guides', 'insert-compound', 'add-to-compound-library', 'library-location', 'find-structure-files', 'new-from-template', 'check-accessibility', 'format-painter', 'insert-symbol', 'edit-palettes', 'preferences', 'export-settings', 'import-settings', 'customize-ribbon', 'toolbox-main', 'toolbox-structure', 'toolbox-arrange', 'toolbox-templates', 'toolbox-colours', 'toolbox-highlight', 'toolbox-custom', 'toolbox-schemes', 'toolbox-diagrams', 'toolbox-tables', 'toolbox-biopolymers', 'toolbox-perspective', 'fold-side', 'customize-toolbox', 'customize-quick-bar', 'lock-toolboxes', 'reset-toolboxes', 'new', 'new-slides', 'new-design', 'new-sheet', 'new-document', 'new-si-project', 'open', 'open-si-project', 'open-si-folder', 'open-workspace', 'save-workspace', 'save-workspace-as', 'batch-convert', 'save', 'save-as', 'autosave', 'version-history', 'recover-work', 'keep-options', 'close-tab', 'next-tab', 'prev-tab', 'undo', 'redo',
   'drawing-style', 'navigation-settings', 'dark-page', 'dark-colours', 'hotkeys', 'typing-spelling', 'mode-colours', 'dev-tools', ...STRESS_SIZES.map((n) => `stress-${n}`), 'scroll-bars', 'ribbon-auto-fold', 'title-bar-in-menu', 'collapse-ribbon', 'ui-scale-in', 'ui-scale-out', 'ui-scale-reset', ...UI_SCALES.map((v) => `ui-scale-${Math.round(v * 100)}`), 'text-bar-docked', 'text-bar-floating', 'text-bar-hidden', 'theme-system', 'theme-light', 'theme-dark', 'theme-darkgray', 'density-snug', 'density-cozy', 'density-normal', 'density-standard', 'density-large', 'shadows-light', 'shadows-strong', 'shadows-off', 'icons-mode', 'icons-kind', 'shape-ink-accent', 'focus-view', 'one-column-tools', 'group-tips', 'tool-tips', 'touch-mode-auto', 'touch-mode-on', 'touch-mode-off', 'atom-keypad', 'pen-sketch', 'show-stereo', 'clipboard-formats', 'close-split', 'command-search', 'next-region', 'prev-region', 'print',
-  'assistant', 'help', 'about', 'user-guide', 'help-here', 'send-feedback', 'report-problem', 'support-project', 'copy-diagnostics', 'open-log-folder', 'open-inspector', 'check-updates', 'whats-new']);
+  'assistant', 'help', 'about', 'user-guide', 'help-here', 'send-feedback', 'report-problem', 'support-project', 'copy-diagnostics', 'copy-ai-guide', 'save-ai-guide', 'open-log-folder', 'open-inspector', 'check-updates', 'whats-new']);
 
 // ---------------------------------------------------------------- accessibility (Review > Check Accessibility, Alt Text…)
 
@@ -11407,6 +11436,8 @@ const COMMANDS: Record<string, () => unknown> = {
   })),
   'report-problem': () => feedback.open('problem'),
   'copy-diagnostics': () => copyText(diagnosticsText(), 'Copied the diagnostics: paste them into a bug report or message.'),
+  'copy-ai-guide': () => void copyAiGuide(),
+  'save-ai-guide': () => void saveAiGuide(),
   'open-log-folder': () => openLogFolder(),
   'open-inspector': () => { invoke('open_inspector').catch((e) => flash(String(e))); },
   'command-search': () => commandSearch.open(),

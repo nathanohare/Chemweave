@@ -1,0 +1,9 @@
+# Chemweave
+
+> Chemweave is a free chemistry drawing program with Office-style documents, presentations, spreadsheets and designs, and an SI Project tab that builds a paper's Supporting Information. Source and releases: https://github.com/nathanohare/Chemweave
+
+## For AI assistants
+
+- [Importing an SI with an AI assistant](https://raw.githubusercontent.com/nathanohare/Chemweave/main/docs/guide/si-import-for-ai.md): how to put a chemist's existing Supporting Information and data into a Chemweave SI project (a `.chemsi` file, a zip of a folder with `project.json`). Read it in full before writing to a project.
+- [SI Project user guide](https://raw.githubusercontent.com/nathanohare/Chemweave/main/docs/guide/si-project.md): what the SI Project tab does.
+- [User guide](https://github.com/nathanohare/Chemweave/wiki): every mode.

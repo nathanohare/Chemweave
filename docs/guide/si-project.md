@@ -165,6 +165,8 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 
 **Insert ▸ Import SI…** reads a Supporting Information you already have, as a Word file or a PDF, and finds its general procedures, compounds, sections, figures, tables and references. A review window shows what was read; correct anything read wrongly and untick what you don't want. Nothing is written until you click **Import**, and the whole import is one step of Undo.
 
+To have an AI assistant do it (useful when the data are spread over many files), click **Insert ▸ Import with AI**: it copies the guide for AI assistants with a starting message, to paste into your AI's chat, and adds a short note for AI assistants (`AGENTS.md`) to the project, which every new project has too. **Help ▸ Save Guide for AI Assistants…** saves the guide as a file instead. The guide is [Importing an SI with an AI assistant](si-import-for-ai.md).
+
 ## Linking a manuscript to its SI
 
 A manuscript written in [Document mode](documents.md) can be linked to its SI project, so the two stay in step. The commands are on the document's **References** tab:

@@ -24,7 +24,7 @@ export const NOT_UNDOABLE = [
   { names: ['import-settings', 'export-settings', 'preferences', 'save-format-favorite', 'save-highlight-look', 'hotkeys'], why: 'changes the program’s settings, not the file' },
   { names: ['insert-picture', 'insert-object', 'hf-picture', 'import-picture', 'import-pdf', 'import-paste', 'compare-docs', 'combine-docs', 'open-object', 'open-link', 'open-inspector', 'open-log-folder'], why: 'asks for a file or opens another program first; what it then inserts is checked by the insert tests' },
   { names: ['present', 'present-current', 'presenter-view', 'rehearse-timings', 'rehearse-here', 'record-show', 'record-show-here', 'play-narrations'], why: 'runs the slide show full screen; the deck is not changed (timings it records are checked by tests/slide-show*.test.ts)' },
-  { names: ['help', 'help-here', 'about', 'send-feedback', 'support-project', 'check-updates'], why: 'help and the program’s own windows' },
+  { names: ['help', 'help-here', 'about', 'send-feedback', 'support-project', 'check-updates', 'copy-ai-guide', 'save-ai-guide'], why: 'help and the program’s own windows' },
   { names: ['dev-tools', 'stress-100', 'stress-500', 'stress-2000', 'stress-5000'], why: 'developer tools: Stress Test replaces the drawing on purpose, to time it' },
   { names: ['undo', 'redo'], why: 'the audit uses these itself' },
   { names: ['zoom-in', 'zoom-out', 'zoom-fit', 'zoom-selection', 'zoom-actual', 'close-split', 'split-window', 'close-master-view'], why: 'changes only the window around the file (zoom, split panes, leaving Slide Master view)' },

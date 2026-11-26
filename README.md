@@ -149,6 +149,8 @@ Once installed, Chemweave keeps itself up to date: it offers each new version wh
 
 The **[user guide](https://github.com/nathanohare/Chemweave/wiki)** covers each mode, every shortcut key, and the files it reads and writes. Inside Chemweave, **Help ▸ Keyboard Shortcuts and Tips** lists the most used keys, and the **Search** box at the top (Alt+Q) finds any command by name.
 
+Asking an AI assistant to move your Supporting Information into an SI project? Give it [Importing an SI with an AI assistant](https://github.com/nathanohare/Chemweave/wiki/SI-Import-with-AI) (in Chemweave: **Help ▸ Copy Guide for AI Assistants**).
+
 ## Feedback
 
 Ideas, problems and questions are welcome. In Chemweave, use **Help ▸ Send Feedback**: it sends your report straight to the team, no account needed, and you choose whether it stays private or appears on the public [issues](https://github.com/nathanohare/Chemweave/issues) page. See [Feedback, problems and ideas](https://github.com/nathanohare/Chemweave/wiki/Feedback).
