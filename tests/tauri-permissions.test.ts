@@ -225,8 +225,9 @@ describe('Tauri permissions', () => {
   it('the default-set lists match the Tauri versions the desktop app is built with', () => {
     const lock = read('src-tauri/Cargo.lock');
     for (const [set, d] of Object.entries(DEFAULTS)) {
-      const m = new RegExp(`name = "${d.crate}"\\nversion = "(\\d+\\.\\d+)\\.`).exec(lock);
-      expect(m?.[1], `${d.crate} for ${set}:default`).toBe(d.version);
+      const at = lock.indexOf(`name = "${d.crate}"\nversion = "`);
+      const version = at < 0 ? undefined : lock.slice(at).split('\n')[1].replace(/^version = "|"$/g, '').split('.').slice(0, 2).join('.');
+      expect(version, `${d.crate} for ${set}:default`).toBe(d.version);
     }
   });
 
