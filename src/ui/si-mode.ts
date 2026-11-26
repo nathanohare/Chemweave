@@ -575,6 +575,7 @@ const RIBBON = `
       <div class="rb-col">
         <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
         <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
+        <button data-si-paint data-ic="format-painter" aria-pressed="false" title="Format Painter: copy the formatting of the words selected in the Live Preview to the words you click or drag over next. Double-click to keep painting until Esc">Format Painter</button>
       </div>
     </div><div class="rb-label">Clipboard</div></div>
     <div class="rb-group"><div class="rb-row">
@@ -761,11 +762,13 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint]')) e.preventDefault(); });
+    this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
+      if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
@@ -1195,6 +1198,8 @@ export class SiMode {
   /** The Font group's font, size and color: for the Live Preview's text when that is where the person is typing; greyed (with why) on the SI page. */
   private fontState(): void {
     const on = !!this.previewTyped;
+    const brush = this.ribbon.querySelector<HTMLButtonElement>('[data-si-paint]');
+    if (brush) { brush.disabled = !on; if (!on) this.preview?.stopPainting(); }
     paintCanRun(this.ribbon.querySelectorAll<HTMLButtonElement>('.rb-font-group button[data-si-fmt]'), 'siFmt', (c) => (SI_FONT_OFF.includes(c) ? (on ? null : SI_FONT_REASON) : undefined));
     if (on) {
       for (const el of this.ribbon.querySelectorAll<HTMLInputElement>('.rb-font-group input[data-si-fmt]')) {
@@ -1202,6 +1207,14 @@ export class SiMode {
         (el.closest('label') ?? el).title = el.dataset.siFmt === 'color' ? 'Text Color (the words selected in the Live Preview)' : el.dataset.siFmt === 'size' ? 'Font size in points (the words selected in the Live Preview)' : 'Font (the words selected in the Live Preview)';
       }
     } else siFontBoxes(this.ribbon, defaultStyles().Normal);
+  }
+
+  /** Format Painter (Home ▸ Clipboard): a click paints once, a double-click keeps painting until Esc; pressed again, it stops. */
+  private formatPainter(keep: boolean): void {
+    const pv = this.previewTyped;
+    if (!pv) { this.host.flash('Format Painter works in the Live Preview: select the words whose formatting you want to copy there first.', 6000); return; }
+    if (pv.painting && !keep) { pv.stopPainting(); return; }
+    pv.startPainting(keep);
   }
 
   /** Formula style on the selected text: numbers lowered (CH₂Cl₂), charges raised (PF₆⁻), as the other modes do. */
@@ -3746,6 +3759,7 @@ export class SiMode {
       editStructure: (id) => { const c = this.project?.compounds.find((k) => structureKey(k.id) === id); if (c) this.editStructure(c); },
     });
     this.live.view = this.preview.view;
+    this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
     this.preview.onScrollSettled = () => this.followPreview();
     // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
     const resized = this.preview.view.onResize;

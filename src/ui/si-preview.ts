@@ -9,7 +9,7 @@
 //     program makes ("calcd for …") can't be typed into: a click goes to its field. Text typed
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
-import { IBEAM } from '../editor/cursors';
+import { BRUSH, IBEAM } from '../editor/cursors';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
@@ -21,7 +21,7 @@ import { blockAt, editableSrc, fieldOfSrc, pageToFollow, readingLine, spanAt, ty
 import { applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf } from '../si/preview-edit';
 import { customAnchor, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
-import { addFormat, blockSrc, clearFormats, markupFormat, markupOnly, printedFor, type FormatLook, type PreviewFormat } from '../si/preview-format';
+import { addFormat, blockSrc, clearFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type PreviewFormat } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -874,7 +874,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
+    this.view.scroller.style.cursor = this.brush && (s || this.view.onPage(e.clientX, e.clientY)) ? BRUSH : this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
@@ -900,6 +900,7 @@ export class SiPreview {
     this.downAt = null;
     if (!d || !this.file) return;
     const still = Math.abs(e.clientX - d.x) < 4 && Math.abs(e.clientY - d.y) < 4;
+    if (this.brush) { this.paintHere(); return; }
     if (!still) return;
     const at = this.file.ed.focus;
     // a click: its page chosen in the list; on words the program makes, its field
@@ -929,6 +930,7 @@ export class SiPreview {
     const moves: Record<string, Parameters<typeof ed.move>[0]> = { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
     // a structure or figure picked: Escape lets it go, the arrows go on from it; it can't be deleted
     // or typed over here (its page has it), and nothing is typed, pasted or cut at the caret hidden meanwhile
+    if (this.brush && e.key === 'Escape' && !ctrl) return run(() => this.stopPainting());
     if (this.pickedStructure && !e.altKey) {
       const k = e.key.toLowerCase();
       if (e.key === 'Escape' && !ctrl) return run(() => this.unpickStructure());
@@ -1110,6 +1112,67 @@ export class SiPreview {
   }
 
   // ---------------------------------------------------------------- formatting (preview-format.ts)
+
+  /** Format Painter: the look being copied, and whether it stays on after one use (double-click). */
+  private brush: { look: FormatLook; keep: boolean } | null = null;
+  /** Format Painter turned on or off (the ribbon button shows it). */
+  onPainting: (on: boolean) => void = () => {};
+  get painting(): boolean { return !!this.brush; }
+
+  /**
+   * Format Painter: copy the look of the selection (or of the words at the caret) to the words
+   * clicked or dragged over next; `keep` (a double-click on the button) goes on until Esc.
+   */
+  startPainting(keep: boolean): void {
+    if (!this.file) return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    const look: FormatLook = {};
+    for (const k of LOOK_KEYS) {
+      const v = this.selectionValue(k);
+      // (on or off for each look, so the words painted match; a font, size or color only when it has one)
+      if (k === 'font' || k === 'size' || k === 'color' || k === 'highlight') { if (v !== undefined) (look as Record<string, unknown>)[k] = v; }
+      else (look as Record<string, unknown>)[k] = !!v;
+    }
+    this.brush = { look, keep };
+    this.onPainting(true);
+  }
+
+  stopPainting(): void {
+    if (!this.brush) return;
+    this.brush = null;
+    this.view.scroller.style.cursor = '';
+    this.onPainting(false);
+  }
+
+  /** A click or drag with the brush: the words dragged over (or the word clicked) get its look. */
+  private paintHere(): void {
+    const b = this.brush, ed = this.file?.ed;
+    if (!b || !ed) return;
+    if (ed.collapsed) ed.selectWord(ed.start);
+    if (!b.keep) this.stopPainting();
+    if (ed.collapsed) return;
+    // only what differs is changed: words already so get no piece of their own
+    const patch: FormatLook = {};
+    for (const [k, v] of Object.entries(b.look) as [keyof FormatLook, FormatLook[keyof FormatLook]][]) {
+      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : this.selectionValue(k) !== v || this.selectionAny(k, v);
+      if (differs) (patch as Record<string, unknown>)[k] = v;
+    }
+    if (Object.keys(patch).length) void this.format(patch);
+  }
+
+  /** Whether any character selected has `key` (with a value other than `but`, when given). */
+  private selectionAny(key: keyof FormatLook, but?: unknown): boolean {
+    const ed = this.file?.ed;
+    if (!ed || ed.collapsed) return false;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const end = at + run.text.length;
+      if (end > ed.start && at < ed.end && run.text && (but === undefined ? !!run[key] : run[key] !== but)) return true;
+      at = end;
+      if (at >= ed.end) break;
+    }
+    return false;
+  }
 
   /** The first selected character's `key` (its size, for Grow Font), or undefined. */
   selectionValue<K extends keyof TextRun>(key: K): TextRun[K] | undefined {
