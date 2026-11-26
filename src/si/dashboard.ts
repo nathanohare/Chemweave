@@ -319,12 +319,19 @@ export function buildRows(p: SiProject, scope: Scope, f: DashboardFacts): Row[] 
     for (const w of active) byField.set(w.field, [...(byField.get(w.field) ?? []), w.message]);
     const defs = new Map(fieldsOf(c).map((e) => fieldDef(e)).filter((d): d is FieldDef => !!d).map((d) => [d.key, d]));
     const flags = flagsOf(c);
+    // (with the flags left in the Live Preview on a field: the first one shows when SI Assistant's has none)
+    const byPlace = p.openFlagsByPlace();
+    const flagOf = (key: string): Json | null => {
+      if (isObj(flags[key])) return flags[key];
+      const x = (byPlace.get(`${c.id}/${key}`) ?? []).find((e) => e.isFlag);
+      return x ? { comment: x.flag.comment, by: x.flag.by, at: x.flag.at } : null;
+    };
     const cells = new Map<string, Cell>();
     for (const key of columns) {
       const def = defs.get(key);
       if (!def) { cells.set(key, { state: 'not_used', summary: '', flag: null, warnings: [] }); continue; }
       const state: CellState = p.fieldFilled(c, def) ? 'filled' : required.has(key) ? 'missing' : 'empty';
-      cells.set(key, { state, summary: fieldSummary(p, c, def, f), flag: isObj(flags[key]) ? flags[key] : null, warnings: byField.get(key) ?? [] });
+      cells.set(key, { state, summary: fieldSummary(p, c, def, f), flag: flagOf(key), warnings: byField.get(key) ?? [] });
     }
     for (const key of split) cells.set(key, splitCell(c, key, defs, required, cells));
     const k = p.completion(c);
@@ -334,7 +341,7 @@ export function buildRows(p: SiProject, scope: Scope, f: DashboardFacts): Row[] 
     return {
       compound: c, id: f.idOf(c), name: compoundName(c), idWarnings: [...(byField.get('id') ?? []), ...structureWarnings],
       filled: k.filled, total: k.total, missing: k.missing, cells, checks,
-      flags: Object.keys(flags).length, warnings: active.length,
+      flags: Object.keys(flags).length + [...byPlace].filter(([k]) => k.startsWith(`${c.id}/`)).reduce((n, [, v]) => n + v.filter((x) => x.isFlag && !x.anchor.startsWith('c:')).length, 0), warnings: active.length,
     };
   });
 }

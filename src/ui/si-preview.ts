@@ -13,6 +13,8 @@ import { BRUSH, IBEAM } from '../editor/cursors';
 import { paraAt } from '../text/paragraphs';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
+import { DocComments } from './doc-comments';
+import type { ThreadActions } from './comment-cards';
 import { DocFile } from '../document/doc-file';
 import type { DocText } from '../document/document';
 import * as rt from '../richtext';
@@ -33,8 +35,15 @@ const CUSTOM = '#c27a00';
 /** Said when typing, pasting or cutting while a structure or figure is selected. */
 const PICKED_TYPING = 'Click in the text to type there: a structure or figure is selected.';
 
+/** What a flag's card asks for (flag-threads.ts): its anchor, and the change. */
+export type FlagChange = { what: 'reply'; text: string } | { what: 'edit'; reply: number | null; text: string } | { what: 'remove-reply'; reply: number } | { what: 'resolve'; done: boolean } | { what: 'delete' };
+
 export interface SiPreviewHost {
   flash(message: string, ms?: number): void;
+  /** A change from a flag's card beside the preview (one step of Undo). */
+  flag?(anchor: string, change: FlagChange): Promise<void>;
+  /** Who can be @mentioned in a flag's notes. */
+  people?(): readonly string[];
   /** Choose a page of the list (text clicked in the preview). */
   pick(node: string): void;
   /** Light up (or stop lighting up) the field a stretch of the preview came from. */
@@ -75,6 +84,8 @@ export interface ShownSi {
   gen?: number;
   /** Pages whose margins hold what is shown (the spectra's): the white space between them is never hidden. */
   keepSpace?: boolean;
+  /** The flags and comments shown as cards beside the pages: each comment's anchor and its card's label, by comment id. */
+  flags?: { anchors: Map<number, string>; labels: Map<number, string> };
 }
 
 const ctrlKeyOf = (e: KeyboardEvent): boolean => e.ctrlKey || e.metaKey || e.altKey;
@@ -157,6 +168,19 @@ export class SiPreview {
   constructor(readonly host: HTMLElement, private readonly api: SiPreviewHost) {
     this.view = new DocView(host);
     this.view.overlay = () => this.overlay();
+    // the flags and comments, as cards beside the pages (as Word's comments)
+    this.comments = new DocComments(host, this.view, {
+      file: () => this.file,
+      focus: () => this.ta.focus({ preventScroll: true }),
+      flash: (m, ms) => this.api.flash(m, ms),
+      askName: async () => true,
+      actions: (id) => this.flagActions(id),
+      // (a flag's card has a red edge; a comment's is a comment's)
+      card: (id) => { const label = this.flagCards.labels.get(id); return { label, cls: label?.startsWith('Flag') ? 'si-flag-card' : '', people: this.api.people?.() ?? [], rich: false }; },
+      // (the pane beside the SI page is too narrow for a column of cards beside readable pages)
+      narrow: () => host.clientWidth < 900,
+    });
+    this.view.onMove = () => this.comments.place();
     // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
     this.view.padX = 0;
     this.view.fitSlack = 0;
@@ -173,6 +197,54 @@ export class SiPreview {
     this.ta.wrap = 'off';
     host.append(this.ta);
     this.wire();
+  }
+
+  /** The flags' and comments' cards beside the pages. */
+  readonly comments: DocComments;
+  private flagCards: { anchors: Map<number, string>; labels: Map<number, string> } = { anchors: new Map(), labels: new Map() };
+
+  /** What a flag's card does: each through the SI page's flag (one step of Undo); null for none. */
+  private flagActions(id: number): ThreadActions | null {
+    const anchor = this.flagCards.anchors.get(id);
+    const change = this.api.flag;
+    if (!anchor || !change) return null;
+    const run = (c: FlagChange): void => { void change.call(this.api, anchor, c).catch((e: unknown) => this.api.flash(e instanceof Error ? e.message : String(e), 8000)); };
+    return {
+      edit: (text, reply) => run({ what: 'edit', reply: reply ?? null, text }),
+      reply: (text) => run({ what: 'reply', text }),
+      removeReply: (i) => run({ what: 'remove-reply', reply: i }),
+      resolve: (done) => run({ what: 'resolve', done }),
+      remove: () => run({ what: 'delete' }),
+      focus: () => this.comments.goTo(id),
+    };
+  }
+
+  /** The anchor of the flag whose card is looked at (null: none). */
+  get activeFlag(): string | null { return this.comments.active !== null ? this.flagCards.anchors.get(this.comments.active) ?? null : null; }
+
+  /** Show the card of a flag (its anchor), as after adding it. */
+  showFlag(anchor: string): void {
+    for (const [id, a] of this.flagCards.anchors) if (a === anchor) { this.comments.shown = true; this.comments.goTo(id); return; }
+  }
+
+  /**
+   * Where a comment at the caret goes (Review ▸ New Comment): the compound field whose text it
+   * is in; else the nearest heading of the SI page above it, a section's or a compound's (its
+   * name); null on the cover page and General Information, which have none.
+   */
+  commentTarget(): { compound: string; field: string } | { section: string } | null {
+    const ed = this.file?.ed;
+    if (!ed) return null;
+    const at = Math.min(ed.start, Math.max(0, (this.base?.text.length ?? 1) - 1));
+    const span = spanAt(this.spans, at);
+    const ps = span ? parseSrc(span.src) : null;
+    if (ps?.owner === 'c' && ps.id) return { compound: ps.id, field: ps.field };
+    if (ps?.owner === 's' && ps.id) return { section: ps.id };
+    if (ps?.owner === 'g' && ps.id) return { section: ps.id.split('/')[0] };
+    const b = blockAt(this.blocks.filter((x) => /^(compound|section):/.test(x.node)), at);
+    if (!b) return null;
+    const [kind, id] = [b.node.slice(0, b.node.indexOf(':')), b.node.slice(b.node.indexOf(':') + 1)];
+    return kind === 'compound' ? { compound: id, field: 'name' } : { section: id };
   }
 
   get focused(): boolean { return document.activeElement === this.ta; }
@@ -254,8 +326,14 @@ export class SiPreview {
       this.file.ed.select(a, f);
     }
     if (!same && this.focusNode) this.revealNode(this.focusNode);
+    // (the card looked at stays the same flag's: the comments are numbered again by each compile)
+    const looked = this.activeFlag;
+    this.flagCards = s.flags ?? { anchors: new Map(), labels: new Map() };
+    this.comments.active = null;
+    if (looked) for (const [id, a] of this.flagCards.anchors) if (a === looked) this.comments.active = id;
     this.findAgain();
     v.redraw();
+    this.comments.update();
     if (this.shownGen >= this.editGen && this.shownWaiters.length) { const w = this.shownWaiters; this.shownWaiters = []; for (const go of w) go(); }
   }
 
@@ -510,6 +588,7 @@ export class SiPreview {
       selection: ed && !ed.collapsed && !ed.composing && picked === null ? [ed.start, ed.end] : null,
       caret: showCaret ? ed!.caret() : null,
       squiggles: [], picked, found: this.finder?.open ? this.finder.hits : [], framed: null,
+      comments: this.comments.shading(),
       marks,
     };
   }

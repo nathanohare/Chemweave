@@ -24,6 +24,10 @@ import { DEFAULT_NMR_NUCLEI, DEFAULT_SECTION_FIELDS, emptyValue, fieldDef, isFil
 import { checkIds, type IdReport } from './compound-ids';
 import { NEW_PROJECT_PER_PAGE, defaultsJson, sectionDefaults, type SpectrumLayout } from './spectra';
 import { newProjectStyleLooks, SI_STYLES_FILE, styleLooksJson } from './si-styles';
+import { compoundAnchor, emptyFlagFile, FLAGS_FILE, flagFileJson, flagRecord, newFlagId, noteAnchor, parseAnchor, parseFlagFile, sectionAnchor, threadOf, type FlagFile, type FlagRecord, type FlagThread } from './flag-threads';
+
+/** A flag or comment as the project lists it (`isFlag` false: a comment only). */
+export interface FlagEntry { anchor: string; flag: FlagRecord; resolved: boolean; isFlag: boolean; thread: FlagThread }
 
 /** The Spectra section's name (SI Assistant's spectra.DEFAULT_NAME). */
 const SPECTRA_NAME = 'Spectra';
@@ -162,6 +166,10 @@ export class SiProject {
   references: Json[] = [];
   /** Problems found reading the project, said once when it opens. */
   warnings: string[] = [];
+  /** Chemweave's additions to the flags (flag-threads.ts): replies, resolved flags, flags on section headings. */
+  flagFile: FlagFile = emptyFlagFile();
+  /** chemweave-flags.json is there but can't be read: shown empty and never written over. */
+  flagFileUnread = false;
   savedFormat = FORMAT_VERSION;
   savedBy = '';
   readOnly = false;
@@ -283,6 +291,9 @@ export class SiProject {
     this.anchored = fresh.anchored;
     this.references = fresh.references;
     this.refsUnread = fresh.refsUnread;
+    this.flagFile = fresh.flagFile;
+    this.flagsChanged();
+    this.flagFileUnread = fresh.flagFileUnread;
     this.warnings = fresh.warnings;
     this.savedFormat = fresh.savedFormat;
     this.savedBy = fresh.savedBy;
@@ -338,6 +349,11 @@ export class SiProject {
     if (!refs.ok) this.warnings.push(`${REFERENCES_FILE} ${refs.why}; the reference list is shown empty and is not saved over.`);
     this.references = refs.ok && Array.isArray(refs.data) ? refs.data.filter(isObj) : [];
     this.refsUnread = !refs.ok;
+    const flagText = await this.folder.readText(FLAGS_FILE).catch(() => undefined);
+    const flagFile = flagText === undefined ? null : parseFlagFile(flagText);
+    this.flagFile = flagFile ?? emptyFlagFile();
+    this.flagFileUnread = !flagFile;
+    if (!flagFile) this.warnings.push(`${FLAGS_FILE} could not be read; flag replies and resolved flags are shown empty and are not saved over.`);
     // the compounds' texts are small: read now, so whether each is filled in is known
     const textFiles = files.filter((f) => f.endsWith('.txt') && f.includes(`/${COMPOUNDS_DIR}/`));
     await Promise.all(textFiles.map(async (f) => this.texts.set(f, (await this.folder.readText(f)) ?? '')));
@@ -485,6 +501,8 @@ export class SiProject {
     if (!c) throw new SiProjectError(`No compound ${id}.`);
     return c;
   }
+  /** A compound by its id, or null when there is none. */
+  compoundById(id: string): SiCompound | null { return this.compounds.find((x) => x.id === id) ?? null; }
   parent(s: SiSection): SiSection | null { return s.parentId ? this.section(s.parentId) : null; }
   depth(s: SiSection): number { let d = 1; for (let p = this.parent(s); p; p = this.parent(p)) d++; return d; }
 
@@ -678,6 +696,7 @@ export class SiProject {
   }
 
   async saveCompound(c: SiCompound): Promise<void> {
+    this.flagsChanged();
     this.checkWritable();
     this.checkThere(c, compoundName(c) || 'This compound');
     c.data.id = c.id;
@@ -1322,15 +1341,222 @@ export class SiProject {
     await this.saveCompound(c);
   }
 
-  /** Flag a field for checking (a comment the person writes), or take the flag off. */
+  /** Flag a field for checking (a comment the person writes), or take the flag off (Delete: its replies go too). */
   async setFlag(c: SiCompound, key: string, flagged: boolean, comment = ''): Promise<void> {
     this.checkWritable();
     const flags = flagsOf(c);
+    const anchor = compoundAnchor(c.id, key);
+    if (flagged && !(key in flags) && this.flagFile.threads[anchor]) {
+      // (a new flag on a field whose last one was resolved: that one, with its replies, is kept as a
+      // resolved note on the field; replies left from a flag taken off elsewhere go)
+      const was = this.flagFile.threads[anchor];
+      await this.changeFlagFile((f) => { if (was.resolved) f.threads[noteAnchor(c.id, key, newFlagId())] = was; delete f.threads[anchor]; });
+    }
     if (flagged) {
       const old = isObj(flags[key]) ? flags[key] : {};
       flags[key] = { comment, by: str(old.by) || this.lock?.user || '', at: str(old.at) || localIso(new Date()) };
     } else delete flags[key];
     await this.saveCompound(c);
+    if (!flagged && this.flagFile.threads[anchor]) await this.changeFlagFile((f) => { delete f.threads[anchor]; });
+  }
+
+  // -------------------------------------------------------------- flag threads (flag-threads.ts)
+
+  /** Who can be @mentioned: the authors, everyone who flagged or replied, and whoever has the project open. */
+  get people(): string[] {
+    const out = new Set<string>();
+    for (const a of Array.isArray(this.settings.authors) ? this.settings.authors : []) if (isObj(a) && str(a.name).trim()) out.add(str(a.name).trim());
+    for (const f of this.allFlags()) { if (f.flag.by) out.add(f.flag.by); for (const r of f.thread.replies) if (r.by) out.add(r.by); if (f.thread.resolved?.by) out.add(f.thread.resolved.by); }
+    if (this.lock?.user) out.add(this.lock.user);
+    return [...out];
+  }
+
+  /**
+   * Every flag and comment, open or resolved, in the tree's order: on sections' headings, then on
+   * their compounds' fields. `isFlag` false: a comment only.
+   */
+  allFlags(): FlagEntry[] {
+    // (kept for the rest of this task: a page's every field button asks)
+    if (this.flagsNow) return this.flagsNow;
+    const out = this.listFlags();
+    this.flagsNow = out;
+    queueMicrotask(() => { this.flagsNow = null; });
+    return out;
+  }
+  private flagsNow: FlagEntry[] | null = null;
+  private byPlace: { all: FlagEntry[]; map: Map<string, FlagEntry[]> } | null = null;
+  /** (a flag or compound changed: the flags are listed again) */
+  private flagsChanged(): void { this.flagsNow = null; }
+
+  /** The open flags and comments of each compound's field ("<compound id>/<field>"), and of each section's heading ("s:<section id>"). */
+  openFlagsByPlace(): Map<string, FlagEntry[]> {
+    const all = this.allFlags();
+    if (this.byPlace?.all === all) return this.byPlace.map;
+    const out = new Map<string, FlagEntry[]>();
+    this.byPlace = { all, map: out };
+    for (const x of all) {
+      if (x.resolved) continue;
+      const at = parseAnchor(x.anchor);
+      if (!at) continue;
+      const k = at.kind === 'section' ? `s:${at.id}` : `${at.id}/${at.field}`;
+      out.set(k, [...(out.get(k) ?? []), x]);
+    }
+    return out;
+  }
+
+  private listFlags(): FlagEntry[] {
+    const out: FlagEntry[] = [];
+    const seen = new Set<string>();
+    const add = (anchor: string, open: FlagRecord | null): void => {
+      if (seen.has(anchor)) return;
+      const thread = this.flagFile.threads[anchor] ?? { replies: [] };
+      const flag = open ?? thread.resolved?.flag;
+      if (!flag) return;
+      seen.add(anchor);
+      out.push({ anchor, flag, resolved: !open, isFlag: flag.flag !== false, thread });
+    };
+    // (the side file's anchors by their section's or compound's id, gathered once)
+    const kept = new Map<string, string[]>();
+    for (const a of new Set([...Object.keys(this.flagFile.notes), ...Object.keys(this.flagFile.threads)])) {
+      const at = parseAnchor(a);
+      if (!at) continue;
+      const k = `${at.kind === 'section' ? 's' : 'c'}:${at.id}`;
+      kept.set(k, [...(kept.get(k) ?? []), a]);
+    }
+    const walk = (list: SiSection[]): void => {
+      for (const s of list) {
+        for (const a of kept.get(`s:${s.id}`) ?? []) add(a, this.flagFile.notes[a] ?? null);
+        for (const c of s.type === 'data' ? compoundsOf(s) : []) {
+          for (const [key, f] of Object.entries(isObj(c.data.flags) ? c.data.flags : {})) { const r = flagRecord(f); if (r) add(compoundAnchor(c.id, key), r); }
+          for (const a of kept.get(`c:${c.id}`) ?? []) add(a, this.flagFile.notes[a] ?? null);
+        }
+        walk(s.children);
+      }
+    };
+    walk(this.top);
+    return out;
+  }
+
+  /** The flag or comment at `anchor` while open (null: resolved, or none). */
+  openFlag(anchor: string): FlagRecord | null {
+    const at = parseAnchor(anchor);
+    if (!at) return null;
+    if (at.kind !== 'compound') return this.flagFile.notes[anchor] ?? null;
+    const c = this.compoundById(at.id);
+    const r = c && isObj(c.data.flags) ? flagRecord(c.data.flags[at.field]) : null;
+    return r ? { comment: r.comment, by: r.by, at: r.at } : null;
+  }
+
+  /**
+   * A comment left in the Live Preview, on a compound's field (`field`) or a section's heading:
+   * a flag (`flag`) or a comment only. A flag on a compound's field with none yet is SI
+   * Assistant's own flag; anything else is kept in Chemweave's file. Its anchor.
+   */
+  async addFlagNote(on: { compound: string; field: string } | { section: string }, comment: string, flag: boolean): Promise<string> {
+    this.checkWritable();
+    const rec: FlagRecord = { comment, by: this.lock?.user || '', at: localIso(new Date()), ...(flag ? {} : { flag: false as const }) };
+    if ('compound' in on) {
+      const c = this.compound(on.compound);
+      const flags = flagsOf(c);
+      if (flag && !(on.field in flags)) { await this.setFlag(c, on.field, true, comment); return compoundAnchor(c.id, on.field); }
+      const anchor = noteAnchor(c.id, on.field, newFlagId());
+      await this.changeFlagFile((f) => { f.notes[anchor] = rec; });
+      return anchor;
+    }
+    this.section(on.section);
+    const anchor = sectionAnchor(on.section, newFlagId());
+    await this.changeFlagFile((f) => { f.notes[anchor] = rec; });
+    return anchor;
+  }
+
+  /** Reply to a flag (it may mention people with @Name). */
+  async replyToFlag(anchor: string, text: string): Promise<void> {
+    this.checkWritable();
+    if (!text.trim()) return;
+    await this.changeFlagFile((f) => { threadOf(f, anchor).replies.push({ text: text.trim(), by: this.lock?.user || '', at: localIso(new Date()) }); });
+  }
+
+  /** Change a reply's text (`reply` its place), or the flag's own (`reply` null). */
+  async editFlagNote(anchor: string, reply: number | null, text: string): Promise<void> {
+    this.checkWritable();
+    if (reply !== null) { await this.changeFlagFile((f) => { const r = f.threads[anchor]?.replies[reply]; if (r) r.text = text; }); return; }
+    const at = parseAnchor(anchor);
+    if (!at) return;
+    if (at.kind === 'compound') {
+      const c = this.compoundById(at.id);
+      const open = c && isObj(c.data.flags) && isObj(c.data.flags[at.field]) ? (c.data.flags[at.field] as Json) : null;
+      if (c && open) { open.comment = text; await this.saveCompound(c); return; }
+    }
+    await this.changeFlagFile((f) => { const r = f.notes[anchor] ?? f.threads[anchor]?.resolved?.flag; if (r) r.comment = text; });
+  }
+
+  async removeFlagReply(anchor: string, reply: number): Promise<void> {
+    this.checkWritable();
+    await this.changeFlagFile((f) => { f.threads[anchor]?.replies.splice(reply, 1); });
+  }
+
+  /**
+   * Resolve a flag (done) or reopen it. SI Assistant's flag leaves compound.json while resolved,
+   * so SI Assistant's warnings clear too; the record stays in chemweave-flags.json.
+   */
+  async resolveFlag(anchor: string, done: boolean): Promise<void> {
+    this.checkWritable();
+    const at = parseAnchor(anchor);
+    if (!at) return;
+    this.flagFileToChange();
+    const stamp = (): { by: string; at: string } => ({ by: this.lock?.user || '', at: localIso(new Date()) });
+    if (done) {
+      const open = this.openFlag(anchor);
+      if (!open) return;
+      if (at.kind === 'compound') {
+        const c = this.compoundById(at.id)!;
+        // (the flag file first: a failed write leaves the flag open, never lost)
+        await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { ...stamp(), flag: open }; });
+        delete flagsOf(c)[at.field];
+        await this.saveCompound(c);
+      } else await this.changeFlagFile((f) => { threadOf(f, anchor).resolved = { ...stamp(), flag: open }; delete f.notes[anchor]; });
+      return;
+    }
+    const was = this.flagFile.threads[anchor]?.resolved;
+    if (!was) return;
+    if (at.kind === 'compound') {
+      const c = this.compoundById(at.id);
+      if (!c) throw new SiProjectError('Its compound is gone, so the flag can’t be reopened.');
+      flagsOf(c)[at.field] = { comment: was.flag.comment, by: was.flag.by, at: was.flag.at };
+      await this.saveCompound(c);
+      await this.changeFlagFile((f) => { delete threadOf(f, anchor).resolved; });
+    } else {
+      if (at.kind === 'section') this.section(at.id); else this.compound(at.id);
+      await this.changeFlagFile((f) => { f.notes[anchor] = { ...was.flag }; delete threadOf(f, anchor).resolved; });
+    }
+  }
+
+  /** Delete a flag or comment, open or resolved, with its replies. */
+  async deleteFlag(anchor: string): Promise<void> {
+    this.checkWritable();
+    const at = parseAnchor(anchor);
+    if (!at) return;
+    if (at.kind === 'compound') {
+      const c = this.compoundById(at.id);
+      if (c && isObj(c.data.flags) && at.field in c.data.flags) { delete flagsOf(c)[at.field]; await this.saveCompound(c); }
+      if (this.flagFile.threads[anchor]) await this.changeFlagFile((f) => { delete f.threads[anchor]; });
+      return;
+    }
+    await this.changeFlagFile((f) => { delete f.threads[anchor]; delete f.notes[anchor]; });
+  }
+
+  private flagFileToChange(): FlagFile {
+    if (this.flagFileUnread) throw new SiProjectError(`${FLAGS_FILE} in the project folder can’t be read (half synced, or changed by hand), so it wasn’t saved over. Fix or remove it, then try again.`);
+    return this.flagFile;
+  }
+
+  /** Change chemweave-flags.json: on a copy, kept only once written. */
+  private async changeFlagFile(f: (file: FlagFile) => void): Promise<void> {
+    const next = JSON.parse(JSON.stringify(this.flagFileToChange())) as FlagFile;
+    f(next);
+    await this.folder.writeText(FLAGS_FILE, flagFileJson(next));
+    this.flagFile = next;
+    this.flagsChanged();
   }
 
   /** Hide an automatic warning for this compound (SI Assistant's SPEC §8): it comes back when the data it was about changes (its fingerprint no longer matches). */
