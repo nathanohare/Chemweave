@@ -65,14 +65,15 @@
 :root[data-motion='off'] { --m-short: 0ms; --m-toggle: 0ms; --m-std: 0ms; --m-large: 0ms; --ease-hi: steps(1, end); }
 /* the arrivals (translate and scale, so an element's own transform, used to place it, is kept) */
 @keyframes m-fade { from { opacity: 0; } }
-@keyframes m-pop { from { opacity: 0; scale: 0.97; } }
 @keyframes m-drop { from { opacity: 0; translate: 0 -4px; } }
 @keyframes m-from-left { from { opacity: 0; translate: -24px 0; } }
-/* windows: fade and grow from 97% as they open; a quick fade as they close (engines that can keep a
-   closing window in the top layer: others close at once) */
-dialog[open] { animation: m-pop var(--m-std) var(--ease-out); }
+/* windows fade in as they open, and out quickly as they close (engines that can keep a closing window
+   in the top layer: others close at once). Only a fade: a window holds the window buttons (fixed, over
+   the title bar), and growing it would carry them along for a moment (S99). A window inside the
+   Settings page fades with that page, not again on its own */
+dialog[open] { animation: m-fade var(--m-std) var(--ease-out); }
 dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
-.sw-pane dialog[open] { animation-name: m-fade; }
+.sw-pane dialog[open] { animation: none; }
 @supports (overlay: auto) {
   dialog { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
   dialog:not([open]) { opacity: 0; pointer-events: none; }
@@ -86,9 +87,12 @@ dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
 .tool-tip:not([hidden]), .info-pop, .tw-zoom { animation: m-fade var(--m-std) var(--ease-out); }
 /* a ribbon tab's contents fade in (a Settings page, a template category's cards, a folding section's
    contents and a Side Panel section unfolded fade in from code: src/ui/motion.ts enter()) */
-.ribbon > .rb-panel:not([hidden]) { animation: m-fade var(--m-std) var(--ease-out); }
+.ribbon > .rb-panel:not([hidden]) > :not(.cr-body-end) { animation: m-fade var(--m-std) var(--ease-out); }
 /* the File tab's page slides in from the left, over the work */
 #backstage:not([hidden]) { animation: m-from-left var(--m-large) var(--ease-out); }
+#backstage .menu { animation: none; }
+/* a whole new look (another mode's colors, another theme) changes at once: no control fades (motion.ts holdTransitions, S99) */
+:root[data-m-still] *, :root[data-m-still] *::before, :root[data-m-still] *::after { transition: none !important; }
 /* buttons change color with a quick fade */
 button { transition: background-color var(--m-short), border-color var(--m-short), color var(--m-short); }
 /* the selected ribbon tab's shape glides to the tab clicked (src/ui/ribbon-glide.ts) */

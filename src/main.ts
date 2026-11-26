@@ -5,7 +5,7 @@
 // every modal window keeps the title bar usable and opens on the screen, before any window opens
 import './ui/modal-guard';
 // the Animations setting on the page before anything shows (Off on the web until settings load)
-import { chosenMotion, enter as motionEnter, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
+import { chosenMotion, enter as motionEnter, fadeInNew as motionFadeInNew, holdTransitions, isMotionLevel, shownUnder as motionShownUnder, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
 import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
@@ -427,6 +427,7 @@ const editor = new Editor(doc, renderer, host);
  * round text being typed take the mode's teal too, so the accent is the same everywhere (UI rule 5).
  */
 function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: ModeColours): void {
+  holdTransitions();
   applyModeColoursOnly(mode, c);
   const tint = mode === 'drawing' ? modeColour('drawing', c) : null;
   setMarkTint(tint);
@@ -4838,7 +4839,11 @@ function finishTab(): void {
 /** Set the window up for a tab that has just come to the front. */
 function enterTab(tab: Tab, opened: boolean): void {
   // another kind of file (mode) fades in; another file of the same kind shows at once, for comparing (Motion Choices)
-  if (enteredMode !== null && enteredMode !== tab.mode) motionEnter($('#work'), 'fade', 'large');
+  // (only what the new mode brings fades: what stays on screen, and every background, stays still)
+  if (enteredMode !== null && enteredMode !== tab.mode) {
+    const work = $('#work'), before = motionShownUnder(work);
+    requestAnimationFrame(() => motionFadeInNew(work, before));
+  }
   enteredMode = tab.mode;
   // a new or opened drawing starts on Select; going back to a tab keeps the tool last used
   if (opened && tab.mode === 'drawing') modeTool.drawing = START_TOOL.drawing;
@@ -17622,6 +17627,7 @@ let appTheme: Settings['appTheme'] = 'darkgray';
 function setAppTheme(t: Settings['appTheme']): void {
   appTheme = t;
   const root = document.documentElement;
+  holdTransitions();
   // Dark Gray is the light theme with its own colours over it
   if (t === 'system') delete root.dataset.theme;
   else root.dataset.theme = t === 'darkgray' ? 'light' : t;

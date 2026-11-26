@@ -95,7 +95,112 @@ export function enter(el: Element | null | undefined, how: Entrance = 'fade', t:
   if (el && !(el as HTMLElement).isConnected) return null;
   const d = motionMs(t);
   if (!el || !d || typeof (el as HTMLElement).animate !== 'function') return null;
-  try { return (el as HTMLElement).animate(FRAMES[how], { duration: d, easing: EASE_OUT }); } catch { return null; }
+  try {
+    const a = (el as HTMLElement).animate(FRAMES[how], { duration: d, easing: EASE_OUT });
+    if (how !== 'fade') arriving(el, a);
+    return a;
+  } catch { return null; }
+}
+
+/**
+ * The parts of `root` on screen now, to `depth` levels: give it to fadeInNew after a switch, so only
+ * what the switch brought fades in.
+ */
+export function shownUnder(root: Element | null, depth = 4): WeakSet<Element> {
+  const seen = new WeakSet<Element>();
+  if (!root || !moving()) return seen;
+  const walk = (el: Element, d: number): void => {
+    for (const c of el.children) if (isShown(c)) { seen.add(c); if (d > 1) walk(c, d - 1); }
+  };
+  walk(root, depth);
+  return seen;
+}
+
+/**
+ * After a switch (another mode): fade in what it brought and nothing else (S95, S99). A part that was
+ * on screen before stays still, and a part brought in with a background of its own shows that
+ * background at once and fades only what is on it, so no background ever pulses.
+ */
+export function fadeInNew(root: Element | null, before: WeakSet<Element>, depth = 4): void {
+  if (!root || !moving()) return;
+  const walk = (el: Element, d: number): void => {
+    for (const c of el.children) {
+      if (!isShown(c)) continue;
+      if (before.has(c) || ownBackground(c)) { if (d > 1) walk(c, d - 1); continue; }
+      enter(c, 'fade', 'large');
+    }
+  };
+  walk(root, depth);
+}
+
+const isShown = (el: Element): boolean => {
+  const r = el.getBoundingClientRect();
+  return r.width > 0 && r.height > 0 && getComputedStyle(el).visibility !== 'hidden';
+};
+/**
+ * The element paints a background of its own. In the page (not floating over it) that background
+ * shows at once and only what is on it fades: fading the background would let what was behind show
+ * through for a moment, and the window would pulse (S99).
+ */
+function ownBackground(el: Element): boolean {
+  const cs = getComputedStyle(el);
+  return cs.backgroundImage !== 'none' || !/^(transparent|rgba\(0, 0, 0, 0\))$/.test(cs.backgroundColor);
+}
+
+/**
+ * Fade in what was just put into a container that stays (a Settings page, a template category's
+ * cards, a slide added to the list): its new contents, not the container, and never a background.
+ */
+export function fadeContent(box: Element | null, depth = 3): void {
+  if (!box || !moving()) return;
+  let n = 0;
+  const walk = (el: Element, d: number): void => {
+    for (const c of el.children) {
+      if (n >= 24) return;
+      if (ownBackground(c)) { if (d > 1) walk(c, d - 1); continue; }
+      n++;
+      enter(c, 'fade');
+    }
+  };
+  walk(box, depth);
+}
+
+/**
+ * Colors set for a whole new look (another mode's colors, another theme) change at once: for two
+ * frames no control fades its color, so the window never pulses (S99).
+ */
+export function holdTransitions(root: HTMLElement | null = typeof document !== 'undefined' ? document.documentElement : null): void {
+  if (!root || !moving()) return;
+  root.dataset.mStill = '';
+  requestAnimationFrame(() => requestAnimationFrame(() => { delete root.dataset.mStill; }));
+}
+
+// Something arriving by a move (a menu dropping, the File page or the Side Panel sliding in) is, for
+// those few frames, the frame that fixed-position parts inside it are placed against: a submenu or a
+// pop-up opened inside it then would show in the wrong place and jump. So the moment the pointer or
+// the keyboard reaches into it, its arrival finishes (S99).
+const moves = new Set<Element>();
+function arriving(el: Element, a: Animation): void {
+  moves.add(el);
+  const done = (): void => { moves.delete(el); };
+  a.addEventListener('finish', done);
+  a.addEventListener('cancel', done);
+}
+const MOVING_ARRIVALS = new Set(['m-drop', 'm-from-left']);
+if (typeof document !== 'undefined') {
+  document.addEventListener('animationstart', (e) => { if (MOVING_ARRIVALS.has(e.animationName) && e.target instanceof Element) moves.add(e.target); }, true);
+  const gone = (e: AnimationEvent): void => { if (e.target instanceof Element) moves.delete(e.target); };
+  document.addEventListener('animationend', gone, true);
+  document.addEventListener('animationcancel', gone, true);
+  const reach = (e: Event): void => {
+    if (!moves.size) return;
+    const t = e.target as Node | null;
+    for (const el of [...moves]) {
+      if (!el.isConnected) { moves.delete(el); continue; }
+      if (t && el.contains(t)) { for (const a of el.getAnimations()) a.finish(); moves.delete(el); }
+    }
+  };
+  for (const type of ['pointerover', 'pointerdown', 'focusin', 'keydown']) document.addEventListener(type, reach, true);
 }
 
 /** How a scroll the app makes itself moves: gliding when animations are on, else a jump (S97). */
