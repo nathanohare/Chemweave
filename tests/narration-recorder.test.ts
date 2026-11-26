@@ -22,7 +22,8 @@ class FakeRecorder {
   stop() {
     this.state = 'inactive';
     calls.push([this.id, 'stop']);
-    queueMicrotask(() => { this.ondataavailable?.({ data: new Blob(['x']) }); this.onstop?.(); });
+    // (as in WebKit: the data and the stop arrive later, after the next piece may have started)
+    setTimeout(() => { this.ondataavailable?.({ data: new Blob([`piece ${this.id}`]) }); this.onstop?.(); }, 5);
   }
 }
 
@@ -85,5 +86,20 @@ describe('narration recorder: never paused right after it starts', () => {
     r.start(true);
     await expect(r.finish()).resolves.toBeNull();
     expect(r.paused).toBe(false);
+  });
+});
+
+describe('narration recorder: each slide keeps its own sound', () => {
+  it("a finished piece's data, arriving after the next piece started, stays with its own piece", async () => {
+    const r = await opened();
+    r.start();
+    now = 4000;
+    const one = r.finish();
+    r.start();
+    now = 13_000;
+    const two = r.finish();
+    const [a, b] = await Promise.all([one, two]);
+    expect(await a!.text()).toBe('piece 1');
+    expect(await b!.text()).toBe('piece 2');
   });
 });

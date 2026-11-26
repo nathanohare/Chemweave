@@ -60,10 +60,11 @@ export const JUST_STARTED_MS = 1000;
 
 /** Records the microphone in pieces: one for each slide, started and finished as the slides change. */
 export class Recorder {
-  private rec: MediaRecorder | null = null;
-  private chunks: Blob[] = [];
+  /** The piece being recorded: its own recorder, data and answer, so a finished piece's data, which
+   * arrives after the next piece has started, can't end up in that one (found on a Mac, 2026-11-26:
+   * every slide got the first slide's sound). */
+  private piece: { rec: MediaRecorder; done: Promise<Blob | null> } | null = null;
   private stream: MediaStream | null = null;
-  private resolveStop: ((b: Blob | null) => void) | null = null;
 
   /** Ask for the microphone; false when there is none or it was refused. */
   async open(): Promise<boolean> {
@@ -78,7 +79,7 @@ export class Recorder {
   /** A piece asked for while paused: its recorder starts when the pause ends. */
   private waiting = false;
 
-  get paused(): boolean { return this.waiting || this.rec?.state === 'paused'; }
+  get paused(): boolean { return this.waiting || this.piece?.rec.state === 'paused'; }
 
   /** When the recorder of this piece started (performance.now). */
   private begunAt = 0;
@@ -91,8 +92,7 @@ export class Recorder {
    */
   start(paused = false): void {
     if (!this.stream) return;
-    this.chunks = [];
-    this.rec = null;
+    this.piece = null;
     this.waiting = paused;
     if (!paused) this.begin();
   }
@@ -102,42 +102,40 @@ export class Recorder {
     if (!stream) return;
     this.waiting = false;
     this.begunAt = performance.now();
-    const rec = (this.rec = new MediaRecorder(stream));
-    rec.ondataavailable = (e) => { if (e.data.size) this.chunks.push(e.data); };
-    rec.onstop = () => {
-      const blob = this.chunks.length ? new Blob(this.chunks, { type: rec.mimeType }) : null;
-      this.resolveStop?.(blob);
-      this.resolveStop = null;
-    };
+    const rec = new MediaRecorder(stream);
+    const chunks: Blob[] = [];
+    rec.ondataavailable = (e) => { if (e.data.size) chunks.push(e.data); };
+    const done = new Promise<Blob | null>((resolve) => {
+      rec.onstop = () => resolve(chunks.length ? new Blob(chunks, { type: rec.mimeType }) : null);
+    });
+    this.piece = { rec, done };
     rec.start();
   }
 
   pause(on: boolean): void {
     if (!on && this.waiting) { this.begin(); return; }
-    if (!this.rec) return;
+    const rec = this.piece?.rec;
+    if (!rec) return;
     // paused just after it started (the 3, 2, 1 before the first slide): nothing worth keeping was
     // said, so this recorder goes and a new one starts when the pause ends
-    if (on && this.rec.state === 'recording' && performance.now() - this.begunAt < JUST_STARTED_MS) {
-      const old = this.rec;
-      old.ondataavailable = null;
-      old.onstop = null;
-      old.stop();
-      this.rec = null;
-      this.chunks = [];
+    if (on && rec.state === 'recording' && performance.now() - this.begunAt < JUST_STARTED_MS) {
+      rec.stop();
+      this.piece = null;
       this.waiting = true;
       return;
     }
-    if (on && this.rec.state === 'recording') this.rec.pause();
-    else if (!on && this.rec.state === 'paused') this.rec.resume();
+    if (on && rec.state === 'recording') rec.pause();
+    else if (!on && rec.state === 'paused') rec.resume();
   }
 
   /** Finish the piece being recorded: what was said (null when nothing was). */
   finish(): Promise<Blob | null> {
-    const rec = this.rec;
-    this.rec = null;
+    const piece = this.piece;
+    this.piece = null;
     this.waiting = false;
-    if (!rec || rec.state === 'inactive') return Promise.resolve(null);
-    return new Promise((resolve) => { this.resolveStop = resolve; rec.stop(); });
+    if (!piece || piece.rec.state === 'inactive') return Promise.resolve(null);
+    piece.rec.stop();
+    return piece.done;
   }
 
   close(): void {
