@@ -35,11 +35,13 @@ export interface SiPreviewLook {
   custom: 'underline' | 'fill';
   /** The white space between pages shown (false: each page's top and bottom margins hidden; a double-click between pages hides or shows it, as in Word). */
   whiteSpace: boolean;
+  /** View ▸ Ruler over the Live Preview. */
+  ruler: boolean;
 }
-export const DEFAULT_SI_PREVIEW: SiPreviewLook = { dim: true, link: 'tint', custom: 'underline', whiteSpace: true };
+export const DEFAULT_SI_PREVIEW: SiPreviewLook = { dim: true, link: 'tint', custom: 'underline', whiteSpace: true, ruler: false };
 export function parseSiPreviewLook(v: unknown): SiPreviewLook {
   const r = v && typeof v === 'object' ? (v as Record<string, unknown>) : {};
-  return { dim: r.dim !== false, link: r.link === 'bracket' ? 'bracket' : 'tint', custom: r.custom === 'fill' ? 'fill' : 'underline', whiteSpace: r.whiteSpace !== false };
+  return { dim: r.dim !== false, link: r.link === 'bracket' ? 'bracket' : 'tint', custom: r.custom === 'fill' ? 'fill' : 'underline', whiteSpace: r.whiteSpace !== false, ruler: r.ruler === true };
 }
 /** `changed`: the preview drawn again in the look chosen; `save`: the settings stored (white space hidden or shown by a double-click). */
 export const siPreviewPrefs: SiPreviewLook & { changed?: () => void; save?: () => void } = { ...DEFAULT_SI_PREVIEW };

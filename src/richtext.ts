@@ -385,6 +385,8 @@ export function toSymbolPieces(text: string, symbolFont?: boolean): { text: stri
 export type CaseMode = 'sentence' | 'lower' | 'upper' | 'title' | 'toggle';
 
 const caseChar = (ch: string, up: boolean): string => {
+  // the micro sign (µL, µmol) is a unit's prefix, not a Greek letter: its capital would be Greek capital Mu
+  if (ch === '\u00b5') return ch;
   const c = up ? ch.toUpperCase() : ch.toLowerCase();
   // a letter whose other case is longer (ß) stays, so the text keeps its length
   return c.length === ch.length ? c : ch;

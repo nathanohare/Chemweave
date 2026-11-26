@@ -25,12 +25,13 @@ export function pasteChoices(mode: 'drawing' | 'slides' | 'design', slides = fal
 /**
  * Word's paste options, for Document mode's Paste ▾ and the SI Project's: Keep Source Formatting,
  * Keep Text Only (Ctrl+Shift+V), then what else the place pasted into takes: an embedded object
- * and SMILES in a document (`object`: one is on the clipboard), a picture in an SI (`picture`:
- * one is, or may be, on the clipboard: it becomes a figure).
+ * (`object`: one is on the clipboard) and SMILES in a document; in an SI, Paste as Picture (a
+ * figure from a copied picture or drawing; it says so when there is none, as the menu opens at
+ * once without reading the clipboard).
  */
-export function wordPasteChoices(mode: 'document' | 'si', has: { object?: boolean; picture?: boolean } = {}): (PasteChoice | null)[] {
+export function wordPasteChoices(mode: 'document' | 'si', has: { object?: boolean } = {}): (PasteChoice | null)[] {
   const keep: PasteChoice = { label: 'Keep Source Formatting', cmd: 'paste-keep', enabled: true };
   const text: PasteChoice = { label: 'Keep Text Only (Ctrl+Shift+V)', cmd: 'paste-text-only', enabled: true };
-  if (mode === 'si') return [keep, text, null, { label: 'Paste as Picture', cmd: 'paste-picture', enabled: !!has.picture }];
+  if (mode === 'si') return [keep, text, null, { label: 'Paste as Picture', cmd: 'paste-picture', enabled: true }];
   return [keep, text, null, { label: 'Paste as Object', cmd: 'paste-object', enabled: !!has.object }, { label: 'Paste SMILES', cmd: 'paste-smiles', enabled: true }];
 }

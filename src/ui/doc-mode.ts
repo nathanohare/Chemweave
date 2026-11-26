@@ -28,7 +28,7 @@ import { pastedTable, tableHtml, tableTsv } from '../io/table-clip';
 import { afterTyping, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, type CharLook, type Issue } from '../text/chemtext';
 import { loadSpeller, type Speller } from '../text/spelling';
-import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
+import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, numberedListRange, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
 import { DocView, ACTUAL, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type Overlay } from './doc-view';
 import {
   PRINT_VIEW, VIEW_NAMES as VIEW_LABEL, changeLevel, withHeadings, continuous, foldHeadings, moveParas, newOutline, outlineLevel, shiftFolds, subtreeEnd, toggleFold,
@@ -5826,9 +5826,7 @@ export class DocumentMode {
       // a scheme is for the whole list: every item of the numbered lists picked takes it
       const [a, b] = ed.selectedParas();
       const paras = fitParas(f.t.paras, paraCount(ed.text));
-      let first = a, last = b;
-      while (first > 0 && paras[first - 1]?.list === 'number' && paras[a]?.list === 'number') first--;
-      while (last + 1 < paras.length && paras[last + 1]?.list === 'number' && paras[b]?.list === 'number') last++;
+      const [first, last] = numberedListRange(paras, a, b);
       const box = !!f.box;
       if (box) ed.setSelectedParas({ list: 'number', scheme: scheme || undefined, cont: undefined }, 'list');
       else ed.setParas(first, last, { list: 'number', scheme: scheme || undefined }, 'list');

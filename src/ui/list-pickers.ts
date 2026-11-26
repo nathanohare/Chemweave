@@ -2,27 +2,19 @@
 // ribbon and the SI Project's: each list's options made from the bullet library and the list
 // schemes (text/paragraphs.ts), so both ribbons offer the same ones.
 
-import { BULLET_LIBRARY, LIST_SCHEMES } from '../text/paragraphs';
+import { BULLET_LIBRARY, BULLET_NAMES, LIST_SCHEMES } from '../text/paragraphs';
 
-/** The bullet library's names, in BULLET_LIBRARY's order. */
-export const BULLET_NAMES = ['Round', 'Hollow', 'Square', 'Diamond', 'Arrow', 'Check Mark', 'Dash', 'Star'];
-
-const esc = (t: string): string => t.replace(/&/g, '&amp;').replace(/</g, '&lt;');
-
-/** The Bullet Library's options: 'default' (the levels' own bullets), then each bullet by its place in the library. */
-export function bulletOptionsHtml(): string {
-  return '<option value="" hidden>▾</option><option value="default">Default (• – • –)</option>'
-    + BULLET_LIBRARY.map((b, i) => `<option value="${i}">${esc(b)}  ${BULLET_NAMES[i] ?? ''}</option>`).join('');
+/** A list's choices as [value, label]: Bullet Library's 'default' then each bullet by its place in the library; Multilevel List's 'default' (1. a. i.) then each other scheme by its id. */
+export function listPickerOptions(kind: 'bullets' | 'multilevel'): [string, string][] {
+  if (kind === 'bullets') return [['default', 'Default (• – • –)'], ...BULLET_LIBRARY.map((b, i): [string, string] => [String(i), `${b}  ${BULLET_NAMES[i] ?? ''}`])];
+  return LIST_SCHEMES.map((s): [string, string] => [s.id || 'default', s.name]);
 }
 
-/** The Multilevel List's options: 'default' (1. a. i.), then each other scheme by its id. */
-export function multilevelOptionsHtml(): string {
-  return '<option value="" hidden>▾</option>' + LIST_SCHEMES.map((s) => `<option value="${s.id || 'default'}">${esc(s.name)}</option>`).join('');
-}
-
-/** Fill the lists marked data-list-picker="bullets" or "multilevel" under `root`. */
+/** Fill the lists marked data-list-picker="bullets" or "multilevel" under `root` (a hidden ▾ first, shown while nothing is chosen). */
 export function fillListPickers(root: ParentNode): void {
   for (const sel of root.querySelectorAll<HTMLSelectElement>('select[data-list-picker]')) {
-    sel.innerHTML = sel.dataset.listPicker === 'bullets' ? bulletOptionsHtml() : multilevelOptionsHtml();
+    const none = new Option('▾', '');
+    none.hidden = true;
+    sel.replaceChildren(none, ...listPickerOptions(sel.dataset.listPicker === 'bullets' ? 'bullets' : 'multilevel').map(([v, label]) => new Option(label, v)));
   }
 }

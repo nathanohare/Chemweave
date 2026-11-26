@@ -119,12 +119,29 @@ export async function readPreviewFormats(folder: SiFolder): Promise<PreviewForma
 
 /** The file's pieces, to change and write back; throws when the file is there but can't be read (it is never written over). */
 export async function readPreviewFormatsToChange(folder: SiFolder): Promise<PreviewFormat[]> {
+  return (await readPreviewFormatFileToChange(folder)).items;
+}
+
+/**
+ * The file's pieces and its version, to change and write back (previewFormatsJson with that
+ * version, so a file a newer look made is never written back as an older version); throws when
+ * the file is there but can't be read (it is never written over).
+ */
+export async function readPreviewFormatFileToChange(folder: SiFolder): Promise<{ items: PreviewFormat[]; version: number }> {
   // (a file that is there but can't be read now throws: it is never written over as if it weren't there)
   const raw = await folder.readText(PREVIEW_FORMAT_FILE);
-  if (!raw || !raw.trim()) return [];
+  if (!raw || !raw.trim()) return { items: [], version: 1 };
   const got = parsePreviewFormats(raw);
   if (!got) throw new Error(`${PREVIEW_FORMAT_FILE} in the project folder can’t be read (half synced, or changed by hand), so it wasn’t saved over. Fix or remove it, then format again`);
-  return got;
+  return { items: got, version: previewFormatVersion(raw) };
+}
+
+/** The version a formatting file says it is (1 when it doesn't say). */
+export function previewFormatVersion(raw: string): number {
+  try {
+    const v = (JSON.parse(raw) as { version?: unknown }).version;
+    return typeof v === 'number' && Number.isInteger(v) && v >= 1 ? v : 1;
+  } catch { return 1; }
 }
 
 /** The file's pieces; null when it can't be read (so it is never written over). */
@@ -140,7 +157,9 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
       const look: FormatLook = {};
       for (const k of LOOK_KEYS) {
         const v = (x.look as Record<string, unknown>)[k];
-        if (typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number') (look as Record<string, unknown>)[k] = v;
+        // (All Caps and kerning on or off; character spacing in points, as the Font box takes it)
+        const ok = k === 'allCaps' || k === 'noKern' ? typeof v === 'boolean' : k === 'spacing' ? num(v, -20, 100) : typeof v === 'boolean' || typeof v === 'string' || typeof v === 'number';
+        if (ok) (look as Record<string, unknown>)[k] = v;
       }
       for (const k of PARA_KEYS) {
         const v = paraValueOf(k, (x.look as Record<string, unknown>)[k]);
@@ -157,11 +176,12 @@ export function parsePreviewFormats(raw: string): PreviewFormat[] | null {
   }
 }
 
-export function previewFormatsJson(items: readonly PreviewFormat[]): string {
+export function previewFormatsJson(items: readonly PreviewFormat[], atLeast = 1): string {
   // (version 2: paragraph looks, which a Chemweave reading only version 1 would drop and write over;
   // version 3: All Caps, character spacing, lists, tab stops and Word's other paragraph settings, which one reading version 2 would)
   const has = (keys: readonly (keyof FormatLook)[]): boolean => items.some((f) => keys.some((k) => f.look[k] !== undefined));
-  const version = has(V3_KEYS) ? 3 : has(V2_KEYS) ? 2 : 1;
+  // (and never lower than the file was: what a newer Chemweave would read it as stays so)
+  const version = Math.max(atLeast, has(V3_KEYS) ? 3 : has(V2_KEYS) ? 2 : 1);
   return JSON.stringify({ version, items }, null, 1) + '\n';
 }
 
@@ -411,4 +431,18 @@ export function markupFormat(raw: string, printed: string, a: number, b: number,
     }),
   }));
   return { raw: writeMarkup(next), missed };
+}
+
+/**
+ * The pieces after the words of `src` changed case (Change Case: the same length, the same
+ * places): each piece found in the printed text before is kept on the same characters, with
+ * the words and the characters either side as they are now (locating is case-sensitive).
+ */
+export function reanchorFormats(items: readonly PreviewFormat[], src: string, before: string, after: string): PreviewFormat[] {
+  if (before.length !== after.length) return [...items];
+  return items.map((f) => {
+    if (f.src !== src) return f;
+    const at = locateFormat(before, f);
+    return at ? pieceAt(src, after, at[0], at[1], f.look, f.id) : f;
+  });
 }

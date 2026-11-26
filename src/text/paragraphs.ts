@@ -198,6 +198,8 @@ function ownScheme(id: string): ListScheme | null {
  * one is a character of the text's own font or a common symbol font, so files show them too.
  */
 export const BULLET_LIBRARY = ['•', '○', '■', '◆', '➢', '✓', '–', '★'];
+/** The bullet library's names (Home ▸ Bullets ▾), in its order. */
+export const BULLET_NAMES = ['Round', 'Hollow', 'Square', 'Diamond', 'Arrow', 'Check Mark', 'Dash', 'Star'];
 
 const roman = (n: number): string => {
   const parts: [number, string][] = [[1000, 'm'], [900, 'cm'], [500, 'd'], [400, 'cd'], [100, 'c'], [90, 'xc'], [50, 'l'], [40, 'xl'], [10, 'x'], [9, 'ix'], [5, 'v'], [4, 'iv'], [1, 'i']];
@@ -330,4 +332,15 @@ export function indentPatch(p: ParaStyle, delta: 1 | -1, step: number): Partial<
   if (p.list) return { level: Math.max(0, Math.min(MAX_LIST_LEVEL, (p.level ?? 0) + delta)) };
   const cur = p.indent ?? 0;
   return { indent: Math.max(Math.min(0, cur), cur + delta * step) };
+}
+
+/**
+ * Multilevel List's extent (Word's): a number format is for the whole list, so the paragraphs
+ * [a, b] reach out to the numbered items next to them when they are numbered themselves.
+ */
+export function numberedListRange(paras: readonly ParaStyle[], a: number, b: number): [number, number] {
+  let first = a, last = b;
+  while (first > 0 && paras[first - 1]?.list === 'number' && paras[a]?.list === 'number') first--;
+  while (last + 1 < paras.length && paras[last + 1]?.list === 'number' && paras[b]?.list === 'number') last++;
+  return [first, last];
 }

@@ -5,13 +5,13 @@
 // carried into the Word file the SI is saved as.
 import { describe, expect, it } from 'vitest';
 import { unzipSync, strFromU8 } from 'fflate';
-import { applyPreviewFormats, paraLookOf, parsePreviewFormats, previewFormatsJson, type PreviewFormat } from '../src/si/preview-format';
+import { addFormat, applyPreviewFormats, locateFormat, paraLookOf, parsePreviewFormats, previewFormatVersion, previewFormatsJson, reanchorFormats, type PreviewFormat } from '../src/si/preview-format';
 import { writeDocx, type DocxDeps } from '../src/io/docx';
 import { newDocument, type DocText } from '../src/document/document';
-import { indentPatch, listPatch } from '../src/text/paragraphs';
-import { pastedLooks, cleanPastedHtml } from '../src/ui/si-paste-html';
+import { indentPatch, listPatch, numberedListRange } from '../src/text/paragraphs';
+import { pastedLooks } from '../src/ui/si-paste-html';
 import { wordPasteChoices } from '../src/ui/paste-options';
-import { bulletOptionsHtml, multilevelOptionsHtml } from '../src/ui/list-pickers';
+import { listPickerOptions } from '../src/ui/list-pickers';
 import * as rt from '../src/richtext';
 
 const piece = (look: PreviewFormat['look'], text = 'Step one', start = 0): PreviewFormat => ({ id: 'x', src: 'p', start, end: start + text.length, text, look });
@@ -86,7 +86,45 @@ describe('putting them on the compiled document', () => {
   });
 });
 
+describe('Change Case keeps the formatting file\'s pieces on the same letters', () => {
+  it('finds a piece again after its words changed case', () => {
+    const before = 'Step one of two', after = 'STEP ONE OF TWO';
+    const items = addFormat([], 'p', before, 0, 8, { color: '#c00000' });
+    // (finding words is case-sensitive: left as it was, the piece would be lost)
+    expect(locateFormat(after, items[0])).toBeNull();
+    const moved = reanchorFormats(items, 'p', before, after);
+    expect(moved[0]).toMatchObject({ id: items[0].id, text: 'STEP ONE', after: ' OF TWO', look: { color: '#c00000' } });
+    expect(locateFormat(after, moved[0])).toEqual([0, 8]);
+    // (another field's pieces are left as they are)
+    const other = addFormat([], 'q', before, 0, 4, { bold: true });
+    expect(reanchorFormats(other, 'p', before, after)).toEqual(other);
+  });
+  it('leaves the micro sign alone (µL is not ΜL), in Document mode too', () => {
+    const runs = [{ text: 'added 50 µL of water' }];
+    expect(rt.plainText(rt.changeCase(runs, 0, 20, 'upper'))).toBe('ADDED 50 µL OF WATER');
+    expect(rt.plainText(rt.changeCase(runs, 0, 20, 'toggle'))).toBe('ADDED 50 µl OF WATER');
+  });
+});
+
+describe('the file\'s version', () => {
+  it('is never written lower than the file was', () => {
+    const old = piece({ bold: true });
+    expect(JSON.parse(previewFormatsJson([old], 3)).version).toBe(3);
+    expect(previewFormatVersion('{"version":3,"items":[]}')).toBe(3);
+    expect(previewFormatVersion('{"items":[]}')).toBe(1);
+  });
+  it('drops All Caps, kerning and character spacing it cannot use', () => {
+    const items = parsePreviewFormats(JSON.stringify({ version: 3, items: [{ src: 'p', start: 0, end: 3, text: 'abc', look: { allCaps: 'yes', noKern: 1, spacing: 500 } }, { src: 'p', start: 0, end: 3, text: 'abc', look: { allCaps: false, noKern: true, spacing: -2.5 } }] }));
+    expect(items!.map((x) => x.look)).toEqual([{}, { allCaps: false, noKern: true, spacing: -2.5 }]);
+  });
+});
+
 describe('Document mode\'s list and indent steps, shared', () => {
+  it('a number format reaches the numbered items next to those selected', () => {
+    const paras = [{}, { list: 'number' as const }, { list: 'number' as const }, { list: 'number' as const }, {}];
+    expect(numberedListRange(paras, 2, 2)).toEqual([1, 3]);
+    expect(numberedListRange(paras, 0, 0)).toEqual([0, 0]);
+  });
   it('Bullets on paragraphs that all have them takes them off; on any other, puts them on', () => {
     expect(listPatch([{ list: 'bullet' }, { list: 'bullet' }], 'bullet')).toEqual({ list: undefined, level: undefined, cont: undefined });
     expect(listPatch([{ list: 'bullet' }, {}], 'bullet')).toEqual({ list: 'bullet', cont: undefined });
@@ -102,19 +140,22 @@ describe('Document mode\'s list and indent steps, shared', () => {
 
 describe('Paste options and the list pickers', () => {
   it('Keep Source Formatting keeps the copied bold, italics, underline, sub- and superscripts as stretches of the text', () => {
-    const got = pastedLooks(cleanPastedHtml('<p>CH<sub>2</sub>Cl<sub>2</sub>, <b>91%</b> <i><b>yield</b></i></p><p>next</p>', true));
+    const got = pastedLooks('<p>CH<sub>2</sub>Cl<sub>2</sub>, <b>91%</b> <i><b>yield</b></i></p><p>next</p>');
     expect(got.text).toBe('CH2Cl2, 91% yield\nnext');
     expect(got.looks).toEqual([
       { a: 2, b: 3, look: { sub: true } }, { a: 5, b: 6, look: { sub: true } }, { a: 8, b: 11, look: { bold: true } }, { a: 12, b: 17, look: { bold: true, italic: true } },
     ]);
   });
+  it('keeps a table\'s cells apart by tabs and its rows and paragraphs by line breaks, with no stray spaces', () => {
+    expect(pastedLooks('<table><tr><td>1.23</td><td><b>4.56</b></td></tr>\n<tr><td>7.8</td><td>9</td></tr></table>')).toEqual({ text: '1.23\t4.56\n7.8\t9', looks: [{ a: 5, b: 9, look: { bold: true } }] });
+    expect(pastedLooks('<p>one</p>\n<p><i>two</i></p>').text).toBe('one\ntwo');
+  });
   it('the SI\'s Paste ▾ has Word\'s choices, as Document mode\'s does', () => {
-    expect(wordPasteChoices('si', { picture: true }).map((c) => c && [c.label, c.enabled])).toEqual([['Keep Source Formatting', true], ['Keep Text Only (Ctrl+Shift+V)', true], null, ['Paste as Picture', true]]);
-    expect(wordPasteChoices('si')[3]?.enabled).toBe(false);
+    expect(wordPasteChoices('si').map((c) => c && [c.label, c.enabled])).toEqual([['Keep Source Formatting', true], ['Keep Text Only (Ctrl+Shift+V)', true], null, ['Paste as Picture', true]]);
     expect(wordPasteChoices('document', { object: false }).map((c) => c?.label ?? null)).toEqual(['Keep Source Formatting', 'Keep Text Only (Ctrl+Shift+V)', null, 'Paste as Object', 'Paste SMILES']);
   });
   it('Bullets ▾ and Numbering ▾ offer the bullet library and the number formats', () => {
-    expect(bulletOptionsHtml()).toContain('<option value="5">✓  Check Mark</option>');
-    expect(multilevelOptionsHtml()).toContain('<option value="default">1. a. i.</option><option value="outline">');
+    expect(listPickerOptions('bullets')).toContainEqual(['5', '✓  Check Mark']);
+    expect(listPickerOptions('multilevel').slice(0, 2)).toEqual([['default', '1. a. i.'], ['outline', '1. 1.1. 1.1.1.']]);
   });
 });
