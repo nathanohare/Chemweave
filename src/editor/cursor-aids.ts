@@ -104,6 +104,8 @@ export interface HintState {
   asksChain: boolean;
   /** The end of a bond is being dragged, keeping the bond's length. */
   bondEnd?: boolean;
+  /** Something is selected (Shift adds to a selection, so says nothing while there is none). */
+  selected?: boolean;
 }
 
 /**
@@ -123,7 +125,7 @@ export function modifierHints(s: HintState, m: Mods): ModHint[] {
       add('Shift', '15° steps');
       return out;
     case 'marquee':
-      add('Shift', 'add to the selection');
+      if (s.selected) add('Shift', 'add to the selection');
       return out;
     case 'pan':
       // moving the view: no key changes it, so the tool's own hints would only mislead
@@ -166,7 +168,10 @@ export function modifierHints(s: HintState, m: Mods): ModHint[] {
           if (drawing) add('Alt', '15° steps');
           break;
         case 'select':
-          if (!drawing) { add('Shift', 'add to the selection'); add('Ctrl', 'drag a copy'); }
+          if (!drawing) {
+            if (s.selected) add('Shift', 'add to the selection');
+            if (s.selected || s.over) add('Ctrl', 'drag a copy');
+          }
           break;
       }
       return out;

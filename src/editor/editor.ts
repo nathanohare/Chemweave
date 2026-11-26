@@ -8912,6 +8912,7 @@ export class Editor {
       snapping: this.smartGuides || !!this.moveSnap || this.guidesSnap(),
       asksChain: !!this.askChainLength,
       bondEnd: d?.mode === 'move' && !!d.pivot,
+      selected: this.hasSelection(),
     };
   }
 
