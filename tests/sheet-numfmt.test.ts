@@ -144,6 +144,10 @@ describe('fractions and times with tenths', () => {
     expect(show(106.999 * S, '[ss].00')).toBe('107.00');
     // (minutes after elapsed hours)
     expect(show(1.5, '[h]:mm')).toBe('36:00');
+    expect(show((25 * 3600 + 7 * 60 + 5) * S, '[h]:mm:ss')).toBe('25:07:05');
+    // (seconds after elapsed minutes, and m before s as minutes, not the month)
+    expect(show((75 * 60 + 9) * S, '[mm]:ss')).toBe('75:09');
+    expect(show((3 * 60 + 9) * S, 'm:ss')).toBe('3:09');
     // (Excel's built-in 47, as read from a file)
     expect(show(0.0005, BUILTIN_FORMATS[47])).toBe('00:43.2');
     // (a number with tenths and a unit is still a number)

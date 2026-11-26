@@ -42,6 +42,17 @@ export const BRUSH = drawn(
   '<path d="M8.5 14.5 L18.5 4.5 A1.6 1.6 0 0 1 20.8 6.8 L10.5 16.5 Z" fill="#fff" stroke="#000" stroke-width="1.2" stroke-linejoin="round"/>',
   3, 21, 'copy');
 
+/**
+ * The I-beam of Document mode and of the text tool in Slides and Design (where it may be over the
+ * grey round the slide): black, outlined in white, so it shows on any background. (The system
+ * I-beam is drawn by inverting what is under it on Windows, and a mid grey such as Dark Gray's, a
+ * page color or shading inverted is the same grey.)
+ */
+export const IBEAM = drawn(
+  '<path d="M8.5 4h7M12 4v16M8.5 20h7" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>' +
+  '<path d="M8.5 4h7M12 4v16M8.5 20h7" fill="none" stroke="#000" stroke-width="1.5" stroke-linecap="round"/>',
+  12, 12, 'text');
+
 /** What a resize or end handle shows: arrows along the way it drags. */
 export function handleCursor(which: HandleId): string {
   switch (which) {
@@ -84,7 +95,7 @@ export interface PointerState {
 }
 
 export function pointerFor(s: PointerState): string {
-  if (s.typing) return 'text';
+  if (s.typing) return s.slides ? IBEAM : 'text';
   if (s.overSelection && s.tool !== 'eraser') return s.ctrl ? 'copy' : 'grab';
   switch (s.tool) {
     case 'select':
@@ -93,7 +104,8 @@ export function pointerFor(s: PointerState): string {
       if (s.over) return s.slides ? 'move' : 'crosshair';
       return s.slides ? '' : MARQUEE;
     case 'eraser': return ERASER;
-    case 'text': return 'text';
+    // (Slides and Design: the I-beam may be over the grey round the slide, so it is outlined)
+    case 'text': return s.slides ? IBEAM : 'text';
     // the Perspective tools: a structure takes a drag (to turn it); empty space a selection box
     case 'perspective': return s.over === 'chem' ? 'grab' : s.over ? 'default' : MARQUEE;
     default: return 'crosshair';

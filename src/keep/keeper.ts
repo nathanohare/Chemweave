@@ -219,6 +219,16 @@ export class Keeper {
 
   // ---------------------------------------------------------------- AutoSave
 
+  /** Whether AutoSave is holding off a tab until it is saved by hand. */
+  isPaused(t: Tab): boolean {
+    return this.paused.has(t.id);
+  }
+
+  /** Hold AutoSave off a tab until it is saved by hand (a tab reopened after an update whose file has moved, or that was held off before). */
+  pause(t: Tab): void {
+    this.paused.add(t.id);
+  }
+
   /** Whether AutoSave is on for a tab (its own switch, or the option), whatever else stops it. */
   autoSaveWanted(t: Tab): boolean {
     return t.autoSave ?? this.prefs.autoSave;

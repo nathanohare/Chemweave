@@ -309,9 +309,8 @@ if (want('dark-mode')) {
   const c = await canvasBox(page);
   await page.mouse.move(c.x + c.width * 0.5, c.y + c.height * 0.8);
   await record(page, 'dark-mode', async () => {
-    const b = await page.locator('.quick-bar [data-qa="dark-page"]').boundingBox();
-    await glide(page, b.x + b.width / 2, b.y + b.height / 2, 25); await page.waitForTimeout(300);
-    await page.mouse.click(b.x + b.width / 2, b.y + b.height / 2);
+    // (Reading Mode is no longer on the Quick Access Toolbar as it comes: from the View menu)
+    await menu(page, 'view', 'dark-page');
     await page.waitForTimeout(1200);
     for (const name of ['Slate', 'Warm dark']) {
       await menu(page, 'view', 'dark-colours');

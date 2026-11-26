@@ -9,6 +9,7 @@
 //     program makes ("calcd for …") can't be typed into: a click goes to its field. Text typed
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
+import { IBEAM } from '../editor/cursors';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
 import { DocFile } from '../document/doc-file';
@@ -870,7 +871,7 @@ export class SiPreview {
     const s = this.spanUnder(e);
     const same = (s?.src ?? null) === (this.hovered?.src ?? null);
     this.hovered = s;
-    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s ? 'text' : '';
+    this.view.scroller.style.cursor = this.structureUnder(e) ? 'default' : s && this.editable && !editableSrc(s.src) && !isCustomSrc(s.src) ? 'pointer' : s || this.view.onPage(e.clientX, e.clientY) ? IBEAM : '';
     if (!same) { this.api.hoverSource(s && !isCustomSrc(s.src) ? s.src : null); this.view.redraw(); }
   }
 
