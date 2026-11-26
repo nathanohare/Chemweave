@@ -4,7 +4,8 @@
       "infoPlist": "Info.macos.plist",
       "files": {
         "Resources/chemsi.icns": "icons/chemsi.icns"
-      }
+      },
+      "entitlements": "Entitlements.macos.plist"
     },
     "fileAssociations": [
       {

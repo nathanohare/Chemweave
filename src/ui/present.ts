@@ -75,6 +75,8 @@ export class Presenter {
   private blank: 'black' | 'white' | 'end' | null = null;
   private typed = '';
   private keyHandler = (e: KeyboardEvent) => this.onKey(e);
+  /** What the show asked as it last ended, answered. */
+  private asked: Promise<void> = Promise.resolve();
   private resizeHandler = () => { this.size(); this.paint(); };
   private wasFullscreen = false;
   private hideCursorTimer = 0;
@@ -429,6 +431,12 @@ export class Presenter {
     if (got) this.onRehearsed({ times: r.times, recordings: got.narration === 'false' ? new Map() : r.recordings, total: r.before });
   }
 
+  /** End the show and wait for what it asks as it ends (keep the rehearsal timings, keep the ink): before quitting. */
+  async finish(): Promise<void> {
+    this.stop();
+    await this.asked;
+  }
+
   stop(): void {
     this.closeMenu();
     if (!this.root) return;
@@ -454,7 +462,7 @@ export class Presenter {
     if (!this.opts.windowed) void this.fullscreen(false);
     this.onEnd(i);
     const after = rehearsing ? this.endRehearsal() : Promise.resolve();
-    if (ink) void after.then(() => askKeepInk()).then((keep) => { if (keep) this.onKeepInk(ink); });
+    this.asked = after.then(() => (ink ? askKeepInk() : false)).then((keep) => { if (keep && ink) this.onKeepInk(ink); }).catch(() => {});
   }
 
   private async fullscreen(on: boolean): Promise<void> {
@@ -521,7 +529,7 @@ export class Presenter {
   }
 
   private onKey(e: KeyboardEvent): void {
-    if (!this.root) return;
+    if (!this.root || systemShortcut(e)) return;
     // every key belongs to the show while it runs
     e.preventDefault();
     e.stopPropagation();
@@ -773,6 +781,14 @@ export class Presenter {
 }
 
 /** At the end of a show with ink: keep it on the slides, or throw it away (as PowerPoint asks). */
+/**
+ * The app's own ⌘Q (Quit) and ⌘H (Hide) on a Mac: a show lets them through. A key the page takes
+ * (preventDefault) never reaches the Mac's app menu, so taking every key made ⌘Q do nothing.
+ */
+export function systemShortcut(e: Pick<KeyboardEvent, 'metaKey' | 'ctrlKey' | 'altKey' | 'key'>): boolean {
+  return e.metaKey && !e.ctrlKey && (e.key === 'q' || e.key === 'Q' || ((e.key === 'h' || e.key === 'H') && !e.altKey));
+}
+
 export async function askKeepInk(): Promise<boolean> {
   const got = await ask('Keep Ink?', [], { ok: 'Keep', note: 'Do you want to keep your ink annotations? Kept, they go on the slides as shapes you can move, recolor or delete (and they go to PowerPoint). Cancel discards them.' });
   return !!got;

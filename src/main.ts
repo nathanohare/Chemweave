@@ -14165,6 +14165,8 @@ if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
     // closing for an update: every tab was kept, and comes back at the next start
     if (closingForUpdate) return;
+    // (a slide show running, as on a Mac's ⌘Q: it ends first, so the question about unsaved work can be seen)
+    if (shows) await Promise.all([shows.presenter.finish(), shows.presenterView.finish()]);
     finishTab();
     // (an SI project saves as it is typed in: what was typed last is written before the window goes)
     await siSavedAll();
