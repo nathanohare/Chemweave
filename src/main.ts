@@ -13331,6 +13331,7 @@ async function generalPreferences(): Promise<void> {
     { name: 'xlsxStructures', label: 'Save structures in Excel files as', value: officeStructures.xlsx, options: structuresAsOptions('xlsx'), help: STRUCTURES_AS_HELP },
     { name: 'reviewer', label: 'User name for tracked changes', value: reviewAuthor() },
     { name: 'startView', label: 'Show the Start screen when Chemweave opens', type: 'checkbox', value: String(startView) },
+    ...(isTauri() ? [] : [{ name: 'welcome', label: 'Show the welcome card when Chemweave opens', type: 'checkbox' as const, value: String(!welcomeOff) }]),
   ], { ok: 'Save', actions: {
     label: 'Settings file',
     help: 'One file holds all settings: shortcuts, toolboxes, preferences, templates, abbreviations, drawing styles, palettes, slide themes and highlight styles. Export to back up or move to another computer; Import to load one. Recent files aren\'t included.',
@@ -13347,6 +13348,7 @@ async function generalPreferences(): Promise<void> {
   straightenLinear.on = r.straightenLinear === 'true';
   setReviewAuthor(r.reviewer ?? '');
   startView = r.startView === 'true';
+  if (!isTauri()) welcomeOff = r.welcome !== 'true';
   storeSettings();
 }
 
@@ -13706,6 +13708,7 @@ function currentSettings(): Settings {
     sheetSmilesStructures: smilesPrefs.draw,
     page: defaultPage,
     welcomed,
+    welcomeOff,
     groupTips: labelTips.enabled,
     toolTips: toolTip.enabled,
     touchMode: touchMode(),
@@ -13942,6 +13945,7 @@ function applySettings(s: Settings): void {
   void setUiScale(s.uiScale);
   defaultPage = s.page;
   welcomed = s.welcomed;
+  welcomeOff = s.welcomeOff;
   // the drawing open at start (empty and never saved) takes the default page
   if (!doc.page && !doc.source && !doc.atoms.size && !deckNow()) doc.page = defaultPage && { ...defaultPage };
   placeTextBar(s.textBar);
@@ -17202,7 +17206,7 @@ const SETTINGS_PAGES: SettingsPage[] = [
 // Apply on a Settings page uses its settings and keeps them. Pages about the open file (Drawing
 // Style) apply to that file; their Set as Default is for new files too.
 /** Settings that change by themselves (recent files, pane sizes): never part of a page's changes. */
-const RUNNING_SETTINGS = ['recentFiles', 'recentSymbols', 'kbColumns', 'lastVersion', 'welcomed', 'skipVersion', 'splitWidth', 'slidePaneWidth', 'notesHeight', 'fileTypesOffered', 'wordObjectsOffered'];
+const RUNNING_SETTINGS = ['recentFiles', 'recentSymbols', 'kbColumns', 'lastVersion', 'welcomed', 'welcomeOff', 'skipVersion', 'splitWidth', 'slidePaneWidth', 'notesHeight', 'fileTypesOffered', 'wordObjectsOffered'];
 const settingsHost: SettingsHost = {
   snapshot: () => {
     const s = JSON.parse(JSON.stringify(currentSettings())) as Record<string, unknown>;
@@ -17545,8 +17549,10 @@ let defaultPage: Settings['page'] = { name: 'letter', w: 540, h: 720, grow: true
 
 // ---------------------------------------------------------------- the welcome card
 
-/** The welcome card has been closed for good. */
+/** The welcome card has been closed for good (the desktop app shows it once). */
 let welcomed = false;
+/** In a browser the card shows at each start, until "Don't show this again" is ticked on it. */
+let welcomeOff = false;
 const welcomeCard = $('#welcome');
 // its key names are written for Windows: a Mac shows ⌥ and ⌘, as the menus and hints do
 if (isMac) for (const k of welcomeCard.querySelectorAll('kbd')) k.textContent = k.textContent!.replace(/^Alt$/, '⌥').replace(/^Ctrl$/, '⌘');
@@ -17599,23 +17605,34 @@ function showStartView(): void {
   welcomeWatch = () => { if (card.hidden) welcomeWatch = null; else if (doc.version !== seen || ws.active !== tab) off(); };
 }
 
-/** Show the welcome card on a first, empty drawing; it goes when closed or when drawing starts. */
+/**
+ * Show the welcome card on an empty drawing as Chemweave opens; it goes when closed, when drawing starts or
+ * when another tab is picked. The desktop app shows it once; a browser shows it at every start until
+ * "Don't show this again" is ticked on it (a browser has no installer or first-run step to explain the app).
+ */
 function showWelcome(): void {
-  if (welcomed) { showStartView(); return; }
-  if (doc.atoms.size || doc.captions.size || doc.shapes.size || deckNow() || ws.active.mode !== 'drawing') return;
+  const web = !isTauri();
+  if (web ? welcomeOff : welcomed) { showStartView(); return; }
+  if (doc.atoms.size || doc.captions.size || doc.shapes.size || doc.arrows.size || deckNow() || ws.active.mode !== 'drawing' || ws.tabs.length > 1) return;
+  const never = welcomeCard.querySelector<HTMLInputElement>('.welcome-never input')!;
+  welcomeCard.querySelector<HTMLElement>('.welcome-never')!.hidden = !web;
+  never.checked = false;
   welcomeCard.hidden = false;
   const seen = doc.version;
+  const tab = ws.active;
   const off = () => {
     welcomeWatch = null;
     if (welcomeCard.hidden) return;
     welcomeCard.hidden = true;
-    welcomed = true;
+    if (!web) welcomed = true;
+    else if (never.checked) welcomeOff = true;
+    else return;
     storeSettings();
   };
   $('#welcome-close').addEventListener('click', () => { off(); $('#overlay').focus({ preventScroll: true }); }, { once: true });
   welcomeCard.querySelector('[data-cmd="user-guide"]')?.addEventListener('click', (e) => { e.preventDefault(); off(); command('user-guide'); }, { once: true });
-  // drawing anything puts it away (looked for on each change, not on every frame)
-  welcomeWatch = () => { if (welcomeCard.hidden) welcomeWatch = null; else if (doc.version !== seen) off(); };
+  // drawing anything, or going to another tab, puts it away (looked for on each change, not on every frame)
+  welcomeWatch = () => { if (welcomeCard.hidden) welcomeWatch = null; else if (doc.version !== seen || ws.active !== tab) off(); };
 }
 
 /**
