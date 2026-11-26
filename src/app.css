@@ -65,14 +65,15 @@
 :root[data-motion='off'] { --m-short: 0ms; --m-toggle: 0ms; --m-std: 0ms; --m-large: 0ms; --ease-hi: steps(1, end); }
 /* the arrivals (translate and scale, so an element's own transform, used to place it, is kept) */
 @keyframes m-fade { from { opacity: 0; } }
-@keyframes m-pop { from { opacity: 0; scale: 0.97; } }
 @keyframes m-drop { from { opacity: 0; translate: 0 -4px; } }
 @keyframes m-from-left { from { opacity: 0; translate: -24px 0; } }
-/* windows: fade and grow from 97% as they open; a quick fade as they close (engines that can keep a
-   closing window in the top layer: others close at once) */
-dialog[open] { animation: m-pop var(--m-std) var(--ease-out); }
+/* windows fade in as they open, and out quickly as they close (engines that can keep a closing window
+   in the top layer: others close at once). Only a fade: a window holds the window buttons (fixed, over
+   the title bar), and growing it would carry them along for a moment (S99). A window inside the
+   Settings page fades with that page, not again on its own */
+dialog[open] { animation: m-fade var(--m-std) var(--ease-out); }
 dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
-.sw-pane dialog[open] { animation-name: m-fade; }
+.sw-pane dialog[open] { animation: none; }
 @supports (overlay: auto) {
   dialog { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
   dialog:not([open]) { opacity: 0; pointer-events: none; }
@@ -86,9 +87,12 @@ dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
 .tool-tip:not([hidden]), .info-pop, .tw-zoom { animation: m-fade var(--m-std) var(--ease-out); }
 /* a ribbon tab's contents fade in (a Settings page, a template category's cards, a folding section's
    contents and a Side Panel section unfolded fade in from code: src/ui/motion.ts enter()) */
-.ribbon > .rb-panel:not([hidden]) { animation: m-fade var(--m-std) var(--ease-out); }
+.ribbon > .rb-panel:not([hidden]) > :not(.cr-body-end) { animation: m-fade var(--m-std) var(--ease-out); }
 /* the File tab's page slides in from the left, over the work */
 #backstage:not([hidden]) { animation: m-from-left var(--m-large) var(--ease-out); }
+#backstage .menu { animation: none; }
+/* a whole new look (another mode, its colors, another theme) shows at once: no control fades its color, and the ribbon's arrival is finished at once (motion.ts holdTransitions, S99) */
+:root[data-m-still] *, :root[data-m-still] *::before, :root[data-m-still] *::after { transition: none !important; }
 /* buttons change color with a quick fade */
 button { transition: background-color var(--m-short), border-color var(--m-short), color var(--m-short); }
 /* the selected ribbon tab's shape glides to the tab clicked (src/ui/ribbon-glide.ts) */
@@ -1872,7 +1876,8 @@ body.doc-reading header, body.doc-reading #tabs, body.doc-reading #doc-ribbon, b
 body.doc-reading #status, body.doc-reading #doc-statusbar, body.doc-reading .dock { display: none !important; }
 body.doc-reading #doc-pane.nav-open > :not(#doc-nav) { margin-left: 0; }
 .doc-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
-.doc-scroll { position: absolute; inset: 0; overflow: auto; outline: none; cursor: text; }
+/* (the pointer: an outlined I-beam over the pages only, set as it moves, DocMode.pointerMove) */
+.doc-scroll { position: absolute; inset: 0; overflow: auto; outline: none; cursor: default; }
 .doc-space { pointer-events: none; }
 /* the document's page count, views and zoom: on the right of the window's one status bar */
 #doc-statusbar { flex: none; display: flex; align-items: center; gap: 4px; font-size: var(--fs-sm); color: var(--muted); }
@@ -1914,7 +1919,7 @@ body.ribbon-collapsed .ribbon > .rb-panel { display: none; }
 body.ribbon-collapsed .ribbon > .rb-tabs [role='tab'][aria-selected='true'] { background: transparent; color: #fff; text-decoration: underline; text-underline-offset: 4px; }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-panel:not([hidden]) { display: flex; position: absolute; top: 100%; left: 0; right: 0; z-index: 45; background: var(--panel); border-bottom: 1px solid var(--line); box-shadow: 0 6px 16px rgb(0 0 0 / 0.2); }
 body.ribbon-collapsed .ribbon.rb-peek > .rb-tabs [role='tab'][aria-selected='true'] { background: var(--panel); color: var(--accent); text-decoration: none; }
-.doc-ribbon .rb-col > button { align-self: flex-start; }
+.doc-ribbon .rb-col > button, .si-ribbon .rb-col > button { align-self: flex-start; }
 .ribbon input.rb-text { font: var(--fs-sm) var(--ui-font); padding: 2px 5px; border: 1px solid var(--line); border-radius: var(--r-control); background: var(--panel); color: var(--text); }
 .ribbon input.rb-font { width: 150px; }
 .ribbon input.rb-num { width: 48px; }
@@ -2997,6 +3002,9 @@ dialog.cf-manage { width: min(92vw, 640px); }
 .whats-new-list li { margin: 1px 0; }
 .whats-new-kind { margin-top: 4px; color: var(--muted, var(--text)); font-size: var(--fs-xs, 11px); font-weight: 600; text-transform: uppercase; letter-spacing: 0.03em; }
 .update-progress { font-variant-numeric: tabular-nums; }
+.update-restart { max-width: 420px; padding: 12px 16px; }
+.update-restart p { margin: 0 0 8px; }
+.update-restart p:last-child { margin: 0; }
 .desktop-only[hidden] { display: none !important; }
 
 /* Search Commands (Alt+Q) */
@@ -5061,6 +5069,11 @@ body.si-mode.floating-drawing #canvas-host { display: block; }
 body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 #si-pane { grid-area: host; position: relative; display: grid; grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) var(--si-live-w, 400px); min-width: 0; min-height: 0; background: var(--surround); }
 #si-pane.si-live-off { grid-template-columns: var(--si-tree-w, 260px) minmax(0, 1fr) 22px; }
+/* View ▸ Navigation Pane off: the list of sections and compounds hidden, the page and the preview wider */
+#si-pane.si-tree-off { grid-template-columns: 0 minmax(0, 1fr) var(--si-live-w, 400px); }
+#si-pane.si-tree-off.si-live-off { grid-template-columns: 0 minmax(0, 1fr) 22px; }
+#si-pane.si-tree-off > .si-tree { visibility: hidden; overflow: hidden; padding: 0; border: 0; }
+#si-pane.si-tree-off > .si-tree-grip { display: none; }
 /* the border between the tree and the page: drag it to change the tree's width */
 .si-tree-grip { position: absolute; top: 0; bottom: 0; left: calc(var(--si-tree-w, 260px) - 3px); width: 6px; cursor: col-resize; z-index: 3; }
 .si-tree-grip:hover, .si-tree-grip.on { background: linear-gradient(to right, transparent 2px, var(--accent) 2px, var(--accent) 4px, transparent 4px); }
@@ -5129,9 +5142,9 @@ body.floating-drawing #si-pane { opacity: 0.55; pointer-events: none; }
 .si-st.warn { color: var(--warn); }
 .si-st.flag { color: var(--slow); }
 
-.si-page { overflow: auto; padding: 10px 12px 24px; }
+.si-page { overflow: auto; padding: 5px 6px 12px; }
 .si-sheet { margin: 0 auto; display: flex; flex-direction: column; gap: 8px; }
-.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; }
+.si-card { background: var(--panel); border: 1px solid var(--line); border-radius: var(--r-control); padding: 8px 10px; box-shadow: 0 1px 4px rgba(0, 0, 0, 0.18); }
 .si-title { margin: 0 0 6px; font-size: var(--fs-lg, 15px); font-weight: 600; }
 .si-sub { margin: 0 0 6px; font-size: var(--fs-sm); font-weight: 600; text-transform: none; }
 .si-note { margin: 0; font-size: var(--fs-sm); }
@@ -6044,10 +6057,18 @@ body.own-title-bar .rb-tabs > .win-controls { position: static; height: auto; al
 #backstage > .bs-strip { background: var(--chrome); }
 /* the one row in a narrow window: the open files' tabs wrap onto a line of their own under the
    ribbon's tabs, Quick Access and Search, and the rest wraps as needed, so nothing runs off the window */
-@media (max-width: 1000px) {
-  body.one-row .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
-  body.one-row .rb-tabs > #tabs { order: 99; flex: 1 0 100%; height: 28px; margin: 0 0 2px; }
-}
+/* (main.ts fitOneRow decides, for any window: the web app's and the desktop app's, with its window buttons) */
+/* first line: File, the ribbon's tabs and (desktop) the window's buttons at the right; second line:
+   Quick Access, the open files, Search and the rest (a break, the row's ::before, between them) */
+body.one-row.row-wrap .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > * { order: 60; }
+body.one-row.row-wrap .ribbon > .rb-tabs > :is(.rb-file, .rb-tablist) { order: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > .win-controls { order: 40; margin-left: auto; }
+body.one-row.row-wrap .ribbon > .rb-tabs::before { content: ''; order: 45; flex: 0 0 100%; height: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #quick-bar { order: 50; margin-left: 0; border-left: 0; padding-left: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #tabs { order: 55; flex: 1 1 0; min-width: 120px; height: 28px; margin: 0 4px 2px; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #btn-search { order: 56; }
+.rb-tabs > .win-controls, .rb-tabs > .rb-file { flex-shrink: 0; }
 /* touch: the row's buttons as big as the title row's (36 px) */
 html.touch-ui .rb-tabs > #quick-bar > button, html.touch-ui .rb-tabs > #btn-search { height: 36px; min-width: 36px; }
 html.touch-ui .rb-tabs .tab { height: 36px; }
@@ -6055,3 +6076,24 @@ html.touch-ui .rb-tabs .tab .tab-close, html.touch-ui .rb-tabs .tab-ctl { width:
 html.touch-ui body.one-row .rb-tabs > #tabs { height: auto; }
 /* Mode Colors set to color the window: the row is the mode's color, so its items are white on it */
 body.mode-window .rb-tabs > :is(#quick-bar, #tabs, #btn-search) { --text: #fff; }
+/* the menu bar with the file tabs in it, too short for them (main.ts fitOneRow): they go onto a line of their own under the menus */
+body.header-wrap header { flex-wrap: wrap; row-gap: 0; }
+body.header-wrap header > #tabs { order: 99; flex: 1 0 100%; height: 28px; }
+/* the row short of room (main.ts fitOneRow): its words go first, and the open file's name shortens */
+body.row-tight :is(header, .rb-tabs) > #btn-search > :is(span, kbd) { display: none; }
+body.row-tight :is(header, .rb-tabs) > #btn-search { padding: 0 6px; }
+body.row-tight .rb-tabs .cr-calc-name { display: none; }
+body.row-tight #tabs.tabs-narrow .tab.active .tab-name { max-width: 64px; }
+/* (and the strip's ‹ › go: the ▾ lists every open file, and the strip still scrolls) */
+body.row-tight #tabs > :is(.tab-left, .tab-right) { display: none !important; }
+/* the open file's tab is never wider than the strip it is in: its name shortens instead (so it is never cut off or under the ▾) */
+#tabs .tab.active { max-width: 100%; }
+.rb-tabs > .win-controls { min-height: 28px; }
+/* a narrow window: the ribbon's tabs go onto a second line rather than off the window (with the menu
+   bar; in the one-row look fitOneRow does it), and the status bar drops its slider, hint and Go to
+   Selection, then wraps what is left, so its buttons stay in reach */
+body:not(.one-row) .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+@media (max-width: 600px) {
+  footer { flex-wrap: wrap; row-gap: 0; justify-content: flex-end; }
+  footer > #hint, footer #slide-zoom-range, footer > #go-buttons { display: none; }
+}

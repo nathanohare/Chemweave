@@ -66,7 +66,7 @@ Three file types are offered:
 
 A few seconds after it starts, the desktop app checks whether a newer version has been released. If there is one, a small message says which version is ready and what changed, and offers:
 
-- **Install and Restart**: downloads it, installs it and restarts the app. If any tab has unsaved changes, you are warned first so you can cancel and save.
+- **Install and Restart**: downloads it, installs it and restarts the app. Every tab you had open comes back as it was: the same tabs in the same order, the one showing, Split Screen, zoom and the slide you were on, and SI projects. Tabs with unsaved changes (and new ones never saved) come back unsaved, with their changes, so nothing needs saving first; your files on disk are not changed.
 - **Later**: closes the message for now.
 - **Skip This Version**: stops asking about this one version.
 
@@ -95,7 +95,7 @@ In the web version the menus are in the **File** tab at the start of the ribbon,
 
 **Help** has this **User Guide** built in (it works without an internet connection), the keyboard shortcuts, and short notes on each part of Chemweave. **F1** (**Help ▸ Help on This Tool or Mode**) opens the guide at the part about the tool or kind of tab in use: with the ring tool, for example, it opens at Rings.
 
-To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar), with buttons for **Save**, **Undo**, **Redo**, **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) and the **eye** (Reading Mode). In the web version it sits just after the ribbon's tabs (after **View**) and starts with only **Save**, **Undo** and **Redo**. Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
+To the right of the menus is the **quick bar** (like Office's Quick Access Toolbar). It starts with **Save**, **Undo** and **Redo**, the same in every kind of tab; in the web version it sits just after the ribbon's tabs (after **View**). Other commands can be added, such as **Fit** (fit the whole drawing in the window), the **padlock** (locks or unlocks all the toolboxes at once so they can be moved; see [Canvas](drawing.md#toolboxes)) or **Reading Mode**. Undo and Redo are grayed out when there is nothing to take back, and resting the mouse on one names the step it would undo (**Undo Add Ring**). To choose its buttons:
 
 - click the **▾** at its end and check the ones you want (Print, Copy, Paste, Focus View and more);
 - right-click any menu command, or a ribbon button that runs one, and pick **Add to Quick Access Toolbar**; right-click a quick button to remove it;

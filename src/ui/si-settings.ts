@@ -1,4 +1,4 @@
-// An SI project's settings (Home ▸ Project Settings, File ▸ Project Settings): a window like
+// An SI project's settings (Project ▸ Project Settings, File ▸ Project Settings): a window like
 // Settings, with a page for each part. Everything is kept in the project's project.json as SI
 // Assistant keeps it (journal style, HRMS tolerance, page header and footer, labels, the scheme
 // defaults); what SI Assistant has no setting for (heading formats beyond its own, a drawing style

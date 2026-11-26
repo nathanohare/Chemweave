@@ -115,14 +115,24 @@ export function worthOffering(version: string, skipped: string | null): boolean 
 }
 
 /**
+ * Text without HTML comments. Removing one can join the pieces of another ("<!<!-- -->-- -->"), so
+ * this repeats until nothing changes, and a comment left unclosed runs to the end.
+ */
+export function withoutComments(text: string): string {
+  let s = text;
+  for (let prev = ''; prev !== s; ) { prev = s; s = s.replace(/<!--[\s\S]*?-->/g, ''); }
+  const open = s.indexOf('<!--');
+  return open < 0 ? s : s.slice(0, open);
+}
+
+/**
  * A release's notes as plain lines: the Markdown the release workflow writes from changes/ ("### Fixed",
  * "- Undo works. Fixes #12. (#40)") with links made plain text, and without what older releases
  * carried from the merge commit (an empty pull request template, GitHub's "Merge pull request" line,
  * the session and co-author lines).
  */
 export function cleanNotes(body: string): string {
-  return body
-    .replace(/<!--[\s\S]*?-->/g, '')
+  return withoutComments(body)
     .split(/\r?\n## Checklist\b/)[0]
     .split(/\r?\n/)
     .map((l) => l.trim().replace(/\[([^\]]+)\]\([^)]*\)/g, '$1').replace(/\*\*([^*]+)\*\*/g, '$1'))

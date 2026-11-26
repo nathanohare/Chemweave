@@ -1,13 +1,17 @@
 name: CodeQL
 
-# Code scanning, only on pushes to main (and once a week, plus by hand).
-# Pull requests and pushes to staging or feature branches skip it.
+# Code scanning on pushes to main, on the staging-to-main pull request (so
+# alerts show before the merge; Nate, 2026-11-26), once a week and by hand.
+# Pull requests into staging, other pull requests into main, and pushes to
+# staging or feature branches skip it (Nate, 2026-11-25).
 # This replaces GitHub's CodeQL "default setup", which also ran on every
 # pull request into main. Default setup must be off (Settings > Code security
 # > CodeQL analysis > Switch to advanced) or GitHub rejects these results.
 
 on:
   push:
+    branches: [main]
+  pull_request:
     branches: [main]
   schedule:
     - cron: '17 6 * * 1' # Mondays 06:17 UTC
@@ -23,6 +27,8 @@ concurrency:
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})
+    # (a pull request into main is scanned only when it comes from staging)
+    if: github.event_name != 'pull_request' || github.head_ref == 'staging'
     runs-on: ubuntu-latest
     permissions:
       security-events: write

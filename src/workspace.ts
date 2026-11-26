@@ -317,6 +317,19 @@ export class Workspace {
     this.hooks.changed();
   }
 
+  /** Open files without each going on File ▸ Recent (reopening the tabs that were open before an update). */
+  async quietly<T>(f: () => Promise<T>): Promise<T> {
+    const was = this.quiet;
+    this.quiet = true;
+    try { return await f(); } finally { this.quiet = was; }
+  }
+
+  /** Show the tab showing again as if coming back to it (its kept zoom and scroll), after the restart reopened it. */
+  reshow(): void {
+    this.hooks.enter(this.active, false);
+    this.hooks.changed();
+  }
+
   /** The tab after (or before) the one showing, round the end. */
   cycle(step: 1 | -1): void {
     if (this.tabs.length < 2) return;

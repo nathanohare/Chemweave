@@ -169,7 +169,7 @@ export class SiManuscriptPage {
       const name = this.state.file;
       if (!name || !this.names.includes(name)) { this.host.flash('Select a file in the list first.'); return; }
       await this.host.act(`Remove Manuscript File ${name}`, () => removeManuscriptFile(this.p, name));
-      this.host.flash(`Moved ${name} to the Trash (Home ▸ Trash, or Undo, puts it back).`);
+      this.host.flash(`Moved ${name} to the Trash (Project ▸ Trash, or Undo, puts it back).`);
       this.state.file = '';
       await this.check(false);
     } else if (cmd === 'ms-check') {

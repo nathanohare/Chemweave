@@ -3,7 +3,7 @@
 import { describe, it, expect } from 'vitest';
 import { readFileSync, readdirSync } from 'node:fs';
 // @ts-expect-error a plain JavaScript script
-import { parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, isRollUp, TYPES } from '../scripts/changelog.mjs';
+import { withoutComments, parseChangeFile, renderEntries, needsEntry, changeFiles, prOf, sortTags, renderChangelog, issuesIn, isRollUp, TYPES } from '../scripts/changelog.mjs';
 
 describe('change files', () => {
   it('reads one change per line, with its type', () => {
@@ -145,5 +145,23 @@ describe('versions and notes from a real history (a throwaway git repository)', 
     const notes = require('node:fs').readFileSync(out, 'utf8') as string;
     expect(notes).toContain('a third change not released yet. (#14)');
     expect(notes).not.toContain('second change');
+  });
+});
+
+describe('withoutComments', () => {
+  it('removes a comment that removing another one puts together', () => {
+    expect(withoutComments('a<!<!-- x -->-- y -->b')).toBe('ab');
+    expect(withoutComments('a<!-<!-- -->- y -->b')).toBe('ab');
+  });
+  it('drops an unclosed comment to the end, as HTML does', () => {
+    expect(withoutComments('Fixed: one.\n<!-- note')).toBe('Fixed: one.\n');
+  });
+  it('with spaces, also the white space after each comment', () => {
+    expect(withoutComments('<!-- a -->\n\nText', true)).toBe('Text');
+  });
+  it('keeps no comment in a change file made of nested pieces', () => {
+    const { entries, errors } = parseChangeFile('<!<!-- -->-- Fixed: hidden. -->\nFixed: Canvas: undo removes a pasted object in one step.');
+    expect(errors).toEqual([]);
+    expect(entries.map((e) => e.text)).toEqual(['Canvas: undo removes a pasted object in one step.']);
   });
 });

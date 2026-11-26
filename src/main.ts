@@ -5,7 +5,7 @@
 // every modal window keeps the title bar usable and opens on the screen, before any window opens
 import './ui/modal-guard';
 // the Animations setting on the page before anything shows (Off on the web until settings load)
-import { chosenMotion, enter as motionEnter, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
+import { chosenMotion, enter as motionEnter, holdTransitions, isMotionLevel, motionLevel, scrollBehavior as motionScroll, scrollToItem as motionScrollTo, setMotion } from './ui/motion';
 import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
@@ -156,7 +156,7 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { QuickBar } from './ui/quick-bar';
 import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
@@ -247,7 +247,7 @@ import { guideSpot } from './ui/guide-spot';
 import type { GuideWindow, GuideHeading } from './ui/guide-window';
 import { SettingsWindow, type SettingsHost, type SettingsPage } from './ui/settings-window';
 import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page';
-import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
+import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows, foldWhen } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
 import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
@@ -356,6 +356,7 @@ import { canReadStructures, importPictureFiles, importPdfDrawings, MOST_PAGES, p
 import { checkRead, placeRead } from './recognise/check';
 import { Diagnostics, catchErrors, errorReport, formatEntry, stamp, type LogEntry, type UnexpectedClose } from './diagnostics';
 import { keepStore, getText, putText } from './keep/store';
+import type { RestartHooks } from './keep/restart';
 import { Library, storePlace, folderPlace, readPlaceChoice, writePlaceChoice, LIBRARY_FILE } from './library/library-store';
 import { compoundBySmiles, newId, noteMentions, type LibCompound, type LibSpectrum } from './library/library';
 import { fetchPubmed, type ZoteroLink } from './library/online';
@@ -426,7 +427,11 @@ const editor = new Editor(doc, renderer, host);
  * Colour the window for a mode; in Canvas mode the selection, hover and drawing marks and the box
  * round text being typed take the mode's teal too, so the accent is the same everywhere (UI rule 5).
  */
+let lastLook = '';
 function applyModeColours(mode: Parameters<typeof applyModeColoursOnly>[0], c: ModeColours): void {
+  // (a new look changes at once, with no control fading its color: S99)
+  const look = mode + JSON.stringify(c);
+  if (look !== lastLook) { if (lastLook) holdTransitions(); lastLook = look; }
   applyModeColoursOnly(mode, c);
   const tint = mode === 'drawing' ? modeColour('drawing', c) : null;
   setMarkTint(tint);
@@ -4837,8 +4842,9 @@ function finishTab(): void {
 
 /** Set the window up for a tab that has just come to the front. */
 function enterTab(tab: Tab, opened: boolean): void {
-  // another kind of file (mode) fades in; another file of the same kind shows at once, for comparing (Motion Choices)
-  if (enteredMode !== null && enteredMode !== tab.mode) motionEnter($('#work'), 'fade', 'large');
+  // another file, of the same kind or another, shows at once: fading a new mode's page in over the
+  // old one's would pulse the window (S99), so its colors and ribbon change at once too
+  if (enteredMode !== null && enteredMode !== tab.mode) holdTransitions();
   enteredMode = tab.mode;
   // a new or opened drawing starts on Select; going back to a tab keeps the tool last used
   if (opened && tab.mode === 'drawing') modeTool.drawing = START_TOOL.drawing;
@@ -6393,7 +6399,21 @@ tabAdd.addEventListener('click', () => {
   showContextMenu(x, y, NEW_ITEMS.map((n) => ({ cmd: n.cmd, label: n.label, title: n.blurb })), { run: (cmd) => void command(cmd), key: commandKey });
 });
 tabsEl.replaceChildren(tabLeft, tabStrip, tabRight, tabList, tabAdd);
-new ResizeObserver(() => fitTabs()).observe(tabsEl);
+const FIT_CLASSES = ['row-tight', 'row-wrap', 'header-wrap'];
+
+/** Fit the tabs again at the next frame, once however many things changed (the window, a ribbon's tabs, the interface size…). */
+let fitQueued = 0;
+function fitSoon(): void {
+  if (fitQueued) return;
+  fitQueued = requestAnimationFrame(() => { fitQueued = 0; fitTabs(); });
+}
+/** What changing size means the tabs must be fitted again: the file tabs, the menu bar, and each ribbon's row of tabs and its tabs. */
+const fitWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fitSoon()) : null;
+function watchFit(el: Element | null): void { if (el) fitWatch?.observe(el); }
+// (the window narrower or wider, the menu bar's or a ribbon's tabs wider or narrower, the fonts loaded: fitted again)
+watchFit(tabsEl);
+watchFit(document.querySelector('header'));
+void document.fonts?.ready.then(() => fitSoon());
 
 /** The file tabs sit in the menu bar beside the menus (to start with), or on a row of their own (View > Window and Colours). */
 let tabsInMenu = true;
@@ -6427,10 +6447,68 @@ function eightChars(): number {
  * one keeps its name.
  */
 function fitTabs(): void {
+  fitOneRow();
   const ctl = [tabList, tabAdd].reduce((w, b) => w + b.offsetWidth + 2, 0);
   const room = tabsEl.clientWidth - ctl - 12;
   tabsEl.classList.toggle('tabs-narrow', room > 0 && room / Math.max(1, ws.tabs.length) - TAB_CHROME < eightChars());
+  // the open file's tab stays in view in the strip, however narrow it has got
+  const act = tabStrip.querySelector<HTMLElement>('.active');
+  if (act && tabStrip.clientWidth) {
+    const a = act.getBoundingClientRect(), sr = tabStrip.getBoundingClientRect();
+    const l = a.left - sr.left + tabStrip.scrollLeft, r = l + a.width;
+    if (l < tabStrip.scrollLeft) tabStrip.scrollLeft = l;
+    else if (r > tabStrip.scrollLeft + tabStrip.clientWidth) tabStrip.scrollLeft = r - tabStrip.clientWidth;
+  }
   showTabArrows();
+}
+
+/**
+ * The open files' tabs, in the one row (menus in the File tab) or in the menu bar: they keep at least
+ * the list of them (▾), New Tab (+) and the open file's tab, and nothing in the row runs off the
+ * window (the window's buttons in the desktop app, Search…). Short of room, the row's words go
+ * first (row-tight); then the file tabs take a line of their own (row-wrap, header-wrap). Nate,
+ * 2026-11-26: essential controls compact, but are never covered or pushed off the window.
+ * Measured each time with none of those classes on, and without anything that depends on what the
+ * tabs show now (narrow or not, the ‹ › or not), so the same window always gets the same answer
+ * and it settles at once.
+ */
+function fitOneRow(): void {
+  const body = document.body;
+  const at = tabsEl.parentElement;
+  const oneRow = body.classList.contains('one-row');
+  // the row to fit: the one the file tabs are in (the ribbon's, or the menu bar), or with the file tabs
+  // on a row of their own, the row Quick Access, Search and the window buttons are in (the ribbon's
+  // row of tabs, or the menu bar)
+  const withTabs = !!at && ((oneRow && at.matches('.rb-tabs')) || at.matches('header'));
+  // (the header too while no ribbon's row shows: in Focus View, or before the ribbon is made, Quick
+  // Access and Search are back there)
+  const ribbonRow = oneRow && !withTabs ? document.querySelector<HTMLElement>('.ribbon:not([hidden]) > .rb-tabs') : null;
+  const row = withTabs ? at : ribbonRow?.offsetParent ? ribbonRow : document.querySelector<HTMLElement>('header');
+  const cls = row?.matches('header') ? 'header-wrap' : 'row-wrap';
+  watchFit(row);
+  // (measured with none of the classes on; a wide window, which has none, is not touched at all)
+  const had = FIT_CLASSES.filter((c) => body.classList.contains(c));
+  if (had.length) body.classList.remove(...had);
+  const want: string[] = [];
+  if (row?.offsetParent) {
+    // (the room for the tabs themselves: the ‹ ›, the open file's icon, a few letters of its name and its ×)
+    const room = () => tabsEl.getBoundingClientRect().width - tabList.offsetWidth - tabAdd.offsetWidth;
+    // (the row's end: the window's, or short of the room the menu bar keeps for the window buttons,
+    // which sit over its end)
+    const end = Math.min(innerWidth, row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight));
+    const short = () => (withTabs && room() < 104) || row.scrollWidth > row.clientWidth + 1
+      || [...row.children].some((c) => { const cs = getComputedStyle(c); return cs.position !== 'absolute' && c.getBoundingClientRect().right + (parseFloat(cs.marginRight) || 0) > end + 0.5; });
+    if (short()) {
+      want.push('row-tight');
+      body.classList.add('row-tight');
+      if (short()) want.push(cls);
+      body.classList.remove('row-tight');
+    }
+  }
+  if (want.length) body.classList.add(...want);
+  // (the rows above the drawing changed height, which moves it without always resizing it: the
+  // floating toolboxes keep their places in it)
+  if (want.join() !== had.join()) document.dispatchEvent(new Event('chrome-moved'));
 }
 
 function showTabArrows(): void {
@@ -9909,7 +9987,7 @@ async function saveSiFile(tab: Tab, how: SaveHow, fresh = false, to?: string): P
   return got === 'save-as' ? saveSiFileAs(tab) : got;
 }
 
-/** Home ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
+/** Project ▸ Reload Project for a project file: its tab closed and the file opened again (unsaved changes dropped, once agreed). */
 async function reloadSiFile(p: SiProjectT): Promise<void> {
   const tab = siTabOf(p);
   const st = siFileStates.get(p);
@@ -11243,7 +11321,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'dev-tools': () => { showDevTools(!devTools); storeSettings(); },
   'show-stereo': () => previewStereo(!renderer.previewStereo),
   'scroll-bars': () => { showScrollBars(!scrollbars.shown); storeSettings(); },
-  'collapse-ribbon': () => { ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
+  'collapse-ribbon': () => { if (ribbonCollapsed() && innerHeight < TOO_SHORT) { tellTooShort(); return; } ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
@@ -11826,6 +11904,9 @@ function placeOneRow(): void {
   } else {
     // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
     const tablist = row.querySelector(':scope > .rb-tablist')!;
+    // (its ribbon's tabs coming and going, an object's own among them, fit the row again)
+    watchFit(row);
+    watchFit(tablist);
     if (qa.previousElementSibling !== tablist) tablist.after(qa);
     if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
   }
@@ -12834,14 +12915,83 @@ async function openWorkspace(): Promise<void> {
 let updateCheck = true;
 let updateChannel: UpdateChannel = 'latest';
 let skipVersion: string | null = null;
+/** What the restart after an update needs from the app: the view on screen, SI projects' files and working copies, AutoSave and recovery copies. */
+const restartHooks: RestartHooks = {
+  liveView: () => ({ view: { ...renderer.view }, fitted: editor.stillFitted }),
+  siOf: (t) => {
+    const st = t.si ? siFileStates.get(t.si) : undefined;
+    if (!t.si || !st) return null;
+    // (a working copy with unsaved changes stays as the app closes: it reopens from there, with them)
+    return { file: t.si.file, stamp: st.stamp, title: t.si.title, ...(st.counter.dirty && !st.discarded ? { working: { working: st.working.working, root: st.working.root } } : {}) };
+  },
+  openSi: async (si) => {
+    // (a working copy gone meanwhile, as when a save finished as the app closed: the file has it all)
+    const working = si.working && await invoke<boolean>('path_exists', { path: si.working.root }).catch(() => true) ? si.working : null;
+    const file = si.file && !ws.tabs.some((t) => t.si?.file && samePath(t.si.file, si.file!)) ? si.file : null;
+    const p = working
+      ? await openSiWorking(working, file, { unsaved: true, recovered: true, stamp: si.stamp, suggest: si.file ? baseName(si.file) : undefined })
+      : si.file ? await openSiProject(false, si.file) : null;
+    return p ? siTabOf(p) ?? null : null;
+  },
+  paused: (t) => keeper.isPaused(t),
+  pause: (t) => keeper.pause(t),
+  secure: () => keeper.copyNow(),
+};
+
+/** The app is closing for an update, its tabs kept: the window closes without asking about unsaved changes. */
+let closingForUpdate = false;
+
+/** The first start after an update: the tabs that were open come back as they were. */
+async function reopenTabsAfterUpdate(): Promise<void> {
+  const { reopenAfterRestart, MAX_TRIES } = await import('./keep/restart');
+  const r = await reopenAfterRestart(ws, keepStore(), restartHooks).catch(() => null);
+  if (!r) return;
+  if (r.gaveUp) {
+    flash(`The tabs open before the update couldn’t be reopened (tried ${MAX_TRIES} times). Their unsaved changes are in the restart folder of ${await keepStore().where().catch(() => 'the app’s data folder')}.`, 20000);
+    return;
+  }
+  const notes = [
+    r.note ? ` The update didn’t install: ${r.note}.` : '',
+    r.missing.length ? ` Not found: ${r.missing.map((m) => baseName(m)).join(', ')}.` : '',
+    r.moved.length ? ` The file of ${r.moved.join(', ')} is no longer where it was: Save puts it back (AutoSave waits for that).` : '',
+    r.failed.length ? ` Couldn’t reopen the unsaved changes to ${r.failed.join(', ')}; they are tried again at the next start.` : '',
+  ].join('');
+  if (r.opened || notes) flash(`Reopened ${r.opened} tab${r.opened === 1 ? '' : 's'} as ${r.opened === 1 ? 'it was' : 'they were'}${r.note ? '' : ' before the update'}.${notes}`, notes ? 15000 : 5000);
+}
+
 const updates = new UpdateUI({
-  unsaved: () => ws.tabs.filter((t) => t.dirty).map((t) => t.name),
+  // (an SI project held in memory only has no file or working copy to come back from)
+  unkept: () => ws.tabs.filter((t) => t.dirty && t.si && !siFileStates.has(t.si)).map((t) => t.name),
   skipped: () => skipVersion,
   skip: (v) => { skipVersion = v; storeSettings(); },
   channel: () => updateChannel,
   openPage: (url) => openWebPage(url),
   // as when the window closes: the recovery copies and lock files aren't needed
-  closing: async () => { await siSavedAll(); await keeper.end(); await diagnostics.end(); await releaseSiProjects(); },
+  closing: async () => {
+    finishTab();
+    await siSavedAll();
+    // (an SI project's save under way finishes first: it decides whether its working copy stays)
+    await Promise.all(ws.tabs.map((t) => (t.si ? siFileStates.get(t.si)?.saving : null)).filter((p) => p).map((p) => p!.catch(() => false)));
+    // every tab, unsaved changes and all, is kept for the start after the update; the files on disk aren't touched
+    const { keepForRestart } = await import('./keep/restart');
+    const agreed = new Set(updates.unkeptAgreed);
+    const lost = (await keepForRestart(ws, keepStore(), restartHooks)).filter((n) => !agreed.has(n));
+    if (lost.length) throw new Error(`the unsaved changes to ${lost.join(', ')} couldn’t be kept for the restart. Save ${lost.length === 1 ? 'it' : 'them'}, then install again`);
+    closingForUpdate = true;
+    await keeper.end(); await diagnostics.end(); await releaseSiProjects();
+  },
+  keepFailed: () => { void import('./keep/restart').then(({ forgetRestart }) => forgetRestart(keepStore())).catch(() => {}); },
+  notInstalled: async (why) => {
+    const { noteRestart } = await import('./keep/restart');
+    await noteRestart(keepStore(), why).catch(() => {});
+    try {
+      const { relaunch } = await import('@tauri-apps/plugin-process');
+      await relaunch();
+      return true;
+    } catch {
+      return false;
+    }
+  },
 });
 /** The desktop app's version when it last ran (for What's New after an update). */
 let lastVersion: string | null = null;
@@ -13036,6 +13186,8 @@ async function openOutsideFiles(): Promise<void> {
   const { listen } = await import('@tauri-apps/api/event');
   // listening first, so no file is missed between asking and listening
   await listen<string[]>('open-files', (e) => { for (const p of e.payload) void openRecent(p); });
+  // the tabs open before an update, first (a file double-clicked to start the app then opens beside them)
+  await reopenTabsAfterUpdate().catch(() => {});
   for (const p of await invoke<string[]>('launch_files').catch(() => [])) await openRecent(p);
   // SI projects left unsaved by a crash: offered back
   void recoverSiCopies().catch(() => {});
@@ -14011,6 +14163,8 @@ function revealStylePanel(focus = false): void {
 // Unsaved work: ask before the window closes.
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
+    // closing for an update: every tab was kept, and comes back at the next start
+    if (closingForUpdate) return;
     finishTab();
     // (an SI project saves as it is typed in: what was typed last is written before the window goes)
     await siSavedAll();
@@ -16665,14 +16819,20 @@ let ribbonChosen = false;
 /** View > Ribbon > Fold on Short Windows: the ribbon folds to its tabs while the window is under SHORT_WINDOW pixels tall. */
 let ribbonAutoFold = false;
 const SHORT_WINDOW = 760;
+/** Under this height the ribbon always folds to its tabs (as Office's does): with it whole, the menus,
+ * the file tabs and the status bar would not fit, and would cover one another. Click a tab to use it. */
+const TOO_SHORT = 420;
+function tellTooShort(): void { flash('The window is too short for the whole ribbon: click a tab to use its buttons.'); }
+foldWhen(() => innerHeight < TOO_SHORT, tellTooShort);
 let wasShort = false;
 /** Fold the ribbon as the window becomes short, and give it back as you had it when it is tall again. */
 function autoFoldRibbon(force = false): void {
-  const short = ribbonAutoFold && innerHeight < SHORT_WINDOW;
+  const short = innerHeight < TOO_SHORT || (ribbonAutoFold && innerHeight < SHORT_WINDOW);
   $('[data-cmd="ribbon-auto-fold"]')?.setAttribute('aria-checked', String(ribbonAutoFold));
   if (short === wasShort && !force) return;
   wasShort = short;
   setRibbonCollapsed(short || ribbonChosen);
+  document.dispatchEvent(new Event('chrome-moved'));
 }
 
 /** Tick the shown toolboxes and the lock in the View menu, and show the lock on its button. */
@@ -16880,8 +17040,7 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
-  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
-  defaults: isTauri() ? undefined : QUICK_WEB,
+  // (null until changed: QUICK_DEFAULT, Save, Undo and Redo, in every kind of tab and in both apps)
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,
@@ -17540,6 +17699,7 @@ function placeTextBar(where: Settings['textBar']): void {
 /** View > Window and Colours > Theme: the window light or dark whatever the computer is set to, or as it is set. */
 let appTheme: Settings['appTheme'] = 'darkgray';
 function setAppTheme(t: Settings['appTheme']): void {
+  if (t !== appTheme) holdTransitions();
   appTheme = t;
   const root = document.documentElement;
   // Dark Gray is the light theme with its own colours over it

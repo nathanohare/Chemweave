@@ -36,13 +36,26 @@ export const SKIP_LABEL = 'no changelog';
 const MAX_TEXT = 400;
 
 /**
+ * Text without HTML comments (with `spaces`, also the white space after each). Removing one can join
+ * the pieces of another ("<!<!-- -->-- -->"), so this repeats until nothing changes, and a comment
+ * left unclosed runs to the end.
+ */
+export function withoutComments(text, spaces = false) {
+  const comment = spaces ? /<!--[\s\S]*?-->\s*/g : /<!--[\s\S]*?-->/g;
+  let s = text;
+  for (let prev = ''; prev !== s; ) { prev = s; s = s.replace(comment, ''); }
+  const open = s.indexOf('<!--');
+  return open < 0 ? s : s.slice(0, open);
+}
+
+/**
  * One change file: each line is "<Type>: <what changed>", such as
  * "Fixed: Slides: a video's poster frame shows again after saving. Fixes #123."
  * Blank lines and lines starting with "<!--" or "#" are skipped.
  */
 export function parseChangeFile(text, name = 'change file') {
   const entries = [], errors = [];
-  const src = text.replace(/<!--[\s\S]*?-->/g, '');
+  const src = withoutComments(text);
   src.split(/\r?\n/).forEach((raw, i) => {
     const line = raw.trim();
     if (!line || line.startsWith('#')) return;
@@ -119,7 +132,7 @@ export function renderChangelog({ versions, history = '', milestones = '' }) {
   const prs = new Set();
   for (const v of versions) for (const e of v.entries) if (e.pr) prs.add(e.pr);
   for (const m of history.matchAll(/\/pull\/(\d+)\)/g)) prs.add(+m[1]);
-  const strip = (t) => t.replace(/<!--[\s\S]*?-->\s*/g, '').trim();
+  const strip = (t) => withoutComments(t, true).trim();
   history = strip(history); milestones = strip(milestones);
   const releases = versions.filter((v) => v.version !== 'Unreleased').length + (history.match(/^## \d/gm) ?? []).length;
   const out = [
