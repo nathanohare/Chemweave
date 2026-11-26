@@ -5,8 +5,8 @@
 // in Compile ▸ Document and PDF, and in the snapshot .docx.
 //
 // Each piece is placed after the text of a field (`after`, a source of source-map.ts) in a page
-// of the tree (`node`): when that field prints nothing any more it goes after the page's last
-// text before it, then at the page's start; when the page is gone it goes at the end of the SI.
+// of the tree (`node`): when that field prints nothing any more it goes at the page's start;
+// when the page is gone it goes at the end of the SI.
 // Either way it is still there, flagged as text no field holds.
 //
 // A piece can hold equations (Insert ▸ Equation in the Live Preview): each is an object character
@@ -139,16 +139,20 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
   let srcs = sources.map((s) => ({ ...s }));
   const blks = blocks.map((b) => ({ ...b }));
   const placed: PlacedCustom[] = [];
+  // (the document's text, kept up to date here rather than read again for each piece)
+  let text = rt.plainText(t.runs);
   for (const item of items) {
     if (!item.text) continue;
-    const text = rt.plainText(t.runs);
     const block = blks.find((b) => b.node === item.node) ?? null;
     let at: number;
     let anchored = true;
     if (!block) { at = text.length; anchored = false; }
     else {
       const inside = (s: SourceSpan): boolean => s.start >= block.start && s.end <= block.end;
-      const after = item.after ? srcs.filter((s) => s.src === item.after && inside(s)).pop() : undefined;
+      // (a field printed in more than one piece on the page: the piece the text was typed after,
+      // the last one followed by what was between them, else the last)
+      const pieces = item.after ? srcs.filter((s) => s.src === item.after && inside(s)) : [];
+      const after = (item.gap ? pieces.filter((s) => text.startsWith(item.gap, s.end)).pop() : undefined) ?? pieces.pop();
       if (item.after && !after) anchored = false;
       at = after ? after.end : block.start;
       // (what was between, kept: the space after a sentence, a citation)
@@ -163,11 +167,19 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
     const shown = [...item.text].filter((ch) => { if (ch !== OBJECT_CHAR) return true; const m = item.math?.[k++] ?? ''; if (m) eqs.push(m); return !!m; }).join('');
     if (!shown) continue;
     const len = shown.length;
-    t = insertText(t, at, shown);
+    t = insertText(t, at, shown, text);
+    text = text.slice(0, at) + shown + text.slice(at);
     if (eqs.length) t = putEquations(t, at, shown, eqs);
     // the stretches after it move along; one it is inside grows
     srcs = srcs.map((s) => (s.start >= at ? { ...s, start: s.start + len, end: s.end + len } : s.end > at ? { ...s, end: s.end + len } : s));
-    for (const b of blks) { if (b.start > at) b.start += len; if (b.end >= at) b.end += len; }
+    // the page it is on grows, and the pages around that one; a page ending where it goes (the
+    // page before) stays as it is, and the pages after it move along
+    const holds = block ? blks.filter((b) => b.start <= block.start && block.end <= b.end) : [];
+    for (const b of blks) {
+      // (with no page of its own, as text at the very end, the page ending there takes it)
+      if (holds.includes(b) || (b.start < at && (at < b.end || (!block && at === b.end)))) b.end += len;
+      else if (b.start >= at) { b.start += len; b.end += len; }
+    }
     for (const p of placed) if (p.start >= at) { p.start += len; p.end += len; }
     srcs.push({ start: at, end: at + len, src: customSrc(item.id) });
     placed.push({ id: item.id, start: at, end: at + len, anchored });
@@ -192,8 +204,7 @@ function putEquations(t: DocText, at: number, text: string, eqs: readonly string
 }
 
 /** `text` put into a document at `at`, in the look of the character before it; each "\n" a new paragraph like the one it is in. */
-export function insertText(t: DocText, at: number, text: string): DocText {
-  const plain = rt.plainText(t.runs);
+export function insertText(t: DocText, at: number, text: string, plain = rt.plainText(t.runs)): DocText {
   const look = styleAt(t.runs, at);
   const runs = rt.replaceRange(t.runs, at, at, [{ ...look, text } as TextRun]);
   const breaks = text.split('\n').length - 1;

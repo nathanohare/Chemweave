@@ -239,6 +239,8 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
   const bySrc = new Map<string, SourceSpan[]>();
   for (const sp of sources) { const l = bySrc.get(sp.src); if (l) l.push(sp); else bySrc.set(sp.src, [sp]); }
   const printedBySrc = new Map<string, string>();
+  // (the looks put on all at once at the end: one pass over the runs, not one for each piece)
+  const edits: { start: number; end: number; patch: Partial<rt.RunStyle> }[] = [];
   for (const f of items) {
     const mine = bySrc.get(f.src) ?? [];
     if (!mine.length && !(f.src.startsWith('b:') && blocks.some((x) => x.node === f.src.slice(2)))) continue;
@@ -249,7 +251,7 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
     const patch = patchOf(f.look);
     const para = paraPatchOf(f.look);
     for (const [a, b] of docRanges(text, mine, f.src, at[0], at[1], blocks)) {
-      if (Object.keys(patch).length) runs = rt.applyStyle(runs, a, b, patch);
+      if (Object.keys(patch).length) edits.push({ start: a, end: b, patch });
       if (para) {
         paras ??= fitParas(doc.paras, paraCount(text));
         nls ??= [...text.matchAll(/\n/g)].map((m) => m.index!);
@@ -261,6 +263,7 @@ export function applyPreviewFormats(doc: DocText, sources: readonly SourceSpan[]
       }
     }
   }
+  if (edits.length) runs = rt.applyStyles(runs, edits);
   return runs === doc.runs && !paras ? doc : { ...doc, runs, ...(paras ? { paras } : {}) };
 }
 
