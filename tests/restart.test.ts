@@ -34,7 +34,7 @@ import { Workspace, type WorkspaceHooks, type Tab } from '../src/workspace';
 import { writeCdxml } from '../src/io/cdxml-write';
 import { newDocument, type DocText } from '../src/document/document';
 import { memoryStore } from '../src/keep/store';
-import { keepForRestart, reopenAfterRestart, parseRestart, forgetRestart, restartWaiting, type RestartHooks } from '../src/keep/restart';
+import { keepForRestart, reopenAfterRestart, parseRestart, forgetRestart, restartWaiting, noteRestart, MAX_TRIES, type RestartHooks } from '../src/keep/restart';
 import { UpdateUI } from '../src/ui/update-ui';
 import type { Release } from '../src/updates';
 
@@ -87,9 +87,8 @@ describe('keeping the open tabs for the restart', () => {
     host.edit('draw', () => { host.addAtom(0, 0); host.addAtom(14, 0); host.addAtom(28, 0); });
     ws.noteChange();
     const untitled = ws.active;
-    // a new tab nothing was done in comes back new
+    // a new tab nothing was done in isn't worth bringing back
     ws.newDrawing();
-    const blank = ws.active;
     ws.activate(changed);
     const before = new Map([...disk].map(([k, v]) => [k, v.modified]));
 
@@ -102,9 +101,7 @@ describe('keeping the open tabs for the restart', () => {
       [saved.name, '/w/saved.cdxml', false],
       [changed.name, '/w/changed.cdxml', true],
       [untitled.name, null, true],
-      [blank.name, null, true],
     ]);
-    expect(list.tabs.map((t) => !!t.clean)).toEqual([false, false, false, true]);
     expect(list.active).toBe(1);
     // the tab showing has the view on screen now
     expect(list.tabs[1].view).toEqual(view(2).view);
@@ -147,7 +144,7 @@ describe('the first start after the update', () => {
     // the app starts again with its one new drawing
     const b = workspace();
     const r = await reopenAfterRestart(b.ws, store, hooks());
-    expect(r).toEqual({ opened: 3, missing: [], failed: [] });
+    expect(r).toEqual({ opened: 3, missing: [], moved: [], failed: [] });
     const tabs = b.ws.tabs;
     expect(tabs.map((t) => [t.name, t.ref.kind === 'path' ? t.ref.path : null, t.dirty])).toEqual([
       ['saved.cdxml', '/w/saved.cdxml', false],
@@ -177,6 +174,8 @@ describe('the first start after the update', () => {
     const left = a.ws.active;
     const d = a.ws.newDocument();
     a.ws.activate(d);
+    d.dirty = true;
+    d.savedEdits = -1;
     a.ws.newWindow();
     a.ws.setSplit({ left, right: d });
     a.ws.activate(d);
@@ -189,7 +188,7 @@ describe('the first start after the update', () => {
     const docs = b.ws.tabs.filter((t) => t.mode === 'document');
     expect(docs).toHaveLength(2);
     expect(docs[1].windowOf).toBe(docs[0]);
-    expect(docs[0].dirty).toBe(false);
+    expect(docs[0].dirty).toBe(true);
     expect(b.ws.split).toEqual({ left: l, right: docs[0] });
     expect(b.ws.mainOf(b.ws.active)).toBe(docs[0]);
   });
@@ -205,7 +204,7 @@ describe('the first start after the update', () => {
     expect(await keepForRestart(a.ws, store, hooks())).toEqual([]);
     disk.delete('/w/gone.cdxml');
     // the copy is spoilt
-    const copy = [...store.files.keys()].find((k) => /tab-\d+\.cdxml$/.test(k))!;
+    const copy = [...store.files.keys()].find((k) => /\.cdxml$/.test(k))!;
     await store.put(copy, bytes('not a drawing'));
 
     const r = await reopenAfterRestart(workspace().ws, store, hooks());
@@ -228,22 +227,97 @@ describe('the first start after the update', () => {
   });
 });
 
-describe('installing the update', () => {
-  const run = (ui: UpdateUI, r: Release) => (ui as unknown as { install(r: Release, bar: HTMLElement, row: HTMLElement): Promise<void> }).install(r, document.createElement('div'), document.createElement('div'));
+describe('a restart that goes wrong', () => {
+  async function oneUnsaved(store = memoryStore()) {
+    const a = workspace();
+    a.ws.newDrawing();
+    a.host.edit('draw', () => { a.host.addAtom(0, 0); });
+    a.ws.noteChange();
+    return { store, ...a };
+  }
 
-  it('forgets the kept tabs when the update doesn’t install after closing began', async () => {
-    const steps: string[] = [];
-    const ui = new UpdateUI({ unkept: () => [], skipped: () => null, skip: () => {}, channel: () => 'latest', openPage: () => {},
-      closing: async () => { steps.push('closing'); }, notInstalled: () => steps.push('forget') });
-    await run(ui, { version: '9.9.9', notes: '', async install(_p, closing) { await closing?.(); throw new Error('installer refused'); } });
-    expect(steps).toEqual(['closing', 'forget']);
+  it('keeps copies an earlier restart couldn’t open when the next update is installed', async () => {
+    const { store, ws } = await oneUnsaved();
+    expect(await keepForRestart(ws, store, hooks(), 1000)).toEqual([]);
+    const first = parseRestart(new TextDecoder().decode((await store.get('restart/tabs.json'))!))!;
+    // (as if it couldn't be opened at the last start, and was kept for the next)
+    await store.put('restart/tabs.json', bytes(JSON.stringify({ ...first, tries: 1 })));
+    expect(await keepForRestart(ws, store, hooks(), 2000)).toEqual([]);
+    const second = parseRestart(new TextDecoder().decode((await store.get('restart/tabs.json'))!))!;
+    expect(second.tabs.map((t) => t.copy)).toEqual([expect.stringMatching(/^t1jk-/), first.tabs[0].copy]);
+    for (const t of second.tabs) expect(store.files.has(`restart/${t.copy}`)).toBe(true);
   });
 
-  it('doesn’t forget them when the download failed before closing', async () => {
+  it('gives up on a list after several starts that didn’t finish it (a file that stops the app as it opens)', async () => {
+    const { store, ws } = await oneUnsaved();
+    await keepForRestart(ws, store, hooks());
+    const list = parseRestart(new TextDecoder().decode((await store.get('restart/tabs.json'))!))!;
+    await store.put('restart/tabs.json', bytes(JSON.stringify({ ...list, tries: MAX_TRIES })));
+    const b = workspace();
+    const r = await reopenAfterRestart(b.ws, store, hooks());
+    expect(r?.gaveUp).toBe(true);
+    expect(b.ws.tabs).toHaveLength(1);
+    // (left where it is, for the person to find)
+    expect(await restartWaiting(store)).toBe(true);
+  });
+
+  it('says why the update didn’t install, and holds AutoSave off a tab whose file has gone or was held off', async () => {
+    const store = memoryStore();
+    const a = workspace();
+    disk.set('/w/gone.cdxml', { data: drawing(1), modified: 50 });
+    disk.set('/w/held.cdxml', { data: drawing(1), modified: 50 });
+    for (const n of ['gone', 'held']) {
+      await a.ws.openBytes(drawing(1), `${n}.cdxml`, { kind: 'path', path: `/w/${n}.cdxml` });
+      a.host.edit('draw', () => { a.host.addAtom(50, 0); });
+      a.ws.noteChange();
+    }
+    const held = a.ws.active;
+    expect(await keepForRestart(a.ws, store, { ...hooks(), paused: (t) => t === held })).toEqual([]);
+    await noteRestart(store, 'the disk is full');
+    disk.delete('/w/gone.cdxml');
+    const paused: string[] = [];
+    const secured = vi.fn(async () => {});
+    const b = workspace();
+    const r = await reopenAfterRestart(b.ws, store, { ...hooks(), pause: (t) => paused.push(t.name), secure: secured });
+    expect(r).toMatchObject({ opened: 2, moved: ['gone.cdxml'], note: 'the disk is full' });
+    expect(paused.sort()).toEqual(['gone.cdxml', 'held.cdxml']);
+    // the reopened tabs had their recovery copies made before the restart's own copies went
+    expect(secured).toHaveBeenCalledOnce();
+    expect(await restartWaiting(store)).toBe(false);
+  });
+});
+
+describe('installing the update', () => {
+  const run = (ui: UpdateUI, r: Release) => (ui as unknown as { install(r: Release, bar: HTMLElement, row: HTMLElement): Promise<void> }).install(r, document.createElement('div'), document.createElement('div'));
+  const ui = (steps: string[], closing: () => Promise<void> = async () => { steps.push('closing'); }) => new UpdateUI({
+    unkept: () => [], skipped: () => null, skip: () => {}, channel: () => 'latest', openPage: () => {}, closing,
+    keepFailed: () => steps.push('forget'), notInstalled: async (why) => { steps.push('restart: ' + why); return true; },
+  });
+
+  it('restarts with the kept tabs when the update doesn’t install after the app put its safety nets away', async () => {
     const steps: string[] = [];
-    const ui = new UpdateUI({ unkept: () => [], skipped: () => null, skip: () => {}, channel: () => 'latest', openPage: () => {},
-      closing: async () => { steps.push('closing'); }, notInstalled: () => steps.push('forget') });
-    await run(ui, { version: '9.9.9', notes: '', async install() { throw new Error('offline'); } });
+    await run(ui(steps), { version: '9.9.9', notes: '', async install(_p, closing) { await closing?.(); throw new Error('installer refused'); } });
+    expect(steps).toEqual(['closing', 'restart: installer refused']);
+  });
+
+  it('blocks the window while the tabs are kept and the installer runs', async () => {
+    const steps: string[] = [];
+    let blocked = false;
+    await run(ui(steps, async () => { blocked = !!document.querySelector('dialog.update-restart[open]'); }), { version: '9.9.9', notes: '', async install(_p, closing) { await closing?.(); } });
+    expect(blocked).toBe(true);
+  });
+
+  it('forgets what was kept when keeping failed, and the app carries on', async () => {
+    document.body.replaceChildren();
+    const steps: string[] = [];
+    await run(ui(steps, async () => { throw new Error('a copy failed'); }), { version: '9.9.9', notes: '', async install(_p, closing) { await closing?.(); } });
+    expect(steps).toEqual(['forget']);
+    expect(document.querySelector('dialog.update-restart')).toBeNull();
+  });
+
+  it('does nothing of the kind when the download failed before closing', async () => {
+    const steps: string[] = [];
+    await run(ui(steps), { version: '9.9.9', notes: '', async install() { throw new Error('offline'); } });
     expect(steps).toEqual([]);
   });
 

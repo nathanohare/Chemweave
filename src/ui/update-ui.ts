@@ -23,8 +23,13 @@ export interface UpdateHost {
    * close does, so the next start doesn't also offer those tabs as unsaved work to recover.
    */
   closing(): Promise<void>;
-  /** The update didn't install after closing began: the tabs kept for the restart aren't needed. */
-  notInstalled?(): void;
+  /** Keeping the tabs failed (`closing` threw before putting anything away): what was kept isn't needed. */
+  keepFailed?(): void;
+  /**
+   * The update didn't install after `closing` put the app's safety nets away: start the app again
+   * (it reopens the kept tabs, saying why). False when it couldn't restart.
+   */
+  notInstalled?(why: string): Promise<boolean>;
 }
 
 export class UpdateUI {
@@ -200,17 +205,66 @@ export class UpdateUI {
     row.hidden = true;
     bar.hidden = false;
     bar.textContent = 'Downloading…';
-    let closed = false;
+    // 'closing': the tabs are being kept; 'closed': kept, and the app's safety nets put away for the installer
+    const at: { stage: 'download' | 'closing' | 'closed'; wait: HTMLDialogElement | null } = { stage: 'download', wait: null };
     try {
       await r.install((done) => {
         bar.textContent = done === null ? 'Downloading…' : done >= 1 ? 'Installing…' : `Downloading… ${Math.round(done * 100)}%`;
-      }, async () => { closed = true; await this.host.closing(); });
+      }, async () => {
+        at.stage = 'closing';
+        // nothing typed from here on would be in what is kept
+        at.wait = restartWindow(`Restarting to install version ${r.version}…`);
+        await this.host.closing();
+        at.stage = 'closed';
+      });
     } catch (e) {
-      if (closed) this.host.notInstalled?.();
-      bar.textContent = `The update didn’t install: ${String(e)}`;
+      const why = e instanceof Error ? e.message : String(e);
+      const wait = at.wait;
+      if (at.stage === 'closed' && wait) {
+        // the app can't go on safely as it is (AutoSave and recovery copies stopped): start again, the tabs as they were
+        const w = wait;
+        restartText(w, `The update didn’t install: ${why}. Chemweave restarts, and your tabs come back as they were.`);
+        if (!(await this.host.notInstalled?.(why).catch(() => false))) {
+          restartText(w, `The update didn’t install: ${why}. Restart Chemweave to carry on: your tabs, unsaved changes included, come back as they were. Until then, AutoSave and recovery copies are off.`);
+          const go = document.createElement('button');
+          go.type = 'button';
+          go.textContent = 'Keep Working';
+          go.addEventListener('click', () => endWindow(w));
+          w.append(go);
+        }
+        return;
+      }
+      if (wait) endWindow(wait);
+      if (at.stage === 'closing') this.host.keepFailed?.();
+      bar.textContent = `The update didn’t install: ${why}`;
       row.hidden = false;
     } finally {
       this.busy = false;
     }
   }
+}
+
+/** The window shown while the app closes for the installer: it takes the keys and clicks, so nothing is typed after the tabs are kept. */
+function restartWindow(text: string): HTMLDialogElement {
+  const d = document.createElement('dialog');
+  d.className = 'update-restart';
+  d.dataset.outsideClick = 'keep';
+  const p = document.createElement('p');
+  p.textContent = text;
+  d.append(p);
+  // (Esc doesn't close it)
+  d.addEventListener('cancel', (e) => e.preventDefault());
+  document.body.append(d);
+  // (where windows can't be shown as modal, as in tests, it is just there)
+  try { d.showModal(); } catch { d.setAttribute('open', ''); }
+  return d;
+}
+
+function restartText(d: HTMLDialogElement, text: string): void {
+  d.querySelector('p')!.textContent = text;
+}
+
+function endWindow(d: HTMLDialogElement): void {
+  try { d.close(); } catch { /* not shown as modal */ }
+  d.remove();
 }
