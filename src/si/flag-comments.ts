@@ -27,7 +27,7 @@ const noteOf = (by: string, at: string, text: string): { author: string; date: s
  * prints, a section's on its heading. Resolved flags only with `withResolved`, marked done. Each
  * comment's anchor (flag-threads.ts) is in `anchors`, by comment id, when given.
  */
-export function addFlagComments(doc: DocText, sources: readonly SourceSpan[], blocks: readonly SourceBlock[], p: SiProject, opts: { withResolved?: boolean; anchors?: Map<number, string> } = {}): DocText {
+export function addFlagComments(doc: DocText, sources: readonly SourceSpan[], blocks: readonly SourceBlock[], p: SiProject, opts: { withResolved?: boolean; anchors?: Map<number, string>; /** The notes' own words, each card's label in `labels` (the Live Preview's cards). */ raw?: boolean; labels?: Map<number, string> } = {}): DocText {
   const text = rt.plainText(doc.runs);
   let runs = doc.runs;
   const comments: Record<number, CommentThread> = { ...(doc.comments ?? {}) };
@@ -63,7 +63,8 @@ export function addFlagComments(doc: DocText, sources: readonly SourceSpan[], bl
       }
     }
     if (!range || range.end <= range.start) continue;
-    const words = at.kind === 'section' ? label + (fl.flag.comment.trim() || 'no comment given') : fl.isFlag ? flagCommentText(at.field, fl.flag.comment) : fl.flag.comment;
+    const words = opts.raw ? fl.flag.comment : at.kind === 'section' ? label + (fl.flag.comment.trim() || 'no comment given') : fl.isFlag ? flagCommentText(at.field, fl.flag.comment) : fl.flag.comment;
+    opts.labels?.set(id, `${fl.isFlag ? 'Flag' : 'Comment'} · ${at.kind === 'section' ? 'Heading' : fieldDef({ key: at.field })?.label ?? at.field}`);
     const main = noteOf(fl.flag.by, fl.flag.at, words);
     const replies = fl.thread.replies.map((r) => noteOf(r.by, r.at, r.text));
     comments[id] = { ...main, ...(replies.length ? { replies } : {}), ...(fl.resolved ? { done: true } : {}) };

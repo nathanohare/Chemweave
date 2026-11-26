@@ -18,6 +18,10 @@ export interface DocCommentsHost {
   flash(msg: string, ms?: number): void;
   /** Make sure there is a name to put on comments (asks the first time). */
   askName(): Promise<boolean>;
+  /** What a card's buttons do, when not the file's own comments (an SI project's flags): null for the usual. */
+  actions?(id: number): ThreadActions | null;
+  /** A card's label, its class, and who can be @mentioned (an SI project's flags). */
+  card?(id: number): { label?: string; cls?: string; people?: readonly string[]; rich?: boolean } | null;
 }
 
 /** The column's width in pixels (room kept beside the pages while comments show). */
@@ -99,7 +103,8 @@ export class DocComments {
       this.layer.replaceChildren();
       this.cards.clear();
       for (const p of list) {
-        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.actions(p.id), rich: true });
+        const own = this.h.card?.(p.id) ?? null;
+        const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.h.actions?.(p.id) ?? this.actions(p.id), rich: own?.rich ?? true, ...(own?.label ? { label: own.label } : {}), ...(own?.cls ? { cls: own.cls } : {}), ...(own?.people ? { people: own.people } : {}) });
         this.cards.set(p.id, card);
         this.layer.append(card);
       }

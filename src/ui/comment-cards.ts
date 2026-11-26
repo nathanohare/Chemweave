@@ -57,7 +57,7 @@ export const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null =>
  * use: Ctrl+B, Ctrl+I, Ctrl+U, Ctrl+= and Ctrl+Shift+= set bold, italic, underline, sub- and
  * superscript, and the looks go with the text.
  */
-function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, save: (text: string, runs: NoteRun[] | null) => void, stop: () => void, rich: boolean): NoteBox {
+function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, save: (text: string, runs: NoteRun[] | null) => void, stop: () => void, rich: boolean, people?: readonly string[]): NoteBox {
   const value = note.text;
   let read: () => { text: string; runs: NoteRun[] | null };
   let box: HTMLElement;
@@ -91,6 +91,7 @@ function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, 
     ta.rows = Math.min(8, Math.max(2, value.split('\n').length));
     ta.spellcheck = true;
     ta.addEventListener('input', () => { ta.rows = Math.min(8, Math.max(2, ta.value.split('\n').length)); });
+    if (people?.length) mentionPicker(ta, people);
     box = ta;
     read = () => ({ text: ta.value.replace(/\s+$/, ''), runs: null });
     focus = () => { ta.focus(); ta.setSelectionRange(ta.value.length, ta.value.length); };
@@ -107,12 +108,79 @@ function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, 
     if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); finish(true); }
     else if (e.key === 'Escape') { e.preventDefault(); finish(!value && !!read().text.trim()); }
   });
-  box.addEventListener('blur', () => finish(true));
+  box.addEventListener('blur', (e) => { if ((e.relatedTarget as HTMLElement | null)?.closest?.('.cmt-mentions')) return; finish(true); });
   // (the file keys, Ctrl+S, take what is typed first)
   box.addEventListener('change', () => finish(true));
   // keys typed here are the comment's, not the page's
   for (const ev of ['keyup', 'keypress', 'paste', 'copy', 'cut'] as const) box.addEventListener(ev, (e) => e.stopPropagation());
   return { el: box, focus };
+}
+
+/**
+ * @mentions: typing "@" and the start of a name lists the people who match (the project's
+ * authors and everyone who wrote a note); Up, Down, Enter or Tab or a click puts the name in.
+ */
+function mentionPicker(ta: HTMLTextAreaElement, people: readonly string[]): void {
+  const list = el('div', 'cmt-mentions');
+  list.setAttribute('role', 'listbox');
+  list.hidden = true;
+  let items: string[] = [];
+  let at = 0;
+  let from = -1;
+  const query = (): { from: number; q: string } | null => {
+    const before = ta.value.slice(0, ta.selectionStart);
+    const m = /(?:^|[^\w.])@([^@\n]{0,40})$/u.exec(before);
+    return m ? { from: before.length - m[1].length - 1, q: m[1] } : null;
+  };
+  const close = (): void => { list.hidden = true; items = []; from = -1; };
+  const show = (): void => {
+    const got = query();
+    items = got ? people.filter((n) => n.toLowerCase().startsWith(got.q.toLowerCase()) && n.toLowerCase() !== got.q.toLowerCase()).slice(0, 6) : [];
+    if (!got || !items.length) { close(); return; }
+    from = got.from;
+    at = Math.min(at, items.length - 1);
+    list.replaceChildren(...items.map((n, i) => {
+      const b = el('button', 'cmt-mention-item' + (i === at ? ' on' : ''), n);
+      b.type = 'button';
+      b.setAttribute('role', 'option');
+      b.setAttribute('aria-selected', String(i === at));
+      b.addEventListener('mousedown', (e) => { e.preventDefault(); pick(n); });
+      return b;
+    }));
+    if (!list.isConnected) ta.after(list);
+    list.hidden = false;
+  };
+  const pick = (name: string): void => {
+    const end = ta.selectionStart;
+    ta.value = ta.value.slice(0, from) + '@' + name + ' ' + ta.value.slice(end);
+    const caret = from + name.length + 2;
+    ta.setSelectionRange(caret, caret);
+    close();
+    ta.focus();
+  };
+  ta.addEventListener('input', () => { at = 0; show(); });
+  ta.addEventListener('keydown', (e) => {
+    if (list.hidden || !items.length) return;
+    if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); e.stopImmediatePropagation(); at = (at + (e.key === 'ArrowDown' ? 1 : items.length - 1)) % items.length; show(); }
+    else if (e.key === 'Enter' || e.key === 'Tab') { e.preventDefault(); e.stopImmediatePropagation(); pick(items[at]); }
+    else if (e.key === 'Escape') { e.preventDefault(); e.stopImmediatePropagation(); close(); }
+  });
+  ta.addEventListener('blur', () => setTimeout(close, 0));
+}
+
+/** The text with its @mentions of `people` marked. */
+function withMentions(p: HTMLElement, text: string, people: readonly string[]): void {
+  const names = [...people].sort((a, b) => b.length - a.length);
+  let last = 0;
+  for (let i = text.indexOf('@'); i >= 0; i = text.indexOf('@', i + 1)) {
+    if (i < last || (i > 0 && /[\w.]/.test(text[i - 1]))) continue;
+    const rest = text.slice(i + 1).toLowerCase();
+    const who = names.find((n) => rest.startsWith(n.toLowerCase()) && !/[\p{L}\p{N}]/u.test(rest[n.length] ?? ''));
+    if (!who) continue;
+    p.append(text.slice(last, i), el('span', 'cmt-mention', text.slice(i, i + 1 + who.length)));
+    last = i + 1 + who.length;
+  }
+  p.append(text.slice(last));
 }
 
 function header(author: string, date: string): HTMLElement {
@@ -127,10 +195,10 @@ function header(author: string, date: string): HTMLElement {
 }
 
 /** A note's text, with its words' looks. */
-export function body(n: Pick<CommentNote, 'text' | 'runs'>): HTMLElement {
+export function body(n: Pick<CommentNote, 'text' | 'runs'>, people?: readonly string[]): HTMLElement {
   const p = el('div', 'cmt-text');
   const runs = noteRuns(n);
-  if (!runs) { p.textContent = n.text; return p; }
+  if (!runs) { if (people?.length) withMentions(p, n.text, people); else p.textContent = n.text; return p; }
   for (const r of runs) {
     const s = el(r.sub ? 'sub' : r.sup ? 'sup' : 'span', undefined, r.text);
     if (r.bold) s.style.fontWeight = 'bold';
@@ -146,10 +214,11 @@ export function body(n: Pick<CommentNote, 'text' | 'runs'>): HTMLElement {
  * The card for a comment. `editing` opens its text for typing (a new comment, or after Edit);
  * `active` marks the one whose words are shown.
  */
-export function threadCard(c: CommentThread, opts: { active: boolean; editing: boolean; actions: ThreadActions; label?: string; /** Its notes keep their words' looks (Word's and PowerPoint's comments). */ rich?: boolean }): HTMLElement {
+export function threadCard(c: CommentThread, opts: { active: boolean; editing: boolean; actions: ThreadActions; label?: string; /** Its notes keep their words' looks (Word's and PowerPoint's comments). */ rich?: boolean; /** Who can be @mentioned (offered while typing, and marked in the notes). */ people?: readonly string[]; /** A class of its own (an SI flag's). */ cls?: string }): HTMLElement {
   const a = opts.actions;
   const rich = !!opts.rich;
-  const card = el('div', 'cmt-card' + (opts.active ? ' active' : '') + (c.done ? ' done' : ''));
+  const people = opts.people;
+  const card = el('div', 'cmt-card' + (opts.active ? ' active' : '') + (c.done ? ' done' : '') + (opts.cls ? ` ${opts.cls}` : ''));
   card.tabIndex = -1;
   card.addEventListener('mousedown', (e) => { if (!(e.target as HTMLElement).closest('textarea, button, .cmt-input')) a.focus(); });
 
@@ -157,24 +226,24 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
   first.append(header(c.author, c.date));
   if (opts.label) first.prepend(el('div', 'cmt-label', opts.label));
   if (opts.editing) {
-    const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.cancelNew ? a.cancelNew() : a.remove()), () => (!c.text.trim() ? (a.cancelNew ?? a.remove)() : a.edit(c.text, undefined, noteRuns(c))), rich);
+    const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.cancelNew ? a.cancelNew() : a.remove()), () => (!c.text.trim() ? (a.cancelNew ?? a.remove)() : a.edit(c.text, undefined, noteRuns(c))), rich, people);
     first.append(ta.el);
     queueMicrotask(() => ta.focus());
   } else {
-    first.append(body(c));
+    first.append(body(c, people));
   }
   card.append(first);
   if (c.done) card.append(el('div', 'cmt-resolved', 'Resolved'));
 
   (c.replies ?? []).forEach((r, i) => {
     const n = el('div', 'cmt-note cmt-reply');
-    n.append(header(r.author, r.date), body(r));
+    n.append(header(r.author, r.date), body(r, people));
     const tools = el('div', 'cmt-tools');
     const edit = el('button', 'cmt-link', 'Edit');
     edit.type = 'button';
     edit.addEventListener('click', () => {
       const text = n.querySelector('.cmt-text')!;
-      const ta = noteBox(r, 'Reply', (t, runs) => (t.trim() ? a.edit(t, i, runs) : a.removeReply(i)), () => a.edit(r.text, i, noteRuns(r)), rich);
+      const ta = noteBox(r, 'Reply', (t, runs) => (t.trim() ? a.edit(t, i, runs) : a.removeReply(i)), () => a.edit(r.text, i, noteRuns(r)), rich, people);
       text.replaceWith(ta.el);
       tools.remove();
       ta.focus();
@@ -194,7 +263,7 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
     reply.title = 'Answer this comment';
     reply.addEventListener('click', () => {
       bar.hidden = true;
-      const ta = noteBox({ text: '' }, 'Reply', (t, runs) => { if (t.trim()) a.reply(t, runs); else bar.hidden = false; }, () => { ta.el.remove(); bar.hidden = false; }, rich);
+      const ta = noteBox({ text: '' }, 'Reply', (t, runs) => { if (t.trim()) a.reply(t, runs); else bar.hidden = false; }, () => { ta.el.remove(); bar.hidden = false; }, rich, people);
       card.insertBefore(ta.el, bar);
       ta.focus();
     });
@@ -207,7 +276,7 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
     edit.title = 'Change the comment’s text';
     edit.addEventListener('click', () => {
       const text = first.querySelector('.cmt-text')!;
-      const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.edit(c.text, undefined, noteRuns(c))), () => a.edit(c.text, undefined, noteRuns(c)), rich);
+      const ta = noteBox(c, 'Type your comment', (t, runs) => (t.trim() ? a.edit(t, undefined, runs) : a.edit(c.text, undefined, noteRuns(c))), () => a.edit(c.text, undefined, noteRuns(c)), rich, people);
       text.replaceWith(ta.el);
       bar.hidden = true;
       ta.focus();
