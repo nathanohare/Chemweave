@@ -7,7 +7,7 @@
 // character by character (a diff), so a change to the printed text is made at the same place in
 // the stored value; a change that touches only what the program added is refused.
 
-import { escapeMarkup } from './markup';
+import { escapeMarkupLines, startsMarker } from './markup';
 import { editableSrc, parseSrc, type SourceSpan } from './source-map';
 
 /** What an edit of the preview's text at [start, end) is. */
@@ -58,7 +58,7 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
     }
     const src = srcs[0];
     // (part of it in a field and part outside every field: across)
-    const inside = over.every((s) => s.start <= start && end <= s.end) || (start >= Math.min(...over.map((s) => s.start)) && end <= Math.max(...over.map((s) => s.end)) && !gapIn(spans, start, end));
+    const inside = over.every((s) => s.start <= start && end <= s.end) || (start >= Math.min(...over.map((s) => s.start)) && end <= Math.max(...over.map((s) => s.end)) && !gapIn(spans, start, end, manyParagraphs(src) && editableSrc(src) ? { text, src } : undefined));
     if (!inside) return writable(src) ? { kind: 'across' } : { kind: 'locked', src };
     if (!writable(src)) return { kind: 'locked', src };
     return lineOk(src) ? { kind: 'field', src } : { kind: 'locked', src };
@@ -77,9 +77,13 @@ export function editKind(spans: readonly SourceSpan[], start: number, end: numbe
   return { kind: 'custom', at };
 }
 
-/** Is any character of [start, end) outside every span? */
-function gapIn(spans: readonly SourceSpan[], start: number, end: number): boolean {
-  for (let i = start; i < end; i++) if (!spans.some((s) => s.start <= i && i < s.end)) return true;
+/** Is any character of [start, end) outside every span? (`joins`: the paragraph mark between two of that field's stretches doesn't count) */
+function gapIn(spans: readonly SourceSpan[], start: number, end: number, joins?: { text: string; src: string }): boolean {
+  for (let i = start; i < end; i++) {
+    if (spans.some((s) => s.start <= i && i < s.end)) continue;
+    if (joins && joins.text[i] === '\n' && spans.some((s) => s.src === joins.src && s.end === i) && spans.some((s) => s.src === joins.src && s.start === i + 1)) continue;
+    return true;
+  }
   return false;
 }
 
@@ -181,11 +185,24 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
     }
   }
   let rb = pb > pa ? map[pb - 1] + 1 : ra;
-  const put = markup ? escapeMarkup(typed) : typed;
-  if (!markup || rb <= ra) return raw.slice(0, ra) + put + raw.slice(rb);
-  // (an escaped character starts with its backslash)
-  if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
-  if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
+  // (a change that would land inside a mention or citation: its printed label was matched to letters of its id)
+  if (markup && insideLink(raw, ra, rb)) return null;
+  // (an escaped character starts with its backslash: what is typed before it goes before that)
+  if (markup) {
+    const insert = rb <= ra;
+    if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
+    if (insert) rb = ra;
+    else if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
+  }
+  // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object; so
+  // does one already after the place that the typed text's last paragraph mark puts at a paragraph
+  // start, unless it was at one already: Enter at a heading's start leaves it a heading)
+  let put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
+  const nl = put.lastIndexOf('\n');
+  const wasStart = rb === 0 || raw[rb - 1] === '\n';
+  if (markup && nl >= 0 && !startsMarker(put.slice(nl + 1)) && startsMarker(put.slice(nl + 1) + raw.slice(rb)) && !(nl === put.length - 1 && wasStart)) put = put.slice(0, nl + 1) + '\\' + put.slice(nl + 1);
+  if (!markup) return raw.slice(0, ra) + put + raw.slice(rb);
+  if (rb <= ra) return keepParagraphText(raw, raw.slice(0, ra) + put + raw.slice(rb), ra, rb);
   // the markers in what is taken out stay (a selection from inside a subscript to after it
   // leaves the subscript closed); the typed text goes before them, in the look of the first
   // character taken out; formatting left empty goes
@@ -200,7 +217,32 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
       if (i >= 0 && i + e.length <= hi && !escapedAt(out, i)) { out = out.slice(0, i) + out.slice(i + e.length); hi -= e.length; again = true; }
     }
   }
-  return out;
+  return keepParagraphText(raw, out, ra, rb);
+}
+
+/**
+ * An edit at `ra` that makes its paragraph start like a heading or an object ("#", "!figure{"),
+ * which it didn't before (the "{" of "!image{" typed after a pause, or the text before a "#"
+ * taken out): the paragraph's start escaped, so it stays the text it reads as.
+ */
+function keepParagraphText(raw: string, out: string, ra: number, rb: number): string {
+  const ps = ra > 0 ? raw.lastIndexOf('\n', ra - 1) + 1 : 0;
+  if (!startsMarker(out.slice(ps)) || startsMarker(raw.slice(ps))) return out;
+  // (a heading or object of the stored text's own, after a paragraph taken out whole, stays one)
+  const rest = raw.slice(rb);
+  if ((rb === 0 || raw[rb - 1] === '\n') && startsMarker(rest) && out.slice(ps) === rest) return out;
+  return out.slice(0, ps) + '\\' + out.slice(ps);
+}
+
+const LINKS = /@(?:cite|struct)?\{[^{}]*\}/g;
+/** Whether ra or rb falls strictly inside a mention, citation or structure link of the stored text. */
+function insideLink(raw: string, ra: number, rb: number): boolean {
+  for (const m of raw.matchAll(LINKS)) {
+    if (escapedAt(raw, m.index)) continue;
+    const a = m.index, b = a + m[0].length;
+    if ((a < ra && ra < b) || (a < rb && rb < b)) return true;
+  }
+  return false;
 }
 
 /** Formatting with nothing in it, taken out after an edit. */
@@ -214,10 +256,12 @@ function escapedAt(s: string, i: number): boolean {
 }
 
 /** The formatting markers of a stretch of markup text, in order (its characters left out). */
+const LINK_AT = /@(?:cite|struct)?\{[^{}]*\}/y;
 export function markersIn(s: string): string {
   let out = '';
   for (let i = 0; i < s.length;) {
     if (s[i] === '\\') { i += 2; continue; }
+    if (s[i] === '@') { LINK_AT.lastIndex = i; const m = LINK_AT.exec(s); if (m) { i += m[0].length; continue; } }
     const two = s.slice(i, i + 2);
     if (two === '**' || two === '__' || two === '^{' || two === '_{') { out += two; i += 2; continue; }
     if (s[i] === '*' || s[i] === '}') { out += s[i]; i++; continue; }
@@ -255,4 +299,87 @@ export function locateEdit(before: string, after: string, selStart: number, selE
     for (const w of wants) for (let s = lo; s <= pre; s++) if (w(s) && fits(s)) return at(s);
   }
   return at(pre);
+}
+
+/**
+ * The fields' stretches after an edit of [start, end) of the text by `delta` characters (`into`:
+ * the field edited, which grows or shrinks; null for custom text, whose own stretch is added by
+ * the caller). A field's stretch ending at `start` is the one edited only when text is put in at
+ * its end (start === end); taking out what follows it (the paragraph mark joining it to the
+ * field's next paragraph) leaves it as it is.
+ */
+export function shiftSpans(spans: readonly SourceSpan[], start: number, end: number, delta: number, into: string | null): SourceSpan[] {
+  const out: SourceSpan[] = [];
+  // (the text put in, [start, start + put) after the edit, goes in the first of the field's stretches reaching the edit)
+  const put = end - start + delta;
+  let given = false;
+  for (const s of spans) {
+    if (s.end <= start && !(into && s.src === into && s.end === start && start === end && !spans.some((x) => x.src === into && x.start < start && start < x.end))) { out.push(s); continue; }
+    if (s.start >= end && !(into && s.src === into && s.start === end && s.end > end && start === end && !spans.some((x) => x.src === into && x.end === start))) {
+      out.push({ ...s, start: s.start + delta, end: s.end + delta });
+      continue;
+    }
+    // a stretch of the field edited: what of it the edit takes out goes (a selection over the
+    // paragraph mark between two of its stretches shortens both), and the text put in is in it
+    if (into && s.src === into) {
+      let ns = s.start < start ? s.start : s.start >= end ? s.start + delta : start;
+      let ne = s.end <= start ? s.end : s.end >= end ? s.end + delta : start;
+      if (put > 0) {
+        if (!given) { given = true; ns = Math.min(ns, start); ne = Math.max(ne, start + put); }
+        else { ns = Math.max(ns, start + put); ne = Math.max(ne, ns); }
+      }
+      out.push({ ...s, start: ns, end: ne });
+    }
+    // the stretch edited (or one the edit reaches into)
+    else if (s.start >= start) out.push({ ...s, start: s.start + delta, end: s.end + delta });
+    else out.push({ ...s, end: Math.max(s.start, s.end + (s.end >= end ? delta : 0)) });
+  }
+  return out.filter((s) => s.end > s.start || isCustomSrc(s.src));
+}
+
+/**
+ * The changes from one printed text of a field to another, each on its own ([pa, pb) of `before`
+ * replaced by `typed`), in order. Two edits far apart in one field (made before it was saved) are
+ * two changes, so what is between them is left as it is stored, formatting and all.
+ */
+export function printedHunks(before: string, now: string): { pa: number; pb: number; typed: string }[] {
+  const map = lineUp(before, now);
+  const out: { pa: number; pb: number; typed: string }[] = [];
+  let prev = -1;
+  let open: number | null = null;
+  for (let i = 0; i <= now.length; i++) {
+    const m = i < now.length ? map[i] : before.length;
+    const same = i === now.length || (m > prev && before[m] === now[i]);
+    if (!same) { if (open === null) open = i; continue; }
+    const from = open ?? i;
+    if (m > prev + 1 || i > from) out.push({ pa: prev + 1, pb: m, typed: now.slice(from, i) });
+    open = null;
+    prev = m;
+  }
+  return out;
+}
+
+/** More changes than this in one write are taken as one rewrite of the field. */
+const MAX_HUNKS = 40;
+
+/** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
+export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean): string | null {
+  let out = raw, printed = before;
+  let hunks = printedHunks(before, now);
+  // (many changes, as a field retyped, aren't separate edits but one rewrite: one change, as before)
+  if (hunks.length > MAX_HUNKS) {
+    let pre = 0;
+    while (pre < before.length && pre < now.length && before[pre] === now[pre]) pre++;
+    let suf = 0;
+    while (suf < before.length - pre && suf < now.length - pre && before[before.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
+    hunks = [{ pa: pre, pb: before.length - suf, typed: now.slice(pre, now.length - suf) }];
+  }
+  // (from the last change back: the places of the ones before it don't move)
+  for (const h of hunks.reverse()) {
+    const next = applyToRaw(out, printed, h.pa, h.pb, h.typed, markup);
+    if (next === null) return null;
+    out = next;
+    printed = printed.slice(0, h.pa) + h.typed + printed.slice(h.pb);
+  }
+  return out;
 }

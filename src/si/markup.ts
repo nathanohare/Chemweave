@@ -132,6 +132,20 @@ export function escapeMarkup(text: string): string {
   return escape(text);
 }
 
+/**
+ * escapeMarkup for text that may start paragraphs: a "#" (a heading) or "!image{" and the like
+ * (an object) at the start of a paragraph is escaped too, as writeMarkup does, so it stays text.
+ * `atStart`: the text goes at the start of a paragraph (each line after a "\n" in it always does).
+ */
+export function escapeMarkupLines(text: string, atStart: boolean): string {
+  return escape(text).split('\n').map((line, i) => ((i > 0 || atStart) && startsMarker(line) ? '\\' + line : line)).join('\n');
+}
+
+/** Whether a paragraph's stored text starts with a heading's or an object's marker. */
+export function startsMarker(line: string): boolean {
+  return line.startsWith('#') || OBJECT_STARTS.some((s) => line.startsWith(s));
+}
+
 function escape(text: string): string {
   let out = '';
   for (let i = 0; i < text.length; i++) {
