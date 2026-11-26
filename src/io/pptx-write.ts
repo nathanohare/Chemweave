@@ -1389,7 +1389,9 @@ class Writer {
     const w = box.x2 - box.x1, h = box.y2 - box.y1;
     const { rid, print } = await addChart(this.pkg, path, 'ppt', ++this.charts, box0, w, h);
     // with the chart's print, to tell whether it was changed in PowerPoint (native-print.ts)
-    const tags = this.addTags(path, { [TAG.chart]: JSON.stringify(print ? { ...box0, pr: print } : box0) });
+    // (not the chart's id: a chart read back gets a new one, freshBox, so a second save would write another)
+    const kept = { ...box0, chart: { ...box0.chart, id: undefined } };
+    const tags = this.addTags(path, { [TAG.chart]: JSON.stringify(print ? { ...kept, pr: print } : kept) });
     const ex = isChartEx(box0.chart.kind);
     const uri = ex ? CX_NS : C_NS, tag = ex ? 'cx' : 'c';
     const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="${id}" name="Chart ${id - 1}"${alt?.trim() ? ` descr="${xmlAttr(alt.trim())}"` : ''}/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr>` +
@@ -1600,7 +1602,7 @@ class Writer {
     // prints of its outline, look and text as written, to tell what PowerPoint changed (native-print.ts)
     const sp = fragment(spPr);
     const pr = sp ? { g: spPrPrint(sp, 'geom'), l: spPrPrint(sp, 'look'), t: textPrint(fragment(txBody)) } : undefined;
-    const tag = this.addTags(path, { [TAG.geo]: JSON.stringify({ v: 1, s: look, plain, sid: s.id, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.geo]: JSON.stringify({ v: 1, s: ordered(look), plain, sid: s.id, ...(pr ? { pr } : {}) }) });
     const click = s.link ? this.hlink(s.link) : '';
     return `<p:sp><p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(s.name?.trim() || `${def.name} ${id - 1}`, s.hidden)}${click ? `>${click}</p:cNvPr>` : '/>'}<p:cNvSpPr/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>` +
       `${spPr}${txBody}</p:sp>`;
@@ -1619,7 +1621,7 @@ class Writer {
     // not its name and hidden, which PowerPoint's cNvPr has, unless the name is one like PowerPoint's own)
     const { name, hidden: _h, ...rest } = look;
     const keep = name !== undefined && PPT_NAME.test(name.trim()) ? { ...rest, name } : rest;
-    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: keep, sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
+    const tag = this.addTags(path, { [TAG.shape]: JSON.stringify({ v: 1, s: ordered(keep), sid: s.id, ...(spPr ? { pr: spPrPrint(spPr, 'look'), g: spPrPrint(spPr, 'geom') } : {}) }) });
     return xmlText.replace('<p:nvPr/>', `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`);
   }
 
@@ -1656,7 +1658,7 @@ class Writer {
     // with a print of its line as written, to tell whether PowerPoint changed it (native-print.ts)
     const lineXml = fragment(`<p:spPr>${geom}${ln}</p:spPr>`);
     const pr = lineXml ? spPrPrint(lineXml, 'look') : '';
-    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: keep, sid: r.id, ...(pr ? { pr } : {}) }) });
+    const tag = this.addTags(path, { [TAG.connector]: JSON.stringify({ v: 1, a: ordered(keep), sid: r.id, ...(pr ? { pr } : {}) }) });
     const nvPr = `<p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr>`;
     // a curved arrow is a shape drawn along the curve (programs route a connector afresh, square),
     // and so is an elbow PowerPoint has no bent connector for: PowerPoint repairs a connector
@@ -1796,18 +1798,30 @@ class Writer {
     const txBody = `<p:txBody>${bodyPr}<a:lstStyle/>${body}</p:txBody>`;
     // and a print of the text as written (how each piece looks), to tell whether PowerPoint changed it (native-print.ts)
     const pr = textPrint(fragment(txBody));
-    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: { ...c, id: undefined }, sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
-    const name = c.name?.trim() || (c.ph === 'title' ? `Title ${id - 1}` : c.ph ? `Text Placeholder ${id - 1}` : `TextBox ${id - 1}`);
-    const nvSp = ph
-      ? `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`
-      : `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr txBox="1"/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`;
-    const geom = ph ? '' : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>';
     // text running down or up: PowerPoint's box is the other way round, turned a quarter less,
     // with the text turned in it
     const quarter = c.dir === 'vert' ? 90 : c.dir === 'vert270' ? -90 : 0;
     const shape = quarter ? swapBox(box) : box;
     const rot = rotAttr((c.rot ?? 0) - quarter);
-    return `<p:sp>${nvSp}<p:spPr>${frame?.xfrm ?? xfrm(shape, rot)}${geom}</p:spPr>${txBody}</p:sp>`;
+    const xfrmXml = frame?.xfrm ?? xfrm(shape, rot);
+    // where the reader puts the text (ourText): the frame as written, in whole EMU, the start in it
+    // turned about its middle; the tag says that, so a second save writes the same (F-P-001)
+    const placed = ((): { x: number; y: number } => {
+      const m = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(xfrmXml);
+      if (!m) return c;
+      const [x, y, w, h] = m.slice(1).map((v) => fromEmu(v));
+      const turn = Number(/<a:xfrm[^>]*\brot="(-?\d+)"/.exec(xfrmXml)?.[1] ?? 0) / 60000 + quarter;
+      const read = { x1: x, y1: y, x2: x + w, y2: y + h };
+      const b = quarter ? { ...read, ...swapBox(read) } : read;
+      return turnAbout({ x: b.x1 + o[0], y: b.y1 + o[1] }, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, turn);
+    })();
+    const tag = this.addTags(path, { [TAG.text]: JSON.stringify({ c: ordered({ ...c, id: undefined, x: tagPt(placed.x), y: tagPt(placed.y) }), sid: c.id, plain, at, o, ...(pr ? { pr } : {}) }), ...more });
+    const name = c.name?.trim() || (c.ph === 'title' ? `Title ${id - 1}` : c.ph ? `Text Placeholder ${id - 1}` : `TextBox ${id - 1}`);
+    const nvSp = ph
+      ? `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr><a:spLocks noGrp="1"/></p:cNvSpPr><p:nvPr>${ph}<p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`
+      : `<p:nvSpPr><p:cNvPr id="${id}"${nameAttrs(name, c.hidden)}/><p:cNvSpPr txBox="1"/><p:nvPr><p:custDataLst><p:tags r:id="${tag}"/></p:custDataLst></p:nvPr></p:nvSpPr>`;
+    const geom = ph ? '' : '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/>';
+    return `<p:sp>${nvSp}<p:spPr>${xfrmXml}${geom}</p:spPr>${txBody}</p:sp>`;
   }
 
   /**
@@ -2510,6 +2524,17 @@ function slideLinks(doc: Doc): string | null {
   }
   return out.length ? JSON.stringify(out) : null;
 }
+
+/**
+ * A tag's object with its fields in one order (by name), so a thing read back and saved again
+ * writes the same tag however its fields were put together (F-P-001).
+ */
+function ordered<T extends object>(o: T): T {
+  return Object.fromEntries(Object.entries(o).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0))) as T;
+}
+
+/** A place in a tag, to a millionth of a point: no float noise (75.10000000000001) from reading it back (F-P-001). */
+const tagPt = (v: number) => Math.round(v * 1e6) / 1e6;
 
 /**
  * A placeholder's kept bodyPr with no AutoFit of its own or from its layout (noAutofit, as written
