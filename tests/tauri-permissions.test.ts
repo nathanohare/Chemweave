@@ -258,7 +258,7 @@ describe('Tauri permissions', () => {
     expect(registered.size).toBeGreaterThan(10);
     const missing = new Set<string>();
     for (const file of sourceFiles('src')) {
-      for (const m of read(file).matchAll(/\binvoke(?:<[^>(]*(?:<[^>]*>[^>(]*)*>)?\(\s*'([a-z_0-9]+)'/g)) {
+      for (const m of read(file).matchAll(/\binvoke(?:<[^<>(]*(?:<[^<>]*>[^<>(]*)*>)?\(\s*'([a-z_0-9]+)'/g)) {
         if (!registered.has(m[1])) missing.add(`${m[1]} (${file})`);
       }
     }
