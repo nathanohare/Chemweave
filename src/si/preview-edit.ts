@@ -7,7 +7,7 @@
 // character by character (a diff), so a change to the printed text is made at the same place in
 // the stored value; a change that touches only what the program added is refused.
 
-import { escapeMarkupLines } from './markup';
+import { escapeMarkupLines, startsMarker } from './markup';
 import { editableSrc, parseSrc, type SourceSpan } from './source-map';
 
 /** What an edit of the preview's text at [start, end) is. */
@@ -183,7 +183,8 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
   let rb = pb > pa ? map[pb - 1] + 1 : ra;
   // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object)
   const put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
-  if (!markup || rb <= ra) return raw.slice(0, ra) + put + raw.slice(rb);
+  if (!markup) return raw.slice(0, ra) + put + raw.slice(rb);
+  if (rb <= ra) return keepParagraphText(raw, raw.slice(0, ra) + put + raw.slice(rb), ra, put.length);
   // (an escaped character starts with its backslash)
   if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
   if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
@@ -200,6 +201,21 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
       const i = out.indexOf(e, lo);
       if (i >= 0 && i + e.length <= hi && !escapedAt(out, i)) { out = out.slice(0, i) + out.slice(i + e.length); hi -= e.length; again = true; }
     }
+  }
+  return keepParagraphText(raw, out, ra, put.length + kept.length);
+}
+
+/**
+ * An edit at `ra` that makes its paragraph start like a heading or an object ("#", "!figure{"),
+ * which it didn't before (the "{" of "!image{" typed after a pause, or the text before a "#"
+ * taken out): the paragraph's start escaped, so it stays the text it reads as.
+ */
+function keepParagraphText(raw: string, out: string, ra: number, put = 0): string {
+  const ps = ra > 0 ? raw.lastIndexOf('\n', ra - 1) + 1 : 0;
+  if (startsMarker(out.slice(ps)) && !startsMarker(raw.slice(ps))) { out = out.slice(0, ps) + '\\' + out.slice(ps); put++; }
+  // (a paragraph mark typed before a "#" or "!image{" already there: the paragraph it starts stays text)
+  for (let i = out.indexOf('\n', ps); i >= 0 && i < ra + put; i = out.indexOf('\n', i + 1)) {
+    if (startsMarker(out.slice(i + 1))) { out = out.slice(0, i + 1) + '\\' + out.slice(i + 1); put++; }
   }
   return out;
 }
@@ -267,14 +283,27 @@ export function locateEdit(before: string, after: string, selStart: number, selE
  */
 export function shiftSpans(spans: readonly SourceSpan[], start: number, end: number, delta: number, into: string | null): SourceSpan[] {
   const out: SourceSpan[] = [];
+  // (the text put in, [start, start + put) after the edit, goes in the first of the field's stretches reaching the edit)
+  const put = end - start + delta;
+  let given = false;
   for (const s of spans) {
-    if (s.end <= start && !(into && s.src === into && s.end === start && start === end && !spans.some((x) => x.src === into && x.start <= start && start < x.end))) { out.push(s); continue; }
+    if (s.end <= start && !(into && s.src === into && s.end === start && start === end && !spans.some((x) => x.src === into && x.start < start && start < x.end))) { out.push(s); continue; }
     if (s.start >= end && !(into && s.src === into && s.start === end && s.end > end && start === end && !spans.some((x) => x.src === into && x.end === start))) {
       out.push({ ...s, start: s.start + delta, end: s.end + delta });
       continue;
     }
+    // a stretch of the field edited: what of it the edit takes out goes (a selection over the
+    // paragraph mark between two of its stretches shortens both), and the text put in is in it
+    if (into && s.src === into) {
+      let ns = s.start < start ? s.start : s.start >= end ? s.start + delta : start;
+      let ne = s.end <= start ? s.end : s.end >= end ? s.end + delta : start;
+      if (put > 0) {
+        if (!given) { given = true; ns = Math.min(ns, start); ne = Math.max(ne, start + put); }
+        else { ns = Math.max(ns, start + put); ne = Math.max(ne, ns); }
+      }
+      out.push({ ...s, start: ns, end: ne });
+    }
     // the stretch edited (or one the edit reaches into)
-    if (into && s.src === into) out.push({ ...s, end: Math.max(s.start, s.end + delta) });
     else if (s.start >= start) out.push({ ...s, start: s.start + delta, end: s.end + delta });
     else out.push({ ...s, end: Math.max(s.start, s.end + (s.end >= end ? delta : 0)) });
   }
@@ -303,11 +332,31 @@ export function printedHunks(before: string, now: string): { pa: number; pb: num
   return out;
 }
 
+/** More changes than this in one write are taken as one rewrite of the field. */
+const MAX_HUNKS = 6;
+const NEAR = 4;
+
 /** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
 export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean): string | null {
   let out = raw, printed = before;
+  let hunks = printedHunks(before, now);
+  // (many changes, as a field retyped, aren't separate edits but one rewrite: one change, as before)
+  if (hunks.length > MAX_HUNKS) {
+    let pre = 0;
+    while (pre < before.length && pre < now.length && before[pre] === now[pre]) pre++;
+    let suf = 0;
+    while (suf < before.length - pre && suf < now.length - pre && before[before.length - 1 - suf] === now[now.length - 1 - suf]) suf++;
+    hunks = [{ pa: pre, pb: before.length - suf, typed: now.slice(pre, now.length - suf) }];
+  }
+  // (changes a few letters apart, as a word retyped over, are one change: what was typed takes the looks around it, as before)
+  hunks = hunks.reduce<typeof hunks>((acc, h) => {
+    const last = acc[acc.length - 1];
+    if (last && h.pa - last.pb < NEAR) acc[acc.length - 1] = { pa: last.pa, pb: h.pb, typed: last.typed + before.slice(last.pb, h.pa) + h.typed };
+    else acc.push(h);
+    return acc;
+  }, []);
   // (from the last change back: the places of the ones before it don't move)
-  for (const h of printedHunks(before, now).reverse()) {
+  for (const h of hunks.reverse()) {
     const next = applyToRaw(out, printed, h.pa, h.pb, h.typed, markup);
     if (next === null) return null;
     out = next;

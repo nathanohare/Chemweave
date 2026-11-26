@@ -132,6 +132,10 @@ export class SiPreview {
   private writtenGen = 0;
   /** Fields being written now: a compile that comes waits. */
   private busy = false;
+  /** A write of the preview's own ended while typing still waited to be written (bumpWritten). */
+  private bumpPending = false;
+  /** The edit the last write that stored something was made at. */
+  private realGen = 0;
   /** Custom text taken out to nothing (and so out of the file): put back where it was if typed again. */
   private gone = new Map<string, CustomText>();
   /** The page chosen in the list. */
@@ -687,11 +691,14 @@ export class SiPreview {
     let wrote = true;
     try { wrote = await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
     this.writtenGen = Math.max(this.writtenGen, gen);
+    if (this.bumpPending && !this.dirty.size && !this.fresh.size) { this.bumpPending = false; this.writtenGen = this.editGen; }
     // (nothing to write, as a letter typed and taken out again: no compile follows, and the text
     // shown is the stored text already, so commands waiting for it go ahead)
+    if (wrote) this.realGen = gen;
     if (!wrote && gen === this.editGen && !this.dirty.size && !this.fresh.size) {
-      this.shownGen = Math.max(this.shownGen, gen);
-      this.releaseShown();
+      // (unless an earlier write's compile isn't shown yet: it would be dropped as older, so ask for a new one)
+      if (this.shownGen < this.realGen) this.api.refresh();
+      else { this.shownGen = Math.max(this.shownGen, gen); this.releaseShown(); }
     }
     this.showWaiting();
   }
@@ -704,7 +711,9 @@ export class SiPreview {
   private bumpWritten(gen0: number): void {
     const typed = this.editGen !== gen0;
     this.editGen++;
-    if (!typed) this.writtenGen = this.editGen;
+    // (typing already written while this one saved: all written; typing still to write: its write says so)
+    if (!typed || (!this.dirty.size && !this.fresh.size && !this.busy)) this.writtenGen = this.editGen;
+    else this.bumpPending = true;
   }
 
   /** Commands waiting for the stored text to be shown (ready()) go ahead, once it is. */

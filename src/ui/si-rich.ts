@@ -211,7 +211,12 @@ export class SiRichBox {
   }
 
   /** The text as stored. */
-  get text(): string { return writeMarkup([...read(this.el, this.multiline), ...this.rest]); }
+  get text(): string {
+    if (!this.rest.length) return writeMarkup(read(this.el, this.multiline));
+    // (an emptied first line still holds its place, so the lines after it stay lines)
+    const first = read(this.el, this.multiline);
+    return writeMarkup([...(first.length ? first : [{ runs: [] }]), ...this.rest]);
+  }
 
   private show(text: string): void {
     const ps = parseMarkup(text);
@@ -224,7 +229,8 @@ export class SiRichBox {
     this.el.contentEditable = 'false';
     this.el.setAttribute('aria-busy', 'true');
     const done = (): void => { this.el.contentEditable = 'true'; this.el.removeAttribute('aria-busy'); };
-    void text.then((t) => { done(); this.set(t); }, () => done());
+    // (text that couldn't be read stays locked: typing into the empty box would save over it)
+    void text.then((t) => { done(); this.set(t); }, () => { this.el.removeAttribute('aria-busy'); this.el.title = 'This text could not be read. Reopen the project to try again.'; });
   }
 
   /** Show other text (the page was changed elsewhere). */

@@ -96,9 +96,9 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
     else {
       const inside = (s: SourceSpan): boolean => s.start >= block.start && s.end <= block.end;
       // (a field printed in more than one piece on the page: the piece the text was typed after,
-      // the one followed by what was between them, else the last)
+      // the last one followed by what was between them, else the last)
       const pieces = item.after ? srcs.filter((s) => s.src === item.after && inside(s)) : [];
-      const after = (item.gap ? pieces.find((s) => text.startsWith(item.gap, s.end)) : undefined) ?? pieces.pop();
+      const after = (item.gap ? pieces.filter((s) => text.startsWith(item.gap, s.end)).pop() : undefined) ?? pieces.pop();
       if (item.after && !after) anchored = false;
       at = after ? after.end : block.start;
       // (what was between, kept: the space after a sentence, a citation)
@@ -116,7 +116,8 @@ export function placeCustomText(doc: DocText, sources: SourceSpan[], blocks: Sou
     // page before) stays as it is, and the pages after it move along
     const holds = block ? blks.filter((b) => b.start <= block.start && block.end <= b.end) : [];
     for (const b of blks) {
-      if (holds.includes(b) || (b.start < at && at < b.end)) b.end += len;
+      // (with no page of its own, as text at the very end, the page ending there takes it)
+      if (holds.includes(b) || (b.start < at && (at < b.end || (!block && at === b.end)))) b.end += len;
       else if (b.start >= at) { b.start += len; b.end += len; }
     }
     for (const p of placed) if (p.start >= at) { p.start += len; p.end += len; }

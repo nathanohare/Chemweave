@@ -33,6 +33,16 @@ describe('joining two paragraphs of a field', () => {
     expect(out).toEqual([{ start: 0, end: 6, src: SRC }, { start: 8, end: 10, src: OTHER }]);
   });
 
+  it('typing straight after the join goes into the field', () => {
+    // after the join: [0, 4) and [4, 8), then a space typed at 4
+    expect(shiftSpans([{ start: 0, end: 4, src: SRC }, { start: 4, end: 8, src: SRC }], 4, 4, 1, SRC)).toEqual([{ start: 0, end: 5, src: SRC }, { start: 5, end: 9, src: SRC }]);
+  });
+
+  it('a selection over the paragraph mark shortens both stretches', () => {
+    // "On|e.\nTw|o." selected from 2 to 7 and taken out
+    expect(shiftSpans(spans, 2, 7, -5, SRC)).toEqual([{ start: 0, end: 2, src: SRC }, { start: 2, end: 4, src: SRC }]);
+  });
+
   it('the stored text loses only the paragraph mark', () => {
     // what the write works out from the stretches after the join: "One." + "Two." (no mark between)
     expect(applyPrintedChange('One.\nTwo.', 'One.\nTwo.', 'One.Two.', true)).toBe('One.Two.');
@@ -46,6 +56,10 @@ describe('two edits far apart in one field, saved together', () => {
       { pa: 16, pb: 16, typed: 'y' },
     ]);
     expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'xCH2Cl2 was addedy', true)).toBe('xCH_{2}Cl_{2} was addedy');
+  });
+
+  it('many changes close together are one change', () => {
+    expect(applyPrintedChange('abcdefghijklmnop', 'abcdefghijklmnop', 'aXcXeXgXiXkXmXoX', true)).toBe('aXcXeXgXiXkXmXoX');
   });
 
   it('one edit is as before', () => {
@@ -65,6 +79,18 @@ describe('"#" typed at the start of a paragraph', () => {
     const ps = parseMarkup(raw);
     expect(ps[1].heading).toBeFalsy();
     expect(ps[1].runs.map((r) => r.text).join('')).toBe('# 3 was used. Second.');
+  });
+
+  it('a "#" left at the start by taking out what was before it stays text', () => {
+    expect(applyPrintedChange('a# b', 'a# b', '# b', true)).toBe('\\# b');
+  });
+
+  it('a paragraph mark typed before a "#" keeps the new paragraph text', () => {
+    expect(applyPrintedChange('abc # def', 'abc # def', 'abc \n# def', true)).toBe('abc \n\\# def');
+  });
+
+  it('"!" typed before "image{" at a paragraph’s start stays text', () => {
+    expect(applyToRaw('image{x} y', 'image{x} y', 0, 0, '!', true)).toBe('\\!image{x} y');
   });
 
   it('inside a paragraph it needs no escape', () => {
@@ -97,6 +123,22 @@ describe('custom text placed at compile', () => {
     const got = placeCustomText(doc(text), sources, blocks, [{ id: 'k1', node: 'compound:c1', after: 'c:c1|f', gap: ' D', text: 'Mine. ' }]);
     expect(rt.plainText(got.doc.runs)).toBe('Name: X. DMine. ata: Y.');
   });
+
+  it('after a field of several paragraphs goes after the last one followed by the gap', () => {
+    // a procedure "Para one.\nPara two.\n" printed as two pieces, then words the program writes
+    const text = 'Para one.\nPara two.\n1H NMR data';
+    const sources: SourceSpan[] = [{ start: 0, end: 9, src: 'c:c1|p' }, { start: 10, end: 19, src: 'c:c1|p' }];
+    const blocks: SourceBlock[] = [{ start: 0, end: text.length, node: 'compound:c1' }];
+    const got = placeCustomText(doc(text), sources, blocks, [{ id: 'k1', node: 'compound:c1', after: 'c:c1|p', gap: '\n', text: 'Note. ' }]);
+    expect(rt.plainText(got.doc.runs)).toBe('Para one.\nPara two.\nNote. 1H NMR data');
+  });
+
+  it('with no page of its own goes at the end, in the last page', () => {
+    const blocks: SourceBlock[] = [{ start: 0, end: 5, node: 'compound:a' }];
+    const got = placeCustomText(doc('AAAA\n'), [], blocks, [{ id: 'k1', node: 'compound:gone', after: '', gap: '', text: 'End.' }]);
+    expect(got.blocks).toEqual([{ start: 0, end: 9, node: 'compound:a' }]);
+    expect(got.placed[0]).toMatchObject({ start: 5, end: 9, anchored: false });
+  });
 });
 
 describe('a one-line box holding a value of several lines', () => {
@@ -107,6 +149,21 @@ describe('a one-line box holding a value of several lines', () => {
     box.el.firstElementChild!.textContent = 'First line!';
     box.el.dispatchEvent(new Event('blur'));
     expect(saved).toBe('First line!\nSecond line');
+  });
+
+  it('keeps the lines after the first when the first is emptied', () => {
+    let saved: string | null = null;
+    const box = new SiRichBox('First line\nSecond line', { label: (r) => r, changed: (v) => { saved = v; } }, false);
+    box.el.firstElementChild!.textContent = '';
+    box.el.dispatchEvent(new Event('blur'));
+    expect(saved).toBe('\nSecond line');
+  });
+
+  it('stays locked when its text can’t be read', async () => {
+    const box = new SiRichBox('', { label: (r) => r, changed: () => {} }, true);
+    box.load(Promise.reject(new Error('unreadable')));
+    await Promise.resolve(); await Promise.resolve();
+    expect(box.el.contentEditable).toBe('false');
   });
 
   it('can’t be typed into while its text is being read', async () => {

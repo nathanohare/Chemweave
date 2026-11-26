@@ -138,7 +138,12 @@ export function escapeMarkup(text: string): string {
  * `atStart`: the text goes at the start of a paragraph (each line after a "\n" in it always does).
  */
 export function escapeMarkupLines(text: string, atStart: boolean): string {
-  return escape(text).split('\n').map((line, i) => ((i > 0 || atStart) && (line.startsWith('#') || OBJECT_STARTS.some((s) => line.startsWith(s))) ? '\\' + line : line)).join('\n');
+  return escape(text).split('\n').map((line, i) => ((i > 0 || atStart) && startsMarker(line) ? '\\' + line : line)).join('\n');
+}
+
+/** Whether a paragraph's stored text starts with a heading's or an object's marker. */
+export function startsMarker(line: string): boolean {
+  return line.startsWith('#') || OBJECT_STARTS.some((s) => line.startsWith(s));
 }
 
 function escape(text: string): string {
