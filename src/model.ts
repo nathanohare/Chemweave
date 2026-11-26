@@ -1546,6 +1546,8 @@ export interface TableData {
    * (a cell with heavier borders than the rest keeps them).
    */
   edges?: { left: number; top: number; bottom: number; right: number }[][];
+  /** The table's rows, columns, joined cells, lines and style when `edges` were read (tableShapeKey): they count only while it is the same. */
+  edgesKey?: string;
   /** How each column lines up (the first is left, the others centred, when not given). */
   align?: Justify[];
   /** Text size in points for runs that don't give one (the drawing's caption size when not given). */

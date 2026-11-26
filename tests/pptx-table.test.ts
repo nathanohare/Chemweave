@@ -317,11 +317,44 @@ describe('a PowerPoint table\'s cell borders', () => {
     // a row added here: the table's lines at its width, as before
     const added = { ...table, rows: [...table.rows, table.rows[2].map(() => R('x'))] };
     expect(slideXml(await save(added))).not.toContain('w="25400"');
+    // two cells joined here (same rows and columns): the borders as read no longer fit either (review)
+    const joined = { ...table, rows: table.rows.map((row, r) => row.map((c, k) => (r === 1 && k === 0 ? { ...c, span: 2 } : c))) };
+    expect(slideXml(await save(joined))).not.toContain('w="25400"');
+  });
+
+  it('keeps the outer rule of a cell joined in PowerPoint over the places it covers (review)', async () => {
+    const bytes = await save(sample());
+    const ln = (side: string) => `<a:${side} w="12700"><a:solidFill><a:srgbClr val="000000"/></a:solidFill></a:${side}>`;
+    const all = `${ln('lnL')}${ln('lnR')}${ln('lnT')}${ln('lnB')}`;
+    const cell = (t: string, extra = '') => `<a:tc${extra}><a:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang="en-US" sz="1800"/><a:t>${t}</a:t></a:r></a:p></a:txBody><a:tcPr>${all}</a:tcPr></a:tc>`;
+    const frame = `<p:graphicFrame><p:nvGraphicFramePr><p:cNvPr id="9" name="Table 8"/><p:cNvGraphicFramePr><a:graphicFrameLocks noGrp="1"/></p:cNvGraphicFramePr><p:nvPr/></p:nvGraphicFramePr>` +
+      `<p:xfrm><a:off x="1270000" y="1270000"/><a:ext cx="3657600" cy="741680"/></p:xfrm><a:graphic><a:graphicData uri="http://schemas.openxmlformats.org/drawingml/2006/table">` +
+      `<a:tbl><a:tblPr/><a:tblGrid><a:gridCol w="1219200"/><a:gridCol w="1219200"/><a:gridCol w="1219200"/></a:tblGrid>` +
+      `<a:tr h="370840">${cell('joined', ' gridSpan="2"')}${cell('', ' hMerge="1"')}${cell('c')}</a:tr><a:tr h="370840">${cell('d')}${cell('e')}${cell('f')}</a:tr></a:tbl></a:graphicData></a:graphic></p:graphicFrame>`;
+    const xml = slideXml(bytes).replace(/<p:graphicFrame>.*<\/p:graphicFrame>/s, frame).replace(/<p:sp>.*?<\/p:sp>/gs, '');
+    const { table } = tableOf(withSlide(bytes, xml));
+    // (every border 1 pt: no cell of its own, only the width)
+    expect(table.lineW).toBe(1);
+    expect(table.edges).toBeUndefined();
+    const saved = slideXml(await save(table));
+    const covered = /<a:tc hMerge="1">[\s\S]*?<a:tcPr[^>]*>([\s\S]*?)<\/a:tcPr>/.exec(saved)![1];
+    expect(covered).toMatch(/<a:lnT w="12700"/);
   });
 
   it('leaves a table without its own width at the drawing\'s line width', async () => {
     const { table } = tableOf(await save(sample()));
     const xml = slideXml(await save({ ...table, lineW: undefined }));
-    expect(xml).not.toContain('w="25400"');
+    const widths = [...xml.matchAll(/<a:ln[LRTB] w="(\d+)"[^>]*>(?!<a:noFill)/g)].map((m) => m[1]);
+    expect(widths.length).toBeGreaterThan(0);
+    expect(new Set(widths)).toEqual(new Set(['15240']));
+  });
+});
+
+describe('a table\'s line width in ChemDraw\'s table tag', () => {
+  it('is written and read back', async () => {
+    const { applyTableTag } = await import('../src/io/cdxml-table');
+    const t = sample();
+    expect(applyTableTag(t, { v: 1, head: 2, lines: 'acs', lineW: 2 }, { lines: 'acs', head: 2 }).lineW).toBe(2);
+    expect(applyTableTag(t, { v: 1, head: 2, lines: 'acs', lineW: -1 }, { lines: 'acs', head: 2 }).lineW).toBeUndefined();
   });
 });

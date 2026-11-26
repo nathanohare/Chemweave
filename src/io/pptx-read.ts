@@ -20,7 +20,7 @@ import { COMMENT_REL, readCommentAuthors, readLegacyComments, readModernComments
 import { Doc, Caption, Shape, TextRun, ParaStyle, Arrow, Contents, Placeholder, Justify, stripBase, type TableCell, type TableData, type PictureFx, type BackgroundRemoval, type PictureLook, type Frame, type ShapeMath, type Media, type OleMark } from '../model';
 import { layoutTable, NOTE_SCALE } from '../table';
 import { PPT_STYLE_IDS, slideCellLook, unstyledRuns } from '../deck/table-styles';
-import { linesFromBorders, commonBorderWidth, tableBorders, type Borders } from './cdxml-table';
+import { linesFromBorders, commonBorderWidth, tableBorders, tableShapeKey, type Borders } from './cdxml-table';
 import { turnAbout, normDegrees, DEG, type Vec, type Rect } from '../geom';
 import { POINTS, rotation, snapshot, transform, mirrorX, mirrorY } from '../editor/arrange';
 import { BULLETS, autoNumLabel, listInfo } from '../text/paragraphs';
@@ -2225,6 +2225,8 @@ class Reader {
       color ??= this.color(fill) ?? undefined;
       return fromEmu(e.getAttribute('w') ?? 12700);
     };
+    // (places covered by a joined cell)
+    const covered = new Set<string>();
     for (const tr of kids(tbl, 'tr')) {
       const tcs = kids(tr, 'tc');
       const row: TableCell[] = [];
@@ -2233,7 +2235,7 @@ class Reader {
         const tc = tcs[c];
         const tcPr = kid(tc ?? null, 'tcPr');
         // (a cell covered by a joined one shows none of its own lines)
-        if (!tc || tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') { bs.push({ left: 0, top: 0, bottom: 0, right: 0 }); row.push({ runs: [] }); continue; }
+        if (!tc || tc.getAttribute('hMerge') === '1' || tc.getAttribute('vMerge') === '1') { bs.push({ left: 0, top: 0, bottom: 0, right: 0 }); row.push({ runs: [] }); covered.add(`${rows.length},${c}`); continue; }
         bs.push({ left: width(tcPr, 'lnL'), top: width(tcPr, 'lnT'), bottom: width(tcPr, 'lnB'), right: width(tcPr, 'lnR') });
         const cap = this.text(tc, { x1: 0, y1: 0, x2: cols[c], y2: 100 }, null, []);
         const cell: TableCell = { runs: cap?.runs ?? [] };
@@ -2285,10 +2287,18 @@ class Reader {
         // (the cells' line width, kept: PowerPoint's 2 pt borders stay 2 pt)
         const w = commonBorderWidth(borders);
         if (w !== undefined && read.lines !== 'none') {
-          read.lineW = w;
-          // (and each cell's own, where they aren't all that width or the kind's lines)
+          // (the drawing's width: none of its own, so it follows the drawing's)
+          if (Math.abs(w - this.masterOut.drawing.lineWidth) > 0.01) read.lineW = w;
+          // and each cell's own, where they aren't all that width or the kind's lines; a place
+          // covered by a joined cell has the kind's (the file gives it none of its own)
           const plain = tableBorders(read, w);
-          if (borders.some((row, r) => row.some((b, c) => (['left', 'top', 'bottom', 'right'] as const).some((k) => Math.abs(b[k] - (plain[r]?.[c]?.[k] ?? 0)) > 0.01)))) read.edges = borders;
+          const joined = (r: number, c: number) => covered.has(`${r},${c}`) || (read.rows[r]?.[c]?.span ?? 1) > 1 || (read.rows[r]?.[c]?.rowSpan ?? 1) > 1;
+          const own = borders.map((row, r) => row.map((b, c) => (joined(r, c) ? plain[r]?.[c] ?? b : b)));
+          if (own.some((row, r) => row.some((b, c) => (['left', 'top', 'bottom', 'right'] as const).some((k) => Math.abs(b[k] - (plain[r]?.[c]?.[k] ?? 0)) > 0.01)))) {
+            read.lineW = w;
+            read.edges = own;
+            read.edgesKey = tableShapeKey(read);
+          }
         }
       }
     }

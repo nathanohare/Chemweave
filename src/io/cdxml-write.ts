@@ -2195,7 +2195,7 @@ class CdxmlWriter {
         table.appendChild(page);
       }
     });
-    const tag: TableTag = { v: 1, head: t.head, lines: t.lines };
+    const tag: TableTag = { v: 1, head: t.head, lines: t.lines, ...(t.lineW ? { lineW: t.lineW } : {}) };
     if (t.align) tag.align = t.align;
     if (t.size !== undefined) tag.size = t.size;
     const spans: [number, number, number][] = [];
