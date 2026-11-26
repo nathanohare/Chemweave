@@ -338,6 +338,17 @@ describe('a text box in a group whose child coordinates differ from its place', 
     }
   });
 
+  it('in a flipped group in another flipped the same way is back where it started', async () => {
+    const g = (inner: string) => `<p:grpSp><p:nvGrpSpPr><p:cNvPr id="${nextId++}" name="Group"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr>`
+      + '<p:grpSpPr><a:xfrm flipH="1"><a:off x="1000000" y="1000000"/><a:ext cx="3000000" cy="2000000"/><a:chOff x="1000000" y="1000000"/><a:chExt cx="3000000" cy="2000000"/></a:xfrm></p:grpSpPr>'
+      + inner + '</p:grpSp>';
+    const box = textBox(`<a:p>${run('Twice')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [1000000, 1000000, 2000000, 500000]);
+    const xml = await save(deck(g(g(box))));
+    const [x, y, cx, cy] = frameOf(xml, 'Twice');
+    const [gx, gy] = groupShift(xml);
+    expect([x + gx, y + gy, cx, cy]).toEqual([1000000, 1000000, 2000000, 500000]);
+  });
+
   it('is saved where it is on the slide, not at its place in the group', async () => {
     const box = textBox(`<a:p>${run('Grouped')}</a:p>`, '<a:bodyPr wrap="square" rtlCol="0"/>', [3048000, 2921000, 2000000, 500000]);
     const xml = await save(deck(group(box, [3000000, 2000000], [3000000, 2000000])));

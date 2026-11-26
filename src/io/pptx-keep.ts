@@ -220,15 +220,18 @@ export function textSig(c: Pick<Caption, 'runs' | 'paras'>): string {
   return JSON.stringify([parts.filter((x) => x[0] !== ''), paras]);
 }
 
-/** Where a text box's kept frame (keptFrame) is on the slide, in points; null without one. */
-export function keptBox(pbox: string | undefined): { x: number; y: number; w: number; h: number } | null {
+/**
+ * Where a text box's kept frame (keptFrame) was on the slide when read, in points, and where its
+ * text was then (`tx`, `ty`: the frame moves with the text, frameNow); null without one.
+ */
+export function keptBox(pbox: string | undefined): { x: number; y: number; w: number; h: number; tx: number; ty: number; wrap: number | null; boxH: number | null } | null {
   if (!pbox) return null;
   let k: FrameKept;
   try { k = JSON.parse(pbox) as FrameKept; } catch { return null; }
   const m = /<a:off x="(-?\d+)" y="(-?\d+)"\/><a:ext cx="(\d+)" cy="(\d+)"/.exec(k.xf ?? '');
   if (!m) return null;
   const [x, y, w, h] = m.slice(1).map((v) => Number(v) / 12700);
-  return { x, y, w, h };
+  return { x, y, w, h, tx: k.x, ty: k.y, wrap: k.wrap, boxH: k.boxH };
 }
 
 /**

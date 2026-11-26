@@ -3199,7 +3199,7 @@ function poseNew(doc: Doc, mark: number, box: Rect & { rot: number; flipH: boole
     const sel = { atoms: ids(doc.atoms), bonds: ids(doc.bonds), captions: ids(doc.captions), arrows: ids(doc.arrows), shapes: ids(doc.shapes) };
     // a PowerPoint text box with its frame kept (not turned): the frame mirrored in the group, the
     // text where it was in it, as PowerPoint shows it (its start isn't mirrored as a point; coordinators #69)
-    const framed = new Map<number, { x: number; y: number; w: number; h: number }>();
+    const framed = new Map<number, NonNullable<ReturnType<typeof keptBox>>>();
     for (const id of sel.captions) {
       const cap = doc.captions.get(id);
       const f = cap && !cap.rot ? keptBox(cap.pbox) : null;
@@ -3210,9 +3210,14 @@ function poseNew(doc: Doc, mark: number, box: Rect & { rot: number; flipH: boole
     if (box.flipV) transform(doc, snapshot(doc, sel, POINTS), mirrorY(c.y), true);
     for (const [id, f] of framed) {
       const cap = doc.captions.get(id)!;
+      // (the frame where it is now, moved with the text since it was read: by a group flipped inside this one)
+      const fx = f.x + cap.x - f.tx, fy = f.y + cap.y - f.ty;
+      // (and its size now: made wider or taller in PowerPoint since, as frameNow writes it)
+      const fw = f.w + (cap.wrap !== undefined && f.wrap !== null ? cap.wrap - f.wrap : 0);
+      const fh = f.h + (cap.boxH !== undefined && f.boxH !== null ? cap.boxH - f.boxH : 0);
       doc.updateCaption(id, {
-        ...(box.flipH ? { x: 2 * c.x - (f.x + f.w) + (cap.x - f.x) } : {}),
-        ...(box.flipV ? { y: 2 * c.y - (f.y + f.h) + (cap.y - f.y) } : {}),
+        ...(box.flipH ? { x: 2 * c.x - (fx + fw) + (f.tx - f.x) } : {}),
+        ...(box.flipV ? { y: 2 * c.y - (fy + fh) + (f.ty - f.y) } : {}),
       });
     }
   }
