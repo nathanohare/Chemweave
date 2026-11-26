@@ -183,16 +183,22 @@ export function applyToRaw(raw: string, printed: string, pa: number, pb: number,
   let rb = pb > pa ? map[pb - 1] + 1 : ra;
   // (a change that would land inside a mention or citation: its printed label was matched to letters of its id)
   if (markup && insideLink(raw, ra, rb)) return null;
+  // (an escaped character starts with its backslash: what is typed before it goes before that)
+  if (markup) {
+    const insert = rb <= ra;
+    if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
+    if (insert) rb = ra;
+    else if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
+  }
   // (a "#" or "!figure{" typed at a paragraph's start stays text, not a heading or an object; so
-  // does one already after the place, when the typed text ends with a paragraph mark)
+  // does one already after the place that the typed text's last paragraph mark puts at a paragraph
+  // start, unless it was at one already: Enter at a heading's start leaves it a heading)
   let put = markup ? escapeMarkupLines(typed, ra === 0 || raw[ra - 1] === '\n') : typed;
   const nl = put.lastIndexOf('\n');
-  if (markup && nl >= 0 && !startsMarker(put.slice(nl + 1)) && startsMarker(put.slice(nl + 1) + raw.slice(rb))) put = put.slice(0, nl + 1) + '\\' + put.slice(nl + 1);
+  const wasStart = rb === 0 || raw[rb - 1] === '\n';
+  if (markup && nl >= 0 && !startsMarker(put.slice(nl + 1)) && startsMarker(put.slice(nl + 1) + raw.slice(rb)) && !(nl === put.length - 1 && wasStart)) put = put.slice(0, nl + 1) + '\\' + put.slice(nl + 1);
   if (!markup) return raw.slice(0, ra) + put + raw.slice(rb);
   if (rb <= ra) return keepParagraphText(raw, raw.slice(0, ra) + put + raw.slice(rb), ra, rb);
-  // (an escaped character starts with its backslash)
-  if (ra > 0 && raw[ra - 1] === '\\' && !escapedAt(raw, ra - 1)) ra--;
-  if (rb - 1 > ra && raw[rb - 1] === '\\' && !escapedAt(raw, rb - 1)) rb--;
   // the markers in what is taken out stay (a selection from inside a subscript to after it
   // leaves the subscript closed); the typed text goes before them, in the look of the first
   // character taken out; formatting left empty goes

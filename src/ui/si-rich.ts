@@ -309,6 +309,8 @@ export class SiRichBox {
 
   /** Save what was typed, if it changed. */
   commit(): void {
+    // (text that couldn't be read isn't saved over)
+    if (this.unread) return;
     if (this.timer) { clearTimeout(this.timer); this.timer = null; }
     const t = this.text;
     if (t === this.last) return;

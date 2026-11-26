@@ -109,6 +109,15 @@ describe('"#" typed at the start of a paragraph', () => {
     expect(applyToRaw('image{x} y', 'image{x} y', 0, 0, '!', true)).toBe('\\!image{x} y');
   });
 
+  it('Enter at a heading’s start leaves it a heading', () => {
+    expect(applyPrintedChange('intro\n# Heading\nbody', 'intro\nHeading\nbody', 'intro\n\nHeading\nbody', true)).toBe('intro\n\n# Heading\nbody');
+  });
+
+  it('typing before an escaped character goes before its backslash', () => {
+    expect(applyToRaw('\\*x', '*x', 0, 0, 'z', true)).toBe('z\\*x');
+    expect(applyToRaw('\\# x', '# x', 0, 0, '\n', true)).toBe('\n\\# x');
+  });
+
   it('a heading after a paragraph taken out whole stays a heading', () => {
     expect(applyPrintedChange('ab\ncd\n# Real', 'ab\ncd\nReal', 'ab\nReal', true)).toBe('ab\n# Real');
   });
