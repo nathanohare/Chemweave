@@ -43,9 +43,10 @@ export const BRUSH = drawn(
   3, 21, 'copy');
 
 /**
- * The text tool where the I-beam may be over the grey round the slide (Slides, Design): a black
- * I-beam outlined in white, so it shows on any background. (The system I-beam is drawn by
- * inverting what is under it on Windows, and a mid grey such as Dark Gray's inverted is the same grey.)
+ * The I-beam of Document mode and of the text tool in Slides and Design (where it may be over the
+ * grey round the slide): black, outlined in white, so it shows on any background. (The system
+ * I-beam is drawn by inverting what is under it on Windows, and a mid grey such as Dark Gray's, a
+ * page color or shading inverted is the same grey.)
  */
 export const IBEAM = drawn(
   '<path d="M8.5 4h7M12 4v16M8.5 20h7" fill="none" stroke="#fff" stroke-width="4" stroke-linecap="round"/>' +

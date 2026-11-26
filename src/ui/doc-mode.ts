@@ -20,7 +20,7 @@ import { keymap, chordOf, parseAction, type KeyContext } from '../editor/keymap'
 import * as rt from '../richtext';
 import type { Move, TextEditing } from '../text/editing';
 import type { ObjectLook, TextLook } from '../format-painter';
-import { BRUSH } from '../editor/cursors';
+import { BRUSH, IBEAM } from '../editor/cursors';
 import { offsetAt, caretPos, selectionRects } from '../text/layout';
 import type { Rect } from '../geom';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
@@ -2826,13 +2826,19 @@ export class DocumentMode {
     const s = v.scroller;
     // (what is clicked is on the screen already: picking it doesn't scroll the window)
     s.addEventListener('pointerdown', (e) => { if (e.button === 0) this.activate(v); this.stayPut(() => this.pointerDown(e)); });
-    s.addEventListener('pointermove', (e) => {
+    const hoverMove = (e: PointerEvent) => {
       // the mouse over the other pane: its own cursor (the pane being worked in stays the same)
       if (this.dragging || v === this.view) { this.pointerMove(e); return; }
       const was = this.view;
       this.view = v;
       try { this.pointerMove(e); } finally { this.view = was; }
-    });
+    };
+    // (the pointer last seen over this pane: scrolling or zooming under a still mouse brings the
+    // page or the grey under it, so its pointer is worked out again then)
+    let last: PointerEvent | null = null;
+    s.addEventListener('pointermove', (e) => { last = e; hoverMove(e); });
+    s.addEventListener('pointerleave', () => { last = null; });
+    s.addEventListener('scroll', () => { if (last && !this.dragging) hoverMove(last); });
     // (letting go puts what was dragged where the pointer is, on the screen: nothing scrolls)
     s.addEventListener('pointerup', (e) => this.stayPut(() => {
       const d = this.dragging;
@@ -3182,7 +3188,7 @@ export class DocumentMode {
       // typing into a header or footer: the document's text can't be typed into meanwhile
       if (f.box?.hf) {
         if (this.view.scroller.title) this.view.scroller.title = '';
-        this.view.scroller.style.cursor = this.view.hfAt(e.clientX, e.clientY) ? 'text' : 'default';
+        this.view.scroller.style.cursor = this.view.hfAt(e.clientX, e.clientY) ? IBEAM : 'default';
         return;
       }
       // a figure under the pointer shows its area in light grey
@@ -3204,9 +3210,10 @@ export class DocumentMode {
       if (this.tables.painting && this.cellAt(p)) { this.view.scroller.style.cursor = 'crosshair'; return; }
       if (this.painter && !this.reading) { this.view.scroller.style.cursor = BRUSH; return; }
       this.view.scroller.style.cursor = across && across.left !== across.top ? 'nesw-resize' : corner || across ? 'nwse-resize'
-        // off the page (the grey round it) the plain arrow, as there is no text there to type into
-        : id === null ? (this.view.onPage(e.clientX, e.clientY) ? 'text' : 'default') : o?.kind === 'table' ? 'text'
-        : o?.kind === 'textbox' ? (o.geo || this.nearEdge(id, p) ? 'move' : 'text') : o?.kind === 'note' ? 'text'
+        // off the page (the grey round it) the plain arrow, as there is no text there to type into;
+        // the I-beam is the outlined one, which shows on any page color, shading or picture too
+        : id === null ? (this.view.onPage(e.clientX, e.clientY) ? IBEAM : 'default') : o?.kind === 'table' ? IBEAM
+        : o?.kind === 'textbox' ? (o.geo || this.nearEdge(id, p) ? 'move' : IBEAM) : o?.kind === 'note' ? IBEAM
         : floatOf(o) ? 'move' : o?.kind === 'drawing' ? 'pointer' : 'default';
       return;
     }

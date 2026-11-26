@@ -1872,7 +1872,7 @@ body.doc-reading header, body.doc-reading #tabs, body.doc-reading #doc-ribbon, b
 body.doc-reading #status, body.doc-reading #doc-statusbar, body.doc-reading .dock { display: none !important; }
 body.doc-reading #doc-pane.nav-open > :not(#doc-nav) { margin-left: 0; }
 .doc-canvas { position: absolute; left: 0; top: 0; display: block; pointer-events: none; }
-/* (the pointer: an I-beam over the pages only, set as it moves, DocMode.pointerMove) */
+/* (the pointer: an outlined I-beam over the pages only, set as it moves, DocMode.pointerMove) */
 .doc-scroll { position: absolute; inset: 0; overflow: auto; outline: none; cursor: default; }
 .doc-space { pointer-events: none; }
 /* the document's page count, views and zoom: on the right of the window's one status bar */

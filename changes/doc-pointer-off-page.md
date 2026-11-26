@@ -1,2 +1,2 @@
-Fixed: Document: the pointer is the I-beam only over the pages; on the gray around them it is the usual arrow again, so it no longer disappears into the Dark Gray background. The same goes for the SI Live Preview.
-Fixed: Slides and Design: the Text tool's I-beam has a white outline, so it shows on the gray around the slide too.
+Fixed: Document: the pointer is the I-beam only over the pages; on the gray around them it is the usual arrow again, so it no longer disappears into the Dark Gray background. It is worked out again when the page scrolls under a still mouse. The same goes for the SI Live Preview.
+Changed: Document, Slides and Design: the I-beam is black with a white outline, so it shows on any page color, shading, picture or gray.
