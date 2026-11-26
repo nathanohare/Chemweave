@@ -1,6 +1,5 @@
 // Workspace files (File > Workspace > Save Workspace, Open Workspace): a short list of the tabs that were
-// open, in order, which one was showing and which drawing sat beside a document, sheet or deck
-// in split view. Files in the workspace's own folder are listed by name, so the folder can be
+// open, in order, which one was showing and which two were side by side in split screen. Files in the workspace's own folder are listed by name, so the folder can be
 // moved or copied (to OneDrive, another computer) and still open; others by their full path.
 
 import type { FileType } from './files';
@@ -10,7 +9,10 @@ export const WORKSPACE: FileType = { description: 'Chemweave workspace', extensi
 export interface WorkspaceEntry {
   /** The file: a name or path relative to the workspace file's folder, or a full path. */
   file: string;
-  /** Split view: the entry (by position) of the drawing shown beside this tab. */
+  /**
+   * Split screen: the entry (by position) of the tab on this one's right. (Workspaces saved before
+   * split screen named the canvas beside a document, sheet or deck this way: it was on the right.)
+   */
   beside?: number;
 }
 
