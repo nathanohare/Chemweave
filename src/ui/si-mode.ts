@@ -656,7 +656,7 @@ export class SiMode {
     this.wirePageScroll();
     let collapsed = false;
     try { collapsed = localStorage.getItem('si.pageCollapsed') === 'on'; } catch { /* (shown) */ }
-    this.setPageCollapsed(collapsed);
+    this.setPageCollapsed(collapsed, false);
     this.pane.append(this.tree, this.page, this.live.el, this.treeGrip());
     work.append(this.pane);
     // a compound's ID in the text shows its structure when the mouse rests on it
@@ -3091,16 +3091,18 @@ export class SiMode {
   pageCollapsed = false;
 
   /** Hide the SI page (the preview takes its width) or show it again: the arrow on the divider. */
-  setPageCollapsed(on: boolean): void {
+  setPageCollapsed(on: boolean, persist = true): void {
     this.pageCollapsed = on;
-    try { localStorage.setItem('si.pageCollapsed', on ? 'on' : 'off'); } catch { /* (not kept) */ }
+    if (persist) try { localStorage.setItem('si.pageCollapsed', on ? 'on' : 'off'); } catch { /* (not kept) */ }
     this.pane.classList.toggle('si-page-off', on);
+    // (nothing to drag with the page hidden)
+    const grip = this.live.el.querySelector<HTMLElement>('.si-live-grip');
+    if (grip) grip.title = on ? '' : 'Drag to change the preview’s width';
     const b = this.live.el.querySelector<HTMLButtonElement>('.si-page-fold');
     if (b) {
-      const tip = on ? 'Show the SI page' : 'Hide the SI page: the Live Preview takes its width';
+      const tip = on ? 'Show the SI page' : 'Hide the SI page so the Live Preview fills the width';
       b.title = tip;
       b.setAttribute('aria-label', on ? 'Show the SI page' : 'Hide the SI page');
-      b.setAttribute('aria-pressed', String(on));
       b.innerHTML = `<svg viewBox="0 0 10 10" aria-hidden="true"><path d="${on ? 'M3.5 1.5L7 5L3.5 8.5' : 'M6.5 1.5L3 5L6.5 8.5'}" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
     }
     this.live.view?.resize();
@@ -3620,6 +3622,8 @@ export class SiMode {
   private goToSource(src: string): void {
     const s = parseSrc(src);
     if (!s) return;
+    // (the field is on the SI page: shown again if it was hidden)
+    if (this.pageCollapsed) this.setPageCollapsed(false);
     if (s.owner === 'c') this.go({ kind: 'compound', id: s.id });
     else if (s.owner === 's' || s.owner === 'g') this.go({ kind: 'section', id: s.id.split('/')[0] });
     else if (s.field === 'settings') { void this.run('project-settings'); return; }
@@ -5092,6 +5096,8 @@ export class SiMode {
   async run(cmd: string): Promise<void> {
     const p = this.project;
     if (!p) return;
+    // (a new page to fill in: the SI page shown again if it was hidden)
+    if (this.pageCollapsed && ['new-compound', 'new-scheme', 'new-section'].includes(cmd)) this.setPageCollapsed(false);
     try {
       const j = !SiMode.NO_STEP.has(cmd) ? journalOf(p.folder) : null;
       if (!j) { await this.command(cmd); return; }
