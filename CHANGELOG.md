@@ -2,7 +2,7 @@
 
 <!-- Made by scripts/changelog.mjs from changes/ each time a version is published. Edit the files in changes/, not this one. -->
 
-Every version of Chemweave, newest first: 170 versions and 687 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
+Every version of Chemweave, newest first: 171 versions and 693 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
 
 ## Milestones
 
@@ -20,6 +20,46 @@ Every version of Chemweave, newest first: 170 versions and 687 pull requests so 
 - **2026-10-22**: Office-style Document, Presentation and Spreadsheet modes finished in five waves ([#83](https://github.com/nathanohare/Chemweave/pull/83) to [#126](https://github.com/nathanohare/Chemweave/pull/126)).
 - **2026-10-14**: The first published release, 0.1.72, with installers for Windows, macOS and Linux.
 - **2026-10-12**: The first line of code: a speed prototype, the desktop app, and saving CDXML files ([#1](https://github.com/nathanohare/Chemweave/pull/1), [#2](https://github.com/nathanohare/Chemweave/pull/2)).
+
+## 0.1.273 (2026-11-26)
+
+### Added
+
+- Desktop app: installing an update reopens every tab afterward as it was: the same tabs in the same order, the tab showing, Split Screen, other windows of a document, each tab's zoom and slide, and SI projects. Tabs with unsaved changes, and ones never saved, come back unsaved, so the update no longer asks you to save or lose them; your files on disk aren't changed. ([#810](https://github.com/nathanohare/Chemweave/pull/810))
+- SI Project: the ribbon has Document mode's Layout, References, Review and View tabs, and Home has Clipboard (Paste, Cut, Copy) and Editing (Find, Go To, Select All). They act on the SI page's boxes or the Live Preview, wherever you were typing. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+- SI Project: Find lights up every place a word appears in the Live Preview; Go To jumps to a page of the compiled SI or a compound by its ID. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+- SI Project: View ▸ Multiple Pages, Show/Hide ¶, Navigation Pane and Hide SI Page for the Live Preview and the list of sections and compounds. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+- SI Project: double-click a compound's structure in the Live Preview to change it with the drawing tools. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+
+### Changed
+
+- Document, Slides and Design: the I-beam is black with a white outline, so it shows on any page color, shading, picture or gray. ([#813](https://github.com/nathanohare/Chemweave/pull/813))
+- The Quick Access Toolbar starts with Save, Undo and Redo in the desktop app too, the same in every kind of tab. A list you have chosen stays as it is, and the other usual commands (New, Open, Print and more) are one click away on the bar's ▾ button. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- In a very short window (under 420 pixels tall) the ribbon folds to its tabs, as Office's does, so the menus, the file tabs and the status bar still fit; click a tab to use its buttons. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- SI Project: Spelling is now Review ▸ Review (F7), beside Dictionary, Warnings and Manuscript Check; the reference list's commands moved from their own tab to the References tab. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+- SI Project: the SI page has half the space around its boxes, and each box has a soft shadow, as the Live Preview's pages do. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+- SI Project: the Home tab keeps the commands used most, in more groups; the rest (moving pages, the ID table, the libraries, Project Settings, snapshots) are on a new Project tab. Small ribbon buttons are aligned left, as in the other modes. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+
+### Fixed
+
+- Animations no longer make the window pulse. Switching ribbon tabs or Settings pages fades only what changes, and backgrounds and parts that stay on screen keep still. Switching to another kind of file (canvas, document, presentation, spreadsheet) now shows it at once, ribbon and colors included. ([#814](https://github.com/nathanohare/Chemweave/pull/814))
+- Opening Settings (or any dialog) no longer flashes the window buttons in the wrong place; dialogs now fade in without growing. ([#814](https://github.com/nathanohare/Chemweave/pull/814))
+- Document: the pointer is the I-beam only over the pages; on the gray around them it is the usual arrow again, so it no longer disappears into the Dark Gray background. It is worked out again when the page scrolls under a still mouse. The same goes for the SI Live Preview. ([#813](https://github.com/nathanohare/Chemweave/pull/813))
+- With the menus in the File tab, the open files' tabs, their ▾ list and New Tab no longer get squeezed out of a narrow window, and the desktop app's window buttons are never pushed off it; when the row is too short, the file tabs move onto a line of their own. The same holds for the menu bar. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- The open file's tab stays in view when the row of tabs gets narrower, and the side panel no longer ends up off the window's right edge after switching between kinds of tab. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- In a narrow window the ribbon's tabs go onto a second line instead of off the edge, and the status bar drops its zoom slider and Go to Selection so its buttons stay in reach. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- A floating toolbox no longer hangs over the status bar in a short window (it gets a scroll bar instead), and it keeps its place in the drawing when the ribbon folds or the file tabs move to a line of their own. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- With the file tabs on a row of their own, Quick Access, Search and the desktop app's window buttons no longer run off a narrow window or cover one another. ([#801](https://github.com/nathanohare/Chemweave/pull/801))
+- Desktop app: the Knowledge Base's imported tables are kept between sessions (they couldn't be written to the app's data folder). ([#810](https://github.com/nathanohare/Chemweave/pull/810))
+
+### Removed
+
+- SI Project: ribbon commands that only repeated a click, a double-click or another command: Edit Structure and Draw Structure (click or double-click the structure, figure or box), Edit Reference and Open Compound (double-click the row), Header, Footer and Page Number (Page Setup), Bibliography, and Project ▸ Cite from My Library. ([#806](https://github.com/nathanohare/Chemweave/pull/806))
+
+### Under the hood
+
+- the smoke test checks the animations for pulses and flashing parts, and that the fades that should run still do. ([#814](https://github.com/nathanohare/Chemweave/pull/814))
+- Release notes and the changelog remove HTML comments completely, even ones that removing another comment puts together. ([#807](https://github.com/nathanohare/Chemweave/pull/807))
 
 ## 0.1.269 (2026-11-26)
 
