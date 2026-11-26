@@ -132,7 +132,13 @@ function svgRoot(text: string): { at: number; tag: string; close: number; attr: 
   const close = blank.lastIndexOf('</svg>');
   if (!open || close < open.index || open[0].endsWith('/>')) return null;
   const tag = text.slice(open.index, open.index + open[0].length);
-  const attr = (name: string): string | null => new RegExp(`\\s${name}\\s*=\\s*(["'])(.*?)\\1`, 'i').exec(tag)?.[2] ?? null;
+  // (the root's attributes read once; a name is matched as written, case aside)
+  const attrs = new Map<string, string>();
+  for (const m of tag.matchAll(/\s([\w:.-]+)\s*=\s*(?:"([^"]*)"|'([^']*)')/g)) {
+    const k = m[1].toLowerCase();
+    if (!attrs.has(k)) attrs.set(k, m[2] ?? m[3] ?? '');
+  }
+  const attr = (name: string): string | null => attrs.get(name.toLowerCase()) ?? null;
   const vb = (attr('viewBox') ?? '').trim().split(/[\s,]+/).map(num);
   const hasVb = vb.length === 4 && vb.every(Number.isFinite) && vb[2] > 0 && vb[3] > 0;
   const wAttr = attr('width'), hAttr = attr('height');
