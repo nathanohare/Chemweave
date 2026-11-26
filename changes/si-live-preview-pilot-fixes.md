@@ -1,5 +1,5 @@
 Fixed: SI Live Preview: pressing Backspace at the start of a field's second paragraph (or Delete at the end of its first) no longer deletes an extra character from the stored text, and what you type right after it is kept.
-Fixed: SI Live Preview: two quick edits in different places of one field no longer remove the subscripts, bold and mentions between them.
+Fixed: SI Live Preview: two quick edits in different places of one field no longer remove the subscripts, bold and mentions between them, and text typed over a selection takes the look of its first selected letter.
 Fixed: SI Live Preview: bold or italic put on words that Chemweave writes inside a procedure or NMR field now stays.
 Fixed: SI Live Preview: typing soon after formatting a selection no longer saves the earlier typing into the field twice.
 Fixed: SI Live Preview: Replace no longer says "still updating" after a letter was typed and taken out again.

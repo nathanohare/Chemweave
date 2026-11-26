@@ -136,6 +136,8 @@ export class SiPreview {
   private bumpPending = false;
   /** The edit the last write that stored something was made at. */
   private realGen = 0;
+  /** Where the selections typed over (not yet written) began, in the preview's text. */
+  private selStarts: number[] = [];
   /** Custom text taken out to nothing (and so out of the file): put back where it was if typed again. */
   private gone = new Map<string, CustomText>();
   /** The page chosen in the list. */
@@ -664,6 +666,9 @@ export class SiPreview {
   /** The stretches after an edit of [start, end) by `delta` characters: the one edited (`into`) grows or shrinks. */
   private shift(start: number, end: number, delta: number, into: string | null): void {
     this.spans = shiftSpans(this.spans, start, end, delta, into);
+    const put0 = end - start + delta;
+    this.selStarts = this.selStarts.map((a) => (a < start ? a : a >= end ? a + delta : start));
+    if (into && end > start && put0 > 0 && !this.selStarts.includes(start)) this.selStarts.push(start);
     // (the pages' stretches and the custom text's places move along too: the wash and new custom text's places use them)
     const put = end - start + delta;
     const move = (x: number, edge: 'start' | 'end'): number => (x < start || (x === start && (edge === 'start' || end > start)) ? x : x >= end ? x + delta : edge === 'start' ? start : start + put);
@@ -686,10 +691,12 @@ export class SiPreview {
     const gen = this.editGen;
     const owner = this.owner;
     const srcs = [...this.dirty];
+    const starts = this.selStarts;
+    this.selStarts = [];
     this.dirty.clear();
     this.busy = true;
     let wrote = true;
-    try { wrote = await this.writeEach(text, spans, srcs, owner); } finally { this.busy = false; }
+    try { wrote = await this.writeEach(text, spans, srcs, owner, starts); } finally { this.busy = false; }
     this.writtenGen = Math.max(this.writtenGen, gen);
     if (this.bumpPending && !this.dirty.size && !this.fresh.size) { this.bumpPending = false; this.writtenGen = this.editGen; }
     // (nothing to write, as a letter typed and taken out again: no compile follows, and the text
@@ -733,7 +740,7 @@ export class SiPreview {
   private failed = false;
 
   /** Whether anything was written (or a write failed). */
-  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown): Promise<boolean> {
+  private async writeEach(text: string, spans: SourceSpan[], srcs: string[], owner: unknown, starts: readonly number[] = []): Promise<boolean> {
     const customs: { id: string; text: string }[] = [];
     let failed = false;
     let wrote = false;
@@ -753,9 +760,11 @@ export class SiPreview {
         }
         before = { printed: printedOf(this.base.text, this.base.spans, src).printed, raw: raw ?? '' };
       }
-      const now = printedOf(text, spans, src).printed;
+      const mine = printedOf(text, spans, src);
+      const now = mine.printed;
+      const at = starts.filter((a) => spans.some((x) => x.src === src && x.start <= a && a < x.end)).map(mine.at);
       // (each change on its own: two edits far apart in the field leave what is between them as stored)
-      const next = applyPrintedChange(before.raw, before.printed, now, markupSrc(src));
+      const next = applyPrintedChange(before.raw, before.printed, now, markupSrc(src), at);
       if (next === null) {
         this.api.flash(`That change touches words Chemweave writes, so it wasn’t saved to ${this.api.labelOf(src)}. Change it on the SI page.`, 8000);
         failed = true;

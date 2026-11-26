@@ -62,6 +62,13 @@ describe('two edits far apart in one field, saved together', () => {
     expect(applyPrintedChange('abcdefghijklmnop', 'abcdefghijklmnop', 'aXcXeXgXiXkXmXoX', true)).toBe('aXcXeXgXiXkXmXoX');
   });
 
+  it('a selection typed over takes the look of its first letter', () => {
+    // "CH2Cl2" selected from its plain "C" and "CHCl3" typed: plain, as the "C" was
+    expect(applyPrintedChange('CH_{2}Cl_{2} was added', 'CH2Cl2 was added', 'CHCl3 was added', true, [0])).toBe('CHCl3 was added');
+    // only the "2 h" in bold selected and "3 h" typed: bold, as the "2" was
+    expect(applyPrintedChange('stirred for **2 h**', 'stirred for 2 h', 'stirred for 3 h', true, [12])).toBe('stirred for **3 h**');
+  });
+
   it('one edit is as before', () => {
     expect(applyPrintedChange('stirred for **2 h**', 'stirred for 2 h', 'stirred for 3 h', true)).toBe('stirred for **3 h**');
   });

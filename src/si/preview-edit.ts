@@ -337,7 +337,7 @@ const MAX_HUNKS = 6;
 const NEAR = 4;
 
 /** The stored value after its printed text went from `before` to `now`: each change put in on its own (null: one touches words the program writes). */
-export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean): string | null {
+export function applyPrintedChange(raw: string, before: string, now: string, markup: boolean, starts: readonly number[] = []): string | null {
   let out = raw, printed = before;
   let hunks = printedHunks(before, now);
   // (many changes, as a field retyped, aren't separate edits but one rewrite: one change, as before)
@@ -355,6 +355,18 @@ export function applyPrintedChange(raw: string, before: string, now: string, mar
     else acc.push(h);
     return acc;
   }, []);
+  // (a selection typed over begins where it began, not where the first changed letter is: what was
+  // typed takes the look of the first letter selected, as "CHCl3" typed over a plain "C" in "CH2Cl2")
+  if (starts.length) {
+    let shift = 0, prevEnd = 0;
+    hunks = hunks.map((h) => {
+      const at = h.pa + shift;
+      const from = Math.min(...starts.filter((x) => x >= prevEnd && x < at), at);
+      shift += h.typed.length - (h.pb - h.pa);
+      prevEnd = h.pb + shift;
+      return from < at ? { pa: h.pa - (at - from), pb: h.pb, typed: now.slice(from, at) + h.typed } : h;
+    });
+  }
   // (from the last change back: the places of the ones before it don't move)
   for (const h of hunks.reverse()) {
     const next = applyToRaw(out, printed, h.pa, h.pb, h.typed, markup);
