@@ -95,6 +95,7 @@ export function enter(el: Element | null | undefined, how: Entrance = 'fade', t:
   if (el && !(el as HTMLElement).isConnected) return null;
   const d = motionMs(t);
   if (!el || !d || typeof (el as HTMLElement).animate !== 'function') return null;
+<<<<<<< HEAD
   try {
     const a = (el as HTMLElement).animate(FRAMES[how], { duration: d, easing: EASE_OUT });
     if (how !== 'fade') arriving(el, a);
@@ -177,6 +178,9 @@ if (typeof document !== 'undefined') {
     }
   };
   for (const type of ['pointerover', 'pointerdown', 'focusin', 'keydown']) document.addEventListener(type, reach, true);
+=======
+  try { return (el as HTMLElement).animate(FRAMES[how], { duration: d, easing: EASE_OUT }); } catch { return null; }
+>>>>>>> 44652a840df704cc39e9d200a3eaa471ef430e9f
 }
 
 /** How a scroll the app makes itself moves: gliding when animations are on, else a jump (S97). */

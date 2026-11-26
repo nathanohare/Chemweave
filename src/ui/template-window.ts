@@ -6,7 +6,11 @@
 // Shared by Document, Spreadsheet, Presentation and Design; each mode supplies its own cards.
 
 import { foldIntoInfo } from './info-tip';
+<<<<<<< HEAD
 import { fadeContent } from './motion';
+=======
+import { enter } from './motion';
+>>>>>>> 44652a840df704cc39e9d200a3eaa471ef430e9f
 
 /** One template: a small picture, a name, and what picking it does. */
 export interface TemplateCard {
@@ -305,8 +309,13 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     if (showing !== id || !isOpen) return;
     io?.disconnect();
     grid.replaceChildren(...cards.map(makeCard));
+<<<<<<< HEAD
     // another category's templates fade in (Nate's note on Motion Choices); the first ones come with the window's own fade
     if (another) fadeContent(grid);
+=======
+    // another category's templates fade in (Nate's note on Motion Choices)
+    enter(grid, 'fade');
+>>>>>>> 44652a840df704cc39e9d200a3eaa471ef430e9f
     grid.scrollTop = 0;
   };
   for (const c of cats) {

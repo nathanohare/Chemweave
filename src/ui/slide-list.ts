@@ -14,7 +14,11 @@
 // right-click to take it away.
 
 import { clockText } from '../deck/show-link';
+<<<<<<< HEAD
 import { EASE_OUT, fadeContent, motionMs, moving } from './motion';
+=======
+import { EASE_OUT, enter, motionMs, moving } from './motion';
+>>>>>>> 44652a840df704cc39e9d200a3eaa471ef430e9f
 import type { Deck } from '../deck/deck';
 import { paintSlide } from '../deck/slide-view';
 import { MASTER_PAGE } from '../deck/master-view';
@@ -177,7 +181,11 @@ export class SlideList {
       const sameSlides = now.size === before.size && [...now.keys()].every((id) => before.has(id));
       for (const [id, el] of now) {
         const a = was.get(id);
+<<<<<<< HEAD
         if (!a) { fadeContent(el); continue; }
+=======
+        if (!a) { enter(el, 'fade'); continue; }
+>>>>>>> 44652a840df704cc39e9d200a3eaa471ef430e9f
         if (!sameSlides) continue;
         const b = el.getBoundingClientRect(), dx = a.left - b.left, dy = a.top - b.top;
         if (dx || dy) el.animate([{ transform: `translate(${dx}px, ${dy}px)` }, { transform: 'none' }], { duration: motionMs('std'), easing: EASE_OUT });
