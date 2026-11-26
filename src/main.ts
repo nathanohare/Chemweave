@@ -151,7 +151,7 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { QuickBar } from './ui/quick-bar';
 import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
@@ -6372,6 +6372,8 @@ tabAdd.addEventListener('click', () => {
 });
 tabsEl.replaceChildren(tabLeft, tabStrip, tabRight, tabList, tabAdd);
 new ResizeObserver(() => fitTabs()).observe(tabsEl);
+// (the window narrower or wider: the one row may need its second line, or no longer need it)
+addEventListener('resize', () => fitTabs());
 
 /** The file tabs sit in the menu bar beside the menus (to start with), or on a row of their own (View > Window and Colours). */
 let tabsInMenu = true;
@@ -6405,10 +6407,46 @@ function eightChars(): number {
  * one keeps its name.
  */
 function fitTabs(): void {
+  fitOneRow();
   const ctl = [tabList, tabAdd].reduce((w, b) => w + b.offsetWidth + 2, 0);
   const room = tabsEl.clientWidth - ctl - 12;
   tabsEl.classList.toggle('tabs-narrow', room > 0 && room / Math.max(1, ws.tabs.length) - TAB_CHROME < eightChars());
+  // the open file's tab stays in view in the strip, however narrow it has got
+  const act = tabStrip.querySelector<HTMLElement>('.active');
+  if (act && tabStrip.clientWidth) {
+    const a = act.getBoundingClientRect(), sr = tabStrip.getBoundingClientRect();
+    const l = a.left - sr.left + tabStrip.scrollLeft, r = l + a.width;
+    if (l < tabStrip.scrollLeft) tabStrip.scrollLeft = l;
+    else if (r > tabStrip.scrollLeft + tabStrip.clientWidth) tabStrip.scrollLeft = r - tabStrip.clientWidth;
+  }
   showTabArrows();
+}
+
+/**
+ * The one row (menus in the File tab): the open files' tabs keep at least the list of them (▾), New
+ * Tab (+) and one tab's icon, and nothing in the row runs off the window (the window's buttons in
+ * the desktop app, Search…). When the row is too short for that, the file tabs go onto a line of
+ * their own under it (Nate, 2026-11-26: essential controls compact, never covered or pushed off).
+ * Measured with the row on one line each time, so it settles at once.
+ */
+function fitOneRow(): void {
+  const row = tabsEl.parentElement;
+  const body = document.body;
+  // (the same in the menu bar, when the file tabs are in it: they go onto a line under the menus)
+  const cls = row?.matches('.rb-tabs') && body.classList.contains('one-row') ? 'row-wrap' : row?.matches('header') ? 'header-wrap' : '';
+  body.classList.remove('row-wrap', 'header-wrap', 'row-tight');
+  if (!cls || !row?.offsetParent) return;
+  // too tight: the open file's tab (or, at the least, one tab's icon and ×: 48 px) doesn't fit in the
+  // strip, or something runs past the row's end or the window's
+  const tight = () => {
+    const act = tabStrip.querySelector<HTMLElement>('.active');
+    return tabStrip.clientWidth < Math.max(48, act ? act.getBoundingClientRect().width : 0) || row.scrollWidth > row.clientWidth + 1
+      || [...row.children].some((c) => c.getBoundingClientRect().right > innerWidth + 0.5);
+  };
+  if (!tight()) return;
+  // first the row's words go (Search, Lab Calculator) and the open file's name gets shorter; then the file tabs get a line of their own
+  body.classList.add('row-tight');
+  if (tight()) body.classList.add(cls);
 }
 
 function showTabArrows(): void {
@@ -16563,7 +16601,6 @@ const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
   // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
-  defaults: isTauri() ? undefined : QUICK_WEB,
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,

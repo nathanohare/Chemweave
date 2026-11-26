@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
 import { a11yProblems, compareA11y } from './a11y-check.mjs';
+import { desktopStub, sweepEssentials } from './essentials-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -273,6 +274,28 @@ try {
   await page.setViewportSize({ width: 800, height: 720 });
   await page.waitForTimeout(300);
   checkRow(await rowCheck(), '800 × 720');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+
+  step('the controls nobody can do without are never squeezed to nothing, covered or off the window: every tab, menu bar and File tab, web and desktop (scripts/essentials-check.mjs)');
+  const SWEEP = [[1366, 768], [1024, 700], [800, 600]];
+  for (const p of await sweepEssentials(page, SWEEP, 'web')) fail(p);
+  {
+    // the desktop app: its own title bar, with the window's buttons (the desktop calls do nothing here)
+    const desk = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await desk.addInitScript(desktopStub);
+    await desk.goto(URL);
+    await desk.waitForFunction(() => window.__app?.chem?.ready || window.__app?.chem?.error, null, { timeout: 30000 });
+    await desk.evaluate(() => document.querySelector('#welcome-close')?.click());
+    for (const k of ['new-sheet', 'new-document', 'new-slides', 'new-design', 'new']) {
+      await desk.evaluate((k) => window.__app.command(k), k);
+      await desk.waitForTimeout(800);
+      await desk.keyboard.press('Escape');
+    }
+    if (!(await desk.evaluate(() => !!document.querySelector('.win-controls > button')))) fail('the desktop check has no window buttons: it is not testing the desktop app\'s title bar');
+    for (const p of await sweepEssentials(desk, SWEEP, 'desktop')) fail(p);
+    await desk.close();
+  }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForTimeout(300);
 

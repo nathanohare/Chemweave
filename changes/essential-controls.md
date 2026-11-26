@@ -1,0 +1,3 @@
+Fixed: With the menus in the File tab, the open files' tabs, their ▾ list and New Tab no longer get squeezed out of a narrow window, and the desktop app's window buttons are never pushed off it; when the row is too short, the file tabs move onto a line of their own. The same holds for the menu bar.
+Fixed: The open file's tab stays in view when the row of tabs gets narrower, and the side panel no longer ends up off the window's right edge after switching between kinds of tab.
+Changed: The Quick Access Toolbar starts with Save, Undo and Redo in the desktop app too, the same in every kind of tab. A list you have chosen stays as it is.

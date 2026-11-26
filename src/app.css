@@ -5906,10 +5906,18 @@ body.own-title-bar .rb-tabs > .win-controls { position: static; height: auto; al
 #backstage > .bs-strip { background: var(--chrome); }
 /* the one row in a narrow window: the open files' tabs wrap onto a line of their own under the
    ribbon's tabs, Quick Access and Search, and the rest wraps as needed, so nothing runs off the window */
-@media (max-width: 1000px) {
-  body.one-row .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
-  body.one-row .rb-tabs > #tabs { order: 99; flex: 1 0 100%; height: 28px; margin: 0 0 2px; }
-}
+/* (main.ts fitOneRow decides, for any window: the web app's and the desktop app's, with its window buttons) */
+/* first line: File, the ribbon's tabs and (desktop) the window's buttons at the right; second line:
+   Quick Access, the open files, Search and the rest (a break, the row's ::before, between them) */
+body.one-row.row-wrap .ribbon > .rb-tabs { flex-wrap: wrap; row-gap: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > * { order: 60; }
+body.one-row.row-wrap .ribbon > .rb-tabs > :is(.rb-file, .rb-tablist) { order: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > .win-controls { order: 40; margin-left: auto; }
+body.one-row.row-wrap .ribbon > .rb-tabs::before { content: ''; order: 45; flex: 0 0 100%; height: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #quick-bar { order: 50; margin-left: 0; border-left: 0; padding-left: 0; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #tabs { order: 55; flex: 1 1 0; min-width: 120px; height: 28px; margin: 0 4px 2px; }
+body.one-row.row-wrap .ribbon > .rb-tabs > #btn-search { order: 56; }
+.rb-tabs > .win-controls, .rb-tabs > .rb-file { flex-shrink: 0; }
 /* touch: the row's buttons as big as the title row's (36 px) */
 html.touch-ui .rb-tabs > #quick-bar > button, html.touch-ui .rb-tabs > #btn-search { height: 36px; min-width: 36px; }
 html.touch-ui .rb-tabs .tab { height: 36px; }
@@ -5917,3 +5925,13 @@ html.touch-ui .rb-tabs .tab .tab-close, html.touch-ui .rb-tabs .tab-ctl { width:
 html.touch-ui body.one-row .rb-tabs > #tabs { height: auto; }
 /* Mode Colors set to color the window: the row is the mode's color, so its items are white on it */
 body.mode-window .rb-tabs > :is(#quick-bar, #tabs, #btn-search) { --text: #fff; }
+/* the menu bar with the file tabs in it, too short for them (main.ts fitOneRow): they go onto a line of their own under the menus */
+body.header-wrap header { flex-wrap: wrap; row-gap: 0; }
+body.header-wrap header > #tabs { order: 99; flex: 1 0 100%; height: 28px; }
+/* the row short of room (main.ts fitOneRow): its words go first, and the open file's name shortens */
+body.row-tight :is(header, .rb-tabs) > #btn-search > :is(span, kbd) { display: none; }
+body.row-tight :is(header, .rb-tabs) > #btn-search { padding: 0 6px; }
+body.row-tight .rb-tabs .cr-calc-name { display: none; }
+body.row-tight #tabs.tabs-narrow .tab.active .tab-name { max-width: 64px; }
+/* (and the strip's ‹ › go: the ▾ lists every open file, and the strip still scrolls) */
+body.row-tight #tabs > :is(.tab-left, .tab-right) { display: none !important; }

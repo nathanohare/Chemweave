@@ -871,6 +871,8 @@ export class Toolboxes {
     const st = this.hooks.get();
     for (const [id, f] of this.frames) {
       if (!f.classList.contains('floating') || !f.isConnected) continue;
+      // (a toolbox hidden for now, in another kind of tab, has no size to place by: it keeps its place)
+      if (!f.offsetWidth) continue;
       if (st.places[id]?.corner) { this.toCorner(f); continue; }
       const r = f.getBoundingClientRect();
       const x = Math.max(0, Math.min(r.left, innerWidth - Math.min(r.width, innerWidth))), y = Math.max(0, Math.min(r.top, innerHeight - 40));
