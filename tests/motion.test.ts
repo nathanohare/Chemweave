@@ -35,6 +35,7 @@ describe('motion', () => {
       .filter(({ value }) => value.split(',').some((part) => LAYOUT.test(part.trim().split(/\s+/)[0])))
       .map(({ line, value }) => `app.css:${line}: ${value}`);
     expect(bad).toEqual([]);
+    expect(declarations('transition').filter(({ value }) => /(^|,)\s*all\b/.test(value)).map(({ line }) => `app.css:${line}`), 'name the properties: "all" can animate a size').toEqual([]);
     for (const m of css.matchAll(/@keyframes\s+([\w-]+)\s*\{([\s\S]*?\})\s*\}/g)) {
       const props = [...m[2].matchAll(/([\w-]+)\s*:/g)].map((p) => p[1]);
       expect(props.filter((p) => LAYOUT.test(p)), `@keyframes ${m[1]}`).toEqual([]);
@@ -82,7 +83,7 @@ describe('motion', () => {
       if (f.endsWith(join('ui', 'motion.ts'))) continue;
       readFileSync(f, 'utf8').split('\n').forEach((line, i) => {
         if (/\.animate\(/.test(line) && !/motionMs\(|duration:\s*d\b/.test(line + readFileSync(f, 'utf8').split('\n').slice(i, i + 4).join(' '))) bad.push(`${f.slice(SRC.length + 1)}:${i + 1}`);
-        if (/transition\s*=\s*`[^`]*\d+m?s/.test(line) || /behavior:\s*'smooth'/.test(line)) bad.push(`${f.slice(SRC.length + 1)}:${i + 1}`);
+        if (/(transition|animation)\s*[:=]\s*['"`][^'"`]*\d+m?s\b/.test(line) || /behavior:\s*'smooth'/.test(line)) bad.push(`${f.slice(SRC.length + 1)}:${i + 1}`);
       });
     }
     expect(bad, 'use motionMs(), enter() or scrollToItem() from src/ui/motion.ts').toEqual([]);

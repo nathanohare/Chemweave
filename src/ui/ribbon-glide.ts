@@ -2,7 +2,7 @@
 //
 // Every ribbon (Canvas, Document, Spreadsheet, Slides, Design, SI) marks its selected tab with
 // aria-selected in its .rb-tablist, so one watcher serves them all: when the selection moves within
-// a list, a copy of the selected tab's shape (.rb-glide) is laid where the old tab was and moved to
+// a list, a copy of the selected tab's mark (.rb-glide: its shape, or the line under it) is laid where the old tab was and moved to
 // the new one by transform, while the new tab's own background waits under it. Nothing waits on it:
 // the new tab's contents are there at once, and clicking again mid-glide simply starts a new one.
 
@@ -21,10 +21,20 @@ function glide(row: Element, from: HTMLElement, to: HTMLElement): void {
   const g = document.createElement('div');
   g.className = 'rb-glide';
   g.setAttribute('aria-hidden', 'true');
-  Object.assign(g.style, { left: `${b.left}px`, top: `${b.top}px`, width: `${b.width}px`, height: `${b.height}px` });
+  // the selected tab's mark: its whole shape in "The whole window" mode colors, else the line under it
+  const line = !document.body.classList.contains('mode-window');
+  const top = line ? b.bottom - 3 : b.top, height = line ? 3 : b.height;
+  Object.assign(g.style, { left: `${b.left}px`, top: `${top}px`, width: `${b.width}px`, height: `${height}px` });
   row.prepend(g);
+  // every tab's label stays above the mark as it passes
+  row.classList.add('rb-glide-on');
   to.classList.add('rb-gliding');
-  const done = () => { g.remove(); to.classList.remove('rb-gliding'); };
+  const done = () => {
+    if (!g.isConnected) return;
+    g.remove();
+    to.classList.remove('rb-gliding');
+    if (!row.querySelector(':scope > .rb-glide')) row.classList.remove('rb-glide-on');
+  };
   try {
     const anim = g.animate([
       { transform: `translateX(${a.left - b.left}px) scaleX(${a.width / b.width})`, transformOrigin: '0 0' },

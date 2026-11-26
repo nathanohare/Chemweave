@@ -7,7 +7,7 @@
 // this only decides which of the shown ones are on screen, and turns their headings into tabs.
 
 import { showContextMenu, type MenuItem } from './context-menu';
-import { enter } from './motion';
+import { fadeIn } from './motion';
 
 /** How one mode's sections are laid out, where changed from how they come (all tabs, in SECTION_ORDER). */
 export interface SideLayout {
@@ -299,7 +299,7 @@ export class SideSections {
       const opening = s.classList.contains('ss-folded') && !folded;
       s.classList.toggle('ss-folded', folded);
       // a section unfolded: its contents fade in
-      if (opening) for (const c of s.children) if (c.tagName !== 'H2') enter(c, 'fade');
+      if (opening) fadeIn([...s.children].filter((c) => c.tagName !== 'H2'));
       const h2 = s.querySelector<HTMLElement>(':scope > h2');
       // a tab's heading keeps a row only for controls of its own (Show on Drawing, Customize)
       h2?.classList.toggle('ss-plain', isTab && ![...h2.children].some((c) => !c.matches(HEADING_EXTRAS)));

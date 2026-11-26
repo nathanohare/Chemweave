@@ -44,9 +44,12 @@ export function automaticMotion(reduced = reducedBySystem(), desktop = desktopAp
   return reduced || !desktop ? 'off' : 'fast';
 }
 
+/** The level used when none is chosen, worked out once and again when the system's setting changes. */
+let automatic: MotionLevel | null = null;
+
 /** The level in use now. */
 export function motionLevel(): MotionLevel {
-  return chosen ?? automaticMotion();
+  return chosen ?? (automatic ??= automaticMotion());
 }
 
 /** The level chosen in Preferences, or null when it follows the app and the system. */
@@ -89,6 +92,7 @@ const FRAMES: Record<Entrance, Keyframe[]> = {
  * nothing when Off, and never holds anything up: the element is usable at once.
  */
 export function enter(el: Element | null | undefined, how: Entrance = 'fade', t: MotionTime = 'std'): Animation | null {
+  if (el && !(el as HTMLElement).isConnected) return null;
   const d = motionMs(t);
   if (!el || !d || typeof (el as HTMLElement).animate !== 'function') return null;
   try { return (el as HTMLElement).animate(FRAMES[how], { duration: d, easing: EASE_OUT }); } catch { return null; }
@@ -96,6 +100,12 @@ export function enter(el: Element | null | undefined, how: Entrance = 'fade', t:
 
 /** How a scroll the app makes itself moves: gliding when animations are on, else a jump (S97). */
 export const scrollBehavior = (): ScrollBehavior => (moving() ? 'smooth' : 'auto');
+
+/** Fade in a folding section's contents: the first rows only, so a long list costs no more than a short one. */
+export function fadeIn(els: Iterable<Element>, most = 24): void {
+  let n = 0;
+  for (const el of els) { if (n++ >= most) break; enter(el, 'fade'); }
+}
 
 /** Scroll an element into view, gliding there when animations are on (jumping to an item, S97). */
 export function scrollToItem(el: Element | null | undefined, block: ScrollLogicalPosition = 'nearest'): void {
@@ -110,13 +120,13 @@ if (typeof document !== 'undefined') {
     const sum = (e.target as Element | null)?.closest?.('summary');
     const d = sum?.parentElement;
     if (!sum || !(d instanceof HTMLDetailsElement)) return;
-    requestAnimationFrame(() => { if (d.open) for (const c of d.children) if (c !== sum) enter(c, 'fade'); });
+    requestAnimationFrame(() => { if (d.open) fadeIn([...d.children].filter((c) => c !== sum)); });
   }, true);
 }
 
 // the system's setting changing while the app is open moves the automatic level with it
 try {
-  if (typeof matchMedia !== 'undefined') matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', () => { if (!chosen) applyMotion(); });
+  if (typeof matchMedia !== 'undefined') matchMedia('(prefers-reduced-motion: reduce)').addEventListener?.('change', () => { automatic = null; if (!chosen) applyMotion(); });
 } catch { /* an older engine: read at start only */ }
 
 applyMotion();

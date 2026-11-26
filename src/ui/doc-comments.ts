@@ -158,11 +158,13 @@ export class DocComments {
           c.style.left = `${host.left + col.left}px`;
           return;
         }
-        // (moved by translate, not top, so a card gliding to its place never lays the page out again: S93)
+        // (moved by translate, not top, so a card gliding to its place never lays the page out again: S92)
         c.style.top = '0px';
         // (a card placed for the first time appears where it goes; only a move glides)
-        if (!c.style.translate) { c.style.transition = 'none'; requestAnimationFrame(() => { c.style.transition = ''; }); }
+        const first = !c.style.translate;
+        if (first) c.style.transition = 'none';
         c.style.translate = `0 ${tops[k]}px`;
+        if (first) { void c.offsetWidth; c.style.transition = ''; }
         c.style.left = `${col.left}px`;
         c.style.width = `${COLUMN - 24}px`;
       });

@@ -77,7 +77,7 @@ dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
   dialog { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
   dialog:not([open]) { opacity: 0; pointer-events: none; }
   dialog::backdrop { transition: opacity var(--m-short) var(--ease-in), overlay var(--m-short) allow-discrete, display var(--m-short) allow-discrete; }
-  dialog:not([open])::backdrop { opacity: 0; }
+  dialog:not([open])::backdrop { opacity: 0; pointer-events: none; }
 }
 /* menus and drop-downs slide 4 px out of their button; right-click menus and submenus just fade, quickly */
 .menu:not([hidden]), .flyout:not([hidden]), .rb-fly-menu:not([hidden]), .combo-list:not([hidden]), .colour-pop:not([hidden]), .shape-pop:not([hidden]) { animation: m-drop var(--m-std) var(--ease-out); }
@@ -93,19 +93,23 @@ dialog[open]::backdrop { animation: m-fade var(--m-std) var(--ease-out); }
 button { transition: background-color var(--m-short), border-color var(--m-short), color var(--m-short); }
 /* the selected ribbon tab's shape glides to the tab clicked (src/ui/ribbon-glide.ts) */
 .rb-glide { position: fixed; z-index: 0; pointer-events: none; background: var(--panel); border-radius: var(--r-control) var(--r-control) 0 0; }
-.rb-tabs [role='tab'].rb-gliding { background: transparent !important; position: relative; z-index: 1; }
+body:not(.mode-window) .rb-glide { background: var(--accent); border-radius: 0; }
+.rb-glide-on [role='tab'] { position: relative; z-index: 1; }
+.rb-tabs [role='tab'].rb-gliding { background: transparent !important; box-shadow: none !important; }
 /* check boxes (Nate, 2026-11-26): an outlined box when clear; filled with the mode's accent when ticked,
    its white check mark drawn in from the left (Toggle: a quarter faster than Standard). :where() keeps
-   these under any control's own styles */
+   the box's size and place under any control's own styles; the ticked look outranks a control's plain
+   background, so ticked and clear always look different */
 :where(input[type='checkbox']) { -webkit-appearance: none; appearance: none; display: inline-grid; place-content: center; flex: none; width: 13px; height: 13px; vertical-align: -2px; border: 1px solid var(--muted); border-radius: var(--r-control); background: var(--panel); cursor: pointer; transition: background-color var(--m-toggle) var(--ease-out), border-color var(--m-toggle) var(--ease-out); }
 :where(input[type='checkbox'])::before { content: ''; width: 7px; height: 3px; margin-top: -2px; border-left: 2px solid var(--on-accent); border-bottom: 2px solid var(--on-accent); transform: rotate(-45deg); clip-path: inset(0 100% 0 0); transition: clip-path var(--m-toggle) var(--ease-out); }
-:where(input[type='checkbox']):checked { background: var(--accent); border-color: var(--accent); }
-:where(input[type='checkbox']):checked::before { clip-path: inset(0); }
-:where(input[type='checkbox']):indeterminate { background: var(--accent); border-color: var(--accent); }
-:where(input[type='checkbox']):indeterminate::before { width: 7px; height: 0; margin-top: 0; border-left: 0; transform: none; clip-path: inset(0); }
+input[type='checkbox']:checked { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:checked::before { clip-path: inset(0); }
+input[type='checkbox']:indeterminate { background: var(--accent); border-color: var(--accent); }
+input[type='checkbox']:indeterminate::before { width: 7px; height: 0; margin-top: 0; border-left: 0; transform: none; clip-path: inset(0); }
 :where(input[type='checkbox']):hover:not(:disabled) { border-color: var(--accent); }
 :where(input[type='checkbox']):focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 :where(input[type='checkbox']):disabled { opacity: 0.5; cursor: default; }
+input[type='checkbox'][hidden] { display: none; }
 @media (forced-colors: active) { :where(input[type='checkbox']) { -webkit-appearance: auto; appearance: auto; } :where(input[type='checkbox'])::before { content: none; } }
 /* repeating motion (the busy stripe, the toolbox editor's jiggle) stands still when Off */
 :root[data-motion='off'] .tbe-wig { animation: none; }
@@ -581,7 +585,7 @@ body.slides-mode #canvas-host, body.design-mode #canvas-host { background: var(-
 #canvas-host.drop { outline: 3px dashed var(--accent); outline-offset: -6px; }
 #canvas-host canvas { position: absolute; left: 0; top: 0; display: block; }
 #canvas-host canvas[hidden] { display: none; }
-.tab { transition: transform var(--m-std) var(--ease-out), background-color var(--m-short), border-color var(--m-short), color var(--m-short); }
+.tab { transition: transform var(--m-std) var(--ease-out); }
 .tab.tab-dragging { transition: none; position: relative; z-index: 2; opacity: 0.92; box-shadow: 0 2px 8px rgba(0, 0, 0, 0.25); cursor: grabbing; }
 
 /* scroll bars over the drawing's bottom and right edges */
@@ -5651,7 +5655,8 @@ dialog.template-window.tw-modal { inset: var(--dlg-top, 0px) var(--dlg-right, 0p
 .si-dash-color { display: grid; grid-template-columns: 26px 230px 44px auto; align-items: center; gap: 8px; }
 .si-dash-swatch { display: inline-flex; justify-content: center; align-items: center; height: 20px; border: 1px solid var(--line); }
 .si-dash-colors .si-link { align-self: flex-start; margin: 4px 0 0; padding: 0; }
-.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; transition: outline-color var(--m-hi) var(--ease-hi); }
+.si-field.si-flash { outline: 2px solid var(--accent); outline-offset: 1px; animation: si-flash-fade var(--m-hi) var(--ease-hi) forwards; }
+@keyframes si-flash-fade { to { outline-color: transparent; } }
 
 /* ---- Side panel: one header row (grip, the sections as tabs, padlock, close) wherever it sits ----
    (the class is tripled to outrank the title-bar rules for docked and upright toolboxes above) */
