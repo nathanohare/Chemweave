@@ -9,7 +9,11 @@ import { join } from 'node:path';
 
 const src = (f: string) => readFileSync(join(__dirname, '..', f), 'utf8');
 const main = src('src/main.ts');
-const listed = (name: string) => new Set([...main.match(new RegExp(`const ${name} = new Set\\(\\[([\\s\\S]*?)\\]\\);`))![1].matchAll(/'([^']+)'/g)].map((m) => m[1]));
+const listed = (name: string) => {
+  const at = main.indexOf(`const ${name} = new Set([`);
+  const body = main.slice(at, main.indexOf(']);', at));
+  return new Set([...body.matchAll(/'([^']+)'/g)].map((m) => m[1]));
+};
 const keysOf = (name: string) => {
   const at = main.indexOf(`const ${name}: Record<string, () => unknown> = {`);
   const body = main.slice(at, main.indexOf('\n};', at));
