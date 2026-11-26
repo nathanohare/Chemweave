@@ -133,11 +133,33 @@ export class EmbeddedFont {
   constructor(readonly font: TrueType, readonly id: number, readonly tag: string) {}
 
   /**
+   * How much wider (more than 1) or narrower the layout set a run's letters than this font draws
+   * them: 1 when they differ by no more than 3 %, as the font the text was measured with is this one
+   * (kerning and rounding aside). A text measured with a font the PDF hasn't got (Georgia, a font
+   * missing here) and drawn with a stand-in gets its letters scaled by this (PDF's Tz) rather than
+   * spaced out to the other font's widths. Spaces don't count: a justified line's stay as set.
+   */
+  scaleFor(text: string, widths: number[], size: number): number {
+    let want = 0, own = 0;
+    [...text].forEach((ch, i) => {
+      // (not spaces, nor what this font hasn't got: drawn with another)
+      const gid = this.font.glyph(ch.codePointAt(0)!);
+      if (/\s/.test(ch) || !gid) return;
+      want += widths[i] ?? 0;
+      own += (this.font.width(gid) * size) / 1000;
+    });
+    if (own <= 0 || want <= 0) return 1;
+    const r = want / own;
+    return Math.abs(r - 1) <= 0.03 ? 1 : Math.min(2, Math.max(0.5, r));
+  }
+
+  /**
    * A run of text as the font's two-byte glyph codes, in PDF hex form. Given the width each
    * character takes in the layout (`widths`, in points, at `size`), a letter whose layout width
-   * differs from the font's own (a kerned pair, AV) is moved to match, as an array for TJ.
+   * differs from the font's own (a kerned pair, AV) is moved to match, as an array for TJ; with
+   * the letters scaled (`scale`, scaleFor's), against their scaled widths.
    */
-  show(text: string, widths?: number[], size?: number): string {
+  show(text: string, widths?: number[], size?: number, scale = 1): string {
     const parts: string[] = [];
     let hex = '';
     [...text].forEach((ch, i) => {
@@ -147,8 +169,8 @@ export class EmbeddedFont {
       hex += gid.toString(16).padStart(4, '0');
       const want = widths?.[i];
       if (want === undefined || !size || i === text.length - 1) return;
-      // (TJ's numbers are taken off the advance, in thousandths of the size)
-      const adjust = Math.round(this.font.width(gid) - (want * 1000) / size);
+      // (TJ's numbers are taken off the advance, in thousandths of the size, before the scaling)
+      const adjust = Math.round(this.font.width(gid) - (want * 1000) / (size * scale));
       if (Math.abs(adjust) >= 1) { parts.push(`<${hex.toUpperCase()}>`, String(adjust)); hex = ''; }
     });
     if (hex || !parts.length) parts.push(`<${hex.toUpperCase()}>`);
