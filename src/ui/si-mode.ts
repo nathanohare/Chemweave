@@ -18,7 +18,7 @@ import { compileSi, objectLabelSets, sectionLandscape, setNewPage, spectraPagesB
 import type { FlagChange, SiPreview } from './si-preview';
 import { addFlagComments } from '../si/flag-comments';
 import { compoundAnchor } from '../si/flag-threads';
-import { threadCard } from './comment-cards';
+import { mentionPicker, threadCard } from './comment-cards';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
 import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
@@ -988,10 +988,10 @@ export class SiMode {
     const esc = (e: KeyboardEvent): void => { if (e.key === 'Escape' && !(e.target as HTMLElement).closest?.('.cmt-input')) { close(); at.focus(); } };
     for (const fl of p.allFlags().filter((x) => anchors.includes(x.anchor))) {
       const iso = (d: string): string => (d && !Number.isNaN(Date.parse(d)) ? new Date(d).toISOString() : '');
-      const thread: CommentThread = { author: fl.flag.by || 'SI flag', date: iso(fl.flag.at), text: fl.flag.comment, ...(fl.thread.replies.length ? { replies: fl.thread.replies.map((r) => ({ author: r.by || 'Author', date: iso(r.at), text: r.text })) } : {}), ...(fl.resolved ? { done: true } : {}) };
+      const thread: CommentThread = { author: fl.flag.by || 'SI flag', date: iso(fl.flag.at), text: fl.flag.comment, ...(fl.thread.replies.length ? { replies: fl.thread.replies.map((r) => ({ author: r.by || 'SI flag', date: iso(r.at), text: r.text })) } : {}), ...(fl.resolved ? { done: true } : {}) };
       const run = (change: FlagChange): void => { close(); void this.flagChange(fl.anchor, change).catch((e: unknown) => this.host.flash(e instanceof Error ? e.message : String(e), 8000)); };
       pop.append(threadCard(thread, {
-        active: true, editing: false, label: fl.isFlag ? 'Flag' : 'Comment', cls: 'si-flag-card', people,
+        active: true, editing: false, label: fl.isFlag ? 'Flag' : 'Comment', cls: fl.isFlag ? 'si-flag-card' : '', people,
         actions: {
           edit: (text, reply) => run({ what: 'edit', reply: reply ?? null, text }),
           reply: (text) => run({ what: 'reply', text }),
@@ -1031,10 +1031,14 @@ export class SiMode {
     const on = pv.commentTarget();
     if (!on) { this.host.flash('Click in a section’s or a compound’s text first: the cover page and General Information take no comments.'); return; }
     const where = 'compound' in on ? `${(() => { try { return compoundName(p.compound(on.compound)) || displayId(p.idReport(), on.compound); } catch { return 'the compound'; } })()} ▸ ${fieldDef({ key: on.field })?.label ?? on.field}` : (() => { try { return p.section(on.section).name; } catch { return 'the section'; } })();
-    const got = await ask('New Comment', [
+    const asking = ask('New Comment', [
       { name: 'text', label: 'Comment', value: '', placeholder: 'e.g. @Alex Example, is this yield isolated?', type: 'textarea' },
       { name: 'flag', label: 'Flag for checking', value: 'true', type: 'checkbox', help: 'A flag shows on the SI page’s field and is counted until it is resolved; a comment is a note only.' },
     ], { ok: 'Add Comment', note: `On ${where}.` });
+    // (@ and a name's start offers the people to mention, as in a card's reply box)
+    const box = [...document.querySelectorAll<HTMLTextAreaElement>('dialog.ask textarea')].pop();
+    if (box) mentionPicker(box, p.people);
+    const got = await asking;
     if (!got || !got.text.trim() || this.project !== p) return;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
     let anchor = '';

@@ -1,0 +1,4 @@
+Added: SI Assistant projects: flags get replies, @mentions, Resolve and Reopen, and Delete, as Word's comments do; replies and resolved flags are kept beside SI Assistant's own files, which stay as SI Assistant writes them.
+Added: SI Assistant projects: Review ▸ New Comment puts a comment or a flag (Flag for checking) on the words at the Live Preview's caret: on a field, or on the nearest heading for other text. Review ▸ Previous, Next, Show Comments and Show Resolved go through them.
+Added: SI Assistant projects: flags and comments show as cards beside the Live Preview (small markers when the pane is narrow), and a field's flag button on the SI page opens its flags and comments to reply or resolve there.
+Added: SI Assistant projects: compiled documents and Word snapshots carry the flags' and comments' replies, and flags on section headings, as Word comments.

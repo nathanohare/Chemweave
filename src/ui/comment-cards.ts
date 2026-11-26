@@ -120,7 +120,7 @@ function noteBox(note: Pick<CommentNote, 'text' | 'runs'>, placeholder: string, 
  * @mentions: typing "@" and the start of a name lists the people who match (the project's
  * authors and everyone who wrote a note); Up, Down, Enter or Tab or a click puts the name in.
  */
-function mentionPicker(ta: HTMLTextAreaElement, people: readonly string[]): void {
+export function mentionPicker(ta: HTMLTextAreaElement, people: readonly string[]): void {
   const list = el('div', 'cmt-mentions');
   list.setAttribute('role', 'listbox');
   list.hidden = true;

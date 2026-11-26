@@ -22,7 +22,16 @@ export interface DocCommentsHost {
   actions?(id: number): ThreadActions | null;
   /** A card's label, its class, and who can be @mentioned (an SI project's flags). */
   card?(id: number): { label?: string; cls?: string; people?: readonly string[]; rich?: boolean } | null;
+  /**
+   * Too narrow for a column of cards beside readable pages (the SI Live Preview's pane): each
+   * comment shows as a small marker beside its words, and the one looked at as its card over the
+   * page's edge, so the pages keep their size.
+   */
+  narrow?(): boolean;
 }
+
+/** A marker's width in pixels (the room kept beside the pages in a narrow pane). */
+const MARKER = 30;
 
 /** The column's width in pixels (room kept beside the pages while comments show). */
 const COLUMN = 280;
@@ -43,7 +52,7 @@ export class DocComments {
   /** The comment whose text is open for typing (a new one). */
   private editing: number | null = null;
   private layer: HTMLDivElement;
-  private built: { t: DocText; active: number | null; editing: number | null; shown: boolean } | null = null;
+  private built: { t: DocText; active: number | null; editing: number | null; shown: boolean; narrow: boolean } | null = null;
   private cards = new Map<number, HTMLElement>();
   /** The other cards in the column (set by the original pictures beside figures). */
   extras: () => ColumnCard[] = () => [];
@@ -52,6 +61,12 @@ export class DocComments {
     this.layer = document.createElement('div');
     this.layer.className = 'doc-comments';
     host.append(this.layer);
+    // (in a narrow pane, a click on the page puts the open card back to its marker)
+    host.addEventListener('pointerdown', (e) => {
+      if (this.active === null || this.editing !== null || !this.h.narrow?.() || this.layer.contains(e.target as Node)) return;
+      this.active = null;
+      this.update();
+    }, true);
   }
 
   private get file(): DocFile | null {
@@ -88,7 +103,8 @@ export class DocComments {
     const f = this.file;
     const list = f && this.shown ? this.placed() : [];
     const extra = f ? this.extras() : [];
-    const gutter = list.length || extra.length ? Math.max(COLUMN, ...extra.map((e) => e.width + 24)) : 0;
+    const narrow = !!this.h.narrow?.();
+    const gutter = list.length || extra.length ? Math.max(narrow ? MARKER : COLUMN, ...extra.map((e) => e.width + 24)) : 0;
     if (gutter !== this.view.gutter) {
       this.view.gutter = gutter;
       this.view.sizeSpace();
@@ -99,16 +115,31 @@ export class DocComments {
     this.layer.hidden = !list.length;
     if (!f || !list.length) { this.layer.replaceChildren(); this.cards.clear(); this.built = null; if (extra.length) this.place([], extra); return; }
     const b = this.built;
-    if (!b || b.t !== f.t || b.active !== this.active || b.editing !== this.editing || b.shown !== this.shown) {
+    if (!b || b.t !== f.t || b.active !== this.active || b.editing !== this.editing || b.shown !== this.shown || b.narrow !== narrow) {
       this.layer.replaceChildren();
       this.cards.clear();
       for (const p of list) {
         const own = this.h.card?.(p.id) ?? null;
+        if (narrow && p.id !== this.active && p.id !== this.editing) {
+          // (a marker: its card opens over the page's edge when clicked)
+          const m = document.createElement('button');
+          m.type = 'button';
+          m.className = `cmt-marker${p.c.done ? ' done' : ''}${own?.cls ? ` ${own.cls}` : ''}`;
+          const first = p.c.text.replace(/\s+/g, ' ').trim();
+          m.title = `${own?.label ? `${own.label}: ` : ''}${first.length > 80 ? `${first.slice(0, 79)}…` : first}${p.c.replies?.length ? ` (${p.c.replies.length} ${p.c.replies.length === 1 ? 'reply' : 'replies'})` : ''}`;
+          m.setAttribute('aria-label', m.title);
+          m.textContent = p.c.replies?.length ? String(p.c.replies.length + 1) : '';
+          m.addEventListener('mousedown', (e) => e.preventDefault());
+          m.addEventListener('click', () => (this.h.actions?.(p.id) ?? this.actions(p.id)).focus());
+          this.cards.set(p.id, m);
+          this.layer.append(m);
+          continue;
+        }
         const card = threadCard(p.c, { active: p.id === this.active, editing: p.id === this.editing, actions: this.h.actions?.(p.id) ?? this.actions(p.id), rich: own?.rich ?? true, ...(own?.label ? { label: own.label } : {}), ...(own?.cls ? { cls: own.cls } : {}), ...(own?.people ? { people: own.people } : {}) });
         this.cards.set(p.id, card);
         this.layer.append(card);
       }
-      this.built = { t: f.t, active: this.active, editing: this.editing, shown: this.shown };
+      this.built = { t: f.t, active: this.active, editing: this.editing, shown: this.shown, narrow };
     }
     this.place(list, extra);
   }
@@ -116,6 +147,9 @@ export class DocComments {
   /** Put each card beside its words: beside the page they are on, when pages sit side by side. */
   place(list = this.placed(), extra = this.file ? this.extras() : []): void {
     if (!this.cards.size && !extra.length) return;
+    // (the pane made wider or narrower than a column of cards needs: shown the other way)
+    const narrow = !!this.h.narrow?.();
+    if (this.built && this.built.narrow !== narrow) { this.update(); return; }
     const host = this.layer.parentElement!.getBoundingClientRect();
     this.layer.style.left = '0';
     this.layer.style.width = `${host.width}px`;
@@ -170,7 +204,9 @@ export class DocComments {
         if (first) c.style.transition = 'none';
         c.style.translate = `0 ${tops[k]}px`;
         if (first) { void c.offsetWidth; c.style.transition = ''; }
-        c.style.left = `${col.left}px`;
+        if (c.classList.contains('cmt-marker')) { c.style.left = `${col.left - 10}px`; return; }
+        // (in a narrow pane the open card lies over the page's edge, inside the pane)
+        c.style.left = `${narrow ? Math.max(4, Math.min(col.left, host.width - (COLUMN - 24) - 4)) : col.left}px`;
         c.style.width = `${COLUMN - 24}px`;
       });
     }

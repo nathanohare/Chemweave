@@ -175,7 +175,10 @@ export class SiPreview {
       flash: (m, ms) => this.api.flash(m, ms),
       askName: async () => true,
       actions: (id) => this.flagActions(id),
-      card: (id) => ({ label: this.flagCards.labels.get(id), cls: 'si-flag-card', people: this.api.people?.() ?? [], rich: false }),
+      // (a flag's card has a red edge; a comment's is a comment's)
+      card: (id) => { const label = this.flagCards.labels.get(id); return { label, cls: label?.startsWith('Flag') ? 'si-flag-card' : '', people: this.api.people?.() ?? [], rich: false }; },
+      // (the pane beside the SI page is too narrow for a column of cards beside readable pages)
+      narrow: () => host.clientWidth < 900,
     });
     this.view.onMove = () => this.comments.place();
     // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
