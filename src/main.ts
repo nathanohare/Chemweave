@@ -156,7 +156,7 @@ import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from './deck/templ
 import { showContextMenu, setMenuKeys, topMenuEntry, type MenuItem } from './ui/context-menu';
 import { MasterPanel } from './ui/master-panel';
 import { PAGE_PROMPTS, refsCaption } from './deck/master-view';
-import { QuickBar, QUICK_WEB } from './ui/quick-bar';
+import { QuickBar } from './ui/quick-bar';
 import { Backstage, addFileTabs } from './ui/backstage';
 import { SmartPane } from './ui/smart-pane';
 import { commandDef } from './commands/registry';
@@ -247,7 +247,7 @@ import { guideSpot } from './ui/guide-spot';
 import type { GuideWindow, GuideHeading } from './ui/guide-window';
 import { SettingsWindow, type SettingsHost, type SettingsPage } from './ui/settings-window';
 import { fileTypesPage, FILE_TYPES, APPS_PAGE_TITLE } from './ui/file-types-page';
-import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows } from './ui/ribbon-fit';
+import { watchRibbons, fitRibbons, setRibbonCollapsed, ribbonCollapsed, repaintArrows, foldWhen } from './ui/ribbon-fit';
 import { CANVAS_TABS, CanvasRibbon } from './ui/canvas-ribbon';
 import { AnalysisBox, WarningsBox } from './ui/canvas-ribbon-boxes';
 import { pageTitleStrip, placeTitleBar, placeWindowButtons, titleBarPlace } from './ui/title-bar';
@@ -6393,7 +6393,21 @@ tabAdd.addEventListener('click', () => {
   showContextMenu(x, y, NEW_ITEMS.map((n) => ({ cmd: n.cmd, label: n.label, title: n.blurb })), { run: (cmd) => void command(cmd), key: commandKey });
 });
 tabsEl.replaceChildren(tabLeft, tabStrip, tabRight, tabList, tabAdd);
-new ResizeObserver(() => fitTabs()).observe(tabsEl);
+const FIT_CLASSES = ['row-tight', 'row-wrap', 'header-wrap'];
+
+/** Fit the tabs again at the next frame, once however many things changed (the window, a ribbon's tabs, the interface size…). */
+let fitQueued = 0;
+function fitSoon(): void {
+  if (fitQueued) return;
+  fitQueued = requestAnimationFrame(() => { fitQueued = 0; fitTabs(); });
+}
+/** What changing size means the tabs must be fitted again: the file tabs, the menu bar, and each ribbon's row of tabs and its tabs. */
+const fitWatch = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => fitSoon()) : null;
+function watchFit(el: Element | null): void { if (el) fitWatch?.observe(el); }
+// (the window narrower or wider, the menu bar's or a ribbon's tabs wider or narrower, the fonts loaded: fitted again)
+watchFit(tabsEl);
+watchFit(document.querySelector('header'));
+void document.fonts?.ready.then(() => fitSoon());
 
 /** The file tabs sit in the menu bar beside the menus (to start with), or on a row of their own (View > Window and Colours). */
 let tabsInMenu = true;
@@ -6427,10 +6441,68 @@ function eightChars(): number {
  * one keeps its name.
  */
 function fitTabs(): void {
+  fitOneRow();
   const ctl = [tabList, tabAdd].reduce((w, b) => w + b.offsetWidth + 2, 0);
   const room = tabsEl.clientWidth - ctl - 12;
   tabsEl.classList.toggle('tabs-narrow', room > 0 && room / Math.max(1, ws.tabs.length) - TAB_CHROME < eightChars());
+  // the open file's tab stays in view in the strip, however narrow it has got
+  const act = tabStrip.querySelector<HTMLElement>('.active');
+  if (act && tabStrip.clientWidth) {
+    const a = act.getBoundingClientRect(), sr = tabStrip.getBoundingClientRect();
+    const l = a.left - sr.left + tabStrip.scrollLeft, r = l + a.width;
+    if (l < tabStrip.scrollLeft) tabStrip.scrollLeft = l;
+    else if (r > tabStrip.scrollLeft + tabStrip.clientWidth) tabStrip.scrollLeft = r - tabStrip.clientWidth;
+  }
   showTabArrows();
+}
+
+/**
+ * The open files' tabs, in the one row (menus in the File tab) or in the menu bar: they keep at least
+ * the list of them (▾), New Tab (+) and the open file's tab, and nothing in the row runs off the
+ * window (the window's buttons in the desktop app, Search…). Short of room, the row's words go
+ * first (row-tight); then the file tabs take a line of their own (row-wrap, header-wrap). Nate,
+ * 2026-11-26: essential controls compact, but are never covered or pushed off the window.
+ * Measured each time with none of those classes on, and without anything that depends on what the
+ * tabs show now (narrow or not, the ‹ › or not), so the same window always gets the same answer
+ * and it settles at once.
+ */
+function fitOneRow(): void {
+  const body = document.body;
+  const at = tabsEl.parentElement;
+  const oneRow = body.classList.contains('one-row');
+  // the row to fit: the one the file tabs are in (the ribbon's, or the menu bar), or with the file tabs
+  // on a row of their own, the row Quick Access, Search and the window buttons are in (the ribbon's
+  // row of tabs, or the menu bar)
+  const withTabs = !!at && ((oneRow && at.matches('.rb-tabs')) || at.matches('header'));
+  // (the header too while no ribbon's row shows: in Focus View, or before the ribbon is made, Quick
+  // Access and Search are back there)
+  const ribbonRow = oneRow && !withTabs ? document.querySelector<HTMLElement>('.ribbon:not([hidden]) > .rb-tabs') : null;
+  const row = withTabs ? at : ribbonRow?.offsetParent ? ribbonRow : document.querySelector<HTMLElement>('header');
+  const cls = row?.matches('header') ? 'header-wrap' : 'row-wrap';
+  watchFit(row);
+  // (measured with none of the classes on; a wide window, which has none, is not touched at all)
+  const had = FIT_CLASSES.filter((c) => body.classList.contains(c));
+  if (had.length) body.classList.remove(...had);
+  const want: string[] = [];
+  if (row?.offsetParent) {
+    // (the room for the tabs themselves: the ‹ ›, the open file's icon, a few letters of its name and its ×)
+    const room = () => tabsEl.getBoundingClientRect().width - tabList.offsetWidth - tabAdd.offsetWidth;
+    // (the row's end: the window's, or short of the room the menu bar keeps for the window buttons,
+    // which sit over its end)
+    const end = Math.min(innerWidth, row.getBoundingClientRect().right - parseFloat(getComputedStyle(row).paddingRight));
+    const short = () => (withTabs && room() < 104) || row.scrollWidth > row.clientWidth + 1
+      || [...row.children].some((c) => { const cs = getComputedStyle(c); return cs.position !== 'absolute' && c.getBoundingClientRect().right + (parseFloat(cs.marginRight) || 0) > end + 0.5; });
+    if (short()) {
+      want.push('row-tight');
+      body.classList.add('row-tight');
+      if (short()) want.push(cls);
+      body.classList.remove('row-tight');
+    }
+  }
+  if (want.length) body.classList.add(...want);
+  // (the rows above the drawing changed height, which moves it without always resizing it: the
+  // floating toolboxes keep their places in it)
+  if (want.join() !== had.join()) document.dispatchEvent(new Event('chrome-moved'));
 }
 
 function showTabArrows(): void {
@@ -11243,7 +11315,7 @@ const COMMANDS: Record<string, () => unknown> = {
   'dev-tools': () => { showDevTools(!devTools); storeSettings(); },
   'show-stereo': () => previewStereo(!renderer.previewStereo),
   'scroll-bars': () => { showScrollBars(!scrollbars.shown); storeSettings(); },
-  'collapse-ribbon': () => { ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
+  'collapse-ribbon': () => { if (ribbonCollapsed() && innerHeight < TOO_SHORT) { tellTooShort(); return; } ribbonChosen = !ribbonCollapsed(); setRibbonCollapsed(ribbonChosen); storeSettings(); },
   'ribbon-auto-fold': () => { ribbonAutoFold = !ribbonAutoFold; autoFoldRibbon(true); storeSettings(); },
   'ribbon-simplified': () => { setRibbonLook(ribbonLook === 'simple' ? 'classic' : 'simple'); storeSettings(); },
   'tabs-in-menu': () => { placeTabs(!tabsInMenu); storeSettings(); },
@@ -11826,6 +11898,9 @@ function placeOneRow(): void {
   } else {
     // File, the ribbon's tabs, then Save, Undo and Redo just after them (Nate, 2026-11-25), the open files and Search
     const tablist = row.querySelector(':scope > .rb-tablist')!;
+    // (its ribbon's tabs coming and going, an object's own among them, fit the row again)
+    watchFit(row);
+    watchFit(tablist);
     if (qa.previousElementSibling !== tablist) tablist.after(qa);
     if (search.previousElementSibling !== (tabsInMenu ? tabsEl : qa) || search.parentElement !== row) qa.after(search);
   }
@@ -16665,14 +16740,20 @@ let ribbonChosen = false;
 /** View > Ribbon > Fold on Short Windows: the ribbon folds to its tabs while the window is under SHORT_WINDOW pixels tall. */
 let ribbonAutoFold = false;
 const SHORT_WINDOW = 760;
+/** Under this height the ribbon always folds to its tabs (as Office's does): with it whole, the menus,
+ * the file tabs and the status bar would not fit, and would cover one another. Click a tab to use it. */
+const TOO_SHORT = 420;
+function tellTooShort(): void { flash('The window is too short for the whole ribbon: click a tab to use its buttons.'); }
+foldWhen(() => innerHeight < TOO_SHORT, tellTooShort);
 let wasShort = false;
 /** Fold the ribbon as the window becomes short, and give it back as you had it when it is tall again. */
 function autoFoldRibbon(force = false): void {
-  const short = ribbonAutoFold && innerHeight < SHORT_WINDOW;
+  const short = innerHeight < TOO_SHORT || (ribbonAutoFold && innerHeight < SHORT_WINDOW);
   $('[data-cmd="ribbon-auto-fold"]')?.setAttribute('aria-checked', String(ribbonAutoFold));
   if (short === wasShort && !force) return;
   wasShort = short;
   setRibbonCollapsed(short || ribbonChosen);
+  document.dispatchEvent(new Event('chrome-moved'));
 }
 
 /** Tick the shown toolboxes and the lock in the View menu, and show the lock on its button. */
@@ -16880,8 +16961,7 @@ let quickPrefs: string[] | null = null;
 const menuLabel = (cmd: string) => topMenuEntry(cmd)?.label ?? commandDef(cmd)?.label ?? COMMAND_NAMES[cmd] ?? cmd;
 quickBar = new QuickBar($('#quick-bar'), {
   get: () => quickPrefs,
-  // the web app starts with only Save, Undo and Redo (Nate, 2026-11-25); the desktop app with the fuller set
-  defaults: isTauri() ? undefined : QUICK_WEB,
+  // (null until changed: QUICK_DEFAULT, Save, Undo and Redo, in every kind of tab and in both apps)
   set: (list) => { quickPrefs = list; storeSettings(); },
   run: (cmd) => { finishTyping(); if (!command(cmd)) flash(`${menuLabel(cmd)} isn't available here.`); },
   label: menuLabel,

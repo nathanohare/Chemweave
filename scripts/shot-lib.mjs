@@ -26,6 +26,8 @@ export async function open(url = 'http://localhost:5173/', { width = 1440, heigh
   await page.addStyleTag({ content: '#welcome, #start-view { display: none !important; }' });
   // the navigator map (on by default) only where a picture is about getting round a drawing
   if (!navigator) await page.evaluate(() => window.__app.command('navigator'));
+  // the recordings click the menu bar's menus: the web app starts with them in the File tab instead
+  await page.evaluate(() => { if (document.body.classList.contains('menus-in-file')) window.__app.command('menu-bar'); });
   return { browser, page, problems };
 }
 

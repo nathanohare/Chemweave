@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { launch } from '../bench/browser.mjs';
 import { a11yProblems, compareA11y } from './a11y-check.mjs';
+import { desktopStub, essentialProblems, sweepEssentials } from './essentials-check.mjs';
 
 const PORT = 4179;
 const URL = `http://localhost:${PORT}/`;
@@ -273,6 +274,68 @@ try {
   await page.setViewportSize({ width: 800, height: 720 });
   await page.waitForTimeout(300);
   checkRow(await rowCheck(), '800 × 720');
+  await page.setViewportSize({ width: 1280, height: 720 });
+  await page.waitForTimeout(300);
+
+  step('the controls nobody can do without are never squeezed to nothing, covered or off the window: every tab, menu bar and File tab, web and desktop (scripts/essentials-check.mjs)');
+  // (wide, narrow and short: a laptop split in two, a phone, a window dragged low)
+  const SWEEP = [[1366, 768], [1100, 700], [1024, 700], [800, 600], [900, 400], [390, 700], [390, 300]];
+  const TOUCH = [[1366, 768], [1024, 700], [600, 260], [390, 300]];
+  for (const p of await sweepEssentials(page, SWEEP, 'web')) fail(p);
+  // (with Touch Mode's bigger buttons, and at a larger interface size)
+  await page.evaluate(() => window.__app.command('touch-mode-on'));
+  for (const p of await sweepEssentials(page, TOUCH, 'web, Touch Mode')) fail(p);
+  await page.evaluate(() => window.__app.command('touch-mode-auto'));
+  // (with the file tabs on a row of their own: View > Window and Colors > File Tabs in the Menu Bar off)
+  const OWN_ROW = [[1366, 768], [1000, 700], [900, 700], [700, 700], [500, 600], [390, 700]];
+  const tabsOwnRow = async (pg, on) => { if (await pg.evaluate(() => document.body.classList.contains('tabs-in-menu')) === on) await pg.evaluate(() => window.__app.command('tabs-in-menu')); };
+  await tabsOwnRow(page, true);
+  for (const p of await sweepEssentials(page, OWN_ROW, 'web, file tabs on their own row')) fail(p);
+  // (Focus View: Quick Access and Search go back to the top row, which fits too)
+  await page.setViewportSize({ width: 500, height: 600 });
+  await page.evaluate(() => window.__app.command('focus-view'));
+  for (const p of await essentialProblems(page, 'web, file tabs on their own row, Focus View, 500 × 600')) fail(p);
+  await page.evaluate(() => window.__app.command('focus-view'));
+  await tabsOwnRow(page, false);
+  // a window too short for the whole ribbon keeps it folded, whatever is clicked, and the choice made stays
+  await page.setViewportSize({ width: 390, height: 300 });
+  await page.waitForTimeout(200);
+  const fold = await page.evaluate(async () => {
+    const was = document.body.classList.contains('ribbon-collapsed');
+    window.__app.command('collapse-ribbon');
+    document.querySelector('.ribbon:not([hidden]) .rb-collapse')?.click();
+    await new Promise((ok) => setTimeout(ok, 100));
+    return { was, now: document.body.classList.contains('ribbon-collapsed') };
+  });
+  if (!fold.was || !fold.now) fail(`at 390 × 300 the ribbon is ${fold.now ? 'folded' : 'whole'} after Collapse the Ribbon and its ▾ (folded before: ${fold.was})`);
+  await page.setViewportSize({ width: 1366, height: 768 });
+  await page.waitForTimeout(200);
+  if (await page.evaluate(() => document.body.classList.contains('ribbon-collapsed'))) fail('the ribbon stays folded once the window is tall again');
+  {
+    // the desktop app: its own title bar, with the window's buttons (the desktop calls do nothing here)
+    const desk = await browser.newPage({ viewport: { width: 1366, height: 768 } });
+    await desk.addInitScript(desktopStub);
+    await desk.goto(URL);
+    await desk.waitForFunction(() => window.__app?.chem?.ready || window.__app?.chem?.error, null, { timeout: 30000 });
+    await desk.evaluate(() => document.querySelector('#welcome-close')?.click());
+    // just started, one tab, the menu bar showing (as the desktop app comes): the file tabs in the menu bar's row
+    await desk.waitForTimeout(600);
+    for (const p of await essentialProblems(desk, 'desktop, just started, 1366 × 768')) fail(p);
+    if (await desk.evaluate(() => /\b(row-wrap|header-wrap)\b/.test(document.body.className))) fail('desktop, just started at 1366 × 768: the file tabs are on a line of their own under the menu bar');
+    for (const k of ['new-sheet', 'new-document', 'new-slides', 'new-design', 'new']) {
+      await desk.evaluate((k) => window.__app.command(k), k);
+      await desk.waitForTimeout(800);
+      await desk.keyboard.press('Escape');
+    }
+    if (!(await desk.evaluate(() => !!document.querySelector('.win-controls > button')))) fail('the desktop check has no window buttons: it is not testing the desktop app\'s title bar');
+    for (const p of await sweepEssentials(desk, SWEEP, 'desktop')) fail(p);
+    await desk.evaluate(() => window.__app.command('touch-mode-on'));
+    for (const p of await sweepEssentials(desk, TOUCH, 'desktop, Touch Mode')) fail(p);
+    await desk.evaluate(() => window.__app.command('touch-mode-auto'));
+    await tabsOwnRow(desk, true);
+    for (const p of await sweepEssentials(desk, OWN_ROW, 'desktop, file tabs on their own row')) fail(p);
+    await desk.close();
+  }
   await page.setViewportSize({ width: 1280, height: 720 });
   await page.waitForTimeout(300);
 

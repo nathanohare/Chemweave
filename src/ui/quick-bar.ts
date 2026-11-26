@@ -1,5 +1,5 @@
 // The quick bar beside the menus (Office's Quick Access Toolbar): small buttons for the commands
-// used most. Save, Undo, Redo, Fit, the toolbox lock and the dark page to start with. Its ▾ button
+// used most. Save, Undo and Redo to start with. Its ▾ button
 // ticks the usual ones on and off; right-click a menu item or a ribbon button to add it, or a
 // quick button to take it off; Customize Quick Access Toolbar… (the ▾ button, or View ▸ Toolboxes)
 // adds any menu command and puts them in order. Kept with the settings.
@@ -8,9 +8,8 @@ import { showContextMenu, type MenuItem } from './context-menu';
 import { moved } from './toolboxes';
 
 /** What the bar has to start with. */
-export const QUICK_DEFAULT: readonly string[] = ['save', 'undo', 'redo', 'zoom-fit', 'lock-toolboxes', 'dark-page'];
-/** What the web app's bar has to start with. */
-export const QUICK_WEB: readonly string[] = ['save', 'undo', 'redo'];
+// (the same in every kind of tab, and in the web and desktop apps: Nate, 2026-11-26)
+export const QUICK_DEFAULT: readonly string[] = ['save', 'undo', 'redo'];
 /** Offered with a tick on the ▾ menu: the commands most people put there. */
 export const QUICK_OFFERED: readonly string[] = ['new', 'open', 'save', 'print', 'undo', 'redo', 'cut', 'copy', 'paste', 'zoom-fit', 'focus-view', 'lock-toolboxes', 'dark-page'];
 
@@ -32,8 +31,6 @@ export function withQuick(list: readonly string[], cmd: string, on: boolean, at?
 export interface QuickHooks {
   /** The bar's commands (null: as it comes). */
   get(): string[] | null;
-  /** What the bar has as it comes (QUICK_DEFAULT unless given). */
-  defaults?: readonly string[];
   set(list: string[] | null): void;
   run(cmd: string): void;
   /** A command's name as the menus show it now (Undo Add Bond). */
@@ -80,11 +77,7 @@ export class QuickBar {
 
   /** The commands on the bar now. */
   list(): string[] {
-    return [...(this.hooks.get() ?? this.defaults)];
-  }
-
-  private get defaults(): readonly string[] {
-    return this.hooks.defaults ?? QUICK_DEFAULT;
+    return [...(this.hooks.get() ?? QUICK_DEFAULT)];
   }
 
   has(cmd: string): boolean {
@@ -92,7 +85,7 @@ export class QuickBar {
   }
 
   private put(list: string[]): void {
-    const d = this.defaults;
+    const d = QUICK_DEFAULT;
     const same = list.length === d.length && list.every((c, i) => c === d[i]);
     this.hooks.set(same ? null : list);
     this.render();
