@@ -33,6 +33,8 @@ export interface TableTag {
   /** The table style (PowerPoint's, used on drawings too) and which parts it picks out. */
   style?: string;
   look?: TableData['look'];
+  /** The width of its lines, when not the drawing's (TableData.lineW). */
+  lineW?: number;
 }
 
 export interface Borders { left: number; top: number; bottom: number; right: number }
@@ -81,6 +83,49 @@ export function tableBorders(t: TableData, lw: number): Borders[][] {
 }
 
 /**
+ * The borders to save a table with: the cells' own as read (`edges`), while the table still has
+ * their rows and columns and its lines are the kind they make; else its lines at its width.
+ */
+export function savedBorders(t: TableData, lw: number): Borders[][] {
+  const e = t.edges;
+  if (e && t.edgesKey === tableShapeKey(t) && e.length === t.rows.length && e.every((row) => Array.isArray(row) && row.length === t.cols.length)) {
+    // (each side a width of 0 or more, whatever a pasted table holds)
+    const w = (v: unknown) => Math.max(0, Number(v) || 0);
+    return e.map((row) => row.map((b) => ({ left: w(b?.left), top: w(b?.top), bottom: w(b?.bottom), right: w(b?.right) })));
+  }
+  return tableBorders(t, t.lineW ?? lw);
+}
+
+/**
+ * What a table's cells' own borders depend on: its rows and columns, joined cells, lines, heading
+ * rows and style. Cells joined or split, lines or a style picked here: the borders as read no longer fit.
+ */
+export function tableShapeKey(t: TableData): string {
+  return JSON.stringify([t.rows.length, t.cols.length, t.lines, t.head, t.style ?? null, t.rows.map((row) => row.map((c) => [c.span ?? 1, c.rowSpan ?? 1]))]);
+}
+
+/**
+ * A table's borders with each line two cells share given to both, at the heavier of the two (as
+ * PowerPoint and this program write them), to compare two sets of borders by the lines they draw.
+ */
+export function sharedBorders(b: Borders[][]): Borders[][] {
+  const out = b.map((row) => row.map((x) => ({ ...x })));
+  for (let r = 0; r < out.length; r++) for (let c = 0; c < out[r].length; c++) {
+    const x = out[r][c], right = out[r][c + 1], below = out[r + 1]?.[c];
+    if (right) { const w = Math.max(x.right, right.left); x.right = right.left = w; }
+    if (below) { const w = Math.max(x.bottom, below.top); x.bottom = below.top = w; }
+  }
+  return out;
+}
+
+/** The width most of a table's cell borders have (to a thousandth of a point), or undefined when it has none. */
+export function commonBorderWidth(b: Borders[][]): number | undefined {
+  const count = new Map<number, number>();
+  for (const row of b) for (const x of row) for (const w of [x.left, x.top, x.bottom, x.right]) if (w > 0) { const k = Math.round(w * 1000) / 1000; count.set(k, (count.get(k) ?? 0) + 1); }
+  return [...count].sort((p, q) => q[1] - p[1] || q[0] - p[0])[0]?.[0];
+}
+
+/**
  * The lines of a table from its cells' borders: none, every cell boxed, or the ACS style with
  * the heading rows ending at the first rule inside the table.
  */
@@ -110,6 +155,7 @@ export function applyTableTag(t: TableData, tag: TableTag | null, fromBorders: {
   // the tag's heading rows count when the borders still show them (ChemDraw may have changed the lines)
   if (tag.lines === fromBorders.lines && (tag.lines !== 'acs' || tag.head === fromBorders.head || (fromBorders.head === 0 && tag.head >= t.rows.length))) out.head = Math.min(tag.head, t.rows.length);
   if (Array.isArray(tag.align) && tag.align.length === t.cols.length) out.align = tag.align;
+  if (typeof tag.lineW === 'number' && tag.lineW > 0 && tag.lineW < 20) out.lineW = tag.lineW;
   if (typeof tag.size === 'number' && tag.size > 0) out.size = tag.size;
   const rows = out.rows.map((row) => [...row]);
   for (const [r, c, s] of tag.spans ?? []) {

@@ -1538,6 +1538,16 @@ export interface TableData {
   head: number;
   /** ACS style (rules above and below the headings and under the last row), every cell boxed, or no lines. */
   lines: 'acs' | 'grid' | 'none';
+  /** The width of those lines in points, when not the drawing's line width (a PowerPoint table's 2 pt borders). */
+  lineW?: number;
+  /**
+   * Each cell's own borders as a PowerPoint file had them (their widths in points, 0 for none),
+   * saved back while the table has the same rows and columns and its lines are still these
+   * (a cell with heavier borders than the rest keeps them).
+   */
+  edges?: { left: number; top: number; bottom: number; right: number }[][];
+  /** The table's rows, columns, joined cells, lines and style when `edges` were read (tableShapeKey): they count only while it is the same. */
+  edgesKey?: string;
   /** How each column lines up (the first is left, the others centred, when not given). */
   align?: Justify[];
   /** Text size in points for runs that don't give one (the drawing's caption size when not given). */
