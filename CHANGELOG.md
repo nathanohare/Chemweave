@@ -2,7 +2,7 @@
 
 <!-- Made by scripts/changelog.mjs from changes/ each time a version is published. Edit the files in changes/, not this one. -->
 
-Every version of Chemweave, newest first: 169 versions and 638 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
+Every version of Chemweave, newest first: 170 versions and 687 pull requests so far. Each version's installers are on the [Releases](https://github.com/nathanohare/Chemweave/releases) page, and the app shows what's new in **Help ▸ What's New**. Found a problem? **Help ▸ Send Feedback**, or [open an issue](https://github.com/nathanohare/Chemweave/issues); the fix's entry here names the issue it fixes.
 
 ## Milestones
 
@@ -20,6 +20,94 @@ Every version of Chemweave, newest first: 169 versions and 638 pull requests so 
 - **2026-10-22**: Office-style Document, Presentation and Spreadsheet modes finished in five waves ([#83](https://github.com/nathanohare/Chemweave/pull/83) to [#126](https://github.com/nathanohare/Chemweave/pull/126)).
 - **2026-10-14**: The first published release, 0.1.72, with installers for Windows, macOS and Linux.
 - **2026-10-12**: The first line of code: a speed prototype, the desktop app, and saving CDXML files ([#1](https://github.com/nathanohare/Chemweave/pull/1), [#2](https://github.com/nathanohare/Chemweave/pull/2)).
+
+## 0.1.269 (2026-11-26)
+
+### Added
+
+- Equations: matrices (matrix, pmatrix, bmatrix and the other LaTeX matrix environments), drawn in rows and columns. ([#773](https://github.com/nathanohare/Chemweave/pull/773))
+- Settings: a new Animations choice under Settings ▸ Preferences ▸ Interface (Off, Fast or Normal). The desktop app starts on Fast; the web version, and any computer set to reduce motion, starts on Off. ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- Short, subtle animations throughout: dialogs, menus, tooltips, the Side Panel, toolboxes, ribbon tabs (the selected tab slides to the one clicked), mode changes, the File page, folding sections, status messages and slides being added or reordered. Nothing waits for them: everything is usable at once. ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- Jumping to an item, such as a link in Help or a field the program points you to, now glides there when animations are on. ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- SI Project: double-click between two pages of the Live Preview to hide the white space between them (each page's top and bottom margins), as in Word; double-click again to show it. Also in Preferences ▸ SI Live Preview. ([#804](https://github.com/nathanohare/Chemweave/pull/804))
+- SI Project: with Synchronous Scrolling on, scrolling the SI page keeps the Live Preview on the same field, and scrolling on past the end of a page opens the next one (above its start, the one before) after a soft barrier, so you never slip onto another compound by accident. ([#804](https://github.com/nathanohare/Chemweave/pull/804))
+- SI Project: an arrow on the bar beside the Live Preview hides the SI page so the preview takes its width (the list of pages stays); click it again to bring the page back. ([#804](https://github.com/nathanohare/Chemweave/pull/804))
+- Split Screen: drag any tab down from the tab row into the window to show it beside the tab you are working on, as with Snap in Windows; an outline shows the split while you hold the tab there. Any two kinds of tab can go side by side, and the ribbon, Side Panel and status bar follow the side you click. ([#802](https://github.com/nathanohare/Chemweave/pull/802))
+- Split Screen: the two tabs sit next to each other in the tab row, and the other side's tab is shaded. Drag the divider to share the width (double-click it for half each), or right-click a tab for Split Screen Left or Right. ([#802](https://github.com/nathanohare/Chemweave/pull/802))
+
+### Changed
+
+- Slides: File ▸ Export ▸ PDF leaves out hidden slides, as PowerPoint's Save as PDF does. ([#775](https://github.com/nathanohare/Chemweave/pull/775))
+- Check boxes have a clearer checked look (filled with the mode's accent color) and the check mark draws in. ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- Every existing animation now uses the same timings and follows the Animations setting, including the slide show's buttons, comment cards, the SI progress bar and highlights. ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- The oldest macOS supported is now 12.3. On macOS 12, Structure to Name and reading structures or text from pictures don't work: that system lacks what they need. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- SI Project: Page Width makes the Live Preview's pages fill the whole pane, with no grey at the sides, and keeps them so as the pane is resized. A bar with a grip now sets the preview apart from the SI page; drag it to change the preview's width. ([#804](https://github.com/nathanohare/Chemweave/pull/804))
+- Scroll bars everywhere (the canvas, documents, spreadsheets, SI pages, panels and lists) are a thin line until you use them: they grow while you scroll or move the pointer near them, and go thin again a couple of seconds later or as soon as the pointer leaves that pane. With Animations on, the canvas bars grow smoothly. ([#805](https://github.com/nathanohare/Chemweave/pull/805))
+
+### Fixed
+
+- Documents: paragraph and table borders from a Word file in Word's other line kinds (thick, triple, dot-dash, wave, 3-D...) keep their kind when saved, instead of becoming single, dashed or double. ([#762](https://github.com/nathanohare/Chemweave/pull/762))
+- Documents: a character style from a Word file stays based on the style it was based on when saved, and keeps its underline's kind (dotted, wave...) instead of a single underline. ([#766](https://github.com/nathanohare/Chemweave/pull/766))
+- Document: pictures and structures in a Word file keep the names and hidden marks they have in Word's Selection Pane when saved. ([#738](https://github.com/nathanohare/Chemweave/pull/738))
+- Word: floating pictures, shapes and text boxes keep their front-to-back order numbers, with no two sharing one, and charts are stored the same way, when a file is opened and saved again here. ([#780](https://github.com/nathanohare/Chemweave/pull/780))
+- Documents: a link's words from a Word file keep Word's Hyperlink (or followed link) style when saved, instead of becoming plain blue underlined text. ([#760](https://github.com/nathanohare/Chemweave/pull/760))
+- Word documents: a table of figures, contents or index field in the middle of a paragraph, showing plain text, stays where it was with that text, instead of being moved into a paragraph of its own. ([#789](https://github.com/nathanohare/Chemweave/pull/789))
+- Documents: text from a Word file keeps Word's kerning size (Font ▸ Advanced ▸ Kerning for fonts, from N points) when saved. ([#759](https://github.com/nathanohare/Chemweave/pull/759))
+- Documents: a paragraph style from a Word file stays linked to its character style (Quote and Quote Char) when saved. ([#764](https://github.com/nathanohare/Chemweave/pull/764))
+- Documents and slides: an equation's arrow over its text (Word's group character on top) keeps the text under the arrow when saved, instead of moving it above. ([#772](https://github.com/nathanohare/Chemweave/pull/772))
+- Documents and slides: an equation's matrix from a Word file is kept as a matrix when saved, instead of its entries run together. ([#773](https://github.com/nathanohare/Chemweave/pull/773))
+- Document: a non-breaking hyphen in a Word file is saved as Word's own non-breaking hyphen. ([#751](https://github.com/nathanohare/Chemweave/pull/751))
+- Word documents: a page or column break in the middle of a paragraph is saved back where it was, in the same paragraph, instead of splitting the paragraph in two. ([#788](https://github.com/nathanohare/Chemweave/pull/788))
+- Documents: a paragraph mark's own formatting from a Word file (such as a bold or larger mark) is kept when saved (not yet on list items, or on a document's last paragraph). ([#761](https://github.com/nathanohare/Chemweave/pull/761))
+- Word: a file with a legacy form field, a table of contents, figures, an index or a table of authorities, opened and saved again here, no longer gets a second bookmark for the form field, a rewritten "toc 1" style or the list styles written twice. ([#779](https://github.com/nathanohare/Chemweave/pull/779))
+- Documents: a shape in line with text from a Word file stays in line when saved (until it is moved, hidden, named, grouped or positioned here), and a shape's gradient fill is kept (shown here as its first colour, or none where that shows through) instead of being lost. ([#774](https://github.com/nathanohare/Chemweave/pull/774))
+- Documents: a paragraph style's borders and shading from a Word file stay in the style when saved (and a paragraph put in that style takes them; one changing style trades the old style's for the new one's). ([#763](https://github.com/nathanohare/Chemweave/pull/763))
+- Documents: a paragraph style from a Word file stays based on the style it was based on (a chain of styles) when saved, instead of on Normal. ([#765](https://github.com/nathanohare/Chemweave/pull/765))
+- Documents: a paragraph style's own numbering from a Word file stays in the style when saved (its paragraphs stay numbered; one taken out of the list here isn't numbered by Word), and a list style comes out the same on a second save. ([#767](https://github.com/nathanohare/Chemweave/pull/767))
+- Document: a figure in a Word file keeps the side its text wraps on (left only, right only or both sides) when saved. ([#728](https://github.com/nathanohare/Chemweave/pull/728))
+- Chemweave now starts on macOS 12.3 and later, and in web browsers as old as Safari 15.4 (older iPads and school computers). Before, it showed an empty window there. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- On those older systems, toolbar icons now show, PDF files open, and the Drawing Tools box is its normal width. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- Mac: quitting (⌘Q, the Quit menu item or the Dock) now asks about unsaved work first. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- Mac: the welcome window shows ⌥ where it said Alt. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- Reference and SI import no longer hang on text with emoji or italic math letters. ([#797](https://github.com/nathanohare/Chemweave/pull/797))
+- Word and PowerPoint charts show in the file's theme colors (series without their own color take its accents, a series in a theme color shows it), and a chart title keeps its own text size.
+- PDF export: Chinese, Japanese, Hebrew and Arabic text, and symbol bullets and Wingdings characters, are drawn with the free Noto Sans fonts that come with the app instead of printing as "?". Hebrew and Arabic still come out left to right with Arabic letters unjoined (F-V-02). ([#783](https://github.com/nathanohare/Chemweave/pull/783))
+- PDF export: text in a font the PDF stands in for (Georgia, a font missing on this computer) has its letters scaled to the widths it was laid out with, instead of spaced out letter by letter. ([#787](https://github.com/nathanohare/Chemweave/pull/787))
+- Pictures: brightness and contrast from Word and PowerPoint (Picture Format ▸ Corrections) look as Office shows them, not stronger. ([#786](https://github.com/nathanohare/Chemweave/pull/786))
+- Slides: a line or connector from a PowerPoint file keeps its name in the Selection Pane when saved, instead of becoming "Straight Arrow Connector N". ([#768](https://github.com/nathanohare/Chemweave/pull/768))
+- PowerPoint: table cell borders keep their width (2 pt borders were saved at 1.2 pt), and are drawn at that width. ([#791](https://github.com/nathanohare/Chemweave/pull/791))
+- PowerPoint: a text box in a flipped group is saved where PowerPoint shows it. ([#793](https://github.com/nathanohare/Chemweave/pull/793))
+- PowerPoint: text running down or up in a flipped group keeps its direction and frame.
+- PowerPoint: a text box in a group whose inside coordinates differ from its place is saved where it shows on the slide. ([#790](https://github.com/nathanohare/Chemweave/pull/790))
+- Slides: a group from a PowerPoint file keeps its name in the Selection Pane when saved, instead of becoming "Group N". ([#769](https://github.com/nathanohare/Chemweave/pull/769))
+- Slides: a plain box or oval from a PowerPoint file keeps its outline's width and its Round Dot dashes, on the slide and when saved. ([#752](https://github.com/nathanohare/Chemweave/pull/752))
+- Slides: a link on a picture (a click goes to a web page, a file, a slide or the next or previous slide) is kept when the deck is saved; and a link to a slide on the slide master or a layout no longer points at a part that isn't there. ([#770](https://github.com/nathanohare/Chemweave/pull/770))
+- Slides: a rounded rectangle from a PowerPoint file keeps its corner size when saved (and other shapes their adjustments, such as an arrow's head), and a corner dragged in PowerPoint on a shape saved here is kept with the rest of the shape. Chemweave still draws these shapes with their usual corner and head. ([#757](https://github.com/nathanohare/Chemweave/pull/757))
+- Slides: an A4 (or other) slide size from a PowerPoint file is saved exactly, not rounded to whole points. ([#771](https://github.com/nathanohare/Chemweave/pull/771))
+- PowerPoint: saving a deck again writes the same text box positions, shape settings and charts in Chemweave's own tags (the shapes' id numbers still change on the first re-save). ([#792](https://github.com/nathanohare/Chemweave/pull/792))
+- Slides: a PowerPoint text box with vertical or turned text stays where it was when the file is opened and saved again (it moved down a little more with each save before). ([#778](https://github.com/nathanohare/Chemweave/pull/778))
+- Documents: a right-to-left paragraph (Hebrew, Arabic; Word's right-to-left setting) is laid out from the right, with Latin words and numbers in it in their own order, the caret and selection where the letters are, and its PDF letters in the order they are seen, Arabic joined. ([#784](https://github.com/nathanohare/Chemweave/pull/784))
+- Word and Slides: a chart's data workbook inside a saved file is the same each time the file is saved, and every file saved here dates its zip entries as Office does (1 January 1980), not with the time of the save. ([#777](https://github.com/nathanohare/Chemweave/pull/777))
+- Sheets: fraction formats (# ?/?, # ??/16, with units, currency or a negative section) and minutes and seconds with tenths (mm:ss.0, Excel's built-in 47) show and print as Excel shows them; and [h]:mm shows minutes, not the month. ([#776](https://github.com/nathanohare/Chemweave/pull/776))
+- File ▸ New ▸ SI Project, File ▸ Open SI Project, Convert SI Project Folder, the workspace commands, Batch Convert and View ▸ Auto-Collapse on Short Windows now work while a document or spreadsheet is showing, not only a canvas. ([#803](https://github.com/nathanohare/Chemweave/pull/803))
+- Canvas: holding Shift with nothing selected no longer shows "Shift: add to the selection" beside the pointer. ([#803](https://github.com/nathanohare/Chemweave/pull/803))
+- Canvas: no dashed page line is drawn along the top and left edges of the drawing, where scrolling stops. ([#803](https://github.com/nathanohare/Chemweave/pull/803))
+- Documents: Word's hollow (outline), embossed and engraved letters, emphasis marks, character borders and the Word 2010 glow are drawn, and outlined text and shadows show in PDFs and pictures too. ([#785](https://github.com/nathanohare/Chemweave/pull/785))
+- Spreadsheet: a carriage return in an Excel cell's text or a formula's text result (as Windows line breaks are written) stays a carriage return when the file is saved. ([#741](https://github.com/nathanohare/Chemweave/pull/741))
+- Spreadsheet: a line break in a data validation message is kept when the file is saved. ([#741](https://github.com/nathanohare/Chemweave/pull/741))
+- Spreadsheet: a collapsed group of columns stays collapsed in Excel after saving. ([#731](https://github.com/nathanohare/Chemweave/pull/731))
+- Spreadsheet: threaded comments and their people keep the ids an Excel file gave them, so saving the same workbook again doesn't change them. ([#746](https://github.com/nathanohare/Chemweave/pull/746))
+- Spreadsheet: a row Excel fitted to its text keeps its height when the workbook is saved here a second time. ([#748](https://github.com/nathanohare/Chemweave/pull/748))
+- Spreadsheet: every table on a sheet keeps its filter buttons when saved for Excel, and Data ▸ Filter off stays off. ([#730](https://github.com/nathanohare/Chemweave/pull/730))
+
+### Removed
+
+- View ▸ Split View: Canvas Beside, which Split Screen replaces; View ▸ Close Split ends a split. Workspaces saved with a canvas beside a document still open with it beside. ([#802](https://github.com/nathanohare/Chemweave/pull/802))
+
+### Under the hood
+
+- a test checks that every animation uses the shared timings and never animates a size or position; the motion rules are in the UI style guide (S91 to S97). ([#800](https://github.com/nathanohare/Chemweave/pull/800))
+- a check that every File menu command shown in a document or spreadsheet runs there. ([#803](https://github.com/nathanohare/Chemweave/pull/803))
 
 ## 0.1.268 (2026-11-25)
 
