@@ -40,12 +40,12 @@ export interface TemplateWindowOptions {
   /** Help behind the "i" beside the title. */
   note?: string;
   categories: TemplateCategory[];
-  /** An "All" category first, with every category's cards. */
+  /** An "All" category first: every category's cards in one scrolling list, a labeled divider before each category. */
   all?: boolean;
-  /** The category shown first (else the one last used, else the first). */
+  /** The category shown first (else the first). */
   initial?: string;
-  /** Where the category last used is kept (a localStorage key). */
-  remember?: string;
+  /** The card chosen when the window opens (the blank file): marked, and focused so Enter picks it. */
+  initialCard?: string;
   /** The "Show templates when creating new …" checkbox. */
   showPref?: { label: string; get(): boolean; set(on: boolean): void };
   /** Block the program until a card is picked or the window closed (Design's New window). */
@@ -231,6 +231,18 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     }, 450);
   };
   grid.addEventListener('scroll', hideZoom);
+  // the default card's mark goes once another card takes the keyboard (one card looks chosen); the cards
+  // are one Tab stop, the card last focused (the arrow keys move among them), so Tab reaches the checkbox
+  grid.addEventListener('focusin', (e) => {
+    const to = (e.target as HTMLElement).closest?.<HTMLElement>('.tw-card');
+    if (!to) return;
+    if (!to.classList.contains('tw-default')) grid.querySelector('.tw-default')?.classList.remove('tw-default');
+    for (const c of grid.querySelectorAll<HTMLElement>('.tw-card')) c.tabIndex = c === to ? 0 : -1;
+    // a card in a section's first row brings the section's name into view with it
+    let before = to.previousElementSibling as HTMLElement | null;
+    while (before?.classList.contains('tw-card') && before.offsetTop === to.offsetTop) before = before.previousElementSibling as HTMLElement | null;
+    if (before?.classList.contains('tw-section')) before.scrollIntoView?.({ block: 'nearest' });
+  });
 
   const makeCard = (c: TemplateCard): HTMLButtonElement => {
     const b = document.createElement('button');
@@ -269,45 +281,75 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     });
     // the arrow keys move from card to card; Left from a row's first card goes back to the categories
     b.addEventListener('keydown', (e) => {
-      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown'].includes(e.key)) return;
+      if (!['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Home', 'End'].includes(e.key)) return;
       const cards = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
       const i = cards.indexOf(b);
-      const perRow = Math.max(1, cards.filter((c) => c.offsetTop === cards[0].offsetTop).length);
       e.preventDefault();
-      if (e.key === 'ArrowLeft' && i % perRow === 0) { tabs.get(showing)?.focus(); return; }
-      const j = i + (e.key === 'ArrowLeft' ? -1 : e.key === 'ArrowRight' ? 1 : e.key === 'ArrowUp' ? -perRow : perRow);
-      cards[Math.min(cards.length - 1, Math.max(0, j))]?.focus();
+      if (e.key === 'Home' || e.key === 'End') { cards[e.key === 'Home' ? 0 : cards.length - 1]?.focus(); return; }
+      // (rows can be short where a section ends, so Up and Down go to the nearest card in the row above or below)
+      if (e.key === 'ArrowLeft' && (i === 0 || cards[i - 1].offsetTop !== b.offsetTop)) { tabs.get(showing)?.focus(); return; }
+      if (e.key === 'ArrowLeft' || e.key === 'ArrowRight') { cards[Math.min(cards.length - 1, Math.max(0, i + (e.key === 'ArrowLeft' ? -1 : 1)))]?.focus(); return; }
+      const down = e.key === 'ArrowDown';
+      const rows = cards.filter((c) => down ? c.offsetTop > b.offsetTop : c.offsetTop < b.offsetTop);
+      if (!rows.length) return;
+      const top = down ? Math.min(...rows.map((c) => c.offsetTop)) : Math.max(...rows.map((c) => c.offsetTop));
+      const row = rows.filter((c) => c.offsetTop === top);
+      row.reduce((a, c) => Math.abs(c.offsetLeft - b.offsetLeft) < Math.abs(a.offsetLeft - b.offsetLeft) ? c : a).focus();
     });
     if (pic.draw) { if (io) io.observe(pic); else pic.draw(); }
     return b;
   };
 
-  type Cat = { id: string; name: string; cards: () => Promise<TemplateCard[]> };
+  /** A category's cards, or (All) every category's under its name. */
+  type Section = { name: string; cards: TemplateCard[] };
+  type Cat = { id: string; name: string; cards: () => Promise<TemplateCard[]>; sections?: () => Promise<Section[]> };
   const load = (c: TemplateCategory) => async () => c.cards();
   const cats: Cat[] = o.categories.map((c) => ({ id: c.id, name: c.name, cards: load(c) }));
   if (o.all) {
-    cats.unshift({
-      id: 'all', name: 'All', cards: async () => {
-        const seen = new Set<string>();
-        return (await Promise.all(o.categories.map((c) => c.cards()))).flat().filter((c) => !seen.has(c.id) && !!seen.add(c.id));
-      },
-    });
+    // (made once for the window: the All count and the list share it)
+    let made: Promise<Section[]> | null = null;
+    const sections = (): Promise<Section[]> => made ??= (async () => {
+      const seen = new Set<string>();
+      const lists = await Promise.all(o.categories.map((c) => c.cards()));
+      return o.categories.map((c, i) => ({ name: c.name, cards: lists[i].filter((t) => !seen.has(t.id) && !!seen.add(t.id)) })).filter((x) => x.cards.length);
+    })();
+    cats.unshift({ id: 'all', name: 'All', sections, cards: async () => (await sections()).flatMap((x) => x.cards) });
   }
+  /** The divider before a category's cards in All: its name (a heading, for screen readers) and a line, across the whole row. */
+  const divider = (name: string): HTMLElement => {
+    const d = document.createElement('div');
+    d.className = 'tw-section';
+    d.setAttribute('role', 'heading');
+    d.setAttribute('aria-level', '3');
+    d.textContent = name;
+    return d;
+  };
   const tabs = new Map<string, HTMLButtonElement>();
   let showing = '';
-  const show = async (id: string, focus = false) => {
+  const show = async (id: string, focus = false, opening = false) => {
     showing = id;
     for (const [k, b] of tabs) { b.setAttribute('aria-selected', String(k === id)); b.tabIndex = k === id ? 0 : -1; }
     if (focus) tabs.get(id)?.focus();
-    if (o.remember) try { localStorage.setItem(o.remember, id); } catch { /* not kept */ }
+    const cat = cats.find((c) => c.id === id)!;
+    grid.setAttribute('aria-label', cat.name);
     const another = grid.childElementCount > 0;
-    const cards = await cats.find((c) => c.id === id)!.cards();
+    const parts = cat.sections ? await cat.sections() : [{ name: '', cards: await cat.cards() }];
     if (showing !== id || !isOpen) return;
     io?.disconnect();
-    grid.replaceChildren(...cards.map(makeCard));
+    grid.replaceChildren(...parts.flatMap((x) => [...(x.name ? [divider(x.name)] : []), ...x.cards.map(makeCard)]));
+    // one Tab stop in the cards: the default card where there is one, else the first
+    const all = [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')];
+    const stop = all.find((b) => b.dataset.id === o.initialCard) ?? all[0];
+    for (const b of all) b.tabIndex = b === stop ? 0 : -1;
     // another category's templates fade in (Nate's note on Motion Choices); the first ones come with the window's own fade
     if (another) fadeContent(grid);
     grid.scrollTop = 0;
+    // the default choice (the blank file) stands out, and takes the keyboard when the window opens
+    const chosen = o.initialCard ? [...grid.querySelectorAll<HTMLButtonElement>('.tw-card')].find((b) => b.dataset.id === o.initialCard) : undefined;
+    if (chosen) {
+      chosen.classList.add('tw-default');
+      if (opening) chosen.focus();
+    }
   };
   for (const c of cats) {
     const b = document.createElement('button');
@@ -349,11 +391,14 @@ export function showTemplateWindow(o: TemplateWindowOptions): TemplateWindow {
     setTimeout(() => { if (isOpen) document.addEventListener('pointerdown', outside, true); }, 0);
   }
   let first = o.initial ?? '';
-  if (!first && o.remember) try { first = localStorage.getItem(o.remember) ?? ''; } catch { /* the first */ }
   if (!tabs.has(first)) first = cats[0]?.id ?? '';
-  if (first) void show(first, true);
-  // the new file's own view takes the keyboard as it opens: take it back, so the arrow keys and Esc work at once
-  const refocus = () => { if (isOpen && !root.contains(document.activeElement)) (tabs.get(showing) ?? root).focus(); };
+  if (first) void show(first, true, true);
+  // the new file's own view takes the keyboard as it opens: take it back (to the blank file's card when
+  // it is showing), so Enter, the arrow keys and Esc work at once
+  const refocus = () => {
+    if (!isOpen || root.contains(document.activeElement)) return;
+    (grid.querySelector<HTMLButtonElement>('.tw-card.tw-default') ?? tabs.get(showing) ?? root).focus();
+  };
   setTimeout(refocus, 0);
   setTimeout(refocus, 250);
   return win;

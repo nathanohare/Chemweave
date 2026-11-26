@@ -1,0 +1,1 @@
+Changed: Document, Spreadsheet, Presentation and Design: the template window for a new file now opens on All, every template in one scrolling list with a divider before each category, and the blank file at the top, already chosen, so Enter keeps it. The categories on the left still show one category at a time.

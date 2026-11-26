@@ -10,7 +10,7 @@ import { STARTER_DECKS } from '../src/deck/starters';
 import { Deck } from '../src/deck/deck';
 import { Doc } from '../src/model';
 import { showTemplateWindow, type TemplateCard } from '../src/ui/template-window';
-import { documentCategories } from '../src/ui/file-templates';
+import { BLANK_CARD, BLANK_CATEGORY, documentCategories, sheetCategories, slideCategories } from '../src/ui/file-templates';
 import { checkDocument } from '../src/accessibility';
 import { keyOf } from '../src/sheet/refs';
 import { writeXlsx, readXlsx } from '../src/io/xlsx';
@@ -190,10 +190,86 @@ describe('the template window', () => {
     expect(await w2.closed).toBe(false);
   });
 
-  it('offers every document template, by category', async () => {
+  it('offers the blank document first, then every document template, by category', async () => {
     const cats = documentCategories(() => {});
-    expect(cats.map((c) => c.name)).toEqual(DOC_CATEGORIES.map((c) => c.name));
-    const n = (await Promise.all(cats.map((c) => c.cards()))).flat().length;
-    expect(n).toBe(DOC_TEMPLATES.length);
+    expect(cats.map((c) => c.name)).toEqual(['Blank', ...DOC_CATEGORIES.map((c) => c.name)]);
+    const cards = await Promise.all(cats.map((c) => c.cards()));
+    expect(cards[0].map((c) => [c.id, c.name])).toEqual([[BLANK_CARD, 'Blank document']]);
+    expect(cards.slice(1).flat().length).toBe(DOC_TEMPLATES.length);
+  });
+
+  it('puts the blank spreadsheet and the blank presentation first too', async () => {
+    const sheets = sheetCategories(() => {});
+    expect(sheets.map((c) => c.id)).toEqual([BLANK_CATEGORY, ...SHEET_CATEGORIES.map((c) => c.id)]);
+    expect((await sheets[0].cards()).map((c) => c.name)).toEqual(['Blank spreadsheet']);
+    const deck = Deck.blank(new Doc());
+    const slides = slideCategories({ master: deck.master, size: deck.size, mine: [], useTheme: () => {}, useStarter: () => {}, paint: () => {} });
+    expect(slides[0].id).toBe(BLANK_CATEGORY);
+    expect((await slides[0].cards()).map((c) => c.name)).toEqual(['Blank presentation']);
+  });
+
+  it('shows every category in one list under All, a labeled divider before each, the blank file first', async () => {
+    const picked: string[] = [];
+    const w = showTemplateWindow({
+      mode: 'slides', title: 'New Presentation', all: true, initial: 'all', initialCard: 'b1',
+      categories: [
+        { id: 'blank', name: 'Blank', cards: () => [card('b1', picked)] },
+        { id: 'a', name: 'Light', cards: () => [card('one', picked), card('two', picked)] },
+        { id: 'b', name: 'Mine', cards: () => [] },
+        { id: 'c', name: 'Dark', cards: () => [card('two', picked), card('three', picked)] },
+      ],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const root = document.querySelector('.template-window') as HTMLElement;
+    expect([...root.querySelectorAll('.tw-cat')].map((b) => b.firstChild!.textContent)).toEqual(['All', 'Blank', 'Light', 'Mine', 'Dark']);
+    // (an empty category has no divider; a card in two categories shows once)
+    expect([...root.querySelectorAll('.tw-grid > *')].map((x) => x.classList.contains('tw-section') ? `— ${x.textContent}` : x.querySelector('strong')!.textContent))
+      .toEqual(['— Blank', 'B1', '— Light', 'ONE', 'TWO', '— Dark', 'THREE']);
+    expect(document.activeElement).toBe(root.querySelector('.tw-card'));
+    expect(root.querySelector('.tw-card')!.classList.contains('tw-default')).toBe(true);
+    // the dividers are headings; the cards are one Tab stop; End and Home go to the last and first card
+    expect([...root.querySelectorAll('.tw-section')].every((d) => d.getAttribute('role') === 'heading')).toBe(true);
+    expect([...root.querySelectorAll<HTMLElement>('.tw-card')].map((c) => c.tabIndex)).toEqual([0, -1, -1, -1]);
+    root.querySelector('.tw-card')!.dispatchEvent(new KeyboardEvent('keydown', { key: 'End', bubbles: true }));
+    const last = [...root.querySelectorAll<HTMLElement>('.tw-card')].pop()!;
+    expect(document.activeElement).toBe(last);
+    expect([...root.querySelectorAll<HTMLElement>('.tw-card')].map((c) => c.tabIndex)).toEqual([-1, -1, -1, 0]);
+    last.dispatchEvent(new KeyboardEvent('keydown', { key: 'Home', bubbles: true }));
+    expect(document.activeElement).toBe(root.querySelector('.tw-card'));
+    // one category alone: its cards, no dividers
+    (root.querySelectorAll('.tw-cat')[2] as HTMLButtonElement).click();
+    await new Promise((r) => setTimeout(r, 0));
+    expect(root.querySelectorAll('.tw-section').length).toBe(0);
+    expect([...root.querySelectorAll('.tw-card strong')].map((b) => b.textContent)).toEqual(['ONE', 'TWO']);
+    w.close();
+  });
+
+  it('opens on the blank file, marked and focused so Enter keeps it; the arrows through the categories stay in the list', async () => {
+    const picked: string[] = [];
+    const w = showTemplateWindow({
+      mode: 'document', title: 'New Document', initial: 'blank', initialCard: 'b1',
+      categories: [{ id: 'blank', name: 'Blank', cards: () => [card('b1', picked), card('b2', picked)] }, { id: 'a', name: 'A', cards: () => [card('one', picked)] }],
+    });
+    await new Promise((r) => setTimeout(r, 0));
+    const root = document.querySelector('.template-window') as HTMLElement;
+    const blank = root.querySelector('.tw-card') as HTMLButtonElement;
+    expect(blank.dataset.id).toBe('b1');
+    expect(blank.classList.contains('tw-default')).toBe(true);
+    expect(document.activeElement).toBe(blank);
+    // another card taking the keyboard takes the mark too: one card looks chosen
+    (root.querySelectorAll('.tw-card')[1] as HTMLButtonElement).focus();
+    expect(root.querySelectorAll('.tw-default').length).toBe(0);
+    // down to the next category and back up: the focus stays on the category list
+    const [tabBlank, tabA] = [...root.querySelectorAll<HTMLButtonElement>('.tw-cat')];
+    tabBlank.focus();
+    tabBlank.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    tabA.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowUp', bubbles: true }));
+    await new Promise((r) => setTimeout(r, 0));
+    expect(document.activeElement).toBe(tabBlank);
+    expect(root.querySelector('.tw-card')!.classList.contains('tw-default')).toBe(true);
+    (root.querySelector('.tw-card') as HTMLButtonElement).click();
+    expect(await w.closed).toBe(true);
+    expect(picked).toEqual(['b1']);
   });
 });
