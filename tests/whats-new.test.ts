@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { compareVersions, notesSince, newestNotes, cleanNotes, shortNotes, noteLine } from '../src/updates';
+import { compareVersions, notesSince, newestNotes, cleanNotes, withoutComments, shortNotes, noteLine } from '../src/updates';
 
 describe("What's New", () => {
   it('orders versions by number, not as text', () => {
@@ -50,5 +50,15 @@ describe("What's New from change files", () => {
   it("leaves out an older release's empty pull request template", () => {
     const old = 'Staging (#716)\n\n## What this changes\n\n<!-- A few lines in plain words.\n-->\n\n## Checklist\n\n- **Real-program check**: queued';
     expect(cleanNotes(old)).toBe('Staging (#716)');
+  });
+});
+
+describe('withoutComments (release notes)', () => {
+  it('removes a comment that removing another one puts together', () => {
+    expect(withoutComments('a<!<!-- x -->-- y -->b')).toBe('ab');
+    expect(cleanNotes('### Fixed\n<!<!-- -->-- old template -->\n- Undo works.')).toBe('### Fixed\n- Undo works.');
+  });
+  it('drops an unclosed comment to the end', () => {
+    expect(withoutComments('- One.\n<!-- left open')).toBe('- One.\n');
   });
 });
