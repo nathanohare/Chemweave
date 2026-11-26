@@ -58,7 +58,7 @@ import { linkFromTarget } from '../links';
 import { mathText, ommlToTex } from '../document/math';
 import { CITE_PRESETS, cleanOptions } from '../document/cite-styles';
 import { listIndent, ownStyleXml, tableText } from './docx-write';
-import { readChart } from './office-chart';
+import { readChart, rethemed, themeColorsOf } from './office-chart';
 import { freshBox, sameBoxData, sizedBox } from '../sheet/chart-box';
 import { chartBoxPng } from '../render/chart-box-paint';
 import { contentsAlt } from '../accessibility';
@@ -267,6 +267,8 @@ class DocxReader {
   private main = 'word/document.xml';
   private warnings = new Set<string>();
   private theme = { major: '', minor: '' };
+  /** The theme's colours, for showing charts in them (read when the first chart is; null without a theme). */
+  private chartTheme: Record<string, string> | null | undefined;
   private wstyles = new Map<string, WStyle>();
   private defaultPara = 'Normal';
   /** Word's default table style (the one a table that names none is in), if the file has one. */
@@ -2704,13 +2706,14 @@ class DocxReader {
     if (!pic && chartEl) {
       // a chart: Word's own (its numbers come from what Word cached), or ours when it charts the same numbers
       const path = this.relTarget(rAttr(chartEl, 'id'));
-      const got = path ? readChart(this.pkg, path, shown.w, shown.h) : null;
+      const got = path ? readChart(this.pkg, path, shown.w, shown.h, (this.chartTheme ??= themeColorsOf(this.pkg, this.main))) : null;
       if (!got) { this.warn('shapes'); return; }
       const mine = new RegExp(`^${CHART_NAME} (\\d+)$`).exec(name);
       const kept = mine ? this.model?.charts?.[Number(mine[1])] : undefined;
       // (and, in files with its print, still the same type with the same look: not changed in Word)
       const print = mine ? this.model?.chartPrints?.[Number(mine[1])] : undefined;
       const chosen = sizedBox(kept && sameBoxData(kept, got.box) && (typeof print !== 'string' || print === got.print) ? freshBox(kept) : got.box, shown.w, shown.h);
+      if (chosen !== got.box) rethemed(chosen.chart, (this.chartTheme ??= themeColorsOf(this.pkg, this.main)));
       if (chosen === got.box && got.partial) this.warn('chartParts');
       const float = box.localName === 'anchor' ? this.floatOf(box, null, shown.w) : null;
       this.emitObject(ctx, { kind: 'picture', src: chartBoxPng(chosen, shown.w, shown.h), w: round(shown.w), h: round(shown.h), px: { w: chosen.chart.w, h: chosen.chart.h }, chart: chosen, ...(float ? { float } : {}), ...wordPr, ...alt }, r);
