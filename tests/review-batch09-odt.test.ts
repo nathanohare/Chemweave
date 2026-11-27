@@ -24,12 +24,13 @@ const doc = (runs: TextRun[], paras: ParaStyle[], objects: DocText['objects'] = 
 const contentOf = async (t: DocText) => strFromU8(unzipSync(await writeOdt(t))['content.xml']);
 
 describe('ODT tables (F121, F122, F581)', () => {
-  it('reads column widths from the column styles, whatever order their attributes are in', () => {
-    // style:family before style:name (the old pattern wanted the name first)
-    const auto = '<style:style style:family="table-column" style:name="Tc.A"><style:table-column-properties style:column-width="1in"/></style:style>';
+  it('reads column widths from the column styles, however their attributes are written', () => {
+    // single quotes around the values (XML 1.0, 3.1 AttValue allows either; the old text pattern wanted double)
+    const auto = "<style:style style:family='table-column' style:name='Tc.A'><style:table-column-properties style:column-width='2in'/></style:style>";
     const body = '<table:table><table:table-column table:style-name="Tc.A"/><table:table-row><table:table-cell><text:p>x</text:p></table:table-cell></table:table-row></table:table>';
     const tb = Object.values(readOdt(odt(auto, body)).doc.objects).find((o) => o.kind === 'table');
-    expect(tb?.kind === 'table' && tb.table.cols).toEqual([72]);
+    // 2 in = 144 pt (72 pt to the inch)
+    expect(tb?.kind === 'table' && tb.table.cols).toEqual([144]);
   });
 
   it('writes the places under a merged cell as covered cells', async () => {

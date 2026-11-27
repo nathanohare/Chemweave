@@ -681,7 +681,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
 /** An atomArray written as attribute arrays: one record per atom. */
 function arrayRows(arr: Element): Record<string, string>[] {
   const cols = Array.from(arr.attributes).map((x) => [x.localName, x.value.trim().split(/\s+/)] as const);
-  const n = Math.max(0, ...cols.map(([, v]) => v.length));
+  const n = Math.max(0, maxOf(cols.map(([, v]) => v.length)));
   const rows: Record<string, string>[] = [];
   for (let i = 0; i < n; i++) rows.push(Object.fromEntries(cols.map(([k, v]) => [k, v[i] ?? ''])));
   return rows;

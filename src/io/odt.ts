@@ -14,6 +14,7 @@ import { fitParas, laidParas, paraCount, splitParagraphs } from '../text/paragra
 import { kid, kids, unzipPackage, ZipTooBigError, xml } from './ooxml';
 import { DocBuilder, headingId, styleIdOf } from './doc-build';
 import { isCovered } from '../table';
+import { maxOf } from './min-max';
 
 const NS = {
   office: 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
@@ -333,7 +334,7 @@ class OdtReader {
       if (r.head) head++;
       rows.push(row);
     }
-    const n = Math.max(cols.length, ...rows.map((r) => r.length));
+    const n = Math.max(cols.length, maxOf(rows.map((r) => r.length)));
     while (cols.length < n) cols.push(72);
     const table: TableData = { cols, rows: rows.map((r) => Array.from({ length: n }, (_, i) => r[i] ?? { runs: [{ text: '' }] })), head, lines: 'grid' };
     this.b.table({ kind: 'table', table });

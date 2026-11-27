@@ -370,7 +370,7 @@ class DocxWriter {
   constructor(private t: DocText, private deps: DocxDeps, private pages?: string[]) {
     // the file's own lists, under ids of their own past ours (their definitions are written back whole)
     t.kept?.numbering?.nums.forEach((n, i) => { this.keptNumIds.set(n.id, String(i + 1)); this.keptAbsOf.set(String(i + 1), n.abs); });
-    this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, ...pages.map((x) => Number(x) || 0)) : undefined);
+    this.shown = fieldTexts(t, pages ? (p) => pages[p] ?? '' : undefined, pages ? Math.max(1, maxOf(pages.map((x) => Number(x) || 0))) : undefined);
     this.charStyles = charStylesOf(t);
     for (const o of Object.values(t.objects)) {
       if (o.kind === 'toc' && !o.noLinks) for (const e of tocEntries(t, o.levels)) this.tocTargets.add(e.para);
@@ -452,7 +452,8 @@ class DocxWriter {
       ['saveSubsetFonts', embed ? '<w:saveSubsetFonts/>' : ''],
       ['trackRevisions', this.t.track ? '<w:trackRevisions/>' : ''],
       ['documentProtection', protectionXml(this.t.protect)],
-      ['defaultTabStop', '<w:defaultTabStop w:val="720"/>'],
+      // (the file's own, kept; else this program's 0.5 in)
+      ['defaultTabStop', `<w:defaultTabStop w:val="${this.t.kept?.settings?.tab ?? 720}"/>`],
       ['autoHyphenation', hyphenXml(this.t.hyphen)],
       ['evenAndOddHeaders', allHf(this.t).some((h) => h.oddEven) ? '<w:evenAndOddHeaders/>' : ''],
       ['characterSpacingControl', '<w:characterSpacingControl w:val="doNotCompress"/>'],
@@ -577,7 +578,7 @@ class DocxWriter {
       const table = only?.kind === 'drawing' ? soleTable(only.contents) : null;
       if (table) {
         if (lastWasTable) out.push('<w:p><w:pPr><w:spacing w:before="0" w:after="0"/></w:pPr></w:p>');
-        out.push(this.table(runs[0].obj!, table, ps.align ?? styleOf(t, ps).align));
+        out.push(this.cmtRound(runs[0], this.table(runs[0].obj!, table, ps.align ?? styleOf(t, ps).align)));
         lastWasTable = true;
         lastFloats = false;
         close();
@@ -606,8 +607,9 @@ class DocxWriter {
           if (part.some((x) => x.text)) out.push(await partPara());
           part = [];
           const o = t.objects[r.obj!];
-          out.push(o?.kind === 'toc' ? this.contents(o.levels, ps, o.look, !o.noLinks) : o?.kind === 'tof' ? this.figureList(o.name, ps)
-            : o?.kind === 'index' ? this.indexField(o, ps) : o?.kind === 'toa' ? this.toaField(o, ps) : this.bibliography(r.obj!, ps));
+          // (with the comments on it round it, as a table's: their character counted, so they close here)
+          out.push(this.cmtRound(r, o?.kind === 'toc' ? this.contents(o.levels, ps, o.look, !o.noLinks) : o?.kind === 'tof' ? this.figureList(o.name, ps)
+            : o?.kind === 'index' ? this.indexField(o, ps) : o?.kind === 'toa' ? this.toaField(o, ps) : this.bibliography(r.obj!, ps)));
         }
         if (part.some((x) => x.text) || own.xe || own.ta) out.push(await partPara());
         close();
@@ -1373,8 +1375,8 @@ class DocxWriter {
     const x0 = minOf(items.map((i) => i.x)), y0 = minOf(items.map((i) => i.y));
     const W = maxOf(items.map((i) => i.x + i.cx)) - x0, H = maxOf(items.map((i) => i.y + i.cy)) - y0;
     // the room the pictures' effects take beyond the group's frame
-    const el = Math.max(0, ...items.map((i) => i.e[0] - (i.x - x0))), et = Math.max(0, ...items.map((i) => i.e[1] - (i.y - y0)));
-    const er = Math.max(0, ...items.map((i) => i.x + i.cx + i.e[2] - (x0 + W))), eb = Math.max(0, ...items.map((i) => i.y + i.cy + i.e[3] - (y0 + H)));
+    const el = Math.max(0, maxOf(items.map((i) => i.e[0] - (i.x - x0)))), et = Math.max(0, maxOf(items.map((i) => i.e[1] - (i.y - y0))));
+    const er = Math.max(0, maxOf(items.map((i) => i.x + i.cx + i.e[2] - (x0 + W)))), eb = Math.max(0, maxOf(items.map((i) => i.y + i.cy + i.e[3] - (y0 + H))));
     const kids = items.map((i) => i.pic.replace(/(<pic:spPr><a:xfrm[^>]*>)<a:off x="0" y="0"\/>/, `$1<a:off x="${i.x - x0}" y="${i.y - y0}"/>`)).join('');
     const n = this.docPr++;
     const fl = floatOf(this.t.objects[ids[0]])!;
@@ -1396,15 +1398,37 @@ class DocxWriter {
   }
 
   /** A text box: Word's text box shape, with its paragraphs inside it (Word fits its height to them). */
+  /**
+   * The Word lists of a text of its own (a text box's, a header's): a new one where its numbers
+   * start again (at its start number), one on the same levels for an item with its own number, as
+   * the body's and table cells' (so each box's list starts at 1 as shown here). With the number each item shows.
+   */
+  private ownLists(ps: ParaStyle[]): { num: number; n?: number }[] {
+    const info = listInfo(ps);
+    let cur = 0;
+    return ps.map((p, i) => {
+      const key = `n${p.scheme ?? ''}`;
+      if (p.list === 'number' && info[i]?.start) cur = this.newList(key, p.startAt);
+      else if (p.list === 'number' && !p.cont && p.startAt !== undefined && info[i]?.n === p.startAt && cur > 0 && this.numKeys[cur - 1] === key) {
+        cur = this.addNum(key, false, { level: Math.max(0, Math.min(8, p.level ?? 0)), value: p.startAt });
+      }
+      return { num: cur, n: p.list === 'number' && !p.cont ? info[i]?.n : undefined };
+    });
+  }
+
   private async textBox(main: string, id: number, o: Extract<DocObject, { kind: 'textbox' }>, rPr: string): Promise<string> {
     const n = paraCount(rt.plainText(o.runs));
     const paras = fitParas(o.paras, n);
     const runsOf = this.splitParas(o.runs);
     const ps: string[] = [];
+    const lists = this.ownLists(paras);
+    const outer = this.shownN;
     for (let p = 0; p < n; p++) {
-      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], 0, -1, '', true), paras[p]);
-      else ps.push(await this.paragraph(main, paras[p], runsOf[p] ?? [], 0));
+      this.shownN = lists[p].n;
+      if (p > 0 && joins(paras[p - 1], paras[p])) ps[ps.length - 1] = joinTo(ps[ps.length - 1], await this.paragraph(main, paras[p], runsOf[p] ?? [], lists[p].num, -1, '', true), paras[p]);
+      else ps.push(await this.paragraph(main, paras[p], runsOf[p] ?? [], lists[p].num));
     }
+    this.shownN = outer;
     const N = styleOf(this.t, {});
     const lines = o.runs.reduce((a, r) => a + (r.text.match(/\n/g)?.length ?? 0), 1);
     // a shape keeps its own height (its text in the middle); a text box grows to fit its text
@@ -1925,8 +1949,11 @@ class DocxWriter {
     const runsOf = this.splitParas(body.runs);
     const ps = fitParas(body.paras, runsOf.length);
     const out: string[] = [];
+    const lists = this.ownLists(ps);
+    const outer = this.shownN;
     for (let p = 0; p < runsOf.length; p++) {
       const runs = runsOf[p];
+      this.shownN = lists[p].n;
       // what its fields show when saved (Word works them out again on each page)
       for (const r of runs) {
         const o = r.obj !== undefined ? t.objects[r.obj] : undefined;
@@ -1941,9 +1968,10 @@ class DocxWriter {
         continue;
       }
       const joined = p > 0 && out.length && joins(ps[p - 1], ps[p]) && out[out.length - 1].endsWith('</w:p>');
-      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, 0, -1, '', true), ps[p]);
-      else out.push(await this.paragraph(part, ps[p], runs, 0));
+      if (joined) out[out.length - 1] = joinTo(out[out.length - 1], await this.paragraph(part, ps[p], runs, lists[p].num, -1, '', true), ps[p]);
+      else out.push(await this.paragraph(part, ps[p], runs, lists[p].num));
     }
+    this.shownN = outer;
     const wm = kind === 'header' && t.watermark?.text ? watermarkXml(t.watermark, pg, this.watermarks++) : '';
     // the watermark goes in the first paragraph, behind the text
     if (wm) {
@@ -2221,8 +2249,6 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   out.push(raw.b ?? '');
   if (x.vanish) out.push('<w:vanish/>');
   out.push(raw.c ?? '');
-  // raised or lowered from the line, in half-points
-  if (r.raise) out.push(`<w:position w:val="${Math.round(r.raise * 2)}"/>`);
   const color = r.color ?? st.color;
   if ((color ?? '') !== (st.color ?? '')) out.push(colorXml(color, th));
   // character spacing (twentieths of a point) and kerning taken off
@@ -2233,6 +2259,8 @@ function runProps(r: TextRun, st: NamedStyle, x: { formula?: boolean; pos?: 'bas
   // (Word's sizes go up to 1638 pt)
   if (r.kernAt !== undefined && r.kernAt > 0 && r.kernAt <= 1638 && !r.noKern === size >= r.kernAt) out.push(`<w:kern w:val="${Math.round(r.kernAt * 2)}"/>`);
   else if (r.noKern) out.push('<w:kern w:val="0"/>');
+  // raised or lowered from the line, in half-points (after w:kern, before w:sz: ECMA-376 part 1, 17.3.2.28 CT_RPr)
+  if (r.raise) out.push(`<w:position w:val="${Math.round(r.raise * 2)}"/>`);
   if (size !== st.size) out.push(`<w:sz w:val="${half(size)}"/><w:szCs w:val="${half(size)}"/>`);
   const hl = r.highlight && !(raw.shd && raw.shdFill === r.highlight) ? highlightName(r.highlight) : null;
   if (hl) out.push(`<w:highlight w:val="${hl}"/>`);
@@ -2615,14 +2643,19 @@ const WM_MEASURE = documentMeasure((s, size, _f, style) => arialWidth(s, size, /
  * A text watermark as Word makes one: a WordArt shape (VML's text path) in the header, in the
  * middle of the margins, behind the text, turned 315° when diagonal, filled half see-through.
  */
+/**
+ * A watermark's VML shape, its shape type (_x0000_t136) with it: each header part that holds one
+ * defines the type itself, as Word writes them, since a shape's type="#..." is found in its own part.
+ * `n` (counted through the file) keeps the shapes' ids apart.
+ */
 export function watermarkXml(w: Watermark, pg: PageSetup, n: number): string {
   const at = watermarkPlace(w, { x: 0, top: 0, w: pg.w, h: pg.h, setup: pg }, WM_MEASURE);
   const r = (v: number) => Math.round(v * 100) / 100;
   const style = `position:absolute;margin-left:0;margin-top:0;width:${r(at.width)}pt;height:${r(at.size)}pt;${at.angle ? 'rotation:315;' : ''}z-index:-251654144;` +
     'mso-wrap-edited:f;mso-position-horizontal:center;mso-position-horizontal-relative:margin;mso-position-vertical:center;mso-position-vertical-relative:margin';
-  const shapetype = n === 0 ? '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas>' +
+  const shapetype = '<v:shapetype id="_x0000_t136" coordsize="21600,21600" o:spt="136" adj="10800" path="m@7,l@8,m@5,21600l@6,21600e"><v:formulas>' +
     ['sum #0 0 10800', 'prod #0 2 1', 'sum 21600 0 @1', 'sum 0 0 @2', 'sum 21600 0 @3', 'if @0 @3 0', 'if @0 21600 @1', 'if @0 0 @2', 'if @0 @4 21600', 'mid @5 @6', 'mid @8 @5', 'mid @7 @8', 'mid @6 @7', 'sum @6 0 @5'].map((e) => `<v:f eqn="${e}"/>`).join('') +
-    '</v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>' : '';
+    '</v:formulas><v:path textpathok="t" o:connecttype="custom" o:connectlocs="@9,0;@10,10800;@11,21600;@12,10800" o:connectangles="270,180,90,0"/><v:textpath on="t" fitshape="t"/><v:handles><v:h position="#0,bottomRight" xrange="6629,14971"/></v:handles><o:lock v:ext="edit" text="t" shapetype="t"/></v:shapetype>';
   return `<w:r><w:rPr><w:noProof/></w:rPr><w:pict>${shapetype}<v:shape id="${WATERMARK_SHAPE}${100000001 + n}" o:spid="_x0000_s${2049 + n}" type="#_x0000_t136" style="${style}" o:allowincell="f" fillcolor="#${hex6(w.color)}" stroked="f">` +
     `${w.faded ? '<v:fill opacity=".5"/>' : ''}<v:textpath style="font-family:&quot;${xml(w.font)}&quot;;font-size:1pt;font-weight:bold" string="${xml(w.text)}"/><w10:wrap anchorx="margin" anchory="margin"/></v:shape></w:pict></w:r>`;
 }

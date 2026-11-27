@@ -31,7 +31,8 @@ describe('src/io never spreads a list into Math.min or Math.max', () => {
     for (const f of files)
       readFileSync(join('src/io', f), 'utf8').split('\n').forEach((line, i) => {
         if (/^\s*(\/\/|\*)/.test(line)) return; // (comments may name it)
-        if (/Math\.(min|max)\(\s*\.\.\./.test(line) || /Math\.(min|max)\.apply\(/.test(line)) found.push(`src/io/${f}:${i + 1}`);
+        // (a spread anywhere in its arguments, as Math.max(0, ...list), not only first; review F572)
+        if (/Math\.(min|max)\((?:[^()]|\([^()]*\))*\.\.\./.test(line) || /Math\.(min|max)\.apply\(/.test(line)) found.push(`src/io/${f}:${i + 1}`);
       });
     expect(found, 'use minOf or maxOf from src/io/min-max.ts: a spread overflows the stack on a long list').toEqual([]);
   });

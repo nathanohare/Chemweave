@@ -10,6 +10,7 @@ import type { Justify, ParaStyle, TableCell, TableData, TextRun } from '../model
 import type { DocObject, DocText } from '../document/document';
 import { cfbStreams, isCfb } from './cfb';
 import { DocBuilder, fromCp1252, headingId } from './doc-build';
+import { maxOf } from './min-max';
 
 export { isDoc } from './doc-sniff';
 
@@ -435,7 +436,7 @@ class DocReader {
     const flushTable = () => {
       flushText();
       if (!rows.length) return;
-      const n = Math.max(cols.length, ...rows.map((r) => r.length));
+      const n = Math.max(cols.length, maxOf(rows.map((r) => r.length)));
       const widths = Array.from({ length: n }, (_, i) => cols[i] ?? 72);
       const table: TableData = { cols: widths, rows: rows.map((r) => Array.from({ length: n }, (_, i) => r[i] ?? { runs: [{ text: '' }] })), head: 0, lines: 'grid' };
       this.b.table({ kind: 'table', table });
