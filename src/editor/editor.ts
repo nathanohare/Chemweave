@@ -8115,13 +8115,14 @@ export class Editor {
   }
 
   /** Show or hide the dashed text guides on the selected arrows (null: as usual, only on plain reaction arrows). */
-  setArrowGuides(ids: number[], on: boolean | null): void {
+  setArrowGuides(ids: number[], on: boolean | null, byDefault?: (r: Arrow) => boolean): void {
     this.doc.edit(on === false ? 'Hide Text Guides' : 'Show Text Guides', () => {
       for (const id of ids) {
         const r = this.doc.arrows.get(id);
         if (!r) continue;
         const look = { ...r.textLook };
-        if (on === null) delete look.guides; else look.guides = on;
+        // (an arrow that shows them or not by default anyway is put back to its default, each arrow on its own)
+        if (on === null || (byDefault && byDefault(r) === on)) delete look.guides; else look.guides = on;
         this.doc.updateArrow(id, { textLook: Object.keys(look).length ? look : undefined });
       }
     });
