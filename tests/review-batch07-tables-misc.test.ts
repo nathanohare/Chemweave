@@ -122,7 +122,7 @@ describe('Use SI Values (F080)', () => {
     choice = 'fix';
     await ui.showCheck();
     const yields = () => (f.t.objects[5] as { table: TableData }).table.rows.slice(1).map((r) => rt.plainText(r[1].runs));
-    expect(yields()).toEqual(['91', '92', '93']);
+    expect(yields()).toEqual(['91%', '92%', '93%']);
     f.ed.undo();
     expect(yields()).toEqual(['50%', '60%', '70%']);
   });
