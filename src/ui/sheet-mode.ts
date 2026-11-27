@@ -18,7 +18,7 @@ import { fillReagentTable } from '../sheet/reagents';
 import { unitPrefs } from '../sheet/template-units';
 import { smilesCandidate, smilesPrefs } from '../sheet/smiles-cells';
 import { shiftFormula } from '../sheet/formula';
-import { MAX_CELLS, deleteCount, lastLine, usedPart } from './sheet-lines';
+import { MAX_CELLS, cutShort, deleteCount, lastLine, usedPart } from './sheet-lines';
 import { PROPERTIES, MolProps, propertyValue } from '../sheet/properties';
 import { FORMATS, changeDecimals, describeFormat } from '../sheet/numfmt';
 import { UNITS, unitFormat } from '../sheet/units';
@@ -1080,11 +1080,11 @@ export class SheetMode {
   }
 
   /** One undoable change to the sheet showing, remembering the selection for undo. */
-  private edit(label: string, fn: (s: Sheet) => void, after?: () => Range): void {
+  private edit(label: string, fn: (s: Sheet) => void, after?: () => Range, keepTyping = false): void {
     const wb = this.book;
     const s = this.view.sheet;
     if (!wb || !s) return;
-    this.view.commitEdit();
+    if (!keepTyping) this.view.commitEdit();
     wb.edit(label, () => fn(s), this.view.place(), after ? () => ({ sheet: s, sel: after() }) : undefined);
     this.view.refresh();
     this.schedulePanel();
@@ -1093,12 +1093,13 @@ export class SheetMode {
   /**
    * One undoable change to a given sheet, for work that awaited (names read, look-ups): the sheet
    * may no longer be the one showing, and is then changed where it is. False when its workbook
-   * was closed or the sheet deleted meanwhile.
+   * was closed or the sheet deleted meanwhile. Typing in a cell goes on (keepTyping) for results
+   * that arrive by themselves.
    */
-  private editSheet(s: Sheet, label: string, fn: (s: Sheet) => void, sel?: Range): boolean {
+  private editSheet(s: Sheet, label: string, fn: (s: Sheet) => void, sel?: Range, keepTyping = false): boolean {
     const wb = s.wb;
     if (!this.host.isOpen(wb) || !wb.sheets.includes(s)) return false;
-    if (wb === this.book && s === this.view.sheet) { this.edit(label, fn); return true; }
+    if (wb === this.book && s === this.view.sheet) { this.edit(label, fn, undefined, keepTyping); return true; }
     wb.edit(label, () => fn(s), sel ? { sheet: s, sel } : undefined);
     if (wb === this.book) { this.view.refresh(); this.schedulePanel(); } else this.host.changed(wb);
     return true;
@@ -1351,19 +1352,27 @@ export class SheetMode {
 
   private hide(kind: 'row' | 'col', hide: boolean): void {
     const v = this.view;
-    const s = v.sheet!;
     const R = v.sel.range;
     this.edit(hide ? (kind === 'row' ? 'Hide rows' : 'Hide columns') : (kind === 'row' ? 'Show rows' : 'Show columns'), (sh) => {
       if (kind === 'row') {
-        const end = lastLine(R, 'row', s.lastRow);
-        if (hide) for (let r = R.r1; r <= end; r++) sh.setRowHidden(r, true);
+        if (hide) for (let r = R.r1, end = this.reachOf(R, 'row'); r <= end; r++) sh.setRowHidden(r, true);
         else for (const r of [...sh.hiddenRows.keys()]) if (r >= R.r1 && r <= R.r2) sh.setRowHidden(r, false);
       } else {
-        const end = lastLine(R, 'col', s.lastCol);
-        if (hide) for (let c = R.c1; c <= end; c++) sh.setColHidden(c, true);
+        if (hide) for (let c = R.c1, end = this.reachOf(R, 'col'); c <= end; c++) sh.setColHidden(c, true);
         else for (const c of [...sh.hiddenCols.keys()]) if (c >= R.c1 && c <= R.c2) sh.setColHidden(c, false);
       }
     });
+  }
+
+  /** The last row (column) a command on whole rows (columns) reaches; says so when that stops short of the selection's end. */
+  private reachOf(R: Range, kind: 'row' | 'col'): number {
+    const used = kind === 'row' ? this.view.sheet!.lastRow : this.view.sheet!.lastCol;
+    const end = lastLine(R, kind, used);
+    if (cutShort(R, kind, used)) {
+      const n = end - (kind === 'row' ? R.r1 : R.c1) + 1;
+      this.host.flash(`Only the first ${n.toLocaleString('en-US')} ${kind === 'row' ? 'rows' : 'columns'} selected are changed. Select the rest again to change those too.`, 6000);
+    }
+    return end;
   }
 
   /** Not too many cells to fill in one step? Says so when there are. */
@@ -1626,7 +1635,7 @@ export class SheetMode {
       const allowed = cond?.kind === 'values' ? new Set(cond.allowed) : null;
       const boxes: HTMLInputElement[] = [];
       const everyValue = [...seen.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
-      // a long list shows its first values; the others stay shown, whichever of these is ticked
+      // a long list shows its first values; the others have no box: they follow (Select all)
       const sorted = everyValue.slice(0, FILTER_LIST_MAX);
       const listed = new Set(sorted);
       const all = document.createElement('label');
@@ -1634,12 +1643,13 @@ export class SheetMode {
       allBox.type = 'checkbox';
       allBox.checked = !allowed;
       all.append(allBox, ' (Select all)');
-      allBox.addEventListener('change', () => boxes.forEach((b) => { b.checked = allBox.checked; }));
+      let allTouched = false;
+      allBox.addEventListener('change', () => { allTouched = true; boxes.forEach((b) => { b.checked = allBox.checked; }); });
       list.append(all);
       if (everyValue.length > sorted.length) {
         const more = document.createElement('p');
         more.className = 'muted';
-        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others show unless another test hides them.`;
+        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others are shown while (Select all) is checked, unless another filter hides them.`;
         list.append(more);
       }
       for (const t of sorted) {
@@ -1653,9 +1663,9 @@ export class SheetMode {
         list.append(l);
       }
       const ok = btn('OK', () => {
-        // the values not listed are not in a box, so they stay allowed (unless an earlier choice left them out)
+        // the values not listed are not in a box: they follow (Select all), or an earlier choice if it was left alone
         const picked = boxes.filter((b) => b.checked).map((b) => b.value);
-        const unlisted = everyValue.filter((t) => !listed.has(t) && (!allowed || allowed.has(t)));
+        const unlisted = everyValue.filter((t) => !listed.has(t) && (allTouched ? allBox.checked : !allowed || allowed.has(t)));
         const everyThing = picked.length === boxes.length && unlisted.length === everyValue.length - sorted.length;
         void this.setCondition(col, everyThing ? null : { kind: 'values', allowed: [...picked, ...unlisted] });
       }, 'primary');
@@ -1791,7 +1801,7 @@ export class SheetMode {
       }
     }
     if (!texts.length) return;
-    if (more) this.host.flash(`${PASTED_SMILES_MAX} SMILES strings are being drawn; the rest of those pasted stay as text. Paste them again, in parts, to draw them.`, 8000);
+    if (more) this.host.flash(`${PASTED_SMILES_MAX} SMILES strings are being drawn; the rest stay as text. Paste them again, in parts, to draw them.`, 8000);
     const got: { r: number; c: number; text: string; contents: Contents }[] = [];
     for (const t of texts) {
       const res = await this.host.toStructure(t.text, wb.drawingStyle, true);
@@ -1800,7 +1810,7 @@ export class SheetMode {
     // only cells that still hold the text pasted (and only if the sheet is still there)
     const still = got.filter((g) => this.book === wb && s.cell(g.r, g.c)?.input === g.text && !s.cell(g.r, g.c)?.structure);
     if (!still.length) return;
-    this.editSheet(s, still.length > 1 ? 'Structures from SMILES' : 'Structure from SMILES', () => { for (const g of still) s.setStructure(g.r, g.c, g.contents); });
+    this.editSheet(s, still.length > 1 ? 'Structures from SMILES' : 'Structure from SMILES', () => { for (const g of still) s.setStructure(g.r, g.c, g.contents); }, undefined, true);
   }
 
   /** Edit > Paste Special > Paste SMILES: a SMILES string, molfile or name drawn as a structure in the active cell. */
@@ -1816,7 +1826,7 @@ export class SheetMode {
     const res = await this.host.toStructure(text, wb.drawingStyle);
     if ('error' in res) { this.host.flash(res.error, 9000); return; }
     // (the sheet may have changed during the look-up: the structure goes where it was asked for)
-    if (!this.editSheet(s, 'Paste structure', (sh) => sh.setStructure(r, c, res.contents), { r1: r, c1: c, r2: r, c2: c })) return;
+    if (!this.editSheet(s, 'Paste structure', (sh) => sh.setStructure(r, c, res.contents), { r1: r, c1: c, r2: r, c2: c }, true)) return;
     if (res.notes.length) this.host.flash('Note from the name reader: ' + res.notes.join(' '), 9000);
   }
 
@@ -2344,7 +2354,10 @@ export class SheetMode {
       }
       for (let i = 0; i < timesR; i++) for (let j = 0; j < timesC; j++) sh.paste({ row: top + i * b.rows, col: left + j * b.cols }, b, what);
     }, () => target);
-    if (cutClip && !cut) this.editSheet(cutClip.sheet, 'Move', (sh) => sh.clear(cutClip.range, 'all'));
+    // (two workbooks keep their own lists of changes, so this is one step in each: Undo in a workbook takes back its part)
+    if (cutClip && !cut && this.editSheet(cutClip.sheet, 'Cut', (sh) => sh.clear(cutClip.range, 'all'))) {
+      this.host.flash('Pasted here, and cleared from the other workbook. Undo in each workbook takes back its part.', 6000);
+    }
     if (cutClip) { this.clip = null; v.copied = null; }
     v.select(target, { r: top, c: left }, { r: top, c: left });
     // text from elsewhere (not cells copied here): SMILES in it is drawn
@@ -2436,12 +2449,12 @@ export class SheetMode {
     if (where === 'row') {
       items.push(act('Insert Rows Above', () => this.insertCells('row'), 'insert-cells'), act('Delete Rows', () => this.deleteCells('row'), 'delete-cells'),
         act('Hide Rows', () => this.hide('row', true), 'hide-rows'), act('Show Hidden Rows', () => this.hide('row', false), 'unhide-rows'),
-        act('Row Height…', () => void this.askSize('row')), act('Fit Height to Contents', () => v.autoFitLines('row', R.r1, lastLine(R, 'row', s.lastRow))));
+        act('Row Height…', () => void this.askSize('row')), act('Fit Height to Contents', () => v.autoFitLines('row', R.r1, this.reachOf(R, 'row'))));
     } else if (where === 'col') {
       items.push(act('Insert Columns to the Left', () => this.insertCells('col'), 'insert-cells'), act('Delete Columns', () => this.deleteCells('col'), 'delete-cells'),
         act('Hide Columns', () => this.hide('col', true), 'hide-cols'), act('Show Hidden Columns', () => this.hide('col', false), 'unhide-cols'),
-        act('Column Width…', () => void this.askSize('col')), act('Fit Width to Contents', () => v.autoFitLines('col', R.c1, lastLine(R, 'col', s.lastCol))));
-      if (s.colDefs.has(R.c1)) items.push(act('Change the Column\'s Formula…', () => void this.editColumnFormula(R.c1)), act('Convert Column to Values', () => this.freezeColumn(R.c1)));
+        act('Column Width…', () => void this.askSize('col')), act('Fit Width to Contents', () => v.autoFitLines('col', R.c1, this.reachOf(R, 'col'))));
+      if (s.colDefs.has(R.c1)) items.push(act('Change the Column\'s Formula…', () => void this.editColumnFormula(R.c1)), act('Convert Column to Values', () => void this.freezeColumn(R.c1)));
     } else {
       // in a PivotTable, its own commands first, as Excel's menu has them
       const pivot = this.pivots.contextItems(x, y);
@@ -2512,10 +2525,10 @@ export class SheetMode {
     // (a cleared box is no size, not a size of nothing)
     const n = ans && ans.px.trim() !== '' ? Number(ans.px) : NaN;
     if (!ans || !Number.isFinite(n) || n < 0) return;
-    const s = v.sheet!;
     this.edit(kind === 'row' ? 'Row height' : 'Column width', (sh) => {
-      if (kind === 'row') for (let r = R.r1; r <= lastLine(R, 'row', s.lastRow); r++) sh.setRowHeight(r, Math.min(2000, n));
-      else for (let c = R.c1; c <= lastLine(R, 'col', s.lastCol); c++) sh.setColWidth(c, Math.min(2000, n));
+      const end = this.reachOf(R, kind);
+      if (kind === 'row') for (let r = R.r1; r <= end; r++) sh.setRowHeight(r, Math.min(2000, n));
+      else for (let c = R.c1; c <= end; c++) sh.setColWidth(c, Math.min(2000, n));
     });
     v.focus();
   }
@@ -2536,25 +2549,41 @@ export class SheetMode {
     this.edit('Column formula', (sh) => sh.setColDef(col, { ...d, formula }));
   }
 
-  /** A property column becomes plain values (as they show now). */
-  private freezeColumn(col: number): void {
+  /** A property column becomes plain values (as they show now; results still being worked out are waited for). */
+  private async freezeColumn(col: number): Promise<void> {
     const s = this.view.sheet!;
-    const d = s.colDefs.get(col);
-    if (!d) return;
-    let errors = 0;
+    if (!s.colDefs.has(col)) return;
+    const busy = () => {
+      for (let r = s.colDefs.get(col)!.firstRow; r <= s.lastDataRow; r++) {
+        const val = s.values.get(keyOf(r, col));
+        if (isError(val) && (val as CellError).code === '#BUSY!') return true;
+      }
+      return false;
+    };
+    if (busy()) {
+      this.book!.recalc();
+      await this.chem.settled();
+      // (the sheet or the column may have changed meanwhile)
+      if (this.view.sheet !== s || !s.colDefs.has(col)) return;
+    }
+    const d = s.colDefs.get(col)!;
+    let errors = 0, unfinished = 0;
     this.edit('Keep values', (sh) => {
       for (let r = d.firstRow; r <= s.lastDataRow; r++) {
         const val = sh.values.get(keyOf(r, col));
         const cell = sh.cell(r, col);
         if (sh.isOverride(r, col)) continue;
-        // an error (#N/A…) is kept as its text: a cell can't hold one as a plain value
-        if (isError(val)) errors++;
-        const input = val === undefined || val === null ? undefined : isError(val) ? (val as CellError).code : plainText(val);
+        // an error (#N/A…) is kept as its text: a cell can't hold one as a plain value; a result not worked out yet is left empty
+        const pending = isError(val) && (val as CellError).code === '#BUSY!';
+        if (pending) unfinished++;
+        else if (isError(val)) errors++;
+        const input = val === undefined || val === null || pending ? undefined : isError(val) ? (val as CellError).code : plainText(val);
         sh.setCell(r, col, { ...cell, input: input && typeof val === 'string' && /^[=+\-@]/.test(input) ? `'${input}` : input });
       }
       sh.setColDef(col, undefined);
     });
     if (errors) this.host.flash(`${errors === 1 ? 'One cell showed an error' : `${errors} cells showed errors`}: ${errors === 1 ? 'it is' : 'they are'} kept as text.`, 6000);
+    if (unfinished) this.host.flash(`${unfinished === 1 ? 'One result was' : `${unfinished} results were`} not calculated yet, so ${unfinished === 1 ? 'its cell is' : 'those cells are'} empty.`, 6000);
   }
 
   // ---------------------------------------------------------------- the side panel and ribbon state

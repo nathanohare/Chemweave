@@ -356,7 +356,6 @@ interface Entry {
 
 let nextSheetUid = 1;
 
-/** Selections up to this many cells keep formatting in their empty cells too. */
 /** A block of this many cells or fewer is formatted cell by cell, empty ones too (a bigger one only where cells are in use). */
 export const SMALL_BLOCK = 10000;
 

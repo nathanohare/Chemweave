@@ -86,6 +86,7 @@ export class SheetLook {
 
   private style(label: string, patch: Partial<CellStyle> | ((st: CellStyle) => Partial<CellStyle>)): void {
     const v = this.view;
+    let leftOut = false;
     this.host.edit(label, (s) => {
       for (const a of v.areas()) {
         const R = growToMerges(s, a);
@@ -102,9 +103,10 @@ export class SheetLook {
         const area = (R.r2 - R.r1 + 1) * (R.c2 - R.c1 + 1);
         if (keys.length < area && area <= SMALL_BLOCK) {
           for (let r = R.r1; r <= R.r2; r++) for (let c = R.c1; c <= R.c2; c++) if (!s.cell(r, c)) s.patchStyle({ r1: r, c1: c, r2: r, c2: c }, first);
-        }
+        } else if (keys.length < area) leftOut = true;
       }
     });
+    if (leftOut) this.host.flash(`${label} is set on the cells in use. The empty cells of a block over ${SMALL_BLOCK.toLocaleString('en-US')} cells were left as they are.`, 6000);
   }
 
   /** The font box: a font for the selected cells (empty: the theme's body font). */

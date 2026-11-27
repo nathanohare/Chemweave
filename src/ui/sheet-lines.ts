@@ -15,12 +15,19 @@ const reaches = (r: Range, kind: 'row' | 'col') => (kind === 'row' ? r.r2 >= MAX
 
 /**
  * The last row (or column) a command on whole rows or columns acts on: the end of the selection,
- * or, for one that runs to the end of the sheet, one past the last row (column) in use.
+ * or, for one that runs to the end of the sheet, one past the last row (column) in use. A selection
+ * far longer than that is cut at MAX_LINES lines, but never above the rows (columns) in use.
  */
 export function lastLine(r: Range, kind: 'row' | 'col', used: number): number {
   const lo = kind === 'row' ? r.r1 : r.c1, hi = kind === 'row' ? r.r2 : r.c2;
   const end = reaches(r, kind) ? Math.min(hi, Math.max(used, lo) + 1) : hi;
-  return Math.min(end, lo + MAX_LINES - 1);
+  return Math.min(end, Math.max(used + 1, lo + MAX_LINES - 1));
+}
+
+/** Does a command on these rows (columns) stop short of the end of what is selected, short of the sheet's end? */
+export function cutShort(r: Range, kind: 'row' | 'col', used: number): boolean {
+  const hi = kind === 'row' ? r.r2 : r.c2;
+  return !reaches(r, kind) && lastLine(r, kind, used) < hi;
 }
 
 /** How many rows (columns) Delete Rows (Delete Columns) takes out: all that are selected, or, for a selection that runs to the end of the sheet, those up to the last in use. */

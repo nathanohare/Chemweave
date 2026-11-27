@@ -12,6 +12,7 @@ import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { Workbook } from '../src/sheet/workbook';
 import { newValidation } from '../src/sheet/validation';
 import { MAX_COLS, MAX_ROWS } from '../src/sheet/refs';
+import { makeSparklines, type SparklineGroup } from '../src/sheet/sparklines';
 import { SheetView, type SheetViewHost } from '../src/ui/sheet-view';
 
 let frames: FrameRequestCallback[] = [];
@@ -107,6 +108,22 @@ describe('F266: Ctrl+Enter', () => {
   });
 });
 
+describe('F266: Ctrl+Enter in a huge block', () => {
+  it('says so and keeps the typing instead of filling millions of cells', () => {
+    const flashes: string[] = [];
+    const { wb, view } = make(['Sheet1'], { flash: (m: string) => { flashes.push(m); } });
+    const s = wb.sheets[0];
+    view.select({ r1: 0, c1: 0, r2: 299999, c2: 25 }, { r: 0, c: 0 });
+    view.editCell('x');
+    const before = wb.undoLabel;
+    expect(view.commitEdit(0, 0, true)).toBe(true);
+    expect(flashes.join(' ')).toContain('more than 500,000 cells');
+    expect(view.editing).not.toBeNull();
+    expect(s.cell(0, 0)?.input).toBeUndefined();
+    expect(wb.undoLabel).toBe(before);
+  });
+});
+
 describe('F264: a whole column selected', () => {
   it('does not lay out a million rows', () => {
     const { wb, view, inner } = make();
@@ -118,6 +135,20 @@ describe('F264: a whole column selected', () => {
     settle();
     expect(inner.rows.n).toBeLessThan(1000);
     expect(inner.cols.n).toBeLessThan(1000);
+  });
+  it('makes room to scroll to the end when a selection is run there, and lets it go again', () => {
+    const { wb, view, inner } = make();
+    wb.edit('t', () => wb.sheets[0].setInput(5, 2, 'x'));
+    view.selectCell(0, 0);
+    inner.extendTo(MAX_ROWS - 1, 0); // Ctrl+Shift+Down in a column with nothing below
+    settle();
+    expect(inner.rows.n).toBeGreaterThanOrEqual(MAX_ROWS - 1);
+    expect(inner.scroller.scrollTop).toBeGreaterThan(1e6);
+    view.selectCell(0, 0); // back to the top
+    inner.scroller.dispatchEvent(new Event('scroll'));
+    settle();
+    expect(inner.scroller.scrollTop).toBe(0);
+    expect(inner.rows.n).toBeLessThan(1000);
   });
 });
 
@@ -131,6 +162,16 @@ describe('F268: resizing with whole columns selected', () => {
     inner.onUp({ pointerId: 1 });
     expect(wb.sheets[0].colWidths.get(7)).toBe(150);
     expect(wb.sheets[0].colWidths.get(0)).toBe(150);
+  });
+  it('sets every column of a selection that stops short of the end, past the data', () => {
+    const { wb, view, inner } = make();
+    wb.edit('t', () => { for (let c = 0; c < 3; c++) wb.sheets[0].setInput(0, c, 'x'); });
+    view.select({ r1: 0, c1: 2, r2: MAX_ROWS - 1, c2: 25 }, { r: 0, c: 2 }); // C:Z
+    inner.drag = { kind: 'resize-col', col: 12, start: 0, size: 64, orig: undefined, pointer: 1 };
+    inner.previewSize('col', 12, 150);
+    inner.onUp({ pointerId: 1 });
+    expect([2, 12, 13, 25].map((c) => wb.sheets[0].colWidths.get(c))).toEqual([150, 150, 150, 150]);
+    expect(wb.sheets[0].colWidths.has(26)).toBe(false);
   });
 });
 
@@ -262,6 +303,25 @@ describe('F265 and F1070: text that runs over empty cells', () => {
     expect(text).toBeGreaterThan(-1);
     // no fill of the cells beside it is drawn after the text
     expect(drawn.slice(text).some((d) => d.op === 'rect' && d.style === '#aabbcc')).toBe(false);
+  });
+  it('leaves a sparkline in an empty cell it runs over', () => {
+    const { wb, view } = make();
+    const s = wb.sheets[0];
+    wb.edit('t', () => {
+      s.setInput(0, 0, title);
+      for (let c = 3; c <= 5; c++) s.setInput(1, c, String(c));
+      const group = makeSparklines('line', { r1: 1, c1: 3, r2: 1, c2: 5 }, { r1: 0, c1: 1, r2: 0, c2: 1 });
+      s.setSparklines([group as SparklineGroup]);
+    });
+    let sparkX = -1;
+    (view as unknown as { drawSparkline: (...a: unknown[]) => void }).drawSparkline = (...a) => { sparkX = a[3] as number; };
+    view.refresh();
+    drawn = [];
+    settle();
+    expect(sparkX).toBeGreaterThan(0);
+    // nothing white is painted over the cell the sparkline sits in, after or before it
+    expect(drawn.some((d) => d.op === 'rect' && d.style === '#ffffff' && Math.abs(d.x - (sparkX - 1)) < 1.5)).toBe(false);
+    expect(drawn.some((d) => d.op === 'text' && d.text === title)).toBe(true);
   });
   it('goes on over the empty cells in view when its own cell is scrolled out', () => {
     const { wb, view, inner } = make();

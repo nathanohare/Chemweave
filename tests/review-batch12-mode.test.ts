@@ -14,7 +14,9 @@
 
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { rig, stubBrowser, settleFrames } from './review-batch12-harness';
-import { MAX_COLS, MAX_ROWS } from '../src/sheet/refs';
+import { MAX_COLS, MAX_ROWS, keyOf } from '../src/sheet/refs';
+import { ERR } from '../src/sheet/values';
+import { Workbook } from '../src/sheet/workbook';
 import { smilesPrefs } from '../src/sheet/smiles-cells';
 import type { Contents } from '../src/model';
 
@@ -86,6 +88,26 @@ describe('F253: a filter list with more than 1000 values', () => {
   });
 });
 
+describe('F253: one value alone in a filter list of more than 1000 values', () => {
+  it('shows only that value when (Select all) is unchecked and one box is checked', async () => {
+    const { mode, wb } = rig();
+    const s = wb.sheets[0];
+    wb.edit('t', () => { s.setInput(0, 0, 'MW'); for (let r = 1; r <= 1500; r++) s.setInput(r, 0, String(r)); });
+    wb.edit('f', () => s.setFilter({ range: { r1: 0, c1: 0, r2: 1500, c2: 0 }, conditions: {} }));
+    priv(mode).filterMenu(0, { x: 0, y: 0 });
+    const boxes = [...document.querySelectorAll<HTMLInputElement>('.filter-menu .fm-values input[type=checkbox]')];
+    const all = boxes[0];
+    all.checked = false;
+    all.dispatchEvent(new Event('change'));
+    boxes[2].checked = true; // the second value
+    [...document.querySelectorAll<HTMLButtonElement>('.filter-menu button')].find((b) => b.textContent === 'OK')!.click();
+    await tick(); await tick();
+    const shown = [];
+    for (let r = 1; r <= 1500; r++) if (!s.hiddenRows.has(r)) shown.push(r);
+    expect(shown).toEqual([2]);
+  });
+});
+
 describe('F254: SMILES pasted down a long column', () => {
   it('draws no more than 500', async () => {
     const calls: string[] = [];
@@ -115,6 +137,22 @@ describe('F1042 and F1043: structures that arrive after the sheet changed', () =
     release();
     await p;
     expect(wb.undoLabel).toBe('deleted');
+  });
+  it('drawings that arrive do not finish what is being typed', async () => {
+    let release!: () => void;
+    const gate = new Promise<void>((r) => { release = r; });
+    const { mode, wb } = rig(['Sheet1'], { toStructure: async () => { await gate; return { contents: drawing, notes: [] }; } });
+    smilesPrefs.draw = true;
+    const s = wb.sheets[0];
+    wb.edit('t', () => s.setInput(0, 0, 'CC(=O)OC1=CC=CC=C1C(=O)O'));
+    const p = priv(mode).pastedSmiles(s, { r1: 0, c1: 0, r2: 0, c2: 0 });
+    mode.view.selectCell(4, 2);
+    mode.view.editCell('half typed');
+    release();
+    await p;
+    expect(s.cell(0, 0)?.structure).toBeTruthy();
+    expect(mode.view.editing).not.toBeNull(); // still typing
+    expect(s.cell(4, 2)?.input).toBeUndefined();
   });
   it('Paste SMILES draws on the sheet it was asked on', async () => {
     let release!: () => void;
@@ -181,6 +219,33 @@ describe('F256: Cut then Paste on another sheet moves the cells', () => {
   });
 });
 
+describe('F256: Cut then Paste into another workbook', () => {
+  it('pastes there and empties the cells here, one step in each workbook, each with a clear name', async () => {
+    const clip: { own?: string; text?: string } = {};
+    const { mode, wb, flashes } = rig(['Sheet1'], {
+      writeCells: async (own: string, text: string) => { clip.own = own; clip.text = text; },
+      readCells: async () => ({ own: clip.own, text: clip.text }),
+    });
+    const a = wb.sheets[0];
+    wb.edit('t', () => { a.setInput(0, 0, '1'); a.setInput(1, 0, '2'); });
+    mode.view.select({ r1: 0, c1: 0, r2: 1, c2: 0 }, { r: 0, c: 0 });
+    await mode.copy(true);
+    // the cells were cut in another workbook: this one is where they are pasted
+    const from = new Workbook(['Other']);
+    from.edit('t', () => { from.sheets[0].setInput(0, 0, '1'); from.sheets[0].setInput(1, 0, '2'); });
+    priv(mode).clip.sheet = from.sheets[0];
+    mode.view.select({ r1: 0, c1: 3, r2: 0, c2: 3 }, { r: 0, c: 3 });
+    await mode.paste(null);
+    expect([0, 1].map((r) => a.cell(r, 3)?.input)).toEqual(['1', '2']);
+    expect(wb.undoLabel).toBe('Paste');
+    expect([0, 1].map((r) => from.sheets[0].cell(r, 0)?.input)).toEqual([undefined, undefined]);
+    expect(from.undoLabel).toBe('Cut');
+    expect(flashes.some((f) => /Undo in each workbook takes back its part/.test(f))).toBe(true);
+    from.undo();
+    expect(from.sheets[0].cell(1, 0)?.input).toBe('2');
+  });
+});
+
 describe('F257: Fit Height and Fit Width for several rows or columns', () => {
   it('is one step to undo', () => {
     const { mode, wb } = rig();
@@ -232,6 +297,22 @@ describe('F258 and F1045: sizes and hiding for rows and columns past the data', 
     mode.view.select({ r1: 0, c1: 0, r2: MAX_ROWS - 1, c2: MAX_COLS - 1 }, { r: 0, c: 0 });
     priv(mode).hide('row', true);
     expect(wb.sheets[0].hiddenRows.size).toBe(11);
+  });
+  it('hides all the rows that hold data, however many, and says when it stops short below them', () => {
+    const { mode, wb, flashes } = rig();
+    const s = wb.sheets[0];
+    wb.edit('t', () => { for (let i = 0; i < 30000; i++) s.setInput(i, 0, 'x'); });
+    mode.view.select({ r1: 0, c1: 0, r2: 39999, c2: 0 }, { r: 0, c: 0 });
+    priv(mode).hide('row', true);
+    expect(s.hiddenRows.has(29999)).toBe(true); // the data is all covered
+    expect(s.hiddenRows.has(30001)).toBe(false);
+    expect(flashes.some((f) => /Only the first 30,001 rows/.test(f))).toBe(true); // rows 30,002 to 40,000 hold nothing
+    // an empty sheet, 50,000 rows selected: the first 10,000 change, and the message says so
+    const other = rig();
+    other.mode.view.select({ r1: 0, c1: 0, r2: 49999, c2: 0 }, { r: 0, c: 0 });
+    priv(other.mode).hide('row', true);
+    expect(other.wb.sheets[0].hiddenRows.size).toBe(10000);
+    expect(other.flashes.some((f) => /Only the first 10,000 rows/.test(f))).toBe(true);
   });
   it('a cleared box is no size', async () => {
     const { mode, wb } = setUp();
@@ -288,16 +369,32 @@ describe('F1044: Copy and hidden rows and columns', () => {
 });
 
 describe('F1046: Convert Column to Values with error results', () => {
-  it('keeps the error as text and says so', () => {
+  it('keeps the error as text and says so', async () => {
     const { mode, wb, flashes } = rig();
     const s = wb.sheets[0];
     wb.edit('t', () => { s.setInput(0, 0, 'H'); s.setInput(1, 0, 'a'); s.setInput(2, 0, 'b'); s.setColDef(1, { formula: '=NA()', firstRow: 1 }); });
     wb.recalc();
     expect(s.shownText(1, 1)).toBe('#N/A');
-    priv(mode).freezeColumn(1);
+    await priv(mode).freezeColumn(1);
     expect(s.colDefs.has(1)).toBe(false);
     expect(s.cell(1, 1)?.input).toBe('#N/A');
     expect(flashes.some((f) => /error/.test(f))).toBe(true);
+    settleFrames();
+  });
+  it('waits for results still being worked out, and leaves any that never arrive empty (not "#BUSY!")', async () => {
+    const { mode, wb, flashes } = rig();
+    const s = wb.sheets[0];
+    wb.edit('t', () => { s.setInput(0, 0, 'H'); s.setInput(1, 0, 'a'); s.setInput(2, 0, 'b'); s.setColDef(1, { formula: '=NA()', firstRow: 1 }); });
+    wb.recalc();
+    s.values.set(keyOf(1, 1), ERR.busy());
+    s.values.set(keyOf(2, 1), ERR.busy());
+    // the engine answers for the first row; the second never does
+    vi.spyOn(wb, 'recalc').mockImplementation(() => { s.values.set(keyOf(1, 1), 7); });
+    await priv(mode).freezeColumn(1);
+    expect(s.colDefs.has(1)).toBe(false);
+    expect(s.cell(1, 1)?.input).toBe('7');
+    expect(s.cell(2, 1)?.input).toBeUndefined();
+    expect(flashes.some((f) => /not calculated yet/.test(f))).toBe(true);
     settleFrames();
   });
 });

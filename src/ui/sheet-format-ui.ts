@@ -7,7 +7,7 @@ import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import { ask, Field } from './ask';
 import type { Sheet } from '../sheet/workbook';
-import { Range, parseRange, rangeName, rangesOverlap, keyOf } from '../sheet/refs';
+import { Range, parseRange, rangeName, rangesOverlap, keyOf, rowOf, colOf, inRange, MAX_ROWS } from '../sheet/refs';
 import {
   CondFormat, CfRule, CfLook, CfOp, CfValue, IconSetName, newCondFormat, scaleRule, describeRule,
   PRESET_LOOKS, PRESET_SCALES, PRESET_BARS, ICON_SETS, rulesAt, mixColour,
@@ -570,32 +570,55 @@ export class SheetFormatting {
 
   /**
    * Turn the totals row on or off: a row under the table with a sum for each column of numbers.
-   * Only the table's own columns make room for it (the cells under the table move down, or back
-   * up); whatever is beside the table stays where it is.
+   * When the row under the table is free, the totals go there and nothing moves. Otherwise a
+   * whole row is made (and taken out again when cells sit right under the totals) so merges,
+   * tables, rules and formulas follow; that moves what is beside the table too, so when cells sit
+   * beside it, turning on changes nothing (a message says why) and turning off only clears the row.
    */
   toggleTotals(t: TableDef): void {
-    const on = !t.totals;
-    this.host.edit(on ? 'Totals row' : 'No totals row', (s) => {
-      const R = t.range;
+    const s = this.host.view.sheet;
+    if (!s) return;
+    const cur0 = s.tables.find((x) => x.id === t.id);
+    if (!cur0) return;
+    const R0 = cur0.range;
+    const on = !cur0.totals;
+    let mode: 'place' | 'shift' | 'clear' | 'delete' | 'gap';
+    if (on) {
+      const row = R0.r2 + 1;
+      if (row >= MAX_ROWS) { this.host.flash('There is no room under the table for a totals row.'); return; }
+      const free = { r1: row, c1: R0.c1, r2: row, c2: R0.c2 };
+      if (!holdsAnything(s, free, t.id)) mode = 'place';
+      else if (!besideTable(s, row, R0.c1, R0.c2)) mode = 'shift';
+      else {
+        this.host.flash('The totals row has no room: the row under the table is in use, and cells beside the table would move too. Clear that row or move the cells under the table first.', 6000);
+        return;
+      }
+    } else {
+      const row = R0.r2;
+      if (!holdsAnything(s, { r1: row + 1, c1: R0.c1, r2: row + 1, c2: R0.c2 }, t.id)) mode = 'clear';
+      else if (!besideTable(s, row, R0.c1, R0.c2)) mode = 'delete';
+      else mode = 'gap';
+    }
+    this.host.edit(on ? 'Totals row' : 'No totals row', (sh) => {
+      const R = sh.tables.find((x) => x.id === t.id)!.range;
       if (on) {
         const row = R.r2 + 1;
-        shiftColumns(s, row, R.c1, R.c2, 1);
-        s.setInput(row, R.c1, 'Total');
+        if (mode === 'shift') sh.insertRows(row, 1);
+        sh.setInput(row, R.c1, 'Total');
         for (let col = R.c1 + 1; col <= R.c2; col++) {
           let numbers = false;
-          for (let rr = R.r1 + 1; rr <= R.r2 && !numbers; rr++) numbers = typeof s.values.get(keyOf(rr, col)) === 'number';
-          if (numbers) s.setInput(row, col, `=SUBTOTAL(109,${rangeName({ r1: R.r1 + 1, c1: col, r2: R.r2, c2: col })})`);
+          for (let rr = R.r1 + 1; rr <= R.r2 && !numbers; rr++) numbers = typeof sh.values.get(keyOf(rr, col)) === 'number';
+          if (numbers) sh.setInput(row, col, `=SUBTOTAL(109,${rangeName({ r1: R.r1 + 1, c1: col, r2: R.r2, c2: col })})`);
         }
-        const cur = s.tables.find((x) => x.id === t.id)!;
-        s.setTables(s.tables.map((x) => (x.id === t.id ? { ...x, totals: true, range: { ...cur.range, r2: cur.range.r2 + 1 } } : x)));
+        sh.setTables(sh.tables.map((x) => (x.id === t.id ? { ...x, totals: true, range: { ...R, r2: row } } : x)));
       } else {
-        const cur = s.tables.find((x) => x.id === t.id)!;
-        const row = cur.range.r2;
-        s.setTables(s.tables.map((x) => (x.id === t.id ? { ...x, totals: false, range: { ...cur.range, r2: row - 1 } } : x)));
-        s.clear({ r1: row, c1: cur.range.c1, r2: row, c2: cur.range.c2 }, 'all');
-        shiftColumns(s, row + 1, cur.range.c1, cur.range.c2, -1);
+        const row = R.r2;
+        sh.setTables(sh.tables.map((x) => (x.id === t.id ? { ...x, totals: false, range: { ...R, r2: row - 1 } } : x)));
+        sh.clear({ r1: row, c1: R.c1, r2: row, c2: R.c2 }, 'all');
+        if (mode === 'delete') sh.deleteRows(row, 1);
       }
     });
+    if (mode === 'gap') this.host.flash('The totals row is cleared. The cells under it stayed where they are, because other cells sit beside them.', 6000);
   }
 
   /** Make the table plain cells again, keeping its look as ordinary formatting (Excel's Convert to Range). */
@@ -617,14 +640,21 @@ export class SheetFormatting {
   }
 }
 
-/**
- * The cells of some columns, from a row down, moved down (or up) by one row: the others stay where
- * they are, and formulas that pointed at the cells moved follow them.
- */
-export function shiftColumns(s: Sheet, from: number, c1: number, c2: number, by: 1 | -1): void {
-  const last = Math.max(s.lastRow, s.lastDataRow);
-  if (from > last) return;
-  s.move({ r1: from, c1, r2: last, c2 }, { row: from + by, col: c1 });
+/** Whether the cells of a range hold anything: an entry, a merged block or another table. */
+function holdsAnything(s: Sheet, r: Range, ownTable: number): boolean {
+  if (s.merges.some((m) => rangesOverlap(m, r))) return true;
+  if (s.tables.some((x) => x.id !== ownTable && rangesOverlap(x.range, r))) return true;
+  for (const [k, c] of s.cells) if (c.input !== undefined && c.input !== '' && inRange(r, rowOf(k), colOf(k))) return true;
+  return false;
+}
+
+/** Whether anything sits beside the columns c1 to c2 from a row down: an entry, or a merged block reaching out of them. */
+function besideTable(s: Sheet, from: number, c1: number, c2: number): boolean {
+  if (s.merges.some((m) => m.r2 >= from && (m.c1 < c1 || m.c2 > c2))) return true;
+  for (const [k, c] of s.cells) {
+    if (rowOf(k) >= from && (colOf(k) < c1 || colOf(k) > c2) && c.input !== undefined && c.input !== '') return true;
+  }
+  return false;
 }
 
 /** The parts of range a outside range b. */

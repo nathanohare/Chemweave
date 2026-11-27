@@ -46,28 +46,90 @@ function setUp(sheets = ['Sheet1']) {
 }
 
 describe('F249: the totals row', () => {
-  it('leaves what is beside the table where it is, turned on and off', () => {
-    const { wb, host, s } = setUp();
-    wb.edit('t', () => {
-      for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) s.setInput(r, c, r === 0 ? `H${c}` : String(r * 10 + c));
-      for (let r = 0; r < 10; r++) { s.setInput(r, 4, `e${r}`); s.setInput(r, 5, `f${r}`); }
-      s.setInput(5, 0, 'below');
-    });
+  /** A table A1:C5 with numbers, and the toggle. */
+  function table() {
+    const rig = setUp();
+    const { wb, host, s } = rig;
+    wb.edit('t', () => { for (let r = 0; r < 5; r++) for (let c = 0; c < 3; c++) s.setInput(r, c, r === 0 ? `H${c}` : String(r * 10 + c)); });
     wb.edit('table', () => s.setTables([newTable({ r1: 0, c1: 0, r2: 4, c2: 2 }, [])]));
-    const fmt = new SheetFormatting(host);
+    return { ...rig, fmt: new SheetFormatting(host) };
+  }
+
+  it('writes the totals into a free row and moves nothing', () => {
+    const { wb, s, fmt } = table();
+    wb.edit('t', () => { s.setInput(7, 0, 'below'); s.setInput(2, 4, 'beside'); });
     fmt.toggleTotals(s.tables[0]);
     expect(s.cell(5, 0)?.input).toBe('Total');
-    expect(s.cell(6, 0)?.input).toBe('below'); // the cells under the table move down
-    expect([5, 6, 7].map((r) => s.cell(r, 4)?.input)).toEqual(['e5', 'e6', 'e7']); // the others don't
-    expect([5, 6, 7].map((r) => s.cell(r, 5)?.input)).toEqual(['f5', 'f6', 'f7']);
+    expect(s.cell(7, 0)?.input).toBe('below');
+    expect(s.cell(2, 4)?.input).toBe('beside');
     expect(s.tables[0].range.r2).toBe(5);
     fmt.toggleTotals(s.tables[0]);
-    expect(s.cell(5, 0)?.input).toBe('below');
-    expect([5, 6, 7].map((r) => s.cell(r, 4)?.input)).toEqual(['e5', 'e6', 'e7']);
+    expect(s.cell(5, 0)?.input).toBeUndefined();
+    expect(s.cell(7, 0)?.input).toBe('below');
     expect(s.tables[0].range.r2).toBe(4);
     expect(wb.undoLabel).toBe('No totals row');
     wb.undo();
     expect(s.cell(5, 0)?.input).toBe('Total');
+  });
+
+  it('makes a whole row when the row under the table is used, and what is under it follows', () => {
+    const { wb, s, fmt } = table();
+    wb.edit('t', () => {
+      s.setInput(5, 0, 'below');
+      s.setInput(7, 0, 'H0'); s.setInput(7, 1, 'H1'); s.setInput(7, 2, 'H2');
+      for (let r = 8; r < 11; r++) for (let c = 0; c < 3; c++) s.setInput(r, c, String(r * 10 + c));
+      s.setInput(0, 4, '=SUM(B1:B10)');
+      s.setInput(1, 4, '=B9');
+    });
+    wb.edit('more', () => {
+      s.setTables([...s.tables, newTable({ r1: 7, c1: 0, r2: 10, c2: 2 }, [])]);
+      s.setMerges([{ r1: 12, c1: 0, r2: 12, c2: 2 }]);
+      s.setCondFormats([newCondFormat([{ r1: 8, c1: 0, r2: 10, c2: 0 }], { kind: 'bar', color: '#ff0000' } as never)]);
+    });
+    const first = s.tables[0], second = s.tables[1];
+    fmt.toggleTotals(first);
+    expect(s.cell(5, 0)?.input).toBe('Total');
+    expect(s.cell(6, 0)?.input).toBe('below');
+    expect(s.tables.find((x) => x.id === second.id)!.range).toEqual({ r1: 8, c1: 0, r2: 11, c2: 2 });
+    expect(s.cell(8, 0)?.input).toBe('H0'); // the second table's header is still the first row of its range
+    expect(s.merges).toEqual([{ r1: 13, c1: 0, r2: 13, c2: 2 }]);
+    expect(s.condFormats[0].ranges).toEqual([{ r1: 9, c1: 0, r2: 11, c2: 0 }]);
+    expect(s.cell(0, 4)?.input).toBe('=SUM(B1:B11)'); // a formula across the new row is stretched
+    expect(s.cell(1, 4)?.input).toBe('=B10');
+    fmt.toggleTotals(s.tables.find((x) => x.id === first.id)!);
+    expect(s.cell(5, 0)?.input).toBe('below');
+    expect(s.tables.find((x) => x.id === second.id)!.range).toEqual({ r1: 7, c1: 0, r2: 10, c2: 2 });
+    expect(s.merges).toEqual([{ r1: 12, c1: 0, r2: 12, c2: 2 }]);
+    expect(s.cell(0, 4)?.input).toBe('=SUM(B1:B10)');
+    wb.undo();
+    expect(s.cell(5, 0)?.input).toBe('Total');
+    wb.undo();
+    expect(s.cell(5, 0)?.input).toBe('below');
+    expect(s.tables.find((x) => x.id === second.id)!.range).toEqual({ r1: 7, c1: 0, r2: 10, c2: 2 });
+  });
+
+  it('says so and changes nothing when making room would move cells beside the table', () => {
+    const { wb, s, fmt, flashes } = table();
+    wb.edit('t', () => { s.setInput(5, 0, 'below'); s.setInput(7, 4, 'beside'); });
+    const before = wb.undoLabel;
+    fmt.toggleTotals(s.tables[0]);
+    expect(flashes.join(' ')).toContain('totals row has no room');
+    expect(s.cell(5, 0)?.input).toBe('below');
+    expect(s.cell(7, 4)?.input).toBe('beside');
+    expect(s.tables[0].totals).toBeFalsy();
+    expect(wb.undoLabel).toBe(before);
+  });
+
+  it('turns the totals row off without moving cells when others sit beside the table', () => {
+    const { wb, s, fmt, flashes } = table();
+    fmt.toggleTotals(s.tables[0]); // in place
+    wb.edit('t', () => { s.setInput(6, 0, 'below'); s.setInput(7, 4, 'beside'); });
+    fmt.toggleTotals(s.tables[0]);
+    expect(s.tables[0].totals).toBe(false);
+    expect(s.cell(5, 0)?.input).toBeUndefined();
+    expect(s.cell(6, 0)?.input).toBe('below');
+    expect(s.cell(7, 4)?.input).toBe('beside');
+    expect(flashes.join(' ')).toContain('stayed where they are');
   });
 });
 
@@ -80,6 +142,15 @@ describe('F251 and F1037: Increase Indent', () => {
     expect(s.styleAt(0, 0)?.indent).toBe(1);
     expect(s.styleAt(700, 0)?.indent).toBe(1);
     expect(s.styleAt(999, 0)?.indent).toBe(1);
+  });
+  it('says so when the empty cells of a block over 10,000 cells are left as they are', () => {
+    const { wb, sel, host, s, flashes } = setUp();
+    wb.edit('t', () => s.setInput(0, 0, 'x'));
+    sel.range = { r1: 0, c1: 0, r2: 19999, c2: 0 };
+    new SheetLook(host as never).indent(1);
+    expect(s.styleAt(0, 0)?.indent).toBe(1);
+    expect(s.styleAt(5, 0)?.indent).toBeUndefined();
+    expect(flashes.join(' ')).toContain('left as they are');
   });
   it('keeps each cell its own level in a long column', () => {
     const { wb, sel, host, s } = setUp();

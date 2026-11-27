@@ -36,6 +36,7 @@ import { OutlineGroup, outlineGroups, maxLevel, setCollapsed, showLevel } from '
 import { SparklineGroup, sparkShape, sparkSource, sparklineAt } from '../sheet/sparklines';
 import { headerRuns, paperSize, DEFAULT_MARGINS } from '../sheet/page-setup';
 import { themeOf } from '../sheet/themes';
+import { MAX_CELLS, lastLine } from './sheet-lines';
 
 /** The row numbers' width and the column letters' height (when shown). */
 const HEAD_W = 44;
@@ -223,6 +224,8 @@ export class SheetView {
   private cols!: Axis;
   private metricsKey = '';
   private extentRows = 200;
+  /** The cell last scrolled to, which the layout makes room for (until the selection changes). */
+  private revealed = { r: 0, c: 0 };
   private extentCols = 40;
   private queued = false;
   private drag: Drag | null = null;
@@ -372,6 +375,7 @@ export class SheetView {
     // (what an earlier workbook's selection made room for isn't kept)
     this.extentRows = 200;
     this.extentCols = 40;
+    this.revealed = { r: 0, c: 0 };
     this.autoDrag = null;
     this.renderTabs();
     this.restoreScroll();
@@ -522,10 +526,10 @@ export class SheetView {
     if (key === this.metricsKey) return;
     this.metricsKey = key;
     const z = this.zoom;
-    const sel = this.sel;
-    // (a whole column, row or sheet selected counts by its active cell: the million rows beyond aren't laid out)
-    this.extentRows = Math.max(this.extentRows, s.lastRow + 60, selReach(sel).r + 30);
-    this.extentCols = Math.max(this.extentCols, s.lastCol + 12, selReach(sel).c + 8);
+    // room for what is in use, selected, scrolled to or in view; what an earlier trip far down or across made room for goes again
+    const need = this.needed(s);
+    this.extentRows = this.extentRows > need.r + 5000 ? need.r : Math.max(this.extentRows, need.r);
+    this.extentCols = this.extentCols > need.c + 200 ? need.c : Math.max(this.extentCols, need.c);
     const auto = this.autoHeights(s);
     // the row numbers and column letters (unless hidden), and the outline's buttons beside them
     const heads = s.viewOpts?.headings !== false;
@@ -587,12 +591,29 @@ export class SheetView {
     };
   }
 
-  /** Scrolling near the end makes more rows and columns. */
+  /**
+   * How many rows and columns the grid needs now: those in use, those the selection reaches (a
+   * whole column, row or sheet counts by its active cell: the million rows beyond aren't laid
+   * out), the cell last scrolled to and the place in view.
+   */
+  private needed(s: Sheet): { r: number; c: number } {
+    const reach = selReach(this.sel), sc = this.scroller;
+    return {
+      r: Math.min(MAX_ROWS, Math.max(s.lastRow + 60, reach.r + 30, this.revealed.r + 30, this.rows.at(sc.scrollTop + sc.clientHeight) + 60)),
+      c: Math.min(MAX_COLS, Math.max(s.lastCol + 12, reach.c + 8, this.revealed.c + 8, this.cols.at(sc.scrollLeft + sc.clientWidth) + 12)),
+    };
+  }
+
+  /** Scrolling near the end makes more rows and columns; back near the start, a trip far down or across is let go. */
   private growExtent(): void {
     const sc = this.scroller;
     let grew = false;
     if (sc.scrollTop + sc.clientHeight > this.rows.total - 200 && this.extentRows < MAX_ROWS) { this.extentRows += 500; grew = true; }
     if (sc.scrollLeft + sc.clientWidth > this.cols.total - 200 && this.extentCols < MAX_COLS) { this.extentCols += 20; grew = true; }
+    if (!grew && this.sheet) {
+      const need = this.needed(this.sheet);
+      grew = this.extentRows > need.r + 5000 || this.extentCols > need.c + 200;
+    }
     if (grew) { this.metricsKey = ''; this.layout(); }
   }
 
@@ -706,6 +727,9 @@ export class SheetView {
 
   /** Scroll so a cell can be seen. */
   reveal(r: number, c: number): void {
+    // (room for the place scrolled to: a selection run to the end of the sheet still scrolls there)
+    this.revealed = { r: Math.max(this.revealed.r, r), c: Math.max(this.revealed.c, c) };
+    if (r + 30 > this.extentRows || c + 8 > this.extentCols) this.metricsKey = '';
     this.layout();
     const { fr, fc, FH, FW, x0, y0 } = this.frozen();
     const sc = this.scroller;
@@ -2006,6 +2030,8 @@ export class SheetView {
         // hide the grid lines under the text (the cells it runs over keep their own fills)
         for (let k = c + 1; k <= last; k++) {
           if (s.hiddenCols.has(k) || s.shownStyleAt(r, k)?.fill) continue;
+          // a sparkline, bar or icon in an empty cell was drawn before the text: keep it
+          if ((s.sparklines.length && sparklineAt(s.sparklines, r, k)) || s.condLook(r, k)?.bar || s.condLook(r, k)?.icon) continue;
           ctx.fillStyle = '#ffffff';
           ctx.fillRect(X(k) - 1, y, X(k + 1) - X(k), h - 1);
         }
@@ -2570,6 +2596,7 @@ export class SheetView {
     const r = normRange({ r1: clampR(range.r1), c1: clampC(range.c1), r2: clampR(range.r2), c2: clampC(range.c2) });
     this.sels.set(s, { active: { r: clampR(active.r), c: clampC(active.c) }, anchor: { r: clampR(anchor.r), c: clampC(anchor.c) }, range: r, ...(more?.length ? { more } : {}) });
     const reach = selReach({ range: r, active: { r: clampR(active.r), c: clampC(active.c) } });
+    this.revealed = { r: 0, c: 0 };
     if (reach.r + 30 > this.extentRows || reach.c + 8 > this.extentCols) { this.metricsKey = ''; }
     if (reveal) this.reveal(active.r, active.c);
     this.render();
@@ -2816,20 +2843,28 @@ export class SheetView {
       });
       return true;
     }
+    const areas = this.areas();
+    // Ctrl+Enter: every cell of each block (a whole column or row: as far as the cells in use go, and one more)
+    const filled = areas.map((sel) => ({
+      sel,
+      lastR: sel.r2 >= MAX_ROWS - 1 ? Math.min(sel.r2, Math.max(s.lastRow, e.r, sel.r1) + 1) : sel.r2,
+      lastC: sel.c2 >= MAX_COLS - 1 ? Math.min(sel.c2, Math.max(s.lastCol, e.c, sel.c1) + 1) : sel.c2,
+    }));
+    if (allSelected && (text !== e.original || !sameRuns(runs, e.runs))
+      && filled.reduce((n, f) => n + (f.lastR - f.sel.r1 + 1) * (f.lastC - f.sel.c1 + 1), 0) > MAX_CELLS) {
+      this.host.flash(`That is more than ${MAX_CELLS.toLocaleString('en-US')} cells. Select fewer cells, or fill a part at a time.`, 5000);
+      return true; // the typing stays open
+    }
     this.editing = null;
     this.pointRef = null;
     this.input.hidden = true;
     this.copied = null;
     if (text !== e.original || !sameRuns(runs, e.runs)) {
-      const areas = this.areas();
       wb.edit('Typing', () => {
         if (allSelected) {
-          // Ctrl+Enter: the same typing in every selected cell, in every block (formulas move with each cell)
+          // the same typing in every selected cell, in every block (formulas move with each cell)
           const block = { rows: 1, cols: 1, cells: [[{ input: text }]], origin: { row: e.r, col: e.c } };
-          for (const sel of areas) {
-            // every cell of the block (a whole column or row: as far as the cells in use go, and one more)
-            const lastR = sel.r2 >= MAX_ROWS - 1 ? Math.min(sel.r2, Math.max(s.lastRow, e.r, sel.r1) + 1) : sel.r2;
-            const lastC = sel.c2 >= MAX_COLS - 1 ? Math.min(sel.c2, Math.max(s.lastCol, e.c, sel.c1) + 1) : sel.c2;
+          for (const { sel, lastR, lastC } of filled) {
             for (let r = sel.r1; r <= lastR; r++) for (let c = sel.c1; c <= lastC; c++) {
               if (text.startsWith('=')) s.paste({ row: r, col: c }, block, 'values');
               else s.setRichInput(r, c, text, runs);
@@ -3460,7 +3495,7 @@ export class SheetView {
       wb.edit(p.kind === 'col' ? 'Column width' : 'Row height', () => {
         // with several whole columns (or rows) selected, they all get the new size
         // (as far as the cells in use go, and always as far as the one dragged)
-        const from = whole ? (p.kind === 'col' ? sel.c1 : sel.r1) : p.index, to = whole ? (p.kind === 'col' ? Math.min(sel.c2, s.lastCol + 1) : Math.min(sel.r2, s.lastRow + 1)) : p.index;
+        const from = whole ? (p.kind === 'col' ? sel.c1 : sel.r1) : p.index, to = whole ? lastLine(sel, p.kind === 'col' ? 'col' : 'row', p.kind === 'col' ? s.lastCol : s.lastRow) : p.index;
         for (let i = from; i <= Math.max(from, to, p.index); i++) {
           if (p.kind === 'col') s.setColWidth(i, p.size);
           else s.setRowHeight(i, p.size);
