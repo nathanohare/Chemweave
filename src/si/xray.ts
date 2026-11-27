@@ -141,9 +141,12 @@ export function xrayCompound(data: Json, exists: (id: string) => boolean): strin
   return cid && exists(cid) ? `@{${cid}}` : '';
 }
 
+/** How a caption names each way of drawing the molecule other than thermal ellipsoids. */
+const STYLE_WORDS: Partial<Record<XView['style'], string>> = { ball: 'ball-and-stick model', stick: 'stick model', fill: 'space-filling model', wire: 'wireframe model' };
+
 /** "Molecular structure of @{c-…} (thermal ellipsoids at 50% probability; …). CCDC 2345678." in stored text, from how it is drawn. */
 export function xrayAutoCaption(view: XView, ref: string, ccdc: string): string {
-  const notes = [view.style === 'ortep' ? `thermal ellipsoids at ${view.probability}% probability` : 'ball-and-stick model'];
+  const notes = [view.style === 'ortep' ? `thermal ellipsoids at ${view.probability}% probability` : STYLE_WORDS[view.style] ?? 'ball-and-stick model'];
   if (!view.hydrogens) notes.push('hydrogen atoms omitted for clarity');
   if (view.hiddenMolecules.length) notes.push('solvent molecules omitted for clarity');
   if (view.hiddenParts.length) notes.push('the minor disorder component omitted for clarity');

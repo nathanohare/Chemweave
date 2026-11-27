@@ -12,6 +12,7 @@
 
 import { withInfo } from './info-tip';
 import { addCloseX } from './window-x';
+import { parsePmids } from '../library/online';
 import type { DocText } from '../document/document';
 import { CITE_PRESETS, changedOptions, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
 import {
@@ -853,7 +854,7 @@ export class ReferencesDialog {
     const got = await ask('Add by PubMed ID', [{ name: 'ids', label: 'PubMed IDs', value: '' }], {
       ok: 'Look Up', note: `One or more PubMed ids (31234567), or pubmed.ncbi.nlm.nih.gov links, separated by spaces or commas. The details come from PubMed (NCBI), which needs the internet; they are added to ${h.name}.`,
     });
-    const ids = [...(got?.ids ?? '').matchAll(/(\d{1,9})/g)].map((m) => m[1]);
+    const ids = parsePmids(got?.ids ?? '');
     if (!ids.length) return;
     let found: Reference[];
     try {

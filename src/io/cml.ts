@@ -87,7 +87,10 @@ export function readCml(text: string): Contents | null {
   let next = 1;
   const hTotal = new Map<number, number>();
   for (const a of all(root, 'atom')) {
-    const x = Number(a.getAttribute('x2')), y = Number(a.getAttribute('y2'));
+    // (an atom without 2D coordinates is left out, not put at 0,0: Number(null) is 0; review F554)
+    const xa = a.getAttribute('x2'), ya = a.getAttribute('y2');
+    if (xa === null || ya === null || !xa.trim() || !ya.trim()) continue;
+    const x = Number(xa), y = Number(ya);
     if (!Number.isFinite(x) || !Number.isFinite(y)) continue;
     const type = a.getAttribute('elementType') ?? 'C';
     const z = elementNumber(type);

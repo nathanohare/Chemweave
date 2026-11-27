@@ -65,7 +65,9 @@ function convert(src: string): string {
       continue;
     }
     if (inClass) {
-      if (ch === ']' && !(out.endsWith('[') || out.endsWith('[^'))) { inClass = false; out += ch; continue; }
+      // (a "]" first in the class was taken as itself when the class began: any other closes it,
+      // whatever was written before it, such as an escaped "\[")
+      if (ch === ']') { inClass = false; out += ch; continue; }
       if (ch === '[') { out += '\\['; continue; }
       if (ci() && /\p{L}/u.test(ch) && src[i + 1] !== '-' && src[i - 1] !== '-') { out += caseBoth(ch); continue; }
       out += ch === '/' ? '\\/' : ch;
@@ -255,7 +257,8 @@ export function rstrip(s: string, chars?: string): string {
 
 export const isAlpha = (s: string): boolean => s !== '' && /^\p{L}+$/u.test(s);
 export const isAlnum = (s: string): boolean => s !== '' && /^[\p{L}\p{N}]+$/u.test(s);
-export const isDigit = (s: string): boolean => s !== '' && /^[\p{Nd}²³¹⁰-⁹₀-₉]+$/u.test(s);
+// (Python's str.isdigit: the superscript digits are ⁰ and ⁴ to ⁹ beside ¹²³; U+2071 between them is the letter ⁱ)
+export const isDigit = (s: string): boolean => s !== '' && /^[\p{Nd}²³¹⁰⁴-⁹₀-₉]+$/u.test(s);
 const cased = (c: string): boolean => c.toLowerCase() !== c.toUpperCase();
 export const isLower = (s: string): boolean => [...s].some(cased) && [...s].every((c) => !cased(c) || c === c.toLowerCase());
 export const isUpper = (s: string): boolean => [...s].some(cased) && [...s].every((c) => !cased(c) || c === c.toUpperCase());

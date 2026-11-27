@@ -356,7 +356,12 @@ export class SiProject {
     this.flagFileUnread = !flagFile;
     if (!flagFile) this.warnings.push(`${FLAGS_FILE} could not be read; flag replies and resolved flags are shown empty and are not saved over.`);
     // the compounds' texts are small: read now, so whether each is filled in is known
-    const textFiles = files.filter((f) => f.endsWith('.txt') && f.includes(`/${COMPOUNDS_DIR}/`));
+    // (only those directly in a compound's folder: a .txt attached in its spectra/, hrms/ or private/ is a file of its own)
+    const inCompound = (f: string): boolean => {
+      const at = f.lastIndexOf(`/${COMPOUNDS_DIR}/`);
+      return at >= 0 && f.slice(at + COMPOUNDS_DIR.length + 2).split('/').length === 2;
+    };
+    const textFiles = files.filter((f) => f.endsWith('.txt') && inCompound(f));
     await Promise.all(textFiles.map(async (f) => this.texts.set(f, (await this.folder.readText(f)) ?? '')));
     this.settings = settings;
     this.top = top;
@@ -755,9 +760,9 @@ export class SiProject {
   }
 
   /** Files sent to the Trash as one entry, as SI Assistant's Trash shows and restores them. */
-  trashFiles(paths: string[], kind: string, name: string, extra: Json): Promise<void> {
+  async trashFiles(paths: string[], kind: string, name: string, extra: Json): Promise<void> {
     this.checkWritable();
-    return this.moveToTrash(paths, kind, name, extra);
+    await this.moveToTrash(paths, kind, name, extra);
   }
 
   async saveReferences(): Promise<void> {
@@ -866,7 +871,10 @@ export class SiProject {
     const anchoredTo = s.type === 'xray' && s.data.anchored ? str(s.data.compound) : '';
     const list = anchoredTo ? (this.anchored.get(anchoredTo) ?? []) : s.parentId ? this.section(s.parentId).children : this.top;
     const index = list.indexOf(s);
-    const tree = this.mergeTree(this.treeJson([s]), this.savedTree)[0] ?? { id: s.id };
+    // (its own node of the whole tree, with any unreadable sub-sections in their places: merged
+    // alone, an unreadable section elsewhere would be put in front of it)
+    const find = (ns: Json[]): Json | null => { for (const n of ns) { if (n.id === s.id) return n; const got = find((n.children as Json[]) ?? []); if (got) return got; } return null; };
+    const tree = find(this.mergeTree(this.treeJson(this.top), this.savedTree)) ?? this.treeJson([s])[0] ?? { id: s.id };
     await this.moveToTrash(all.map((x) => x.folder), 'section', s.name, {
       section_id: s.id, type: s.type, original_index: index, parent_id: s.parentId ?? '', tree, subsections: all.length - 1,
       ...(anchoredTo ? { anchored_to: anchoredTo } : {}),
@@ -961,10 +969,10 @@ export class SiProject {
     const clean = safeFilename(name);
     const dot = clean.lastIndexOf('.');
     const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
-    const taken = new Set((await this.folder.list(join(s.folder, 'images'), ['png', 'jpg', 'jpeg', 'svg', 'pdf', 'emf', 'tif', 'tiff', 'gif', 'bmp', 'cdxml', 'cdx'])).map((f) => {
-      const n = f.slice(f.lastIndexOf('/') + 1);
-      const d = n.lastIndexOf('.');
-      return (d > 0 ? n.slice(0, d) : n).toLowerCase();
+    // (every file there, whatever its extension: a .wmf or .webp of the same name is never written over)
+    const taken = new Set((await this.folder.entries(join(s.folder, 'images'))).filter((e) => !e.folder).map((e) => {
+      const d = e.name.lastIndexOf('.');
+      return (d > 0 ? e.name.slice(0, d) : e.name).toLowerCase();
     }));
     let pick = stem;
     for (let n = 2; taken.has(pick.toLowerCase()); n++) pick = `${stem} (${n})`;
@@ -1219,8 +1227,9 @@ export class SiProject {
     const old = str(s.data.file);
     const passing = join(s.folder, `.incoming-${newId('t').slice(2)}`);
     await this.folder.writeBytes(passing, bytes);
+    let entry: string | null = null;
     try {
-      if (old) await this.moveToTrash([join(s.folder, old)], 'file', nameOf(old), { section_id: s.id, section_name: s.name });
+      if (old) entry = await this.moveToTrash([join(s.folder, old)], 'file', nameOf(old), { section_id: s.id, section_name: s.name });
     } catch (e) {
       await this.setAside(passing).catch(() => {});
       throw e;
@@ -1229,8 +1238,18 @@ export class SiProject {
     const dot = clean.lastIndexOf('.');
     const stem = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : '';
     let pick = clean;
-    for (let n = 2; await this.folder.exists(join(s.folder, pick)); n++) pick = `${stem} (${n})${ext}`;
-    await this.folder.move(passing, join(s.folder, pick));
+    try {
+      for (let n = 2; await this.folder.exists(join(s.folder, pick)); n++) pick = `${stem} (${n})${ext}`;
+      await this.folder.move(passing, join(s.folder, pick));
+    } catch (e) {
+      // (the old file comes back from the Trash, so the section still has the file it names)
+      if (entry) {
+        const back = await this.folder.move(join(entry, nameOf(old)), join(s.folder, old)).then(() => true, () => false);
+        if (back) await this.folder.removeTrash(entry).catch(() => {});
+      }
+      await this.setAside(passing).catch(() => {});
+      throw e;
+    }
     s.data.file = pick;
     if (s.type === 'xray') Object.assign(s.data, { block: '', view: {}, table_values: {} });
     await this.saveSection(s);
@@ -1242,10 +1261,10 @@ export class SiProject {
    * companions, all or nothing: the entry is described first (marked pending), and anything
    * already moved is put back when one can't be.
    */
-  private async moveToTrash(paths: string[], kind: string, name: string, extra: Json): Promise<void> {
+  private async moveToTrash(paths: string[], kind: string, name: string, extra: Json): Promise<string | null> {
     const present: string[] = [];
     for (const x of paths) if (await this.folder.exists(x)) present.push(x);
-    if (!present.length) return;
+    if (!present.length) return null;
     const now = new Date();
     const stamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}-${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}-`;
     const entry = join(TRASH_DIR, stamp + newId('t').slice(2));
@@ -1261,6 +1280,7 @@ export class SiProject {
       throw new SiProjectError(`“${name}” could not be moved to the Trash, so nothing was deleted. A file in it is probably open in another program or being synced: close it and try again. (${e instanceof Error ? e.message : String(e)})`);
     }
     await this.writeJson(join(entry, 'entry.json'), info);
+    return entry;
   }
 
   /** A Trash entry that was begun and holds nothing but its description (the deletion failed) goes again. */
@@ -1356,7 +1376,7 @@ export class SiProject {
       const extra = fieldsOf(c).filter((e) => !keys.includes(e.key) && e.key !== 'notes');
       const next = keys.filter((k) => by.has(k)).map((k) => by.get(k)!);
       if (!removeOthers) next.push(...extra);
-      if (by.has('notes')) next.push(by.get('notes')!);
+      if (by.has('notes') && !keys.includes('notes')) next.push(by.get('notes')!);   // (notes last, unless the defaults place it)
       c.data.fields = next;
       if (JSON.stringify(next) !== before) { await this.saveCompound(c); changed++; }
     }
@@ -1873,23 +1893,29 @@ export class SiProject {
     const src = this.containerOf(c.sectionId, c.schemeId);
     const dst = this.containerOf(sectionId, schemeId);
     const E = await import('./scheme-edit');
-    if (src.scheme && src.scheme !== dst.scheme) await E.compoundLeaving(this, src.scheme, c.id);
     const at = src.list.indexOf(c);
     if (at < 0) throw new SiProjectError('That compound is no longer where it was: nothing was moved.');
-    const before = [...src.list];
-    src.list.splice(at, 1);
+    // (the folder moves first: when it can't, the scheme page's box is left as it was)
+    const was = c.folder;
+    let moved = false;
     if (src.section !== dst.section) {
       // (another section: its folder moves into that section's compounds folder)
       const dest = await this.freeFolder(join(dst.section.folder, COMPOUNDS_DIR), nameOf(c.folder));
-      try {
-        await this.folder.move(c.folder, dest);
-      } catch (e) {
-        src.list.splice(0, src.list.length, ...before);
-        throw e;
-      }
+      await this.folder.move(c.folder, dest);
       this.renameKnown(c.folder, dest);
       c.folder = dest;
-    } else if (src.list === dst.list && index > at) index--;
+      moved = true;
+    }
+    if (src.scheme && src.scheme !== dst.scheme) {
+      try {
+        await E.compoundLeaving(this, src.scheme, c.id);
+      } catch (e) {
+        if (moved && await this.folder.move(c.folder, was).then(() => true, () => false)) { this.renameKnown(c.folder, was); c.folder = was; }
+        throw e;
+      }
+    }
+    src.list.splice(at, 1);
+    if (!moved && src.list === dst.list && index > at) index--;
     c.sectionId = dst.section.id;
     c.schemeId = dst.scheme?.id ?? null;
     dst.list.splice(Math.max(0, Math.min(index, dst.list.length)), 0, c);

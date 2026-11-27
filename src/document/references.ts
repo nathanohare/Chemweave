@@ -104,6 +104,22 @@ export function normaliseDoi(text: string): string {
   return t.trim();
 }
 
+/**
+ * The DOIs in some typed or pasted text: one to a line, or separated by spaces. A comma or semicolon
+ * is part of a DOI where it is inside one (older Wiley DOIs, "10.1002/(SICI)…>3.0.CO;2-2");
+ * it ends one only at the end of a word ("10.1021/a, 10.1021/b") or before the next DOI starts.
+ */
+export function splitDois(text: string): string[] {
+  const out: string[] = [];
+  for (const word of (text ?? '').split(/\s+/)) {
+    for (const part of word.split(/[,;](?=(?:https?:\/\/|doi:|10\.))/i)) {
+      const doi = part.replace(/[,;]+$/, '');
+      if (doi) out.push(doi);
+    }
+  }
+  return out;
+}
+
 /** A person's family name ("Fulmer" from "Fulmer, Gregory R."). */
 export function surname(author: string): string {
   const a = author.trim();

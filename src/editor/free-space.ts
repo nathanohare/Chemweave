@@ -30,11 +30,16 @@ export function freeSpace(doc: Doc, w: number, h: number, near: Vec, margin: num
   const dot = (p: Vec, r: number) => fill({ x1: p.x - r, y1: p.y - r, x2: p.x + r, y2: p.y + r });
   const L = margin / 2;
   for (const a of doc.atoms.values()) dot(a, L / 3);
+  // each bond along its whole length (a long one would otherwise leave room beside its middle)
   for (const bd of doc.bonds.values()) {
     const a = doc.atoms.get(bd.a1), c = doc.atoms.get(bd.a2);
-    if (a && c) dot({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, L / 3);
+    if (!a || !c) continue;
+    const n = Math.max(1, Math.ceil(Math.hypot(c.x - a.x, c.y - a.y) / cell));
+    for (let k = 1; k < n; k++) dot({ x: a.x + ((c.x - a.x) * k) / n, y: a.y + ((c.y - a.y) * k) / n }, L / 3);
+    if (n === 1) dot({ x: (a.x + c.x) / 2, y: (a.y + c.y) / 2 }, L / 3);
   }
-  for (const c of doc.captions.values()) fill({ x1: c.x, y1: c.y - 10, x2: c.x + (c.width ?? 40), y2: c.y + 4 });
+  // each caption as the drawing's bounds measure it (the whole text, every line)
+  for (const c of doc.captions.values()) fill(doc.captionExtent(c));
   for (const r of doc.arrows.values()) for (const p of arrowPoints(r, 12)) dot(p, L / 3);
   for (const s of doc.shapes.values()) fill({ x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2), x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2) });
   // sums over the grid, so any rectangle's count of used cells takes four look-ups

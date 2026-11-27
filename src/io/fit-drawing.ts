@@ -72,6 +72,8 @@ export function fitPasted(src: Doc, to: DocStyle, bondLength?: number): void {
       src.updateArrow(r.id, {
         tail: at(r.tail), head: at(r.head), headLength: r.headLength * k, headWidth: r.headWidth * k,
         shaftSpacing: len(r.shaftSpacing), lineWidth: line((r.lineWidth ?? from.lineWidth) * k),
+        // (its own bold width and dash length too, kept from ChemDraw; review F576)
+        boldWidth: len(r.boldWidth), hashSpacing: len(r.hashSpacing),
       });
     }
     for (const s of [...src.shapes.values()]) {

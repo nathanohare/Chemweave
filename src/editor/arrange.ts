@@ -189,7 +189,18 @@ export function distributeOffsets(us: Unit[], axis: 'h' | 'v', by: 'gaps' | 'foc
     order.forEach((i, k) => put(i, first + k * step - at(i)));
     return out;
   }
-  const order = us.map((_u, i) => i).sort((i, j) => lo(us[i].box) + hi(us[i].box) - lo(us[j].box) - hi(us[j].box));
+  let order = us.map((_u, i) => i).sort((i, j) => lo(us[i].box) + hi(us[i].box) - lo(us[j].box) - hi(us[j].box));
+  // the ones reaching furthest out each way stay where they are (as in Office), the rest in order of their centers between
+  let iLo = order[0], iHi = order[order.length - 1];
+  for (const i of order) { if (lo(us[i].box) < lo(us[iLo].box)) iLo = i; if (hi(us[i].box) > hi(us[iHi].box)) iHi = i; }
+  if (iLo === iHi) {
+    // one object reaching furthest out both ways (a box round the rest): it stays, and the rest are spaced among themselves
+    const rest = order.filter((i) => i !== iLo);
+    const inner = distributeOffsets(rest.map((i) => us[i]), axis, by);
+    rest.forEach((i, k) => { out[i] = inner[k]; });
+    return out;
+  }
+  order = [iLo, ...order.filter((i) => i !== iLo && i !== iHi), iHi];
   const first = us[order[0]].box, last = us[order[order.length - 1]].box;
   let sizes = 0;
   for (const i of order) sizes += hi(us[i].box) - lo(us[i].box);
@@ -203,6 +214,31 @@ export function distributeOffsets(us: Unit[], axis: 'h' | 'v', by: 'gaps' | 'foc
 }
 
 /** Move one object. Call inside an edit. */
+/**
+ * Units for wrapping a paste onto rows: each arrow, + sign or other text box on its own joins the
+ * structure (or shape) before it in reading order, the nearest one to its left (else the nearest
+ * one), so a reaction wraps with its arrows and + signs beside its structures instead of each
+ * arrow and + wrapped on its own (review F020).
+ */
+export function joinLoose(us: Unit[]): Unit[] {
+  const anchors = us.filter((u) => u.atoms.length || u.shapes.length).map((u) => ({ ...u, atoms: [...u.atoms], captions: [...u.captions], arrows: [...u.arrows], shapes: [...u.shapes], box: { ...u.box } }));
+  if (!anchors.length) return us;
+  const mid = (b: Rect) => ({ x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 });
+  for (const u of us) {
+    if (u.atoms.length || u.shapes.length) continue;
+    const c = mid(u.box);
+    const left = anchors.filter((a) => a.box.x1 <= c.x);
+    const pool = left.length ? left : anchors;
+    // the nearest by its middle, rows counting more than columns (a scheme is read row by row)
+    const far = (a: Unit) => { const m = mid(a.box); return Math.abs(m.x - c.x) + 3 * Math.max(0, Math.abs(m.y - c.y) - (a.box.y2 - a.box.y1) / 2); };
+    const to = pool.reduce((p, q) => (far(q) < far(p) ? q : p));
+    to.captions.push(...u.captions);
+    to.arrows.push(...u.arrows);
+    to.box = { x1: Math.min(to.box.x1, u.box.x1), y1: Math.min(to.box.y1, u.box.y1), x2: Math.max(to.box.x2, u.box.x2), y2: Math.max(to.box.y2, u.box.y2) };
+  }
+  return anchors;
+}
+
 export function moveUnit(doc: Doc, u: Unit, d: Vec): void {
   if (!d.x && !d.y) return;
   doc.moveAtoms(u.atoms, d.x, d.y);
