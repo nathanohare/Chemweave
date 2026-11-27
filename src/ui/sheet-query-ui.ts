@@ -383,10 +383,16 @@ export class SheetQueries {
     const status = el('p', 'qe-status muted');
     w.body.append(top, tools, main, status);
 
+    // the steps run over the whole source, so their result is kept until the source, the steps or the step shown change
+    let ran: { raw: QTable; key: string; value: { table: QTable; error?: string; step?: number } } | null = null;
     const current = (): { table: QTable; error?: string; step?: number } => {
       if (!raw) return { table: rawTable([]), error: problem ?? 'Reading…' };
+      const key = `${at}|${JSON.stringify(q.steps)}`;
+      if (ran && ran.raw === raw && ran.key === key) return ran.value;
       const res = runSteps(raw, q.steps, at + 1);
-      return 'error' in res ? { table: res.table, error: res.error, step: res.step } : { table: res.table };
+      const value = 'error' in res ? { table: res.table, error: res.error, step: res.step } : { table: res.table };
+      ran = { raw, key, value };
+      return value;
     };
 
     const reparse = () => {
@@ -510,13 +516,16 @@ export class SheetQueries {
           const types = src.kind === 'text' ? TEXT_TYPES : src.kind === 'json' ? JSON_TYPES : BOOK_TYPES;
           const g = await openBytesDialog('Data files', types);
           if (!g) return;
-          picked.set(g.name, g.bytes);
           const file = g.ref.kind === 'path' ? g.ref.path : g.name;
-          fetched = { bytes: g.bytes };
+          // a workbook is read before anything is changed: one that can't be read leaves the editor as it was
+          let book: Workbook | undefined;
           if (src.kind === 'workbook') {
-            try { fetched.book = await readBook(g.bytes, g.name); } catch (e) { this.host.flash((e as Error).message, 6000); return; }
+            try { book = await readBook(g.bytes, g.name); } catch (e) { this.host.flash((e as Error).message, 6000); return; }
           }
-          q.source = { ...src, file } as QuerySource;
+          picked.set(g.name, g.bytes);
+          fetched = book ? { bytes: g.bytes, book } : { bytes: g.bytes };
+          // (the settings as they are now, not as they were when this button was drawn)
+          q.source = { ...q.source, file } as QuerySource;
           reparse();
           renderSettings();
           render();
@@ -640,11 +649,12 @@ export class SheetQueries {
     const v = this.host.view;
     const old = fresh ? null : wb.queries.find((x) => x.id === q.id) ?? null;
     let place = old ? queryTable(wb, old) : null;
-    let target: { kind: 'new' } | { kind: 'here'; sheet: Sheet; at: { row: number; col: number } } | { kind: 'none' } = place ? { kind: 'here', sheet: place.sheet, at: { row: place.table.range.r1, col: place.table.range.c1 } } : { kind: 'new' };
+    // a new query goes on a new sheet; one that was loaded only as a connection stays one
+    let target: { kind: 'new' } | { kind: 'here'; sheet: Sheet; at: { row: number; col: number } } | { kind: 'none' } = place ? { kind: 'here', sheet: place.sheet, at: { row: place.table.range.r1, col: place.table.range.c1 } } : old && !old.table ? { kind: 'none' } : { kind: 'new' };
     if (where === 'ask') {
       const s = v.sheet!;
       const a = await ask('Import Data', [
-        { name: 'where', label: 'Where do you want to put the data?', value: place ? 'here' : 'new', options: [{ value: 'new', label: 'New worksheet' }, { value: 'here', label: 'Existing worksheet' }, { value: 'none', label: 'Only Create Connection' }] },
+        { name: 'where', label: 'Where do you want to put the data?', value: place ? 'here' : old && !old.table ? 'none' : 'new', options: [{ value: 'new', label: 'New worksheet' }, { value: 'here', label: 'Existing worksheet' }, { value: 'none', label: 'Only Create Connection' }] },
         { name: 'cell', label: 'Existing worksheet: top left cell', value: place ? `${place.sheet.name}!${cellName(place.table.range.r1, place.table.range.c1)}` : `${s.name}!${cellName(v.sel.active.r, v.sel.active.c)}` },
       ], { ok: 'OK', note: 'The data goes in as a table, which Refresh fills in again.' });
       if (!a) return false;
@@ -665,7 +675,7 @@ export class SheetQueries {
     }
     if (target.kind === 'here') {
       const own = place && place.sheet === target.sheet ? place.table : null;
-      const R = resultRange(target.at, t, own ? addedColumns(target.sheet, own, t, old ?? q).length : 0);
+      const R = resultRange(target.at, t, own ? addedColumns(target.sheet, own, t, old ?? q).length : 0, !!own?.totals);
       const p = loadProblem(target.sheet, R, own);
       if (p) return p;
       if (wouldCover(target.sheet, R, own)) {
@@ -674,6 +684,7 @@ export class SheetQueries {
       }
     }
     v.commitEdit();
+    const connectionOnly = target.kind === 'none';
     let errors = 0;
     let shownSheet: Sheet | null = null;
     wb.edit(fresh ? 'Get Data' : 'Edit Query', () => {
@@ -705,7 +716,8 @@ export class SheetQueries {
       if (i >= 0 && wb.sheets[wb.active] !== shownSheet) v.goSheet(i);
     }
     v.refresh();
-    this.host.flash(`${q.name}: ${t.rows.length} row${t.rows.length === 1 ? '' : 's'} loaded${errors ? `, ${errors} error${errors > 1 ? 's' : ''} (left blank)` : ''}.`, errors ? 8000 : 3000);
+    // a connection only writes nothing to the workbook, so no rows were loaded
+    this.host.flash(connectionOnly ? `${q.name} is a connection only.` : `${q.name}: ${t.rows.length} row${t.rows.length === 1 ? '' : 's'} loaded${errors ? `, ${errors} error${errors > 1 ? 's' : ''} (left blank)` : ''}.`, errors ? 8000 : 3000);
     if (this.paneWin && ToolWindow.open === this.paneWin) this.queriesPane();
     return null;
   }
@@ -722,7 +734,37 @@ export class SheetQueries {
 
   // ---------------------------------------------------------------- refreshing
 
-  /** Refresh one query: read its source again and run its steps, writing over its table. */
+  /**
+   * What refreshing a query with its results `t` would do: a problem to report, or the writing
+   * (to run inside an edit) and whether it would cover cells that have something in them. Null
+   * when the query has gone.
+   */
+  private refreshPlan(q: Query, t: QTable): { problem: string } | { label: string; cover: boolean; write: () => string | null } | null {
+    const wb = this.wb;
+    const cur = wb.queries.find((x) => x.id === q.id);
+    if (!cur) return null;
+    const place = queryTable(wb, cur);
+    if (!place) {
+      return { label: 'Refresh', cover: false, write: () => { wb.setQueries(wb.queries.map((x) => (x.id === q.id ? { ...x, refreshed: new Date().toISOString() } : x))); return null; } };
+    }
+    const at = { row: place.table.range.r1, col: place.table.range.c1 };
+    const R = resultRange(at, t, addedColumns(place.sheet, place.table, t, cur).length, !!place.table.totals);
+    const p = loadProblem(place.sheet, R, place.table);
+    if (p) return { problem: `${q.name}: ${p}` };
+    return {
+      label: `Refresh ${q.name}`, cover: wouldCover(place.sheet, R, place.table),
+      write: () => {
+        const got = writeResult(place.sheet, at, t, place.table, cur);
+        wb.setQueries(wb.queries.map((x) => (x.id === q.id ? { ...x, refreshed: new Date().toISOString(), loaded: got.cols } : x)));
+        return got.errors ? `${q.name}: ${got.errors} error${got.errors > 1 ? 's' : ''} (left blank).` : null;
+      },
+    };
+  }
+
+  /**
+   * Refresh one query: read its source again and run its steps, writing over its table. Returns
+   * what went wrong (or that the person said no to covering cells), or null when it is done.
+   */
   async refresh(q: Query, quiet = false): Promise<string | null> {
     let t: QTable;
     try {
@@ -730,33 +772,20 @@ export class SheetQueries {
     } catch (e) {
       return `${q.name}: ${(e as Error).message}`;
     }
-    const wb = this.wb;
-    const cur = wb.queries.find((x) => x.id === q.id);
-    if (!cur) return null;
-    const place = queryTable(wb, cur);
-    const v = this.host.view;
-    if (!place) {
-      wb.edit('Refresh', () => wb.setQueries(wb.queries.map((x) => (x.id === q.id ? { ...x, refreshed: new Date().toISOString() } : x))), v.place());
-      return null;
-    }
-    const at = { row: place.table.range.r1, col: place.table.range.c1 };
-    const R = resultRange(at, t, addedColumns(place.sheet, place.table, t, cur).length);
-    const p = loadProblem(place.sheet, R, place.table);
-    if (p) return `${q.name}: ${p}`;
-    if (wouldCover(place.sheet, R, place.table)) {
+    const plan = this.refreshPlan(q, t);
+    if (!plan) return null;
+    if ('problem' in plan) return plan.problem;
+    if (plan.cover) {
       if (quiet) return `${q.name}: the new results would cover cells beside the table. Refresh it on its own to replace them.`;
       const ok = await ask('Replace the cells?', [], { ok: 'Replace', note: `${q.name} has grown: its results would cover cells that have something in them. Replace what is there?` });
-      if (!ok) return null;
+      if (!ok) return `${q.name} was not refreshed.`;
     }
+    const v = this.host.view;
     v.commitEdit();
-    let errors = 0;
-    wb.edit(`Refresh ${q.name}`, () => {
-      const got = writeResult(place.sheet, at, t, place.table, cur);
-      errors = got.errors;
-      wb.setQueries(wb.queries.map((x) => (x.id === q.id ? { ...x, refreshed: new Date().toISOString(), loaded: got.cols } : x)));
-    }, v.place());
+    let said: string | null = null;
+    this.wb.edit(plan.label, () => { said = plan.write(); }, v.place());
     v.refresh();
-    return errors ? `${q.name}: ${errors} error${errors > 1 ? 's' : ''} (left blank).` : null;
+    return said;
   }
 
   /** The query whose table holds the active cell. */
@@ -766,15 +795,39 @@ export class SheetQueries {
     return t ? queryOfTable(this.wb, t) : undefined;
   }
 
-  /** Refresh every query, one after another. Returns what went wrong, if anything. */
-  async refreshQueries(): Promise<string[]> {
+  /**
+   * Read every query's source, one after another, changing nothing yet. What went wrong in the
+   * reading comes back, and the writing, which a caller runs inside its own edit (so Refresh All
+   * is one step to undo) and which returns what went wrong in the writing.
+   */
+  async readQueries(): Promise<{ problems: string[]; write: () => string[] }> {
     const problems: string[] = [];
+    const read: { q: Query; t: QTable }[] = [];
     for (const q of this.wb.queries.slice()) {
-      const p = await this.refresh(q, true);
-      if (p) problems.push(p);
+      try {
+        read.push({ q, t: await runQuery(q) });
+      } catch (e) {
+        problems.push(`${q.name}: ${(e as Error).message}`);
+      }
     }
+    const write = (): string[] => {
+      const out: string[] = [];
+      for (const { q, t } of read) {
+        const plan = this.refreshPlan(q, t);
+        if (!plan) continue;
+        if ('problem' in plan) { out.push(plan.problem); continue; }
+        if (plan.cover) { out.push(`${q.name}: the new results would cover cells beside the table. Refresh it on its own to replace them.`); continue; }
+        const said = plan.write();
+        if (said) out.push(said);
+      }
+      return out;
+    };
+    return { problems, write };
+  }
+
+  /** The Queries & Connections window, drawn again when it is open. */
+  refreshPane(): void {
     if (this.paneWin && ToolWindow.open === this.paneWin) this.queriesPane();
-    return problems;
   }
 
   // ---------------------------------------------------------------- Queries & Connections

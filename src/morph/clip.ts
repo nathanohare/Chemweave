@@ -24,13 +24,17 @@ export interface Plan {
   groups: number[][];
   /** The arrow behind step i (groups[i] → groups[i + 1]), or null when read from left to right. */
   arrows: (number | null)[];
-  /** Step i is a reaction ('morph') or the same molecule redrawn, an equivalency sign ('turn'). */
+  /**
+   * Step i is a reaction ('morph'), the same molecule redrawn, an equivalency sign ('turn'), or the
+   * move to another reaction drawn on its own ('next': no atom becomes another, the last structure
+   * fades out and the next reaction's starting material fades in).
+   */
   kinds: StepKind[];
   /** The 3-D pose drawn above each structure, which says how it turns (atom ids), or null. */
   poses: (number[] | null)[];
 }
 
-export type StepKind = 'morph' | 'turn';
+export type StepKind = 'morph' | 'turn' | 'next';
 
 /** Longest line that still counts as one bar of an equivalency sign, and how close its bars sit. */
 const SIGN_BAR = 25, SIGN_GAP = 8;
@@ -234,21 +238,33 @@ export function planOf(doc: Doc, opts: { arrow?: number; atoms?: Set<number>; me
     // the previous step's arrow while its product waits to be replaced by the next step's starting
     // materials (which may add a new one); null once the products are in
     let pending: number | null = null;
+    // the first step of a reaction of its own, after another chain ended
+    let fresh = false;
     while (cur !== null && !seen.has(cur)) {
       seen.add(cur);
       const s = steps[cur];
       if (!groups.length) s.r.forEach((g) => add(g, 'turn', null));
       else {
         const at = s.r.findIndex((g) => same(g, groups[groups.length - 1]));
-        if (at < 0) add(s.r[0], 'morph', pending);
+        if (at < 0) add(s.r[0], fresh ? 'next' : 'morph', pending);
         s.r.slice(at < 0 ? 1 : at + 1).forEach((g) => add(g, 'turn', null));
       }
       pending = null;
+      fresh = false;
       let nxt: number | null = null;
       const prod = s.p.flatMap(atomsOf);
       for (let k = 0; k < steps.length; k++) if (!seen.has(k) && steps[k].r.some((g) => shares(atomsOf(g), prod))) { nxt = k; break; }
       if (nxt === null || s.p.length > 1) s.p.forEach((g, i) => add(g, i ? 'turn' : 'morph', i ? null : s.arrow));
       else pending = s.arrow;
+      if (nxt === null) {
+        // a reaction of its own after the chain ends (sharing no structure with it): its chain
+        // follows, from its first step, rather than being left out; it is reached by a 'next'
+        // step, not by a made-up reaction from this chain's product (review F646)
+        const left = steps.map((_, k) => k).filter((k) => !seen.has(k));
+        const made = left.flatMap((k) => steps[k].p.flatMap(atomsOf));
+        nxt = left.find((k) => !steps[k].r.some((g) => shares(atomsOf(g), made))) ?? left[0] ?? null;
+        fresh = nxt !== null;
+      }
       cur = nxt;
     }
     // structures an equivalency sign joins to either end of the scheme
@@ -403,6 +419,14 @@ export function buildSteps(doc: Doc, plan: Plan, r: Renderer, morphs?: (MorphSte
           error = (e as Error).message;
         }
       }
+    }
+    if (kind === 'next') {
+      // another reaction: nothing pairs, so the one fades out and the other in where it stood
+      const map: Mapping = { nmap: new Map(), bmap: new Map(), shifts: new Map(), slides: [] };
+      const B = align(A, Bdrawn, map);
+      out.push({ A, B, map, opt: {}, swaps: new Map(), arrow, kind });
+      prev = B;
+      continue;
     }
     let map: Mapping;
     try {

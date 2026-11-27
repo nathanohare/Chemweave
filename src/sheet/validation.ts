@@ -8,7 +8,8 @@
 
 import type { Sheet } from './workbook';
 import { Range, inRange, parseRange, rangeName } from './refs';
-import { Value, isError, readTyped } from './values';
+import { Value, isError, readTyped, toText } from './values';
+import { extent, type Arg } from './args';
 import { formatValue } from './numfmt';
 
 export type ValidationKind = 'any' | 'whole' | 'decimal' | 'list' | 'date' | 'time' | 'length' | 'custom';
@@ -85,7 +86,11 @@ export function readDate(text: string): number | null {
     [y, m, d] = [dt.getUTCFullYear(), dt.getUTCMonth() + 1, dt.getUTCDate()];
   }
   if (m < 1 || m > 12 || d < 1 || d > 31) return null;
-  return (Date.UTC(y, m - 1, d) - Date.UTC(1899, 11, 30)) / 86400000;
+  const t = Date.UTC(y, m - 1, d);
+  // a day the month doesn't have (2/31/2026) is not a date, rather than rolling into the next month
+  const dt = new Date(t);
+  if (dt.getUTCMonth() !== m - 1 || dt.getUTCDate() !== d) return null;
+  return (t - Date.UTC(1899, 11, 30)) / 86400000;
 }
 
 /** 13:30 or 1:30 PM as a fraction of a day; null when it isn't a time. */
@@ -121,18 +126,30 @@ export function limitText(kind: ValidationKind, n: number): string {
 export interface ValidationHost {
   formulaAt(formula: string, home: { row: number; col: number }, row: number, col: number): Value;
   sheetNamed(name: string): Sheet | undefined;
+  /** A list's source that isn't a plain reference (a defined name, =OFFSET(…)) worked out with its block kept whole. */
+  formulaArg?(formula: string, home: { row: number; col: number }): Arg;
 }
 
 const homeOf = (v: Validation) => ({ row: v.ranges[0]?.r1 ?? 0, col: v.ranges[0]?.c1 ?? 0 });
 
-/** A limit worked out for a cell (a formula moves with the cell, as in a copied formula). */
+/**
+ * A limit worked out for a cell (a formula moves with the cell, as in a copied formula). A
+ * formula that reads an empty cell counts it as 0, as a formula does, rather than turning every
+ * value away while the cell is empty.
+ */
 function limit(v: Validation, text: string | undefined, host: ValidationHost, row: number, col: number): number | null {
   if (text === undefined) return null;
   if (text.trim().startsWith('=')) {
     const got = host.formulaAt(text.trim(), homeOf(v), row, col);
+    if (got === null || got === '') return 0;
     return typeof got === 'number' ? got : typeof got === 'boolean' ? Number(got) : null;
   }
   return limitNumber(v.kind, text);
+}
+
+/** Does x pass a rule's limits? */
+function withinLimits(v: Validation, op: ValidationOp, x: number, host: ValidationHost, row: number, col: number): boolean {
+  return compare(op, x, limit(v, v.value1, host, row, col), twoLimits(v) ? limit(v, v.value2, host, row, col) : null);
 }
 
 function compare(op: ValidationOp, x: number, a: number | null, b: number | null): boolean {
@@ -163,11 +180,19 @@ function splitRef(text: string): { sheet?: string; range: Range } | null {
 
 /** The items of a list rule, as the drop-down shows them (cells' items as they show). */
 export function listItems(v: Validation, sheet: Sheet, host: ValidationHost): string[] {
+  return readList(v, sheet, host) ?? [];
+}
+
+/**
+ * The items of a list rule, or null when its source can't be worked out here (a formula this
+ * program can't follow): such a rule lets values through rather than turning every one away.
+ */
+function readList(v: Validation, sheet: Sheet, host: ValidationHost): string[] | null {
   const src = (v.value1 ?? '').trim();
   if (!src) return [];
   if (!src.startsWith('=')) return src.split(',').map((x) => x.trim()).filter((x) => x !== '');
   const ref = splitRef(src);
-  if (!ref) return [];
+  if (!ref) return formulaList(src, v, sheet, host);
   const s = ref.sheet ? host.sheetNamed(ref.sheet) : sheet;
   if (!s) return [];
   const out: string[] = [];
@@ -181,26 +206,72 @@ export function listItems(v: Validation, sheet: Sheet, host: ValidationHost): st
   return out;
 }
 
-/** Does a cell's value pass the rule? (`shown` is the value as the cell shows it.) */
-export function passes(v: Validation, value: Value, shown: string, sheet: Sheet, host: ValidationHost, row: number, col: number): boolean {
+/** A list whose source is a defined name (=Catalysts, the usual way in Excel) or a formula (=OFFSET(…)): the cells it names, as they show. */
+function formulaList(src: string, v: Validation, sheet: Sheet, host: ValidationHost): string[] | null {
+  if (!host.formulaArg) return null;
+  const got = host.formulaArg(src, homeOf(v));
+  if (got !== null && typeof got === 'object' && 'block' in got) {
+    const s = got.sheet ? host.sheetNamed(got.sheet) : sheet;
+    const out: string[] = [];
+    // a whole column (=$H:$H named) stops at the cells in use, as a plain reference does
+    let { h, w } = extent(got);
+    if (got.at && s) { h = Math.min(h, Math.max(0, s.lastRow - got.at.r + 1)); w = Math.min(w, Math.max(0, s.lastCol - got.at.c + 1)); }
+    for (let i = 0; i < h; i++) {
+      for (let j = 0; j < w; j++) {
+        const t = got.at && s ? s.shownText(got.at.r + i, got.at.c + j) : plainText(got.block[i]?.[j] ?? null);
+        if (t !== '') out.push(t);
+      }
+    }
+    return out;
+  }
+  if (isError(got)) return null;
+  const t = plainText(got);
+  return t === '' ? [] : [t];
+}
+
+/** A value's own text, without its cell's number format (5, not 5.00). */
+function plainText(v: Value): string {
+  const t = toText(v);
+  return typeof t === 'string' ? t : '';
+}
+
+/** Is a value one of a list's items? Capitals don't matter; a number matches an item that reads as the same number. */
+function inList(items: readonly string[], value: Value, shown: string): boolean {
+  const want = shown.trim().toLowerCase(), own = plainText(value).trim().toLowerCase();
+  return items.some((x) => {
+    const item = x.trim().toLowerCase();
+    if (item === want || item === own) return true;
+    if (typeof value !== 'number') return false;
+    const n = readTyped(x.trim()).value;
+    return typeof n === 'number' && n === value;
+  });
+}
+
+/**
+ * Does a cell's value pass the rule? (`shown` is the value as the cell shows it.) `lists` keeps
+ * each list rule's items while many cells are checked at once.
+ */
+export function passes(v: Validation, value: Value, shown: string, sheet: Sheet, host: ValidationHost, row: number, col: number, lists?: Map<Validation, string[] | null>): boolean {
   if (v.kind === 'any') return true;
   if (value === null || value === '') return !v.noBlank;
   if (isError(value)) return false;
   const op = v.op ?? 'between';
   switch (v.kind) {
     case 'whole':
-      return typeof value === 'number' && Number.isInteger(value) && compare(op, value, limit(v, v.value1, host, row, col), limit(v, v.value2, host, row, col));
+      return typeof value === 'number' && Number.isInteger(value) && withinLimits(v, op, value, host, row, col);
     case 'decimal': case 'date':
-      return typeof value === 'number' && compare(op, value, limit(v, v.value1, host, row, col), limit(v, v.value2, host, row, col));
+      return typeof value === 'number' && withinLimits(v, op, value, host, row, col);
     case 'time':
       // a time compares by its time of day
-      return typeof value === 'number' && compare(op, value - Math.floor(value), limit(v, v.value1, host, row, col), limit(v, v.value2, host, row, col));
+      return typeof value === 'number' && withinLimits(v, op, value - Math.floor(value), host, row, col);
     case 'length':
-      return compare(op, shown.length, limit(v, v.value1, host, row, col), limit(v, v.value2, host, row, col));
+      // the length of the value itself, not of how its number format shows it ($1,234.50 is 1234.5)
+      return withinLimits(v, op, plainText(value).length, host, row, col);
     case 'list': {
       // Excel matches list items without minding capitals
-      const want = shown.trim().toLowerCase();
-      return listItems(v, sheet, host).some((x) => x.toLowerCase() === want);
+      let items = lists?.get(v);
+      if (items === undefined) { items = readList(v, sheet, host); lists?.set(v, items); }
+      return items === null || inList(items, value, shown);
     }
     case 'custom': {
       if (!v.value1?.trim()) return true;
@@ -238,6 +309,8 @@ export const validationRangesText = (v: Validation): string => v.ranges.map(rang
 /** Every cell in use that breaks a rule (for Circle Invalid Data). */
 export function invalidCells(sheet: Sheet, host: ValidationHost): { row: number; col: number }[] {
   const out: { row: number; col: number }[] = [];
+  // each list rule's items read once for every cell it covers, not again for each cell
+  const lists = new Map<Validation, string[] | null>();
   for (const v of sheet.validations) {
     if (v.kind === 'any') continue;
     for (const R of v.ranges) {
@@ -247,7 +320,7 @@ export function invalidCells(sheet: Sheet, host: ValidationHost): { row: number;
           const val = sheet.value(r, c);
           // empty cells aren't circled, even where blanks aren't allowed (as in Excel)
           if (val === null || val === '') continue;
-          if (!passes(v, val, sheet.shownText(r, c), sheet, host, r, c)) out.push({ row: r, col: c });
+          if (!passes(v, val, sheet.shownText(r, c), sheet, host, r, c, lists)) out.push({ row: r, col: c });
         }
       }
     }

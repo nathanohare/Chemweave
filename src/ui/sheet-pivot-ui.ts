@@ -8,6 +8,7 @@ import type { SheetView } from './sheet-view';
 import { popupMenu } from './sheet-view';
 import { ToolWindow, absText } from './tool-window';
 import { ask } from './ask';
+import { addInfo } from './info-tip';
 import type { Sheet, Workbook } from '../sheet/workbook';
 import { valueInput } from '../sheet/workbook';
 import { rangeName } from '../sheet/refs';
@@ -34,6 +35,8 @@ export class SheetPivots {
   private fieldsWin: ToolWindow | null = null;
   /** Field List: the Fields window shows whenever the active cell is in a PivotTable (Close turns it off). */
   private fieldListOn = true;
+  /** The PivotTable as the Fields window last drew it (a different one after Undo or Redo). */
+  private shown: PivotTable | null = null;
 
   constructor(private host: PivotUiHost) {}
 
@@ -63,6 +66,13 @@ export class SheetPivots {
     // (never over another tool window, such as one picking cells)
     if (!open && ToolWindow.open) return;
     if (this.fieldListOn && (!open || pt.id !== this.fieldsOf?.id || this.fieldsOf?.sheet !== this.view.sheet)) this.fieldsWindow();
+    else this.workbookChanged();
+  }
+
+  /** The workbook changed under the Fields window (Undo, Redo): it shows the PivotTable as it is now. */
+  workbookChanged(): void {
+    if (!this.fieldsWin || ToolWindow.open !== this.fieldsWin) return;
+    if ((this.current()?.pt ?? null) !== this.shown) this.renderFields();
   }
 
   /** Field List on the PivotTable tab: shows the Fields window, or hides it (and keeps it hidden). */
@@ -113,7 +123,8 @@ export class SheetPivots {
 
   private change(label: string, fn: (pt: PivotTable) => PivotTable): void {
     const c = this.current();
-    if (c) void this.apply(c.sheet, fn(c.pt), label);
+    // (a change that is refused or answered Cancel leaves the PivotTable as it was, so the window shows it so)
+    if (c) void this.apply(c.sheet, fn(c.pt), label).then((ok) => { if (!ok && this.fieldsWin && ToolWindow.open === this.fieldsWin) this.renderFields(); });
   }
 
   // ---------------------------------------------------------------- Insert PivotTable
@@ -238,8 +249,11 @@ export class SheetPivots {
       for (const { s, pt } of all) {
         const rep = reportOf(wb, s, pt);
         if (typeof rep === 'string') { problems.push(`${pt.name}: ${rep}`); continue; }
-        const p = placeProblem(s, pt, reportRange(pt, rep));
+        const R = reportRange(pt, rep);
+        const p = placeProblem(s, pt, R);
         if (p) { problems.push(`${pt.name}: ${p}`); continue; }
+        // cells a grown report would cover are asked about when it is refreshed on its own, never taken silently
+        if (wouldCover(s, pt, R)) { problems.push(`${pt.name}: it would cover cells that have something in them (${rangeName(R)}): refresh it on its own.`); continue; }
         writePivot(s, pt);
       }
     }, this.view.place());
@@ -257,12 +271,17 @@ export class SheetPivots {
     if (!s || !pt) { this.host.flash('Click in a PivotTable to show its fields.'); return; }
     this.fieldsOf = { sheet: s, id: pt.id };
     this.fieldListOn = true;
+    // (making the window closes the one open, which is not the person turning Field List off)
+    const old = this.fieldsWin;
+    if (old) { old.onClose = null; this.fieldsWin = null; }
     const w = new ToolWindow('PivotTable Fields', 'pivot-fields');
     w.home = s.name;
     this.fieldsWin = w;
-    // closed by the person (Close or Escape): Field List is off until asked for again
-    w.onClose = () => { if (this.fieldsWin === w) { this.fieldsWin = null; this.fieldListOn = false; } };
-    w.button('Close', () => w.close(), 'primary');
+    // Field List is off until asked for again only when the person closed the window (Close or
+    // Escape), not when another window, or Clear PivotTable, took its place
+    let closing = false;
+    w.onClose = () => { if (this.fieldsWin === w) { this.fieldsWin = null; if (closing || w.dismissed) this.fieldListOn = false; } };
+    w.button('Close', () => { closing = true; w.close(); }, 'primary');
     this.renderFields();
     w.show();
   }
@@ -271,6 +290,7 @@ export class SheetPivots {
     const w = this.fieldsWin, c = this.current();
     if (!w) return;
     w.body.replaceChildren();
+    this.shown = c?.pt ?? null;
     if (!c) { w.note('The PivotTable has gone.'); return; }
     const { sheet, pt } = c;
     const src = readSource(this.wb, pt, sheet);
@@ -320,12 +340,15 @@ export class SheetPivots {
     layout.addEventListener('change', () => this.change('Report layout', (p) => ({ ...p, layout: layout.value as PivotLayout })));
     const sub = w.check('Subtotals', pt.subtotals, g);
     sub.addEventListener('change', () => this.change('Subtotals', (p) => ({ ...p, subtotals: sub.checked })));
-    const gr = w.check('Grand totals for rows (a Grand Total row at the bottom)', pt.grandRows, g);
+    const gr = w.check('Grand Totals for Rows', pt.grandRows, g);
+    addInfo(gr.nextElementSibling, 'A Grand Total row at the bottom.');
     gr.addEventListener('change', () => this.change('Grand totals', (p) => ({ ...p, grandRows: gr.checked })));
-    const gc = w.check('Grand totals for columns (a Grand Total column at the right)', pt.grandCols, g);
+    const gc = w.check('Grand Totals for Columns', pt.grandCols, g);
+    addInfo(gc.nextElementSibling, 'A Grand Total column at the right.');
     gc.addEventListener('change', () => this.change('Grand totals', (p) => ({ ...p, grandCols: gc.checked })));
     if (pt.values.length > 1) {
-      const vr = w.check('Σ Values down the rows (not across the columns)', !!pt.valuesOnRows, g);
+      const vr = w.check('Σ Values on Rows', !!pt.valuesOnRows, g);
+      addInfo(vr.nextElementSibling, 'Σ Values go down the rows instead of across the columns.');
       vr.addEventListener('change', () => this.change('Σ Values', (p) => ({ ...p, valuesOnRows: vr.checked || undefined })));
     }
     const empty = w.text('For empty cells show', pt.emptyText ?? '', g);

@@ -50,6 +50,11 @@ export interface KeptSettings {
   ext: string[];
   /** w:compat's children other than the compatibility mode. */
   compat?: string;
+  /**
+   * The file's default tab stop (w:defaultTabStop, twentieths of a point; 17.15.1.25), written
+   * back as it was (the text is laid out here with this program's 0.5 in ones).
+   */
+  tab?: number;
 }
 
 const strip = (s: string) => s.replace(/ xmlns:w="[^"]*"/g, '');
@@ -64,13 +69,16 @@ export function readKeptSettings(root: Element | null | undefined): KeptSettings
     if (ns === W_NS && n === 'compat') {
       const rest = Array.from(el.children).filter((c) => !(c.localName === 'compatSetting' && c.getAttributeNS(W_NS, 'name') === 'compatibilityMode'));
       if (rest.length) k.compat = rest.map((c) => strip(elementXml(c))).join('');
+    } else if (ns === W_NS && n === 'defaultTabStop') {
+      const v = Number(el.getAttributeNS(W_NS, 'val'));
+      if (Number.isInteger(v) && v > 0 && v <= 31680) k.tab = v;
     } else if ((ns === W_NS || (ns === M_NS && n === 'mathPr')) && ORDER.has(n) && !OURS.has(n) && !hasRel(el)) k.w.push({ n, xml: strip(elementXml(el)) });
     // (only Word 2010's and 2013's, which the part names as ignorable: others' would need declaring so)
     else if (ns === W14_NS || ns === W15_NS) {
       if (n === 'docId') { if (!k.ext.includes('')) k.ext.push(''); } else k.ext.push(elementXml(el));
     }
   }
-  return k.w.length || k.ext.some(Boolean) || k.compat ? k : null;
+  return k.w.length || k.ext.some(Boolean) || k.compat || k.tab !== undefined ? k : null;
 }
 
 /**

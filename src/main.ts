@@ -10,7 +10,7 @@ import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
-import { infoTipsOnOpen } from './ui/info-tip';
+import { infoFromAttrs, infoTipsOnOpen } from './ui/info-tip';
 import { bothLive, clampShare, dropSide, fitPicture, insertLabel, pictureOf, splitAfterDrop, type Side as SplitSide } from './ui/split-screen';
 import './commands/menus';
 // every mode's Font group, the same controls in the same order (G5-26), before anything looks for them
@@ -36,7 +36,7 @@ import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } fr
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
 import { BUILT_IN_LOOKS, type HighlightLookPreset } from './ui/highlight-looks';
-import { selectionBox, atomsBox, POINTS, type Align, units, moveUnit } from './editor/arrange';
+import { selectionBox, atomsBox, POINTS, type Align, units, moveUnit, joinLoose } from './editor/arrange';
 import { defaultColumns } from './editor/grid-arrange';
 import { askGridLayout, type GridPick } from './ui/grid-picker';
 import { groupSelection, selectedGroups } from './editor/groups';
@@ -56,6 +56,8 @@ import { reviewAuthor, setReviewAuthor } from './document/revisions';
 import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
 import { paintCanRun, clearCanRun, cantRun, menuAsksLazily } from './ui/can-run';
 import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
+import { scaleFactor } from './editor/scale-factor';
+import { fileDropAction, filesTaken, mayBePicture, pasteTarget, type DropPlace } from './ui/window-drop';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
@@ -90,9 +92,10 @@ import { WORKSPACE, folderOf } from './io/workspace-file';
 import { askLink, followLink, setLinkHost, type LinkPlace } from './ui/links-ui';
 import type { LigandLibraryWindow } from './ui/ligand-library';
 import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink, removeLink, setLink, slideOfLink } from './links';
-import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, type FileType } from './io/files';
+import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, pathExists, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
+import { GLOW_TRANSPARENCY } from './render/shape-fx';
 import { Workspace, Tab, type SaveHow } from './workspace';
 import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
@@ -123,7 +126,7 @@ import { LayersPanel } from './ui/layers-panel';
 import { Scrollbars, type ScrollContent } from './ui/scrollbars';
 import { installScrollbarFade } from './ui/scrollbar-fade';
 import type { Presenter, ShowOptions } from './ui/present';
-import { editHeaderFooter } from './ui/header-footer-dialog';
+import { applyHeaderFooter, editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
 import { docHolder, deckHolder } from './ui/ref-holders';
 import { editSlideRefs } from './ui/slide-refs-dialog';
@@ -139,11 +142,11 @@ import { clockText } from './deck/show-link';
 import type { PresenterView } from './ui/presenter-view';
 import { editDrawingStyle } from './ui/style-dialog';
 import { usedObjects, type DocText, type SiLink } from './document/document';
-import { DARK_PALETTES, darkPaletteNamed, showDarkPage, type DarkPalette } from './dark-page';
+import { DARK_PALETTES, darkPaletteNamed, readingPaletteToKeep, showDarkPage, type DarkPalette } from './dark-page';
 import { STYLE_PRESETS, applyStyle, presetNamed, restyleContents, sameLook, styleNamed, type StyleMode } from './drawing-styles';
 import { askCleanUpOption } from './ui/cleanup-picker';
 import { looksTangled, turnOption } from './chem/cleanup';
-import { recordPicture, pictureSvg, pictureEmf, pictureCanvas, canvasPng, bitmapScale, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS } from './render/picture';
+import { recordPicture, pictureSvg, pictureEmf, pictureEmfWithPictures, pictureCanvas, canvasPng, bitmapScale, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS } from './render/picture';
 import { pngWithDpi } from './render/emf-read';
 import { whiteToClear } from './render/background';
 
@@ -179,12 +182,12 @@ import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng
 import { newChartBox, sizedBox } from './sheet/chart-box';
 import { chartBoxPng } from './render/chart-box-paint';
 import { itemsToSvg } from './render/svg';
-import { itemsToEmf, type EmfBox } from './render/emf';
+import { itemsToEmfWithPictures, type EmfBox } from './render/emf';
 import type { Item } from './render/vector';
 import { PAPERS, defaultPaper, orient, placeIn, inside, placeSvg, pageSvg } from './print-layout';
 import { printPages } from './ui/print';
 import { SHEETS } from './io/cdxml-print';
-import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
+import { bitmapToPng, dataUrl, fromDataUrl, imageSize, imagePixels, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { BOX_DEFAULTS } from './ui/toolbox-defaults';
@@ -215,7 +218,7 @@ import { cxSmiles, cxSmilesLeftOut, isReactionSmiles, isRxn, parseRxn, reactionS
 import { showBalance } from './ui/balance-dialog';
 import { withoutCharge } from './chem/formula';
 import { ORBITAL_KINDS, ORBITAL_LOOKS, angleOfDir, openDirection, orbitalAtom, orbitalShapes, orbitalsAmong, PHASE_COLOURS, putOrbital, readAngle, readOrbital, redrawOrbital, takenDirections, type OrbitalKind, type OrbitalLook, type OrbitalSpec } from './chem/orbitals';
-import { BATCH_FORMATS, BATCH_INPUTS, readBatchFile, smilesLine, uniqueName, writeBatchItem, type BatchDeps, type BatchFormat } from './io/batch-convert';
+import { BATCH_FORMATS, BATCH_INPUTS, freeBatchName, readBatchFile, smilesLine, uniqueName, writeBatchItem, type BatchDeps, type BatchFormat } from './io/batch-convert';
 import { zipSync } from 'fflate';
 import { clampSchemeDistance, labelsOf, SCHEME_LIMITS, schemePrefs, setSchemePrefs, SPACING, type SchemeDistance, type SchemePrefs } from './chem/scheme-layout';
 import { SINGLE } from './text/layout';
@@ -228,7 +231,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
+import { loadSettings, saveSettings, flushSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -242,7 +245,7 @@ import { alkylSwatch, bondEndSwatch, chargeSwatch, counterionSwatch, cursorAidSw
 import { AUTO_STEPS_DEFAULTS, markPieces, stepAnims, stepClicks, stepPieces, type AutoStepsOptions, type StepPiece } from './deck/auto-steps';
 import { UpdateUI } from './ui/update-ui';
 import { canUpdate, appVersion, portableInfo, STAGE, STAGE_NOTE, UPDATE_CHANNELS, type UpdateChannel } from './updates';
-import { computerName } from './feedback';
+import { computerName, pagePictureDpi } from './feedback';
 import { guideSpot } from './ui/guide-spot';
 import type { GuideWindow, GuideHeading } from './ui/guide-window';
 import { SettingsWindow, type SettingsHost, type SettingsPage } from './ui/settings-window';
@@ -338,7 +341,7 @@ import { Brush, paintObjects, pickObjectLook, type ObjectLook, type TextLook } f
 import { popupMenu } from './ui/popup-menu';
 import { DEFAULT_FOCAL_PREFS, focalAtoms, parseFocalPrefs, setFocal, setFocalDefault, type FocalPrefs } from './chem/focal';
 import { FOCAL_LOOKS, drawFocalMark } from './editor/focal-marks';
-import { favoriteSummary, freshFavoriteName, ribbonFavorites, withFavorite, type FormatFavorite } from './ui/format-favorites';
+import { favoriteSummary, freshFavoriteName, renamedFavorite, ribbonFavorites, withFavorite, type FormatFavorite } from './ui/format-favorites';
 import { SymbolWindow } from './ui/symbol-window';
 import { Navigator, EdgeArrows, paintGrid, paintTint, type Target } from './ui/orientation';
 import { type OrientPrefs, DEFAULT_ORIENT } from './orientation-prefs';
@@ -1261,22 +1264,30 @@ window.addEventListener('dragover', (e) => {
 window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) host.classList.remove('drop'); });
 window.addEventListener('drop', (e) => {
   if (!hasFiles(e)) return;
+  // (always cancelled: a file drop left to the webview opens the file in place of the app)
   e.preventDefault();
   host.classList.remove('drop');
+  // a drop zone on the page used the files already (the SI Project's report boxes, manuscript
+  // and attachments): not opened or placed a second time (review F018)
+  if (filesTaken(e)) return;
   void dropFiles([...(e.dataTransfer?.files ?? [])], { x: e.clientX, y: e.clientY });
 });
 
 async function dropFiles(files: File[], at: { x: number; y: number }): Promise<void> {
   const r = host.getBoundingClientRect();
   const inside = at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom;
+  const where: DropPlace = sheetActive() ? 'sheet' : docActive() ? 'document' : siActive() ? 'si' : 'drawing';
   for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());
+    const mime = mayBePicture(f.name) ? pictureMime(f.name, bytes) : null;
+    const act = fileDropAction(f.name, !!mime, where);
     // a crystal structure: into the crystal structure window, to turn and place
-    if (/\.cif$/i.test(f.name) && !sheetActive() && !docActive()) { await plateFigure('crystal', null, { name: f.name, text: new TextDecoder().decode(bytes) }); continue; }
-    const mime = /\.(cdxml|cdx|cds|mol|mdl|rxn|mrv|ket|cml|json|pptx|xlsx|xlsm|xls|ods|docx|csv|tsv|txt|sdf?)$/i.test(f.name) ? null : pictureMime(f.name, bytes);
-    if (mime && sheetActive()) flash('Pictures can\'t go in a cell yet. Drop sheet files (.xlsx, .csv, .sdf) to open them.');
-    else if (mime && docActive()) docMode.dropPicture(bytes, mime);
-    else if (mime) placePicture(bytes, mime, inside ? renderer.toDoc(at.x - r.left, at.y - r.top) : null);
+    if (act === 'crystal') await plateFigure('crystal', null, { name: f.name, text: new TextDecoder().decode(bytes) });
+    else if (act === 'no-cell-picture') flash('Pictures can\'t go in a cell yet. Drop sheet files (.xlsx, .csv, .sdf) to open them.');
+    // (not onto the drawing hidden behind the SI Project)
+    else if (act === 'not-in-si') flash('Drop pictures and spectra on a compound’s report box, the manuscript or an attachment.', 6000);
+    else if (act === 'doc-picture') docMode.dropPicture(bytes, mime!);
+    else if (act === 'picture') placePicture(bytes, mime!, inside ? renderer.toDoc(at.x - r.left, at.y - r.top) : null);
     else await ws.openBytes(bytes, f.name);
   }
 }
@@ -1301,13 +1312,21 @@ function copy(): Promise<void> {
 
 async function cut(): Promise<void> {
   if (!editor.hasSelection()) { flash(WHY.cut); return; }
+  // what is copied is what is deleted, even when the selection, slide or tab changes while the copy
+  // is made (review F304)
+  const s = editor.sel;
+  const took = { atoms: new Set(s.atoms), bonds: new Set(s.bonds), captions: new Set(s.captions), arrows: new Set(s.arrows), shapes: new Set(s.shapes) };
+  const here = sameDrawing('The cut', 'done');
   let msg: string;
   try {
-    msg = await copyDrawing(doc, editor.sel);
+    msg = await copyDrawing(doc, took);
   } catch (err) {
     flash('Could not copy: ' + String(err));
     return;
   }
+  if (here.left()) return;
+  const keep = <T>(ids: Set<number>, m: Map<number, T>) => new Set([...ids].filter((id) => m.has(id)));
+  editor.sel = { atoms: keep(took.atoms, doc.atoms), bonds: keep(took.bonds, doc.bonds), captions: keep(took.captions, doc.captions), arrows: keep(took.arrows, doc.arrows), shapes: keep(took.shapes, doc.shapes) };
   editor.deleteSelection();
   flash(msg.replace(/^Copied/, 'Cut'));
 }
@@ -1318,10 +1337,13 @@ function paste(): void {
 
 // In a browser, Ctrl+V arrives as a paste event, which carries the clipboard's text.
 window.addEventListener('paste', (e) => {
-  if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
+  // (pasted already by the part of the page it went to, or the SI Project, which pastes for
+  // itself: not into the drawing hidden behind it as well, review F019)
+  const to = pasteTarget({ typing: isTyping(e.target), inDialog: !!(e.target as HTMLElement | null)?.closest?.('dialog'), taken: e.defaultPrevented, si: siActive(), sheet: sheetActive(), document: docActive() });
+  if (to === 'none') return;
   e.preventDefault();
-  if (sheetActive()) { void sheetMode.paste(nativeClipboard ? null : e); return; }
-  if (docActive()) { void docMode.paste(nativeClipboard ? null : e); return; }
+  if (to === 'sheet') { void sheetMode.paste(nativeClipboard ? null : e); return; }
+  if (to === 'document') { void docMode.paste(nativeClipboard ? null : e); return; }
   if (nativeClipboard) paste();
   else void pasteFrom(() => readPasteEvent(e));
 });
@@ -1387,7 +1409,7 @@ async function pasteIntoSpeciesBox(holder: number, got: Pasted): Promise<void> {
 /** Cells from Excel, Word or a sheet become a table in the ACS style, with the first row as headings. */
 function pasteTable(rows: PastedRows): void {
   const t = tableFromCells(rows, textMeasure, doc.style.captionSize);
-  placeTable(t, 'Paste table');
+  placeTable(t, 'Paste Table');
   flash(`Pasted a table of ${t.rows.length} rows and ${t.cols.length} columns. Double-click a cell to type; the Style panel has its rows, columns and lines.`, 7000);
 }
 
@@ -1458,7 +1480,7 @@ async function insertTable(): Promise<void> {
   if (onSlide) lastTableStyle = got.style ?? '';
   // columns centred (the Style panel lines up each column its own way)
   const t0 = { ...emptyTable(rows, cols, doc.style.captionSize), align: Array(cols).fill('center') };
-  const id = placeTable(onSlide && got.style ? { ...t0, style: got.style } : t0, 'Insert table');
+  const id = placeTable(onSlide && got.style ? { ...t0, style: got.style } : t0, 'Insert Table');
   editor.editTable(id, { r: 0, c: 0 });
 }
 
@@ -1559,7 +1581,7 @@ async function pasteText(text: string, html?: string, plain = false): Promise<vo
   const wrap = b.x2 - b.x1 > most ? most : undefined;
   if (wrap) b = frame(wrap);
   let id = 0;
-  doc.edit('Paste text', () => {
+  doc.edit('Paste Text', () => {
     id = doc.addCaption({ x: c.x - (b.x1 + b.x2) / 2, y: c.y - (b.y1 + b.y2) / 2, runs, justify: 'left', ...(paras ? { paras } : {}), ...(wrap ? { wrap } : {}) }).id;
     editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set([id]), arrows: new Set(), shapes: new Set() };
     editor.placeClear(placingPage());
@@ -1946,7 +1968,7 @@ async function insertChart(): Promise<void> {
   if (here.left()) return;
   const c = pasteCentre();
   let made: Shape | null = null;
-  doc.edit('Insert chart', () => {
+  doc.edit('Insert Chart', () => {
     made = doc.addShape({ kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, chart: got });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set([made!.id]) };
@@ -1962,10 +1984,10 @@ async function editChartShape(id: number): Promise<void> {
   const here = sameDrawing('The chart change', 'applied');
   const got = await editChart(sizedBox(s.chart, Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)), false, flash);
   if (!got || here.left() || !doc.shapes.get(id)?.chart) return;
-  if (got === 'delete') { doc.edit('Delete chart', () => doc.removeShape(id)); editor.changed(); return; }
+  if (got === 'delete') { doc.edit('Delete Chart', () => doc.removeShape(id)); editor.changed(); return; }
   const { w, h } = (await import('./ui/chart-editor')).chartPoints(got.chart);
   if (here.left()) return;
-  doc.edit('Change chart', () => doc.updateShape(id, { chart: got, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, x1: x, y1: y, x2: x + w, y2: y + h, crop: undefined }));
+  doc.edit('Change Chart', () => doc.updateShape(id, { chart: got, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, x1: x, y1: y, x2: x + w, y2: y + h, crop: undefined }));
   editor.changed();
 }
 editor.onChart = (id) => void editChartShape(id);
@@ -1978,7 +2000,7 @@ async function editMediaShape(id: number): Promise<void> {
   const here = sameDrawing('The playback change', 'applied');
   const got = await editMedia(s.video);
   if (!got || here.left() || !doc.shapes.get(id)?.video) return;
-  doc.edit(s.video.audio ? 'Audio playback' : 'Video playback', () => doc.updateShape(id, { video: got }));
+  doc.edit(s.video.audio ? 'Audio Playback' : 'Video Playback', () => doc.updateShape(id, { video: got }));
   editor.changed();
 }
 editor.onMedia = (id) => void editMediaShape(id);
@@ -2020,7 +2042,7 @@ async function insertMedia(audio: boolean): Promise<void> {
   const w = px.w * k, h = px.h * k;
   const c = deck && type.audio ? { x: deck.size.w / 2, y: deck.size.h / 2 } : pasteCentre();
   let made: Shape | null = null;
-  doc.edit(type.audio ? 'Insert audio' : 'Insert video', () => {
+  doc.edit(type.audio ? 'Insert Audio' : 'Insert Video', () => {
     made = doc.addShape({
       kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, px, src: poster,
       video: { src, ...(type.audio ? { audio: true } : {}), start: 'click', once: true, ...(length ? { length: +length.toFixed(3) } : {}) },
@@ -2071,7 +2093,7 @@ async function insertZoom(summary: boolean): Promise<void> {
   const area = { x1: d.size.w * 0.1, y1: d.size.h * 0.3, x2: d.size.w * 0.9, y2: d.size.h * 0.9 };
   const boxes = zoomGrid(pick.indices.length, d.size, area);
   const made: number[] = [];
-  doc.edit(pick.indices.length > 1 ? 'Insert slide zooms' : 'Insert slide zoom', () => {
+  doc.edit(pick.indices.length > 1 ? 'Insert Slide Zooms' : 'Insert Slide Zoom', () => {
     pick.indices.forEach((i, k) => { const z = zoomShape(d, i, boxes[k], {}); if (z) made.push(doc.addShape(z).id); });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set(made) };
@@ -2128,7 +2150,7 @@ async function actionSettings(): Promise<void> {
   ], { ok: 'OK', note: 'What happens when this is clicked in the slide show. Saved as PowerPoint\'s own action.' });
   if (!got || here.left()) return;
   const link = got.kind === 'place' ? got.place : got.kind === 'url' ? normalizeLink(got.url) ?? '' : '';
-  doc.edit('Action settings', () => { for (const s of shapes) doc.updateShape(s.id, { link: link || undefined }); });
+  doc.edit('Action Settings', () => { for (const s of shapes) doc.updateShape(s.id, { link: link || undefined }); });
   editor.changed();
 }
 
@@ -2263,7 +2285,7 @@ async function insertEquation(): Promise<void> {
   const { w, h } = shapeMathSize(math, measureText);
   const c = pasteCentre();
   let made: Shape | null = null;
-  doc.edit('Insert equation', () => {
+  doc.edit('Insert Equation', () => {
     made = doc.addShape({ kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, math });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set([made!.id]) };
@@ -2284,10 +2306,17 @@ async function editEquationShape(id: number): Promise<void> {
   const math = { ...now.math, tex: got.tex };
   const { w, h } = shapeMathSize(math, measureText);
   const x = Math.min(now.x1, now.x2), y = Math.min(now.y1, now.y2);
-  doc.edit('Change equation', () => doc.updateShape(id, { math, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, x1: x, y1: y, x2: x + w * k, y2: y + h * k }));
+  doc.edit('Change Equation', () => doc.updateShape(id, { math, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, x1: x, y1: y, x2: x + w * k, y2: y + h * k }));
   editor.changed();
 }
 editor.onEquation = (id) => void editEquationShape(id);
+
+/** Select a pasted reaction: its structures with their bonds, its + signs and its arrows. */
+function selectPastedReaction(atoms: number[], captions: number[], arrows: number[]): void {
+  editor.sel = { atoms: new Set(atoms.filter((id) => doc.atoms.has(id))), bonds: new Set(), captions: new Set(captions.filter((id) => doc.captions.has(id))), arrows: new Set(arrows.filter((id) => doc.arrows.has(id))), shapes: new Set() };
+  for (const id of editor.sel.atoms) for (const b of doc.adj.get(id) ?? []) editor.sel.bonds.add(b);
+  editor.changed();
+}
 
 /** Select just these (new) atoms and their bonds. */
 function selectNewAtoms(ids: number[]): void {
@@ -2446,12 +2475,29 @@ function conformerTools(molblock: string): ConformerTools {
   };
 }
 
+/** What a structure is, not how it is drawn: its atoms (element, label, charge, isotope) and how they are bonded, without wedges or places. */
+function compoundKey(ids: Iterable<number>): string {
+  const set = [...ids].filter((id) => doc.atoms.has(id)).sort((p, q) => p - q);
+  const inSet = new Set(set);
+  const atoms = set.map((id) => { const a = doc.atoms.get(id)!; return `${id}:${a.z}:${a.label ?? ''}:${a.charge}:${a.isotope}`; });
+  const bonds: string[] = [];
+  for (const id of set) for (const bid of doc.adj.get(id) ?? []) {
+    const b = doc.bonds.get(bid);
+    if (b && b.a1 === id && inSet.has(b.a2)) bonds.push(`${b.a1}-${b.a2}:${b.order}`);
+  }
+  return atoms.join(',') + '|' + bonds.sort().join(',');
+}
+
 async function show3dModel(): Promise<void> {
   const root = editor.sel.atoms.size ? [...editor.sel.atoms][0] : editor.lastEdited;
   if (root === null || !doc.atoms.has(root)) { flash(WHY.model3d); return; }
   const ids = [...doc.fragmentOf(root)];
   const ex = toMolfile(doc, ids, '');
   if (ex.generic.length) { flash('A structure with R groups or labels that can\'t be read has no 3-D shape. Replace them with atoms first.'); return; }
+  // the window stays open while other drawings show: Place on Page works only on the drawing and
+  // the structure the model was built from (review F306)
+  const here = sameDrawing('The 3-D view', 'placed', true);
+  const key = compoundKey(ids);
   if (!viewer3d) viewer3d = new (await import('./ui/viewer3d')).Viewer3d((m) => flash(m));
   viewer3d.showBusy('3-D Model');
   try {
@@ -2459,16 +2505,22 @@ async function show3dModel(): Promise<void> {
     const m = await model3d.build(ex.molblock, 12, 1);
     const before = await chem.molToSmiles(ex.molblock);
     viewer3d.show(m, '3-D Model', async (v) => {
-      if (!ids.every((id) => doc.atoms.has(id))) { flash('The structure has changed since the model was built. Open 3-D Model again.'); return; }
+      if (here.left()) return;
+      if (!ids.every((id) => doc.atoms.has(id)) || compoundKey(doc.fragmentOf(root)) !== key) { flash('The structure has changed since the model was built. Open 3-D Model again.'); return; }
       let unshown = 0;
       doc.edit('3-D Rotation', () => ({ unshown } = placeView(doc, ex.map, v.view)));
       editor.changed();
+      // (the rotation's own undo step: changes that join it later, a linked projection worked out again, don't count)
+      const placed = doc.topStep, history = deckNow()?.historyLength;
       // the drawing must still mean the same compound: a view where a wedge can't read right is taken back
       // (an engine that stopped leaves the placed view as it is: nothing to compare it with)
       const after = await chem.molToSmiles(toMolfile(doc, doc.fragmentOf(root), '').molblock).catch(() => null);
       if (unshown || (before && after && after !== before)) {
-        editor.undo();
-        flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Rotate the model slightly and place it again.', 7000);
+        // only while the rotation is still the last change: never an edit made during the check (review F307)
+        if (!here.left() && doc.topStep === placed && deckNow()?.historyLength === history) {
+          editor.undo();
+          flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Rotate the model slightly and place it again.', 7000);
+        } else flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Undo the 3-D Rotation, rotate the model slightly and place it again.', 7000);
       }
     }, ex.map.map((id) => { const a = id >= 0 ? doc.atoms.get(id) : undefined; return a ? { x: a.x, y: a.y } : null; }));
   } catch (e) {
@@ -2800,15 +2852,20 @@ function placeWithPointer(preview: { doc: Doc; box: { x1: number; y1: number; x2
       const r = over.getBoundingClientRect();
       resolve(renderer.toDoc(e.clientX - r.left, e.clientY - r.top));
     };
-    const move = (e: PointerEvent) => at(e.clientX, e.clientY);
+    // another tab, slide or mode came up while it was placed (Ctrl+Tab, a shortcut): the picture
+    // goes, and the next click works as usual (review F308)
+    const tab = ws.active, key0 = doc.contentsKey;
+    const gone = () => ws.active !== tab || doc.contentsKey !== key0;
+    const move = (e: PointerEvent) => { if (gone()) done(null); else at(e.clientX, e.clientY); };
     const down = (e: PointerEvent) => {
+      if (gone()) { done(null); return; }
       if (drag) return;
       // a click anywhere else (a menu, a ribbon button) leaves the picture unplaced
       e.preventDefault();
       e.stopPropagation();
       done(e.button === 0 && inside(e) ? e : null);
     };
-    const up = (e: PointerEvent) => { if (drag) { e.stopPropagation(); done(inside(e) ? e : null); } };
+    const up = (e: PointerEvent) => { if (gone()) { done(null); return; } if (drag) { e.stopPropagation(); done(inside(e) ? e : null); } };
     const key = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(null); } };
     window.addEventListener('pointermove', move, true);
     window.addEventListener('pointerdown', down, true);
@@ -2833,13 +2890,33 @@ async function newmanLookOnly(id: number, d: NewmanData): Promise<void> {
 
 /** Linked projections whose structure changed are worked out again, as the most stable conformer of the new structure (or as drawn). */
 const newmanRedo = new Map<number, ReturnType<typeof setTimeout>>();
+/** Projections whose drawing went out of sight before they were worked out: done when it shows again (review F309). */
+const newmanLater = new WeakMap<object, Set<number>>();
+function newmanWhenShown(key: object, id: number): void {
+  const ids = newmanLater.get(key) ?? new Set<number>();
+  ids.add(id);
+  newmanLater.set(key, ids);
+}
+/** Called each frame: the projections left waiting for the drawing showing now. */
+function redoWaitingNewman(): void {
+  const ids = newmanLater.get(doc.contentsKey);
+  if (!ids) return;
+  newmanLater.delete(doc.contentsKey);
+  for (const id of ids) void redoNewman(id);
+}
 editor.onNewmanStale = (frames) => {
+  const key = doc.contentsKey;
   for (const id of frames) {
     clearTimeout(newmanRedo.get(id));
-    newmanRedo.set(id, setTimeout(() => { newmanRedo.delete(id); void redoNewman(id); }, 500));
+    newmanRedo.set(id, setTimeout(() => {
+      newmanRedo.delete(id);
+      if (doc.contentsKey !== key) newmanWhenShown(key, id);
+      else void redoNewman(id);
+    }, 500));
   }
 };
 async function redoNewman(id: number): Promise<void> {
+  const key = doc.contentsKey;
   const d = doc.shapes.get(id)?.newman;
   if (!d?.link || structureKey(doc, doc.fragmentOf(d.link.front)) === d.link.key) return;
   const { front, back } = d.link;
@@ -2848,6 +2925,7 @@ async function redoNewman(id: number): Promise<void> {
     const method = d.method === 'GFN2-xTB' && conformerTools(w.ex.molblock).xtb ? 'xtb' : 'mmff';
     const conf = d.source === 'drawn' ? await w.drawn(false) : (await w.list(false, method, () => {}))[0];
     if (!conf || typeof conf === 'string') throw new Error(typeof conf === 'string' ? conf : 'No conformer was found.');
+    if (doc.contentsKey !== key) { newmanWhenShown(key, id); return; }
     const shape = doc.shapes.get(id);
     if (!shape?.newman?.link || !doc.atoms.has(front) || !doc.atoms.has(back)) return;
     const choice: NewmanChoice = { reversed: false, kind: d.kind, source: d.source === 'drawn' ? 'drawn' : 'stable', index: 0, turn: d.turn, method, mark: !!d.mark, linked: true, ...lookChoice(d.look) };
@@ -2963,23 +3041,34 @@ const nameTools: NameTools = {
 };
 /** Each structure's systematic name this session, by SMILES, for the Analysis panel. */
 const nameStates = new Map<string, NameState>();
+/** The names being worked out now, by SMILES. */
+const namesRunning = new Map<string, Promise<NameState>>();
 
 /** The checked systematic name of a structure (by its SMILES and molfile), kept for the Analysis panel. */
-async function nameOf(smiles: string, molblock: string): Promise<NameState> {
+function nameOf(smiles: string, molblock: string): Promise<NameState> {
   const known = nameStates.get(smiles);
-  if (known && known.kind !== 'idle' && known.kind !== 'busy') return known;
+  if (known && known.kind !== 'idle' && known.kind !== 'busy') return Promise.resolve(known);
+  // already being named: the same run answers both (review F310)
+  const running = namesRunning.get(smiles);
+  if (running) return running;
   nameStates.set(smiles, { kind: 'busy', loading: !namer.ready });
-  let state: NameState;
-  try {
-    const r = await confirmedName(molblock, nameTools);
-    state = r.ok ? { kind: 'found', name: r.name } : { kind: 'none', message: r.message };
-  } catch (e) {
-    // the namer couldn't start: let the button try again
-    nameStates.delete(smiles);
-    throw e;
-  }
-  nameStates.set(smiles, state);
-  return state;
+  const p = (async (): Promise<NameState> => {
+    let state: NameState;
+    try {
+      const r = await confirmedName(molblock, nameTools);
+      state = r.ok ? { kind: 'found', name: r.name } : { kind: 'none', message: r.message };
+    } catch (e) {
+      // the namer couldn't start: let the button try again
+      nameStates.delete(smiles);
+      throw e;
+    }
+    nameStates.set(smiles, state);
+    return state;
+  })();
+  namesRunning.set(smiles, p);
+  const end = () => { if (namesRunning.get(smiles) === p) namesRunning.delete(smiles); };
+  void p.then(end, end);
+  return p;
 }
 
 /** The Analysis panel's IUPAC name button (and names once the namer is running). */
@@ -3025,7 +3114,7 @@ async function structureToName(): Promise<void> {
   const none = states.find((s): s is Extract<NameState, { kind: 'none' }> => s.kind === 'none');
   if (!found.length) { flash(none?.message ?? 'No name found.', 6000); return; }
   const m = editor.measure();
-  doc.edit(found.length > 1 ? 'Name captions' : 'Name caption', () => {
+  doc.edit(found.length > 1 ? 'Name Captions' : 'Name Caption', () => {
     for (const t of found) {
       const c = doc.addCaption(lookCaption(doc, 'caption', t.frag, nameRuns(t.name), {}, true));
       placeAttached(doc, c, m);
@@ -3140,8 +3229,10 @@ let toolboxesBuilt = false;
 const wantOneColumn = () => oneColumnTools && ws.active.mode !== 'drawing';
 
 function toggleStructureLock(): void {
-  structuresLocked = !structuresLocked;
   const slides = !!ws.active.deck && ws.active.mode !== 'design';
+  // only slides lock their structures: elsewhere it is not turned on, and says why (review F311)
+  if (!slides && !structuresLocked) { flash('Lock Structures works on slides, where clicks can pass through structures to the text and pictures near them.'); return; }
+  structuresLocked = !structuresLocked;
   editor.structuresLocked = slides && structuresLocked;
   $('#rb-lock-structures').setAttribute('aria-pressed', String(structuresLocked));
   if (structuresLocked) {
@@ -3240,7 +3331,7 @@ function whyDrawingCannotRun(cmd: string, lazy = false): string | null | undefin
     case 'delete-all-comments': return ws.active.mode === 'slides' ? slideCmts?.whyNoComments() ?? null : undefined;
     case 'animate-step': return pickedReactionArrow() === undefined ? 'Select a reaction arrow first, or use Animate Reaction for the whole scheme.' : null;
     case 'action-settings': {
-      const ok = !!deckNow() && [...editor.sel.shapes].some((id) => { const s = doc.shapes.get(id); return !!s && s.kind === 'geo' && !s.diagram && !s.energy; });
+      const ok = !!deckNow() && [...editor.sel.shapes].some((id) => { const s = doc.shapes.get(id); return !!s && s.kind === 'geo' && !isDataFrame(s); }); // as actionSettings picks them (review F312)
       return ok ? null : 'Select an action button or a shape on a slide first (Insert ▸ Shapes ▸ Action buttons).';
     }
     default: return whyNot(cmd, picked);
@@ -3410,6 +3501,7 @@ const assistantBar = madeLater(async (): Promise<AssistantBar> => new (await imp
   apply: applyAssistantAction,
   markStep: markAssistantStep,
   undo: () => { command('undo'); },
+  position: () => ws.active.mode === 'document' ? [docMode?.undoMark()] : [doc.topStep, deckNow()?.historyLength],
   openSettings: aiSettings,
   area: () => document.getElementById('work')?.getBoundingClientRect() ?? null,
   tab: () => ws.active,
@@ -3499,7 +3591,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
   // (with the atoms' labels, so HO at the end of one structure doesn't run into the next)
   const boxOf = (ids: number[]) => atomsBox(doc, ids, editor.measure());
   try {
-    doc.edit('Paste reaction', () => {
+    doc.edit('Paste Reaction', () => {
       let x = 0;
       const place = (mb: string, at: number, y = 0) => {
         const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
@@ -3546,7 +3638,9 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
       editor.cleanUpReaction();
       editor.placeClear(placingPage());
     });
-    selectNewAtoms(made);
+    // the whole reaction stays selected, its arrow and + signs too, so keeping it on the page and
+    // dragging it move all of it (review F020)
+    selectPastedReaction(made, caps, arrows);
     await keepPasteInside();
   } catch (err) {
     flash(String(err));
@@ -3628,7 +3722,10 @@ async function engineLayouts(): Promise<Map<number, Vec>[]> {
 
 /** Structure > Clean Up Structure. Pressed again on the same structures, it steps through other ways of laying them out. */
 async function cleanUpStructures(): Promise<void> {
+  // (the engine's layouts are for the drawing showing when it was asked: review F319)
+  const here = sameDrawing('The clean-up', 'done');
   const seeds = await engineLayouts();
+  if (here.left()) return;
   const r = editor.cleanUp(seeds);
   if (!r) flash('Nothing to clean up: the structures are already tidy.');
   else if (r.k > 0) flash(`${r.label} (${r.k + 1} of ${r.of}). Clean Up again for the next, or Clean Up Options… to see them all.`, 4000);
@@ -3648,7 +3745,10 @@ async function smartClean(): Promise<void> {
   const arrows = [...s.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r);
   if (arrows.length && !s.atoms.size && !s.captions.size && !s.shapes.size && arrows.every((r) => isCurved(r) && !r.step)) { COMMANDS['clean-up-arrow'](); return; }
   if (!editor.schemeInContext()) { await cleanUpStructures(); return; }
-  const r = editor.smartCleanScheme(await engineLayouts());
+  const here = sameDrawing('The clean-up', 'done');
+  const seeds = await engineLayouts();
+  if (here.left()) return;
+  const r = editor.smartCleanScheme(seeds);
   if (!r) flash('Nothing to clean up: the structures and the scheme are already tidy.');
   else if (r === 'tidied') flash('Scheme tidied. Smart Clean again to fit each arrow to its own text.', 4000);
   else if (r === 'fitted') flash('Each arrow fitted to its own text. Smart Clean again to make them all the same length.', 4000);
@@ -3663,7 +3763,9 @@ function setKindOfArrows(kind: ArrowKind): void {
 /** Structure > Clean Up Options…: every way Clean Up can lay out the picked structures, to choose from. */
 async function cleanUpChoices(): Promise<void> {
   finishTyping();
+  const here = sameDrawing('The clean-up', 'done');
   const seeds = await engineLayouts();
+  if (here.left()) return;
   const { frags, options } = editor.cleanUpChoices(seeds);
   if (!options.length) { flash('Draw or select a structure first.'); return; }
   const count = Math.max(...options.map((o) => o.length));
@@ -3773,7 +3875,9 @@ async function numberCompounds(): Promise<void> {
   Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, same: got.same === 'true', align: got.align === 'true' });
   let keyOf: ((atoms: number[]) => string | undefined) | undefined;
   if (numbering.same) {
+    const here = sameDrawing('Numbering the compounds', 'done');
     const keys = await structureKeys();
+    if (here.left()) return; // (review F313)
     keyOf = (atoms) => keys.get(atoms[0]);
   }
   const n = editor.numberCompounds({ start: Math.max(0, start), style, prefix: got.prefix, suffix: got.suffix, bold: got.bold === 'true', align: numbering.align, keep: got.old === 'keep', reagents: got.reagents === 'number', keyOf });
@@ -3812,7 +3916,7 @@ async function addTiedText(role: 'label' | 'caption'): Promise<void> {
     return t;
   };
   const made: number[] = [];
-  doc.edit(role === 'label' ? 'Add ID label' : 'Add caption', () => {
+  doc.edit(role === 'label' ? 'Add ID Label' : 'Add Caption', () => {
     for (const f of frags) {
       const k = keys.get([...f][0]);
       const text = role === 'caption' ? '' : (k && known.get(k)) || freshId();
@@ -3886,7 +3990,7 @@ function captionTyped(id: number): void {
   if (chemText.ionCharges && sp.expected !== undefined && !sp.written) {
     const sign = chargeSign(sp.expected);
     const last = c.runs[c.runs.length - 1];
-    doc.edit('Add charge', () => doc.updateCaption(id, { runs: [...c.runs, { ...last, text: sign, sub: undefined, sup: true, formula: undefined }] }));
+    doc.edit('Add Charge', () => doc.updateCaption(id, { runs: [...c.runs, { ...last, text: sign, sub: undefined, sup: true, formula: undefined }] }));
     editor.changed();
     sp = captionSpecies(doc, doc.captions.get(id)!, m);
     if (!sp) return;
@@ -3924,7 +4028,7 @@ function groupCounterion(id: number, charge: number): void {
   const other = best.caption !== undefined ? doc.captions.get(best.caption)?.grp : doc.atoms.get(best.atoms[0])?.grp;
   if (other !== undefined && other === c.grp) return;
   const sel = { atoms: new Set(best.atoms), bonds: new Set<number>(), captions: new Set([id, ...(best.caption !== undefined ? [best.caption] : [])]), arrows: new Set<number>(), shapes: new Set<number>() };
-  doc.edit('Group salt', () => groupSelection(doc, sel));
+  doc.edit('Group Salt', () => groupSelection(doc, sel));
   editor.changed();
   flash('Grouped the counterion with its partner as one salt. Undo (Ctrl+Z) to keep them apart, or turn this off in Settings ▸ Preferences.', 6000);
 }
@@ -3935,7 +4039,7 @@ function setCaptionChem(how: 'auto' | 'on' | 'off'): boolean {
   const caps = [...editor.sel.captions].map((id) => doc.captions.get(id)).filter((c): c is Caption => !!c);
   if (!caps.length) { flash('Select a text box first.'); return false; }
   const chem = how === 'auto' ? undefined : how === 'on';
-  doc.edit(how === 'off' ? 'Read as plain text' : how === 'on' ? 'Read as chemistry' : 'Read text automatically', () => { for (const c of caps) doc.updateCaption(c.id, { chem }); });
+  doc.edit(how === 'off' ? 'Read as Plain Text' : how === 'on' ? 'Read as Chemistry' : 'Read Text Automatically', () => { for (const c of caps) doc.updateCaption(c.id, { chem }); });
   editor.changed();
   if (how === 'on') {
     const bad = caps.filter((c) => !captionSpecies(doc, doc.captions.get(c.id)!, editor.measure()));
@@ -4067,7 +4171,10 @@ async function deleteNickname(): Promise<void> {
  * labels that brings in (PPh2, P(t-Bu)2, CHPh2) until none are left, as one step to undo.
  */
 async function expandLabel(full = false): Promise<void> {
+  // the labels are expanded in the drawing they were picked in, never one shown while the engine works (review F313)
+  const here = sameDrawing('Expanding the labels', 'done');
   if (full) await loadFullLigands();
+  if (here.left()) return;
   let list = editor.expandableLabels();
   let made: number[] = [];
   if (!list.length && selectedSpecies().length) {
@@ -4087,6 +4194,7 @@ async function expandLabel(full = false): Promise<void> {
     for (const x of list) {
       if (x.template) continue;
       const mb = x.smiles ? await chem.smilesToMol((doc.degree(x.id) === 1 ? '*' : '') + x.smiles) : null;
+      if (here.left()) return;
       if (mb) mbs.set(x.id, mb);
       else failed.push(doc.atoms.get(x.id)?.label ?? '');
     }
@@ -4126,7 +4234,7 @@ async function expandText(caps: Caption[], full = false): Promise<number[]> {
   }
   const made: number[] = [];
   if (drawn.length) {
-    doc.edit('Expand text', () => {
+    doc.edit('Expand Text', () => {
       for (const d of drawn) {
         const grp = doc.captions.get(d.id)?.grp;
         doc.removeCaption(d.id);
@@ -4170,8 +4278,10 @@ async function builtInNamesFor(smiles: string): Promise<string[]> {
 async function contractLabel(): Promise<void> {
   const g = selectedGroup(doc, editor.sel.atoms);
   if ('error' in g) { flash(g.error, 6000); return; }
+  const here = sameDrawing('Contracting the label', 'done');
   // when the selection is a group the program already has a name for (Ph, TBS, Boc), offer that name
   const same = await builtInNamesFor(g.smiles);
+  if (here.left()) return; // (review F319)
   const got = await ask('Contract Label', [{ name: 'name', label: 'Label', value: same[0] ?? '' }],
     { ok: 'Contract', note: `The selected group becomes one label with this name.${same.length > 1 ? ` It is also known as ${same.slice(1).join(', ')}.` : ''} The formula and mass still count the whole group, and ChemDraw sees the group inside the label.` });
   if (!got) return;
@@ -4228,17 +4338,25 @@ async function mapAtomsCommand(): Promise<void> {
   ], { ok: 'Map', note: 'Atoms are paired the way Animate Reaction pairs them. To change a pair, pair it by hand in Animate Reaction and map again. Map numbers go into copied reaction SMILES and RXN files.' });
   if (!got || here.left()) return;
   Object.assign(mapChoice, { numbers: got.numbers, colours: got.colours, bonds: got.bonds });
+  // a new box look is set with the map, in the same undo step, and only when something is mapped (review F314)
+  let look: { look: MapLook; box?: MapBoxStyle } | null = null;
   if (MAP_LOOKS.some((l) => l.value === got.look) && got.look !== docMapLook(doc.style).look) {
-    setMapLook(got.look as MapLook);
-    // your own format: set it now (it starts as light peach with a dark outline)
-    if (got.look === 'custom') await mapFormatCommand(false);
+    look = { look: got.look as MapLook };
+    // your own format: chosen now (it starts as light peach with a dark outline)
+    if (got.look === 'custom') {
+      const { askMapFormat } = await import('./ui/map-format');
+      look.box = (await askMapFormat(docMapLook(doc.style).custom)) ?? undefined;
+    }
   }
   const { mapAtoms, applyAtomMap } = await import('./morph/atom-map');
   if (here.left()) return;
   const res = mapAtoms(doc, renderer, { arrow: got.which === 'step' ? arrow : undefined, measure: editor.measure() });
   if (!res.steps) { flash('No reaction step to map: draw the starting materials, a reaction arrow and the products.', 6000); return; }
   let kept = { keptNumbers: 0, keptColours: 0 };
-  doc.edit('Map Atoms', () => { kept = applyAtomMap(doc, res, { numbers: got.numbers === 'true', colours: got.colours === 'true', bonds: got.bonds === 'true' }); });
+  doc.edit('Map Atoms', () => {
+    if (look) putMapLook(look.look, look.box);
+    kept = applyAtomMap(doc, res, { numbers: got.numbers === 'true', colours: got.colours === 'true', bonds: got.bonds === 'true' });
+  });
   editor.changed();
   const top = Math.max(0, ...res.numbers.values());
   const notes = [
@@ -4257,11 +4375,15 @@ async function mapAtomsCommand(): Promise<void> {
  * step; the last one chosen is also the default for drawings with none of their own.
  */
 function setMapLook(look: MapLook, box?: MapBoxStyle): void {
+  doc.edit('Map Number Format', () => putMapLook(look, box));
+  editor.changed();
+}
+/** The map-number look put in the drawing's style (inside an edit) and kept as the default. */
+function putMapLook(look: MapLook, box?: MapBoxStyle): void {
   const own = { ...docMapLook(doc.style).custom, ...box };
-  doc.edit('Map Number Format', () => doc.setStyle({ ...doc.style, mapLook: look, mapBox: own }));
+  doc.setStyle({ ...doc.style, mapLook: look, mapBox: own });
   mapLookPrefs.look = look;
   mapLookPrefs.custom = { ...own };
-  editor.changed();
   storeSettings();
 }
 
@@ -4289,12 +4411,13 @@ async function clearAtomMapCommand(): Promise<void> {
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
   editor.changed();
 }
-const nameDialog = new NameDialog(async (name) => {
+const nameDialog = new NameDialog(async (name, closed) => {
   // a SMILES string (or molfile) is drawn as it is; anything else is read as a name
   const here = sameDrawing('The structure');
   const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)).catch(() => null) : null;
   const got = mb ? { mb, attach: [], warnings: [] } : await nameToMolfile(name);
-  if (here.left()) return null;
+  // (and not when the window was cancelled while the name was being read)
+  if (here.left() || closed()) return null;
   if ('error' in got) return got;
   const c = pasteCentre();
   try {
@@ -4353,9 +4476,12 @@ async function nameToStructure(): Promise<void> {
     try {
       doc.edit('Name to Structure', () => {
         for (const f of found) {
-          const box = renderer.captionBox(f.cap);
+          // a text box deleted during the lookup gets no structure; one moved puts it where it is now (review F315)
+          const cap = doc.captions.get(f.cap.id);
+          if (!cap) continue;
+          const box = renderer.captionBox(cap);
           ids = ids.concat(addNamed(f, (box.x1 + box.x2) / 2, (box.y1 + box.y2) / 2));
-          doc.removeCaption(f.cap.id);
+          doc.removeCaption(cap.id);
         }
       });
     } catch (err) {
@@ -4436,7 +4562,9 @@ function copyText(text: string, done: string): Promise<void> {
 
 /** Copy the selected structures (or all of them) as molfile text. */
 function copyMolfile(): Promise<void> {
-  const atoms = loneAtomStructure() ?? (editor.sel.atoms.size ? editor.sel.atoms : doc.atoms.keys());
+  const atoms = [...(loneAtomStructure() ?? (editor.sel.atoms.size ? editor.sel.atoms : doc.atoms.keys()))];
+  // no structure: nothing copied, and it says why rather than copying an empty molfile (review F316)
+  if (!atoms.length) { flash(WHY.copy); return Promise.resolve(); }
   const { molblock } = toMolfile(doc, atoms);
   return copyText(molblock, 'Copied as molfile text.');
 }
@@ -4481,8 +4609,7 @@ async function scaleDialog(): Promise<void> {
     note: L ? `The selected bonds are ${shown} pt long; the drawing's standard is ${doc.style.bondLength.toFixed(1)} pt. Change either box.` : undefined,
   });
   if (!r) return;
-  let f = parseFloat(r.pct) / 100;
-  if (L && r.len !== undefined && r.len.trim() !== shown) f = parseFloat(r.len) / L;
+  const f = scaleFactor(r.pct, r.len, shown, L);
   if (!Number.isFinite(f) || f <= 0) { flash('Type a size above zero.'); return; }
   editor.scaleSelection(f);
 }
@@ -4532,13 +4659,14 @@ function align(how: Align): void {
  * in the wrong drawing, and the user is told once. `what` names the result ("The structure"), and
  * `done` what would have happened to it ("added", "applied").
  */
-function sameDrawing(what = 'The result', done = 'added'): { left: () => boolean } {
+function sameDrawing(what = 'The result', done = 'added', everyTime = false): { left: () => boolean } {
   const key = doc.contentsKey;
   let told = false;
   return {
     left: () => {
       if (doc.contentsKey === key) return false;
-      if (!told) { told = true; flash(`${what} was not ${done}: another drawing is showing now. Go back to it and try again.`, 6000); }
+      // (said once for a command; `everyTime` for a window whose button can be pressed again and again)
+      if (!told || everyTime) { told = true; flash(`${what} was not ${done}: another drawing is showing now. Go back to it and try again.`, 6000); }
       return true;
     },
   };
@@ -4652,9 +4780,11 @@ const docFiles: DocxDeps = {
     const pic = fb ? { items: drawn?.items ?? [], box: drawn ? { x1: Math.min(fb.x1, drawn.box.x1), y1: Math.min(fb.y1, drawn.box.y1), x2: Math.max(fb.x2, drawn.box.x2), y2: Math.max(fb.y2, drawn.box.y2) } : fb } : drawn;
     if (!pic) return null;
     const png = new Uint8Array(await (await canvasPng(pictureCanvas(d, pic).canvas)).arrayBuffer());
-    return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
+    return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: await pictureEmfWithPictures(pic) } : {}) };
   },
   svgToPng,
+  // (WebP for Word; GIF, BMP and WebP for RTF)
+  pictureToPng: bitmapToPng,
   bakePicture: (p) => fxPng(p, 'baked'),
   fonts: bundledFaces,
   smiles: (contents, style) => drawingSmiles(structureDoc(contents, style)),
@@ -4742,7 +4872,7 @@ const ws: Workspace = new Workspace(doc, {
   },
   documents: {
     read: async (bytes, name) => (await import('./io/doc-files')).readDocumentFile(bytes, name, docRead),
-    write: async (d, name) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles),
+    write: async (d, name, notes) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles, notes),
   },
   newStyle: (mode) => { const n = mode === 'si' ? null : modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
   newPage: () => (defaultPage ? { ...defaultPage } : null),
@@ -4751,6 +4881,7 @@ const ws: Workspace = new Workspace(doc, {
   beforeSaveAs: (tab, name) => offerChemdrawToPictures(tab, name),
   saved: (tab, data, how, was) => { keeper.saved(tab, data, how, was); if (how !== 'autosaved') void noteFileCompounds(tab).catch(() => {}); },
   autoSaveFailed: (tab, msg) => keeper.autoSaveFailed(tab, msg),
+  written: (tab) => keeper.written(tab),
   canvasEdited: async (name, n) => {
     const got = await ask('Canvas Slides Changed in PowerPoint', [{
       name: 'keep', label: 'Keep', value: 'canvas',
@@ -4758,6 +4889,7 @@ const ws: Workspace = new Workspace(doc, {
     }], { ok: 'Open', note: `${n === 1 ? 'A canvas slide' : `${n} canvas slides`} in ${name} ${n === 1 ? 'was' : 'were'} saved as one slide per keyframe, and ${n === 1 ? 'its slides were' : 'their slides were'} changed in PowerPoint since. Keep Canvas discards PowerPoint's changes to those slides; Keep PowerPoint turns them into normal slides.` });
     return got?.keep === 'slides' ? 'slides' : 'canvas';
   },
+  chemdrawObjects: (program) => (program === 'Word' ? officeStructures.docx : officeStructures.pptx) === 'chemdraw',
   opened: (tab) => { keeper.opened(tab); void noteFileCompounds(tab).catch(() => {}); },
   styleSheet: (tab, style) => void offerStyleSheet(tab, style),
   dropped: (tab) => {
@@ -4780,6 +4912,8 @@ const keeper = new Keeper({
   setPrefs: (p) => { keepPrefs = p; tickAutoSave(); renderTabs(); storeSettings(); },
   flash,
   refresh: () => { renderTabs(); updateTitle(); tickAutoSave(); },
+  // (copies an update's restart kept because the recovery copies couldn't be made then: not needed now)
+  allKept: () => { void import('./keep/restart').then(({ settleRestart }) => settleRestart(keepStore())).catch(() => {}); },
 });
 // The web version: a notice when a newer version is published, and a reload that keeps unsaved work
 /** The page is reloading for a new version with every unsaved tab copied: no "Leave site?" question. */
@@ -4815,7 +4949,7 @@ function pptxOptions(): PptxOptions {
       if (!pic) return null;
       const png = new Uint8Array(await (await canvasPng(pictureCanvas(d, pic, PPTX_FALLBACK_DPI).canvas)).arrayBuffer());
       // (a ChemDraw object keeps an EMF of it, as ChemDraw does, to show until it is opened)
-      return { svg: pictureSvg(pic), png, box: pic.box, ...(officeStructures.pptx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
+      return { svg: pictureSvg(pic), png, box: pic.box, ...(officeStructures.pptx === 'chemdraw' ? { emf: await pictureEmfWithPictures(pic) } : {}) };
     },
     svgToPng,
     bakePicture: (p) => fxPng(p, 'baked'),
@@ -4991,7 +5125,8 @@ const slidePage = {
     }
     if (ws.active.mode === 'design' && designGrid.on) drawGrid(ctx, d.size, designGrid.step);
     if (ws.active.mode === 'slides') {
-      const v = d.settings.view;
+      // (a guide being dragged is drawn where it is dragged to: review F021)
+      const v = guideDrag?.view ?? d.settings.view;
       if (slideLook.grid) drawGrid(ctx, d.size, v?.grid ?? defaultView(d.size).grid);
       if (v?.showGuides) drawGuides(ctx, v, d.size, renderer.view.scale, guideDrag?.which);
     }
@@ -5043,23 +5178,24 @@ const keyframeCommands = {
     const k = canvasNow();
     if (!k) return;
     const got = addKeyframe(k.c, k.d.size, k.i);
-    setKeyframes(k.d, got.canvas, got.index, 'Add keyframe');
+    setKeyframes(k.d, got.canvas, got.index, 'Add Keyframe');
   },
   /** A keyframe showing what is in the window now (as near as the zoom limits allow). */
   keyframeHere(): void {
     const k = canvasNow();
     if (!k) return;
     const got = insertKeyframe(k.c, keyframeAround(renderer.visibleRect(0), k.d.size, 0, 1), k.i);
-    setKeyframes(k.d, got.canvas, got.index, 'Keyframe from window');
+    setKeyframes(k.d, got.canvas, got.index, 'Keyframe from Window');
   },
   fitToSelection(): void {
     const k = canvasNow();
     if (!k) return;
     const box = editor.hasSelection() ? editor.selBox() : null;
     if (!box) { flash('Select what the keyframe should show, then Fit Keyframe to Selection.'); return; }
-    const key = { ...keyframeAround(box, k.d.size), id: k.c.keys[k.i].id };
+    // (only the framing changes: the keyframe keeps its title, zone, spotlight and detour, review F022)
+    const key = { ...k.c.keys[k.i], ...keyframeAround(box, k.d.size), id: k.c.keys[k.i].id };
     if (key.zoom <= 1 / ZOOM_IN_MAX + 1e-9 && Math.max((box.x2 - box.x1) / k.d.size.w, (box.y2 - box.y1) / k.d.size.h) < 1 / ZOOM_IN_MAX) flash(`Keyframes zoom in at most ${ZOOM_IN_MAX}×, so this one shows a little more than the selection.`);
-    setKeyframes(k.d, { keys: k.c.keys.map((x, j) => (j === k.i ? key : x)) }, k.i, 'Fit keyframe to selection');
+    setKeyframes(k.d, { keys: k.c.keys.map((x, j) => (j === k.i ? key : x)) }, k.i, 'Fit Keyframe to Selection');
   },
   remove(i?: number): void {
     const k = canvasNow();
@@ -5191,7 +5327,7 @@ const keyframeCommands = {
     const r = renderer.visibleRect(0);
     const size = Math.round(m.titleSize * 2.4);
     let id = 0;
-    doc.edit('Canvas heading', () => {
+    doc.edit('Canvas Heading', () => {
       id = doc.addCaption({
         x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2, justify: 'center',
         runs: [{ text: 'Heading', font: m.titleFont, size, bold: true, color: mix(m.titleColor, m.background, 0.6) }],
@@ -5460,6 +5596,7 @@ layers = new LayersPanel($('#layers-section'), {
   edit: (label, f) => { finishTyping(); doc.edit(label, f); editor.changed(); },
   pick: (w) => { finishTyping(); editor.selectThese({ atoms: new Set(w.atoms), bonds: new Set(), captions: new Set(w.captions), arrows: new Set(w.arrows), shapes: new Set(w.shapes) }); },
   picked: () => ({ shapes: [...editor.sel.shapes], captions: [...editor.sel.captions], atoms: [...editor.sel.atoms], arrows: [...editor.sel.arrows] }),
+  dragging: () => editor.dragging,
 });
 layers.onClose = () => { selectionPane = false; showLayers(); };
 const lib = (designLib = new DesignLibrary($('#design-lib'), (id) => { finishTyping(); editor.setTool(`geo:${id}`); }));
@@ -5528,7 +5665,7 @@ const rulers = new SlideRulers(host, {
     // a new guide, shown, dragged from the ruler
     const next = { ...view, showGuides: true, guides: { x: [...view.guides.x], y: [...view.guides.y] } };
     next.guides[axis].push(axis === 'x' ? -1e6 : -1e6);
-    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add guide', view);
+    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add Guide', view);
   },
 });
 
@@ -5566,7 +5703,7 @@ function startGuideDrag(d: Deck, view: SlideView, which: { axis: 'x' | 'y'; i: n
     const off = v < 0 || v > (which.axis === 'x' ? d.size.w : d.size.h);
     if (off) view.guides[which.axis].splice(which.i, 1);
     d.settings.view = before;
-    d.setSettings({ ...d.settings, view }, off ? 'Remove guide' : label);
+    d.setSettings({ ...d.settings, view }, off ? 'Remove Guide' : label);
     renderer.repaintAll();
     editor.requestScene();
   };
@@ -5623,7 +5760,7 @@ function toggleGuides(): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
   const v = slideViewOf(d);
-  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide guides' : 'Show guides');
+  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide Guides' : 'Show Guides');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5638,7 +5775,7 @@ async function gridSettings(): Promise<void> {
   slideLook.grid = got.grid;
   guidesOn.slides = got.smart;
   Object.assign(rulerPrefs, got.prefs);
-  d.setSettings({ ...d.settings, view: got.view }, 'Grid and guides');
+  d.setSettings({ ...d.settings, view: got.view }, 'Grid and Guides');
   showGuides();
   showRulers();
   storeSettings();
@@ -5655,7 +5792,7 @@ function addGuide(axis: 'x' | 'y'): void {
   // not a second guide where one is already (the deck's first ones are down the middle, hidden): it shows
   const mid = (axis === 'x' ? d.size.w : d.size.h) / 2;
   if (!next.guides[axis].some((g) => Math.abs(g - mid) < 0.01)) next.guides[axis].push(mid);
-  d.setSettings({ ...d.settings, view: next }, 'Add guide');
+  d.setSettings({ ...d.settings, view: next }, 'Add Guide');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5684,7 +5821,7 @@ async function newDesign(): Promise<void> {
   finishTyping();
   const t = await pickTemplate();
   if (t === 'blank') {
-    const size = await pickDesignSize('New Design: page size');
+    const size = await pickDesignSize('New Design: Page Size');
     if (size) ws.newDesign(size);
   } else if (t && 'blank' in t) {
     ws.newDesign(t.blank);
@@ -5698,7 +5835,7 @@ async function designSize(): Promise<void> {
   const d = deckNow();
   if (!d || ws.active.mode !== 'design') { flash('Page Size is for designs: use File ▸ New ▸ Blank design.'); return; }
   finishTyping();
-  const size = await pickDesignSize('Page size', d.size);
+  const size = await pickDesignSize('Page Size', d.size);
   if (size && deckNow() === d) {
     d.setSize(size);
     editor.fit();
@@ -5959,7 +6096,7 @@ function pasteSlides(keep?: boolean): void {
   if (keep !== undefined || sameLook) { flash(`Pasted ${what}.`); return; }
   const edits = d.edits;
   flash(`Pasted ${what} in this deck's style.`, 8000, {
-    label: 'Keep source formatting',
+    label: 'Keep Source Formatting',
     run: () => {
       // put them in again their own way, in place of the ones just pasted (if nothing has changed since)
       if (deckNow() !== d || d.edits !== edits) { flash('Use Edit ▸ Slides ▸ Paste Slides (Keep Source Formatting) to paste them with their own formatting.'); return; }
@@ -6122,14 +6259,19 @@ function flushNotes(): void {
   if (i >= 0) f.deck.setNotes(notesBox.value, i, notesLookOf(notesBox.value, notesBox.charLooks));
 }
 
+/** A structure turned (and maybe turned over) by Orient Like First. */
+type OrientMove = { atoms: Set<number>; f: (p: Vec) => Vec; mirror: boolean };
+
 /**
  * Chemistry > Orient Like First: each selected structure (or, with `scheme`, each structure in
  * the drawing) is turned, and turned over if need be, so the part it shares with the first
  * structure (top left, as a scheme is read) lies the same way round. Configuration is kept.
- * Returns how many structures were turned, or null when there was nothing to compare.
+ * Returns the turns to make (for the caller to make, in its own undo step), null when there was
+ * nothing to compare, 'failed' when the structures could not be compared (it says so) or 'left'
+ * when another drawing came up while they were compared.
  */
-async function orientLikeFirst(scheme = false): Promise<number | null> {
-  if (!chem.ready) { flash('The chemistry engine is still loading; try again in a moment.'); return null; }
+async function orientLikeFirst(scheme = false): Promise<OrientMove[] | null | 'failed' | 'left'> {
+  if (!chem.ready) { flash('The chemistry engine is still loading; try again in a moment.'); return 'failed'; }
   const picked = editor.sel.atoms;
   const frags = doc.fragments().filter((f) => [...f].some((id) => !doc.atoms.get(id)?.multi) && (scheme || !picked.size ? true : [...f].some((id) => picked.has(id))));
   if (!scheme && !picked.size) return null;
@@ -6146,9 +6288,13 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
   const others = frags.filter((f) => f !== ref);
   const refEx = toMolfile(doc, ref);
   const exs = others.map((f) => toMolfile(doc, f));
+  // (the atoms compared are this drawing's: review F319)
+  const here = sameDrawing('Orienting the structures', 'done');
   const pairs = await chem.common(refEx.molblock, exs.map((e) => e.molblock)).catch(() => null);
-  if (!pairs) { flash('Could not compare the structures.'); return 0; }
-  const moves: { atoms: Set<number>; f: (p: Vec) => Vec; mirror: boolean }[] = [];
+  if (here.left()) return 'left';
+  // (said once: not followed by "nothing to rotate", review F320)
+  if (!pairs) { flash('Could not compare the structures.'); return 'failed'; }
+  const moves: OrientMove[] = [];
   others.forEach((f, i) => {
     const pr = pairs[i];
     if (!pr) return;
@@ -6165,8 +6311,7 @@ async function orientLikeFirst(scheme = false): Promise<number | null> {
     for (const id of f) { const a = doc.atoms.get(id)!; cx += a.x; cy += a.y; }
     moves.push({ atoms: f, f: fitMove(fit, { x: cx / f.size, y: cy / f.size }), mirror: fit.mirror });
   });
-  if (moves.length) editor.reorient(moves);
-  return moves.length;
+  return moves;
 }
 
 /**
@@ -6212,7 +6357,16 @@ async function matchFocalPoints(): Promise<void> {
 /** After a flip: nothing selected, or a plain flip that made the mirror image of a structure with wedges. */
 function flipped(r: boolean | 'stereo'): void {
   if (!r) flash(WHY.flip);
-  else if (r === 'stereo') flash('Flipped: the stereocenters are now inverted (the enantiomer). To keep the configuration, undo and use Flip, Preserve Stereochemistry.', 7000, { label: 'Undo', run: () => undo() });
+  else if (r === 'stereo') {
+    // the button undoes the flip only while it is still the last change (review F322)
+    // (the flip's own undo step still the newest; changes joining it later don't count)
+    const key = doc.contentsKey, step = doc.topStep, history = deckNow()?.historyLength;
+    const still = () => doc.contentsKey === key && doc.topStep === step && deckNow()?.historyLength === history;
+    flash('Flipped: the stereocenters are now inverted (the enantiomer). To keep the configuration, undo and use Flip, Preserve Stereochemistry.', 7000, {
+      label: 'Undo',
+      run: () => { if (still()) undo(); else flash('Not undone: something else has changed since the flip. Use Undo until the flip is taken back.', 6000); },
+    });
+  }
 }
 
 /** Undo and Redo: in Slides mode the deck's history covers every slide and the slide list; a sheet has its own. */
@@ -7513,7 +7667,7 @@ async function referencesSlideOptions(): Promise<void> {
 async function insertReference(): Promise<void> {
   if (docActive() || sheetActive()) { void openReferences(); return; }
   finishTyping();
-  const groups = (): RefGroup[] => refHolders().map((h) => ({ name: h.name, refs: h.refs(), style: h.citeStyle() }));
+  const groups = (): RefGroup[] => refHolders().map((h) => ({ key: h.key, name: h.name, refs: h.refs(), style: h.citeStyle() }));
   const here = sameDrawing('The reference');
   const got = await chooseRefsToInsert(groups(), async () => {
     const asked = await ask('Reference by DOI', [{ name: 'doi', label: 'DOI', value: '' }], { ok: 'Look Up', note: 'Paste a DOI (10.1021/om100106e) or a doi.org link. The details are filled in from Crossref, which needs the internet.' });
@@ -7797,11 +7951,17 @@ async function svgToPng(svg: string, w: number, h: number): Promise<Uint8Array> 
   return new Uint8Array(await (await canvasPng(c)).arrayBuffer());
 }
 
-// a picture that has just loaded is drawn, on the slide and in the slide list
+// a picture that has just loaded is drawn, on the slide and in the slide list: a burst of
+// pictures loading (a deck opening) is one redraw, not one for each (review F023)
+let imagesReadyTimer = 0;
 onImageReady(() => {
-  renderer.repaintAll();
-  editor.requestScene();
-  slideList.refreshAll();
+  if (imagesReadyTimer) return;
+  imagesReadyTimer = window.setTimeout(() => {
+    imagesReadyTimer = 0;
+    renderer.repaintAll();
+    editor.requestScene();
+    slideList.refreshAll();
+  }, 60);
 });
 
 // ---------------------------------------------------------------- slide master and the slide show
@@ -7829,14 +7989,18 @@ async function drawingStyleDialog(): Promise<void> {
     current, own: ownStyles, kindPlural: STYLE_KINDS[mode].plural, where: STYLE_KINDS[mode].where,
     isDefault: modeStyleFor(mode) === current.name, hasStructures,
     preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+    // a style saved in the window is kept even when the window is cancelled
+    saveOwn: (own) => { ownStyles = own; storeSettings(); },
   });
   if (!got || ws.active !== tab) return;
   ownStyles = got.own;
   // Set as Default: new files start in it too
   if (settingsWindow.mode === 'default') got.forNew = true;
   if (got.forNew) modeStyles[mode] = got.style.name;
-  else if (modeStyleFor(mode) === current.name || modeStyleFor(mode) === got.style.name) {
-    // no longer the default for new tabs: back to the standard one (or, where that is this style, plain ACS)
+  else if (modeStyleFor(mode) === current.name) {
+    // the box was ticked and is now not: no longer the default for new tabs, back to the standard
+    // one (or, where that is this style, plain ACS). A box never ticked changes no default, even
+    // when the style picked is the default already (review F024).
     delete modeStyles[mode];
     if (modeStyleFor(mode) === got.style.name) modeStyles[mode] = 'ACS Document 1996';
   }
@@ -7875,7 +8039,7 @@ async function offerStyleSheet(tab: Tab, style: DocStyle): Promise<void> {
     return;
   }
   const base = tab.name.replace(/\.cds$/i, '');
-  const got = await ask('Use this style sheet?', [
+  const got = await ask('Use This Style Sheet?', [
     { name: 'name', label: 'Name', value: base },
     { name: 'forNew', label: 'Start new canvases in it', value: 'false', type: 'checkbox' },
   ], {
@@ -8288,7 +8452,8 @@ function present(fromHere: boolean, notes = false, how: { custom?: number; windo
 /** The slides Clear works on: the ones picked in the slide list (the one showing), or all. */
 function clearTargets(d: Deck, which: 'slide' | 'all'): number[] {
   if (which === 'all') return d.slides.map((_s, i) => i);
-  const picked = [...slideList.picked].filter((i) => i >= 0 && i < d.slides.length).sort((a, b) => a - b);
+  // (the slides picked where they show: in Slide Sorter, its own picks, review F324)
+  const picked = [...new Set(pickedSlides())].filter((i) => i >= 0 && i < d.slides.length).sort((a, b) => a - b);
   return picked.length ? picked : [d.index];
 }
 
@@ -8297,7 +8462,7 @@ function clearShowTimings(which: 'slide' | 'all'): void {
   const d = deckNow();
   if (!d) return;
   const ix = clearTargets(d, which);
-  if (!d.clearTimings(ix, which === 'all' ? 'Clear timings on all slides' : 'Clear timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
+  if (!d.clearTimings(ix, which === 'all' ? 'Clear Timings on All Slides' : 'Clear Timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
   flash(which === 'all' ? 'Timings cleared: all slides advance on click.' : 'Timing cleared: the slide advances on click.');
 }
 
@@ -8307,7 +8472,7 @@ function clearNarration(which: 'slide' | 'all'): void {
   if (!d) return;
   const ix = clearTargets(d, which).filter((i) => d.narrated(i));
   if (!ix.length) { flash(which === 'all' ? 'No slide has narration to clear.' : 'This slide has no narration to clear.'); return; }
-  d.editSlides(which === 'all' ? 'Clear narration on all slides' : 'Clear narration', ix, (sd) => {
+  d.editSlides(which === 'all' ? 'Clear Narration on All Slides' : 'Clear Narration', ix, (sd) => {
     for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
   });
   flash(`Narration cleared from ${ix.length} slide${ix.length > 1 ? 's' : ''}. Their times stay (Clear ▸ Timings takes those off).`);
@@ -8338,6 +8503,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
     const d = deckNow();
     if (!d) return;
     return (async () => {
+      let history = d.historyLength;
       if (r.recordings.size) {
         const sounds = new Map<number, { src: string; seconds: number }>();
         for (const [i, blob] of r.recordings) {
@@ -8346,10 +8512,13 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
             if (w.seconds > 0.2) sounds.set(i, { src: dataUrl(w.bytes, 'audio/wav'), seconds: w.seconds });
           } catch { /* a recording this computer can't read is left out */ }
         }
+        // the presentation was closed while the recordings were read: nothing to keep them in (review F325)
+        if (!ws.tabs.some((t) => t.deck === d)) { flash('The narration and timings were not kept: the presentation was closed before they were ready.', 8000); return; }
+        history = d.historyLength;
         const ix = [...sounds.keys()].filter((i) => i >= 0 && i < d.slides.length);
         if (ix.length) {
           const poster = speakerPng(), s = 24;
-          d.editSlides('Record narration', ix, (sd, i) => {
+          d.editSlides('Record Narration', ix, (sd, i) => {
             // a new recording takes the place of the slide's old one
             for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
             const n = sounds.get(i)!;
@@ -8360,7 +8529,9 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
           });
         } else flash('Nothing was recorded (the microphone gave no sound).');
       }
-      d.setTimings(r.times, r.recordings.size ? 'Record slide show timings' : 'Rehearse timings');
+      d.setTimings(r.times, r.recordings.size ? 'Record Slide Show Timings' : 'Rehearse Timings');
+      // narration and timings: one step to undo (review F326)
+      if (r.recordings.size) d.joinSince(history, 'Record Slide Show Timings');
       // the whole show, with the times of slides not played this time (rehearsing from one slide)
       const whole = d.slides.reduce((n, s) => n + (s.hidden ? 0 : s.transition?.advanceAfter ?? 0), 0);
       flash(`Kept: the show takes ${clockText(Math.max(whole, r.total))}${r.recordings.size ? ', with narration on the slides' : ''}. Set Up Show ▸ Advance slides can turn the times off.`, 8000);
@@ -8396,7 +8567,7 @@ async function headerFooter(tab: 'slide' | 'notes' = 'slide'): Promise<void> {
   const ix = pickedSlides();
   const got = await editHeaderFooter(d.master, d.current, ix.length, tab);
   if (!got || deckNow() !== d) return;
-  d.setHeaderFooter(got.master, got.show, got.scope === 'picked' ? ix : undefined);
+  applyHeaderFooter(d, got, ix);
 }
 
 /** Slide Show > Set Up Show. */
@@ -8405,7 +8576,7 @@ async function setUpShowCmd(): Promise<void> {
   if (!d || ws.active.mode !== 'slides') return;
   finishTyping();
   const got = await setUpShow(d.settings.show, d.settings.customShows ?? [], d.slides.length);
-  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set up show');
+  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set Up Show');
   showSlideState();
 }
 
@@ -8423,7 +8594,7 @@ async function customShowsCmd(): Promise<void> {
   if (!got || deckNow() !== d) return;
   const show = d.settings.show && d.settings.show.custom !== undefined && !got.shows.some((c) => c.id === d.settings.show!.custom) ? { ...d.settings.show, custom: undefined } : d.settings.show;
   if (show && show.custom === undefined) delete show.custom;
-  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom shows');
+  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom Shows');
   if (got.play !== undefined) present(false, false, { custom: got.play });
 }
 
@@ -8463,12 +8634,19 @@ async function batchConvert(): Promise<void> {
   const folder = toFolder ? await pickFolder() : null;
   if (toFolder && !folder) return;
   const ZIP_TYPE: FileType = { description: 'Converted files (zip)', extension: 'zip', mime: 'application/zip' };
-  const zipTarget = toFolder ? null : await saveFileDialog(files.length === 1 ? withExtension(files[0].name, 'zip') : 'converted.zip', format === 'smi' ? { description: 'SMILES list', extension: 'smi', mime: 'text/plain' } : ZIP_TYPE).catch(async (e) => { await showError(String(e)); return null; });
+  // (a SMILES list is offered as a .smi file, not a .zip: review F025)
+  const saveAs = format === 'smi' ? 'smi' : 'zip';
+  const zipTarget = toFolder ? null : await saveFileDialog(files.length === 1 ? withExtension(files[0].name, saveAs) : `converted.${saveAs}`, format === 'smi' ? { description: 'SMILES list', extension: 'smi', mime: 'text/plain' } : ZIP_TYPE).catch(async (e) => { await showError(String(e)); return null; });
   if (!toFolder && !zipTarget) return;
   const used = new Set<string>();
-  const out: Record<string, Uint8Array> = {};
+  // into a folder: never over a file already there (the files converted among them), review F026
+  const sep = folder?.includes('\\') ? '\\' : '/';
+  const inFolder = (name: string) => folder!.replace(/[\\/]$/, '') + sep + name;
+  // (a folder that can't be checked stops the save, with why, rather than risk writing over a file)
+  const taken = (name: string) => pathExists(inFolder(name));
+  const out: { stem: string; bytes: Uint8Array }[] = [];
   const lines: string[] = [];
-  let failed = 0, empty = 0, done = 0;
+  let failed = 0, empty = 0, done = 0, smiName = 'converted.smi';
   const enc = new TextEncoder();
   flash('Converting…');
   for (const f of files) {
@@ -8484,24 +8662,27 @@ async function batchConvert(): Promise<void> {
       let data: Uint8Array | string | null;
       try { data = await writeBatchItem(it, format, Math.max(30, Math.min(2400, Number(v.dpi) || 300))); } catch { failed++; continue; }
       if (data === null) { empty++; continue; }
-      out[uniqueName(it.name, format, used)] = typeof data === 'string' ? enc.encode(data) : data;
+      out.push({ stem: it.name, bytes: typeof data === 'string' ? enc.encode(data) : data });
       done++;
     }
   }
   try {
     if (format === 'smi') {
       const text = lines.join('\n') + '\n';
-      if (folder) await writeFile({ kind: 'path', path: `${folder}/converted.smi` }, 'converted.smi', text, { description: 'SMILES list', extension: 'smi', mime: 'text/plain' });
+      if (folder) { smiName = await freeBatchName('converted', 'smi', used, taken); await writeFile({ kind: 'path', path: inFolder(smiName) }, smiName, text, { description: 'SMILES list', extension: 'smi', mime: 'text/plain' }); }
       else await writeFile(zipTarget!.ref, zipTarget!.name, text, { description: 'SMILES list', extension: 'smi', mime: 'text/plain' });
     } else if (folder) {
-      const sep = folder.includes('\\') ? '\\' : '/';
-      for (const [name, bytes] of Object.entries(out)) await writeFile({ kind: 'path', path: folder.replace(/[\\/]$/, '') + sep + name }, name, bytes, ZIP_TYPE);
-    } else await writeFile(zipTarget!.ref, zipTarget!.name, zipSync(out), ZIP_TYPE);
+      for (const o of out) { const name = await freeBatchName(o.stem, format, used, taken); await writeFile({ kind: 'path', path: inFolder(name) }, name, o.bytes, ZIP_TYPE); }
+    } else {
+      const zip: Record<string, Uint8Array> = {};
+      for (const o of out) zip[uniqueName(o.stem, format, used)] = o.bytes;
+      await writeFile(zipTarget!.ref, zipTarget!.name, zipSync(zip), ZIP_TYPE);
+    }
   } catch (e) {
     await showError(`Could not save the converted files: ${e instanceof Error ? e.message : String(e)}`);
     return;
   }
-  const where = format === 'smi' ? (folder ? 'converted.smi' : zipTarget!.name) : folder ? baseName(folder) : zipTarget!.name;
+  const where = format === 'smi' ? (folder ? smiName : zipTarget!.name) : folder ? baseName(folder) : zipTarget!.name;
   const notes = [failed ? `${failed} could not be read` : '', empty ? `${empty} had no structure${format === 'smi' ? ' SMILES can show' : ''}` : ''].filter(Boolean).join('; ');
   flash(`Converted ${done} structure${done === 1 ? '' : 's'} into ${where}${notes ? ` (${notes})` : ''}.`, notes ? 8000 : 4000);
 }
@@ -8627,7 +8808,10 @@ async function printNow(): Promise<void> {
   }
   if (deck) {
     // (a canvas slide as its first keyframe; full-page slides print each keyframe)
-    const slide = (i: number, k = 0) => { const p = slidePages(deck, i)[k]; return itemsToSvg(recordSlide(p.page, p.doc), { x1: 0, y1: 0, x2: deck.size.w, y2: deck.size.h }); };
+    // (each slide split once, however many keyframes it prints: review F327)
+    const split = new Map<number, ReturnType<typeof slidePages>>();
+    const pagesOf = (i: number) => { let p = split.get(i); if (!p) { p = slidePages(deck, i); split.set(i, p); } return p; };
+    const slide = (i: number, k = 0) => { const p = pagesOf(i)[k]; return itemsToSvg(recordSlide(p.page, p.doc), { x1: 0, y1: 0, x2: deck.size.w, y2: deck.size.h }); };
     if (tab.mode === 'design') { printPages({ pages: [slide(deck.index)], w: deck.size.w, h: deck.size.h }); return; }
     const m = deck.master;
     const v = await ask('Print', [
@@ -8642,7 +8826,7 @@ async function printNow(): Promise<void> {
     ], { ok: 'Print…', note: 'Full-page slides print at the slide\'s shape and notes pages at 7.5 × 10 in, scaled to the paper in the next window. Handouts and notes use the header and footer from Insert ▸ Header & Footer ▸ Notes and Handouts.' });
     if (!v) return;
     Object.assign(printChoices, v);
-    if (v.handout === '1') { printPages({ pages: deck.slides.flatMap((_, i) => slidePages(deck, i).map((_p, k) => slide(i, k))), w: deck.size.w, h: deck.size.h }); return; }
+    if (v.handout === '1') { printPages({ pages: deck.slides.flatMap((_, i) => pagesOf(i).map((_p, k) => slide(i, k))), w: deck.size.w, h: deck.size.h }); return; }
     if (v.handout === 'notes') {
       const size = notesPageSize(m.notesPage);
       const pages = deck.slides.map((s, i) => notesPageSvg(m, deck.size, slide(i), s.notes, i + 1, (t, k) => measureText(t, k, m.notesPage?.font || m.bodyFont || 'Arial'), placeSvg));
@@ -8733,7 +8917,10 @@ async function exportPicture(preset: { format?: string; dpi?: number; note?: str
   if (deck) {
     const i = deck.index;
     // a canvas slide: the keyframe picked, as a slide of its own
-    const at = slidePages(deck, i)[deck.current?.canvas ? canvasKeys.picked(deck) : 0];
+    // (a keyframe picked that is gone: the last one there is, review F328)
+    const split = slidePages(deck, i);
+    const at = split[Math.min(deck.current?.canvas ? canvasKeys.picked(deck) : 0, split.length - 1)];
+    if (!at) { flash('There is nothing to export yet.'); return; }
     const page = clear ? { ...at.page, own: solid(CLEAR) } : at.page;
     ({ w, h } = deck.size);
     items = () => ({ items: recordSlide(page, at.doc).filter((it) => !(it.kind === 'path' && it.fill === CLEAR)), box: { x1: 0, y1: 0, x2: w, y2: h } });
@@ -8769,7 +8956,14 @@ async function exportPicture(preset: { format?: string; dpi?: number; note?: str
   let note = '';
   try {
     if (type === SVG) await writeFile(target.ref, target.name, svg(), SVG);
-    else if (type === EMF) { const p = items(); await writeFile(target.ref, target.name, itemsToEmf(p.items, p.box), EMF); }
+    else if (type === EMF) {
+      const p = items();
+      // (a picture the browser can't read, a WMF or a TIFF one, can't go in: said so)
+      let missed = 0;
+      const emf = await itemsToEmfWithPictures(p.items, p.box, async (src) => { const px = await imagePixels(src).catch(() => null); if (!px) missed++; return px; });
+      await writeFile(target.ref, target.name, emf, EMF);
+      if (missed) note = ` without ${missed === 1 ? 'one picture' : `${missed} pictures`} that could not be read`;
+    }
     else if (type === EPS) { const p = items(); await writeFile(target.ref, target.name, await itemsToEps(p.items, p.box, pdfImage, tab.name.replace(/\.[^.]+$/, '')), EPS); }
     else {
       const k = bitmapScale(w, h, dpi, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS);
@@ -8799,31 +8993,15 @@ async function pdfImage(src: string): Promise<PdfImage | null> {
     const info = jpegInfo(bytes);
     if (info) return { kind: 'jpeg', bytes, ...info };
   }
-  if (mime === 'image/x-wmf' || mime === 'image/tiff') return null;
-  let img: HTMLImageElement;
-  try {
-    img = await loadImage(src);
-  } catch {
-    return null;
-  }
-  let w = img.naturalWidth || 300, h = img.naturalHeight || 150;
-  // a drawing in SVG (or a Windows metafile, shown as SVG) has no pixels of its own: make plenty so it prints sharply
-  if (mime === 'image/svg+xml' || mime === 'image/x-emf') { const k = 3000 / Math.max(w, h); w *= k; h *= k; }
-  const k = Math.min(1, Math.sqrt(16e6 / (w * h)));
-  w = Math.max(1, Math.round(w * k));
-  h = Math.max(1, Math.round(h * k));
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d')!;
-  g.drawImage(img, 0, 0, w, h);
-  const px = g.getImageData(0, 0, w, h).data;
+  const px = await imagePixels(src);
+  if (!px) return null;
+  const { w, h, rgba } = px;
   const rgb = new Uint8Array(w * h * 3), alpha = new Uint8Array(w * h);
   let clear = false;
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    rgb[i * 3] = px[j]; rgb[i * 3 + 1] = px[j + 1]; rgb[i * 3 + 2] = px[j + 2];
-    alpha[i] = px[j + 3];
-    if (px[j + 3] < 255) clear = true;
+    rgb[i * 3] = rgba[j]; rgb[i * 3 + 1] = rgba[j + 1]; rgb[i * 3 + 2] = rgba[j + 2];
+    alpha[i] = rgba[j + 3];
+    if (rgba[j + 3] < 255) clear = true;
   }
   return { kind: 'raw', w, h, rgb, alpha: clear ? alpha : null };
 }
@@ -8966,6 +9144,11 @@ async function writeCells(own: string, text: string, html: string): Promise<void
   }
 }
 
+/** CDXML text on the clipboard as a drawing, or null when it can't be read (then it is pasted as text: review F329). */
+function cdxmlOnClipboard(text: string): Doc | null {
+  try { return readCdxml(text).doc; } catch { return null; }
+}
+
 /** What's on the clipboard for a paste into a sheet. Drawings (from here or ChemDraw) stay structures. */
 async function readCells(e: ClipboardEvent | null): Promise<ClipboardCells> {
   const dec = (b: Uint8Array) => new TextDecoder().decode(b).replace(/\0+$/, '');
@@ -8978,12 +9161,12 @@ async function readCells(e: ClipboardEvent | null): Promise<ClipboardCells> {
     // (our drawing whole first, then, when that can't be read, as CDXML, then ChemDraw's; G1-11, F1b-R06)
     const got = await nativeClipboardDrawing();
     if (got) return { drawing: drawingOf(got), text };
-    if (text && looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
+    if (text && looksLikeCdxml(text)) { const d = cdxmlOnClipboard(text); if (d) return { drawing: drawingOf(d) }; }
     if (text) return { text };
     return { picture: !!(await nativeFirst(['PNG', 'CF_ENHMETAFILE', 'CF_DIB'])) };
   }
   const text = e ? e.clipboardData?.getData('text/plain') ?? '' : await navigator.clipboard.readText().catch(() => '');
-  if (looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
+  if (looksLikeCdxml(text)) { const d = cdxmlOnClipboard(text); if (d) return { drawing: drawingOf(d) }; }
   if (text) return { text };
   if (!e) return {};
   // a drawing copied here goes on the clipboard as a picture; the drawing itself is kept for pasting back
@@ -9483,6 +9666,7 @@ function loadSiMode(): Promise<SiMode> {
         const got = await editDrawingStyle({
           current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
           preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+          saveOwn: (own) => { ownStyles = own; storeSettings(); },
         });
         if (!got) return null;
         if (got.own !== ownStyles) { ownStyles = got.own; storeSettings(); }
@@ -9616,7 +9800,10 @@ async function addStructureToSi(tab: Tab, sectionId: string, replace?: string, n
     if (await mode.replaceFromCanvas(tab, replace, got[0].molfile)) flash(`Put on ${number} in “${title}”.`, 6000, open(replace));
   } else {
     const made: { id: string; label: string }[] = [];
-    for (const g of got) { const r = await mode.addFromCanvas(tab, sectionId, g.molfile); if (r) made.push(r); }
+    const addAll = async () => { for (const g of got) { const r = await mode.addFromCanvas(tab, sectionId, g.molfile); if (r) made.push(r); } };
+    // every structure added is one step to undo (the steps for each join it: review F330)
+    const j = got.length > 1 && tab.si ? journalOf(tab.si.folder) : null;
+    await (j ? j.step('Add from Canvas', addAll) : addAll());
     const short = title.length > 40 ? title.slice(0, 38).trimEnd() + '…' : title;
     const ids = made.map((m) => m.label).filter((x) => x !== 'ID?');
     if (made.length) flash(ids.length === made.length ? `Added to “${short}” as ${ids.join(', ')}.` : `Added to “${short}”: ${made.length === 1 ? 'the new compound needs' : 'the new compounds need'} a row in the section’s ID table for an ID.`, 7000, open(made[0].id));
@@ -10181,12 +10368,19 @@ const siCompiled = new Map<string, { version: string; view: Promise<SiView | nul
 /** SI projects linked documents read that aren't open in a tab (read-only), by folder. */
 const siLinked = new Map<string, SiProjectT>();
 let siChangeTimer = 0;
+/** The projects changed since the documents last followed (null: every project), so none is missed (review F331). */
+const siChangedPaths = new Set<string | null>();
 
 /** An SI project changed: linked documents follow it (soon, so typing in the SI isn't slowed). */
 function siChanged(path: string | null): void {
   siBump(path);
+  siChangedPaths.add(path);
   clearTimeout(siChangeTimer);
-  siChangeTimer = window.setTimeout(() => { if (docModeLoading && docMode) docMode.siChanged(path); }, 1200);
+  siChangeTimer = window.setTimeout(() => {
+    const paths = siChangedPaths.has(null) ? [null] : [...siChangedPaths];
+    siChangedPaths.clear();
+    if (docModeLoading && docMode) for (const p of paths) docMode.siChanged(p);
+  }, 1200);
 }
 
 /** Linked projects being read now (by path), so the pictures and the compile asking at once read it once. */
@@ -10484,7 +10678,7 @@ async function readDocPaste(e: ClipboardEvent | null): Promise<DocPaste> {
     if (got) return { drawing: drawingOf(got) };
     const t = await nativeFirst(['CF_UNICODETEXT']);
     const text = t ? dec(t[1]) : '';
-    if (looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
+    if (looksLikeCdxml(text)) { const d = cdxmlOnClipboard(text); if (d) return { drawing: drawingOf(d) }; }
     const h = await nativeFirst(['HTML Format']);
     const html = h ? fromCfHtml(h[1]) : undefined;
     if (text || html) return { text, html };
@@ -10492,7 +10686,7 @@ async function readDocPaste(e: ClipboardEvent | null): Promise<DocPaste> {
     return p.kind === 'picture' ? { picture: { bytes: p.bytes, mime: p.mime } } : {};
   }
   const text = e ? e.clipboardData?.getData('text/plain') ?? '' : await navigator.clipboard.readText().catch(() => '');
-  if (looksLikeCdxml(text)) return { drawing: drawingOf(readCdxml(text).doc) };
+  if (looksLikeCdxml(text)) { const d = cdxmlOnClipboard(text); if (d) return { drawing: drawingOf(d) }; }
   if (text) return { text };
   const p = e ? await readPasteEvent(e) : await readWebClipboard();
   if (p.kind === 'drawing') return { drawing: drawingOf(p.doc) };
@@ -10952,7 +11146,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
-    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: GLOW_TRANSPARENCY };
     const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },
@@ -10998,7 +11192,10 @@ function shapeNoPictureFill(): void {
 function setPictureStyle(look: PictureLook | undefined): boolean {
   const pics = [...editor.sel.shapes].map((id) => doc.shapes.get(id)).filter((x): x is Shape => x?.kind === 'picture');
   if (!pics.length) { flash(WHY.picture); return false; }
+  finishTyping();
   doc.edit('Picture style', () => { for (const p of pics) doc.updateShape(p.id, { look: look && { ...look } }); });
+  // drawn again and marked unsaved, as every other change is (review F027)
+  editor.changed();
   return true;
 }
 
@@ -11261,14 +11458,14 @@ const COMMANDS: Record<string, () => unknown> = {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use timings' : 'Advance manually');
+    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use Timings' : 'Advance Manually');
     showSlideState();
   },
   'play-narrations': () => {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play narrations' : 'Show without narration');
+    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play Narrations' : 'Show without Narration');
     showSlideState();
   },
   'header-footer': () => void headerFooter(),
@@ -11572,13 +11769,21 @@ const COMMANDS: Record<string, () => unknown> = {
     flash(n ? `${n === 1 ? 'It stays' : `${n} things stay`} put when the structure moves now.` : 'Nothing selected is stuck to a structure.');
   },
   'orient-like': async () => {
-    const n = await orientLikeFirst();
-    if (n === null) flash(WHY.orient, 6000);
-    else if (n === 0) flash('Nothing to rotate: the structures already match the first one, or share too little with it.');
+    const m = await orientLikeFirst();
+    if (m === 'failed' || m === 'left') return;
+    if (m === null) flash(WHY.orient, 6000);
+    else if (!m.length) flash('Nothing to rotate: the structures already match the first one, or share too little with it.');
+    else editor.reorient(m);
   },
   'clean-up-reaction-orient': async () => {
-    await orientLikeFirst(true);
-    if (!editor.cleanUpReaction()) flash('Nothing to clean up: draw starting materials, an arrow and products, or the scheme is already tidy.', 6000);
+    const m = await orientLikeFirst(true);
+    if (m === 'left') return;
+    const moves = Array.isArray(m) ? m : [];
+    const turned = moves.length > 0;
+    // turned and tidied in one undo step (review F321)
+    const tidied = editor.cleanUpAndOrient(moves);
+    if (!tidied && !turned && m !== 'failed') flash('Nothing to clean up: draw starting materials, an arrow and products, or the scheme is already tidy.', 6000);
+    else if (tidied === 'fitted') flash('Each arrow fitted to its own text. Clean Up Reaction again to make them all the same length.', 4000);
   },
   'clean-up-reaction': () => {
     const r = editor.cleanUpReaction();
@@ -11700,7 +11905,8 @@ const COMMANDS: Record<string, () => unknown> = {
     const ids = [...editor.sel.arrows].filter((id) => { const r = doc.arrows.get(id); return !!r && canShowGuides(r); });
     if (!ids.length) { flash('Select a straight arrow first.'); return; }
     const on = !ids.every((id) => arrowGuidesOn(doc.arrows.get(id)!));
-    editor.setArrowGuides(ids, on === ids.every((id) => plainReactionArrow(doc.arrows.get(id)!)) ? null : on);
+    // (each arrow on its own: a plain reaction arrow among other arrows can be hidden too, review F332)
+    editor.setArrowGuides(ids, on, plainReactionArrow);
   },
   'split-steps': () => { if (!editor.splitSteps()) flash('No numbered steps to split. Write them as "1. n-BuLi; 2. PhCHO".'); },
   'show-roles': () => { showAllRoles(!editor.showAllRoles); storeSettings(); },
@@ -12833,9 +13039,9 @@ let linkLook: Settings['linkLook'] = 'style';
 async function toggleTerminalMethyls(): Promise<void> {
   const doc = editor.doc;
   if (!editor.sel.atoms.size && askWholeDrawing && doc.fragments().length > 1) {
-    const r = await ask('Every structure on the page?', [
-      { name: 'again', label: 'Don\u2019t ask again (Edit > Settings)', type: 'checkbox', value: 'false' },
-    ], { ok: 'Change every structure', note: 'Nothing is selected, so this shows or hides the terminal methyls on every structure on the page. To change only some, cancel and select them first.' });
+    const r = await ask('Change Every Structure on the Page?', [
+      { name: 'again', label: 'Don\u2019t ask again (Edit ▸ Settings ▸ General)', type: 'checkbox', value: 'false' },
+    ], { ok: 'Change Every Structure', note: 'Nothing is selected, so this shows or hides the terminal methyls on every structure on the page. To change only some, cancel and select them first.' });
     if (!r) return;
     if (r.again === 'true') { askWholeDrawing = false; storeSettings(); }
   }
@@ -12979,6 +13185,7 @@ const restartHooks: RestartHooks = {
   paused: (t) => keeper.isPaused(t),
   pause: (t) => keeper.pause(t),
   secure: () => keeper.copyNow(),
+  kept: (t) => keeper.recovery.copied(t.id, ws.token(t)),
 };
 
 /** The app is closing for an update, its tabs kept: the window closes without asking about unsaved changes. */
@@ -13063,7 +13270,7 @@ const feedback = new FeedbackDialog({
       const p = recordPicture(doc, 4);
       if (!p) return null;
       const side = Math.max(p.box.x2 - p.box.x1, p.box.y2 - p.box.y1);
-      const dpi = side > 0 ? Math.min(144, Math.max(48, (2000 / side) * 72)) : 96;
+      const dpi = pagePictureDpi(side); // (no floor that a big drawing would take past 2000 px: review F334)
       const c = pictureCanvas(doc, p, dpi).canvas;
       // on white, so it reads on GitHub's dark pages too
       const out = document.createElement('canvas');
@@ -13382,7 +13589,8 @@ async function generalPreferences(): Promise<void> {
   } });
   if (!r) return;
   editor.options.groupClick = r.groupClick === 'item' ? 'item' : 'group';
-  editor.options.groupOutline = r.groupOutline === 'true';
+  // (drawn again at once, as the other drawing options are: review F335)
+  if (editor.options.groupOutline !== (r.groupOutline === 'true')) { editor.options.groupOutline = r.groupOutline === 'true'; editor.requestOverlay(); }
   linkLook = r.linkLook === 'keep' ? 'keep' : 'style';
   askWholeDrawing = r.ask === 'true';
   docRead.convertChemDraw = r.convertChemDraw === 'true';
@@ -14210,8 +14418,8 @@ function revealStylePanel(focus = false): void {
 // Unsaved work: ask before the window closes.
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
-    // closing for an update: every tab was kept, and comes back at the next start
-    if (closingForUpdate) return;
+    // closing for an update: every tab was kept, and comes back at the next start (and settings changed just now are written)
+    if (closingForUpdate) { await flushSettings().catch(() => {}); return; }
     // (a slide show running, as on a Mac's ⌘Q: it ends first, so the question about unsaved work can be seen)
     if (shows) await Promise.all([shows.presenter.finish(), shows.presenterView.finish()]);
     finishTab();
@@ -14224,6 +14432,8 @@ if (isTauri()) {
     }
     // closing normally: the recovery copies and lock files aren't needed
     else {
+      // (a setting changed just now, such as the file just saved going on File ▸ Recent, is written before the window goes)
+      await flushSettings().catch(() => {});
       await keeper.end();
       await diagnostics.end();
       // (each SI project's Word snapshot, if it changed: waited for a while, then the window goes anyway)
@@ -14232,8 +14442,11 @@ if (isTauri()) {
     }
   }).catch(() => {});
 } else {
+  // a setting changed just before the page goes is written at once, not lost with the timer
+  window.addEventListener('pagehide', () => { void flushSettings(); });
   window.addEventListener('beforeunload', (e) => {
     finishTyping();
+    void flushSettings();
     // reloading for a new version: the unsaved tabs were just copied, and are offered when the page is back
     // (anything changed after the copy, and the question asks again)
     if (webReloading && keeper.workKept()) { void diagnostics.write(); return; }
@@ -14589,7 +14802,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     const st = r?.smiles ? casStateOf(r.smiles) : null;
     if (st?.kind !== 'found' || !frag) return;
     const m = editor.measure();
-    doc.edit('CAS caption', () => {
+    doc.edit('CAS Caption', () => {
       const c = doc.addCaption(lookCaption(doc, 'caption', frag, casRuns(st.cas[0]), {}, true));
       placeAttached(doc, c, m);
     });
@@ -14604,7 +14817,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     // tied to the structure like Add Caption's, so it follows it; edit or retype it like any text
     // (the structure stays selected, so the panel stays open for the other buttons)
     const m = editor.measure();
-    doc.edit(kind === 'pcname' ? 'Name caption' : kind === 'pccas' ? 'CAS caption' : 'Hazards caption', () => {
+    doc.edit(kind === 'pcname' ? 'Name Caption' : kind === 'pccas' ? 'CAS Caption' : 'Hazards Caption', () => {
       const c = doc.addCaption(lookCaption(doc, 'caption', frag, runs, {}, true));
       placeAttached(doc, c, m);
     });
@@ -14647,11 +14860,15 @@ function chosenStructures(): Set<number>[] {
 
 /** A structure's formula and masses from the chemistry engine (null when it can't be worked out). */
 async function weigh(atoms: Set<number>): Promise<FragmentResult | null> {
-  if (!chem.ready || !atoms.size) return null;
+  return (await weighed(atoms)).r;
+}
+/** As weigh, and whether the engine answered that it can't weigh it (not: not loaded yet, or it stopped). */
+async function weighed(atoms: Set<number>): Promise<{ r: FragmentResult | null; refused: boolean }> {
+  if (!chem.ready || !atoms.size) return { r: null, refused: false };
   const ex = toMolfile(doc, atoms);
   const res = await chem.analyze([{ molblock: ex.molblock, map: ex.map }]).catch(() => null);
   const r = res?.results[0];
-  return r && !r.error ? r : null;
+  return r && !r.error ? { r, refused: false } : { r: null, refused: !!r };
 }
 
 /** A structure's checked systematic name for its descriptors (the namer starts if need be), or null when it has none. */
@@ -14678,7 +14895,7 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
   const show = newDescriptors();
   const names = show.includes('name') ? await Promise.all(frags.map((f, i) => descriptorName(f, weighed[i]))) : [];
   if (here.left()) return;
-  doc.edit('Attach descriptors', () => {
+  doc.edit('Attach Descriptors', () => {
     frags.forEach((f, i) => {
       const r = weighed[i];
       if (!r) return;
@@ -14697,6 +14914,8 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
 }
 
 let descriptorBusy = false, descriptorAgain = false;
+/** By drawing, each descriptor text box's structure (its signature) the engine could not weigh: not sent again until it changes (review F336). */
+const descriptorFailed = new WeakMap<object, Map<number, string>>();
 /** Work out tied descriptors again for structures that changed (the new text joins the change that caused it). */
 async function refreshDescriptors(): Promise<void> {
   if (descriptorBusy) { descriptorAgain = true; return; }
@@ -14710,13 +14929,24 @@ async function refreshDescriptors(): Promise<void> {
         const atoms = attachedAtoms(doc, a);
         const sig = structureSig(doc, atoms);
         if (!atoms.size || sig === a.sig) continue;
+        const drawing = doc.contentsKey;
+        if (descriptorFailed.get(drawing)?.get(c.id) === sig) continue;
         const version = doc.version;
-        const r = await weigh(atoms);
+        const { r, refused } = await weighed(atoms);
         const name = (a.show ?? newDescriptors()).includes('name') ? await descriptorName(atoms, r) : null;
         // something else changed meanwhile: look again from the start
         if (doc.version !== version) { descriptorAgain = true; break; }
         const now = doc.captions.get(c.id);
-        if (!r || !now?.attach) continue;
+        if (!r) {
+          // (only an answer from the engine is remembered: one not loaded yet, or stopped, is asked again)
+          if (!refused) continue;
+          const tried = descriptorFailed.get(drawing) ?? new Map<number, string>();
+          tried.set(c.id, sig);
+          descriptorFailed.set(drawing, tried);
+          continue;
+        }
+        if (!now?.attach) continue;
+        descriptorFailed.get(drawing)?.delete(c.id);
         doc.amend('Descriptors', () => doc.updateCaption(c.id, { runs: descriptorRuns(r, now.attach!.show ?? newDescriptors(), now.attach!.adduct ?? adductSel.value, analysisPrefs(), benchOf(r), name), attach: { ...now.attach!, sig } }));
         editor.changed();
       }
@@ -14797,6 +15027,10 @@ async function runAnalysis(force: boolean): Promise<void> {
   analysisKey = key;
   const panel = $('#analysis-body');
   if (!frags.length) {
+    // (a run still waiting on the engine must not fill the panel in after this, and the Lab
+    // Calculator no longer takes the structure that was selected: review F028)
+    analysisSeq++;
+    lastAnalysis = null;
     panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF₄⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
     $('#si-section').hidden = true;
@@ -14857,6 +15091,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   } : null);
   panel.innerHTML = results.map((r, i) => polymers[i] ? polymerHtml(polymers[i]!) : analysisHtml(r, i, adductSel.value, { prefs, bench: benchOf(r), customize: analysisCustomize, ions: COMMON_ADDUCTS, stereo: r.error ? '' : stereoSummary(frags[i]), unknown: exports[i].unknownLabels, electrons: frags[i].size ? electronsHtml(countElectrons(doc, frags[i].values().next().value!)) : '', rGroups: rGroupNames(frags[i]), name: r.error || !r.smiles || rGroupNames(frags[i]).length ? '' : nameHtml(nameStates.get(r.smiles) ?? { kind: 'idle' }), pubchem: r.error || !r.smiles ? '' : pubchemHtml(pubchemStates.get(r.smiles) ?? { kind: 'idle' }, i), cas: r.error || !r.smiles ? undefined : casHtml(casStateOf(r.smiles), i) })).join('');
   if (analysisCustomize) panel.insertAdjacentHTML('afterbegin', CUSTOMIZE_BAR);
+  infoFromAttrs(panel);
   const nmrOn = prefs.rows.some((x) => x.key === 'nmr' && x.on);
   nmrPanel.attach(panel, results.map((r, i) => (!nmrOn || r.error || !r.smiles || polymers[i] || rGroupNames(frags[i]).length ? null : { molblock: exports[i].molblock, map: exports[i].map })));
   // the NMR section goes where its row is in the order
@@ -15064,6 +15299,21 @@ warnBox.addEventListener('change', () => {
 const warnTip = $<HTMLDivElement>('#warn-tip');
 let warnKey = '';
 
+/** Every problem in the drawing, as the Warnings panel lists them and Check Structure steps through them: atoms and bonds, then text boxes. */
+function drawingProblems(): { kind: 'atom' | 'bond' | 'caption'; id: number; text: string[] }[] {
+  const list: { kind: 'atom' | 'bond' | 'caption'; id: number; text: string[] }[] = checks.list();
+  for (const [id, text] of labelWarnings) if (doc.captions.has(id)) list.push({ kind: 'caption', id, text: [text] });
+  // text boxes read as chemistry: an ion without its charge, text set to Chemical that can't be read
+  for (const c of doc.captions.values()) {
+    if (c.ignoreWarnings) continue;
+    const w = captionChemWarning(doc, c, editor.measure());
+    if (w) list.push({ kind: 'caption', id: c.id, text: [w] });
+  }
+  return list;
+}
+/** How many problems were chosen to be ignored. */
+const ignoredProblems = (): number => checks.ignoredCount() + [...doc.captions.values()].filter((c) => c.ignoreWarnings).length;
+
 /** The Warnings panel and the tip shown when pointing at a problem. Runs after each paint. */
 function updateWarnings(): void {
   // tip for the atom or bond under the pointer
@@ -15098,15 +15348,8 @@ function updateWarnings(): void {
   const key = checks.version + ':' + doc.version + ':' + labelWarnVersion;
   if (key === warnKey) return;
   warnKey = key;
-  const list: { kind: 'atom' | 'bond' | 'caption'; id: number; text: string[] }[] = checks.list();
-  for (const [id, text] of labelWarnings) if (doc.captions.has(id)) list.push({ kind: 'caption', id, text: [text] });
-  // text boxes read as chemistry: an ion without its charge, text set to Chemical that can't be read
-  for (const c of doc.captions.values()) {
-    if (c.ignoreWarnings) continue;
-    const w = captionChemWarning(doc, c, editor.measure());
-    if (w) list.push({ kind: 'caption', id: c.id, text: [w] });
-  }
-  const ignored = checks.ignoredCount() + [...doc.captions.values()].filter((c) => c.ignoreWarnings).length;
+  const list = drawingProblems();
+  const ignored = ignoredProblems();
   $('#warnings-count').textContent = list.length ? String(list.length) : '';
   warningsBox.set(list.length, doc.atoms.size > 0);
   const MAX = 100;
@@ -15201,7 +15444,7 @@ function checkFileProblems(): void {
   const key = list.map((d) => `${d.where}:${d.doc.version}:${d.doc.atoms.size}`).join('|');
   if (key === fileChecksKey && warningsBox.button.isConnected) return;
   fileChecksKey = key;
-  warningsBox.setFile(checkDrawings(list), tab.mode === 'document' || tab.mode === 'sheet' ? 'Double-click a structure to open it in the drawing tools, where each problem is marked.' : 'Each problem is marked on its slide.');
+  warningsBox.setFile(checkDrawings(list), tab.mode === 'document' || tab.mode === 'sheet' ? 'Double-click a structure to open it in the drawing tools, where each problem is marked.' : tab.mode === 'design' ? 'Each problem is marked on the design.' : 'Each problem is marked on its slide.');
 }
 // (a few seconds after a change is soon enough: a slide, cell or document gives no word of its own)
 setInterval(() => { if (!document.hidden && PROBLEMS_RIBBON[ws.active.mode]) checkFileProblems(); }, 2500);
@@ -15228,12 +15471,18 @@ function checkArrows(): void {
 }
 
 function checkStructure(): void {
-  const list = checks.list();
+  // the problems the Warnings panel lists, text boxes too (review F338); a text box with two
+  // problems is one stop, so a press always moves on
+  const list: ReturnType<typeof drawingProblems> = [];
+  for (const w of drawingProblems()) {
+    const same = list.find((x) => x.kind === w.kind && x.id === w.id);
+    if (same) same.text = [...same.text, ...w.text]; else list.push({ ...w, text: [...w.text] });
+  }
   if (!list.length) {
-    flash(checks.ignoredCount() ? 'No problems found (apart from the ones you chose to ignore).' : 'No problems found.');
+    flash(ignoredProblems() ? 'No problems found (apart from the ones you chose to ignore).' : 'No problems found.');
     return;
   }
-  const cur = list.findIndex((w) => (w.kind === 'atom' ? editor.sel.atoms : editor.sel.bonds).has(w.id));
+  const cur = list.findIndex((w) => (w.kind === 'atom' ? editor.sel.atoms : w.kind === 'bond' ? editor.sel.bonds : editor.sel.captions).has(w.id));
   const w = list[(cur + 1) % list.length];
   editor.reveal(w.kind, w.id);
   flash(`${(cur + 1) % list.length + 1} of ${list.length}: ${w.text.join(' ')}`);
@@ -15920,17 +16169,14 @@ async function darkColours(): Promise<void> {
     { name: 'name', label: 'Save as Custom…', value: '', placeholder: 'leave empty to use the palette as it is' },
   ], { ok: 'Use', preview: { title: 'On screen', draw: (v) => {
     const base = darkPaletteNamed(v.palette, dark.own);
-    const untouched = v.paper === cur.paper && v.ink === cur.ink;
-    return readingPreview(untouched ? base : { name: '', paper: v.paper || base.paper, ink: v.ink || base.ink }, doc.style);
+    // (shown as it will be kept: each color left as it showed is the picked palette's)
+    return readingPreview(readingPaletteToKeep({ paper: v.paper, ink: v.ink, name: 'preview' }, cur, base) ?? base, doc.style);
   } }, note: 'Affects the screen only: files, printing, copying and exports stay black on white. Edit the colors and name the palette to save a custom one.' });
   if (!got) return;
   const base = darkPaletteNamed(got.palette, dark.own);
-  // colours left as they were mean "this palette as it is"
-  const untouched = got.paper === cur.paper && got.ink === cur.ink;
-  const changed = !untouched && (got.paper !== base.paper || got.ink !== base.ink);
-  const name = got.name.trim();
-  if (changed || name) {
-    const p: DarkPalette = { name: name || `${base.name} (changed)`, paper: got.paper || base.paper, ink: got.ink || base.ink };
+  // colours left as they were mean "this palette as it is" (named: a copy of it, review F339)
+  const p = readingPaletteToKeep({ paper: got.paper, ink: got.ink, name: got.name }, cur, base);
+  if (p) {
     dark.own = [...dark.own.filter((o) => o.name !== p.name), p];
     dark.palette = p.name;
   } else dark.palette = base.name;
@@ -16235,7 +16481,10 @@ function favoriteMenu(f: FormatFavorite, at: HTMLElement): void {
       const got = await ask('Rename Favorite', [{ name: 'name', label: 'Name', value: f.name }], { ok: 'Rename' });
       const name = got?.name.trim();
       if (!name || name === f.name) return;
-      favorites = favorites.filter((x) => x.name !== name).map((x) => (x.name === f.name ? { ...x, name } : x));
+      // (another favorite with that name is kept: review F340)
+      const next = renamedFavorite(favorites, f.name, name);
+      if (typeof next === 'string') { flash(next, 6000); return; }
+      favorites = next;
       favoritesChanged();
     }],
     ['Move Earlier', () => {
@@ -17280,7 +17529,7 @@ stylePanel.reaction = {
   sideText: (id) => editor.arrowSideText(id),
   setSideText: (id, side, text) => editor.setArrowSideText(id, side, text),
   setTextAlign: (id, side, how) => editor.setArrowTextAlign(id, side, how),
-  setGuides: (ids, on) => editor.setArrowGuides(ids, on),
+  setGuides: (ids, on) => editor.setArrowGuides(ids, on, plainReactionArrow),
 };
 stylePanel.tables = {
   part: () => editor.tablePart,
@@ -17489,7 +17738,8 @@ async function keepPasteInside(): Promise<void> {
   if (here.left()) return;
   const sel = editor.sel;
   doc.amend('Paste', () => {
-    const pieces = units(doc, sel, editor.measure());
+    // (an arrow or + sign wraps with the structure before it, not on a row of its own)
+    const pieces = joinLoose(units(doc, sel, editor.measure()));
     if (how === 'wrap' && pieces.length > 1) {
       // between the fixed edges, or the grid's edges on an open side
       const grid = extentRect(p, pageExtent(p, doc.bounds()));
@@ -17553,7 +17803,7 @@ async function navigationSettings(): Promise<void> {
   const o = orientPrefs;
   const strength = [{ value: 'faint', label: 'Faint' }, { value: 'light', label: 'Light' }, { value: 'strong', label: 'Stronger' }];
   const r = await ask('Navigation', [
-    { name: 'navigator', label: 'Navigator', type: 'checkbox', value: String(o.navigator), help: 'A minimap of the drawing in a corner. Click or drag in it to move; double-click to fit.' },
+    { name: 'navigator', label: 'Document Map', type: 'checkbox', value: String(o.navigator), help: 'A small map of the drawing in a corner. Click or drag in it to move; double-click to fit.' },
     { name: 'navCorner', label: 'Document Map corner', value: o.navCorner, options: [{ value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }, { value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }] },
     { name: 'navSize', label: 'Document Map size', value: o.navSize, options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }] },
     { name: 'navHideAll', label: 'Hide the Document Map while the whole drawing is on screen', type: 'checkbox', value: String(o.navHideAll) },
@@ -17897,8 +18147,10 @@ editor.onFrame = () => {
   }
   showZoom();
   rulers.update();
+  redoWaitingNewman();
   // what is typed on the slide shows in the outline
-  if (outlineView.shown && doc.version !== outlineSeen) { outlineSeen = doc.version; outlineView.rebuild(); }
+  // (only the slide being edited, and not while something is dragged on it: review F029)
+  if (outlineView.shown && doc.version !== outlineSeen && !editor.dragging) { outlineSeen = doc.version; outlineView.refresh(deckNow()?.index ?? 0); }
   layers?.refresh();
   scrollbars.update(doc.version);
   updateOrientation();

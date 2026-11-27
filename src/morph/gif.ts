@@ -115,7 +115,15 @@ export async function encodeGif(n: number, frameAt: (i: number) => RgbaFrame | P
     const f = await frameAt(k);
     if (!k) { w = f.width; h = f.height; }
     const d = f.data;
-    for (let i = 0; i < d.length; i += 4) { const c = pack(d, i); counts.set(c, (counts.get(c) ?? 0) + 1); }
+    // a run of one colour (most of a line drawing) is counted once, as a run (review F648)
+    let run = -1, len = 0;
+    for (let i = 0; i < d.length; i += 4) {
+      const c = pack(d, i);
+      if (c === run) { len++; continue; }
+      if (len) counts.set(run, (counts.get(run) ?? 0) + len);
+      run = c; len = 1;
+    }
+    if (len) counts.set(run, (counts.get(run) ?? 0) + len);
   }
   const { pal, index } = palette(counts);
   let bitsPer = 1;
@@ -141,7 +149,13 @@ export async function encodeGif(n: number, frameAt: (i: number) => RgbaFrame | P
   for (let k = 0; k < n; k++) {
     const d = (await frameAt(k)).data;
     const px = new Uint8Array(w * h);
-    for (let i = 0, j = 0; j < px.length; i += 4, j++) px[j] = index(pack(d, i));
+    // (a colour the same as the last pixel's has the same index: looked up once per run)
+    let last = -1, at = 0;
+    for (let i = 0, j = 0; j < px.length; i += 4, j++) {
+      const c = pack(d, i);
+      if (c !== last) { last = c; at = index(c); }
+      px[j] = at;
+    }
     if (held && delay + cs <= 0xffff && sameBytes(held, px)) { delay += cs; continue; }
     flush();
     held = px;

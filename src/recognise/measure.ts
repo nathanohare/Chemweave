@@ -64,9 +64,11 @@ export function refineAtoms(p: Pixels, start: [number, number][], bonds: Measure
   for (const b of bonds) { nb[b.a].push(b.b); nb[b.b].push(b.a); if (b.order > 1) { multiple.add(`${b.a},${b.b}`); multiple.add(`${b.b},${b.a}`); } }
   const bond = bondLengthPx(start, bonds) ?? reach * 8;
   // labels: the middle of the letter under (or nearest) the atom
+  const r = Math.max(reach * 1.5, bond * 0.2);
+  const letterH = typicalLetterHeight(p, pts, labelled, r, bond);
   labelled.forEach((on, i) => {
     if (!on) return;
-    const g = glyphAt(p, pts[i], Math.max(reach * 1.5, bond * 0.2), bond);
+    const g = glyphAt(p, pts[i], r, bond, letterH);
     if (g) pts[i] = [g.x + g.w / 2, g.y + g.h / 2];
   });
   const step = Math.max(0.5, reach / 8);
@@ -156,7 +158,12 @@ export function lineWidthPx(p: Pixels, pts: [number, number][], bonds: MeasureBo
 export interface Glyph { x: number; y: number; w: number; h: number }
 
 /** The blob of ink (a letter) under the point, or the nearest within `r` pixels; null if none, if it's a line, or if it grows beyond `most` pixels. */
-export function glyphAt(p: Pixels, at: [number, number], r: number, most = r * 2.5): Glyph | null {
+/**
+ * `letterH`: the height of the other letters in the picture, when known. A narrow upright stem (I,
+ * l) is taken for a letter only when it is about as tall as they are (a hash or a bond stub isn't);
+ * with none to go by, it must be no taller than 0.6 of `most` (capitals are about half a bond tall).
+ */
+export function glyphAt(p: Pixels, at: [number, number], r: number, most = r * 2.5, letterH?: number): Glyph | null {
   const W = p.width, H = p.height;
   const dark = (x: number, y: number) => inkAt(p, x, y) > 0.45;
   // the nearest dark pixel
@@ -183,8 +190,10 @@ export function glyphAt(p: Pixels, at: [number, number], r: number, most = r * 2
     }
   }
   const g = { x: gx1, y: gy1, w: gx2 - gx1 + 1, h: gy2 - gy1 + 1 };
-  // a stroke rather than a letter (a bond running on from the label): long and thin
-  if (Math.max(g.w, g.h) > 3 * Math.min(g.w, g.h)) return null;
+  // a stroke rather than a letter (a bond running on from the label): long and thin. A short
+  // upright stem as tall as a letter is a letter (I, l)
+  const letterTall = g.h > g.w && (letterH ? g.h >= 0.75 * letterH && g.h <= 1.25 * letterH : g.h <= 0.6 * most);
+  if (Math.max(g.w, g.h) > 3 * Math.min(g.w, g.h) && !letterTall) return null;
   return g;
 }
 
@@ -195,12 +204,25 @@ export function glyphAt(p: Pixels, at: [number, number], r: number, most = r * 2
  */
 export const CAP_HEIGHT = 0.7;
 
-/** The label size (pixels, as a font size) from the letters at the labelled atoms. */
-export function labelSizePx(p: Pixels, pts: [number, number][], labelled: boolean[], bondPx: number): number | null {
+/** The median height of the labels' letters that aren't narrow (O, N, S), or undefined when there are none. */
+function typicalLetterHeight(p: Pixels, pts: [number, number][], labelled: boolean[], r: number, most: number): number | undefined {
   const hs: number[] = [];
   labelled.forEach((on, i) => {
     if (!on) return;
-    const g = glyphAt(p, pts[i], bondPx * 0.35, bondPx);
+    // (an impossible letter height: narrow stems are left out here)
+    const g = glyphAt(p, pts[i], r, most, Infinity);
+    if (g && g.h >= 4 && g.h < most) hs.push(g.h);
+  });
+  return median(hs) ?? undefined;
+}
+
+/** The label size (pixels, as a font size) from the letters at the labelled atoms. */
+export function labelSizePx(p: Pixels, pts: [number, number][], labelled: boolean[], bondPx: number): number | null {
+  const letterH = typicalLetterHeight(p, pts, labelled, bondPx * 0.35, bondPx);
+  const hs: number[] = [];
+  labelled.forEach((on, i) => {
+    if (!on) return;
+    const g = glyphAt(p, pts[i], bondPx * 0.35, bondPx, letterH);
     // one letter is about as wide as tall; two run together (OH touching) are wider, still the right height
     if (g && g.h >= 4 && g.h < bondPx) hs.push(g.h);
   });

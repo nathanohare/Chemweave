@@ -78,7 +78,7 @@ export function groupsOf(block: Value[][], byRows: boolean, labels: boolean): Gr
       if (v === null || v === '') values.push(null);
       else if (typeof v === 'number') values.push(v);
       else if (typeof v === 'boolean') values.push(v ? 1 : 0);
-      else return `The input holds ${isError(v) ? `an error (${v.code})` : `text ("${v}")`} where a number is needed${labels ? '' : '(if its first row or column is labels, check Labels)'}.`;
+      else return `The input holds ${isError(v) ? `an error (${v.code})` : `text ("${v}")`} where a number is needed${labels ? '' : ' (if its first row or column is labels, check Labels)'}.`;
     }
     out.push({ label, values });
   }
@@ -204,7 +204,9 @@ export function autoBins(xs: number[]): number[] {
   const k = Math.max(1, Math.round(Math.sqrt(xs.length)));
   if (hi === lo) return [lo];
   const w = (hi - lo) / k;
-  return Array.from({ length: k + 1 }, (_, i) => lo + i * w);
+  // the last edge is the largest number itself (lo + k·w can round to just below it, which would
+  // put the largest number in More)
+  return Array.from({ length: k + 1 }, (_, i) => (i === k ? hi : lo + i * w));
 }
 
 export function histogram(data: number[], o: HistogramOptions): ToolOutput | string {
@@ -607,6 +609,14 @@ export function matrix(groups: Group[], kind: 'correlation' | 'covariance'): Too
 // ---------------------------------------------------------------- Moving Average and Exponential Smoothing
 
 /**
+ * The block from one cell to another as a range. The cells may carry their sheet's name
+ * ("Sheet1!A1"), which a range names once, at the front: Sheet1!A1:A3, not Sheet1!A1:Sheet1!A3.
+ */
+function span(first: string, last: string): string {
+  return `${first}:${last.slice(last.lastIndexOf('!') + 1)}`;
+}
+
+/**
  * A moving average of the last `interval` values, as formulas reading the input cells (`refs`
  * names each one, in order). With `stdErrors`, a second column of standard errors. In the
  * formulas, %OUT<i> stands for the forecast in row i of the results (the caller puts in its cell).
@@ -617,13 +627,13 @@ export function movingAverage(refs: string[], interval: number, stdErrors: boole
   if (refs.length < k) return `The input needs at least ${k} values for this interval.`;
   const out = new Out();
   refs.forEach((_, i) => {
-    out.put(i, 0, i < k - 1 ? ERR.na() : { f: `=AVERAGE(${refs[i - k + 1]}:${refs[i]})` });
+    out.put(i, 0, i < k - 1 ? ERR.na() : { f: `=AVERAGE(${span(refs[i - k + 1], refs[i])})` });
   });
   if (stdErrors) {
     // the error over the last `interval` forecasts: needs as many forecasts as the interval
     refs.forEach((_, i) => {
       const first = i - k + 1 - (k - 1);
-      out.put(i, 1, first < 0 ? ERR.na() : { f: `=SQRT(SUMXMY2(${refs[i - k + 1]}:${refs[i]},${'%OUT'}${i - k + 1}:${'%OUT'}${i})/${k})` });
+      out.put(i, 1, first < 0 ? ERR.na() : { f: `=SQRT(SUMXMY2(${span(refs[i - k + 1], refs[i])},${'%OUT'}${i - k + 1}:${'%OUT'}${i})/${k})` });
     });
   }
   return out.done();
@@ -644,7 +654,7 @@ export function expSmoothing(refs: string[], damping: number, stdErrors: boolean
   if (stdErrors) {
     // over the last three forecasts, as the ToolPak does
     refs.forEach((_, i) => {
-      out.put(i, 1, i < 4 ? ERR.na() : { f: `=SQRT(SUMXMY2(${refs[i - 2]}:${refs[i]},%OUT${i - 2}:%OUT${i})/3)` });
+      out.put(i, 1, i < 4 ? ERR.na() : { f: `=SQRT(SUMXMY2(${span(refs[i - 2], refs[i])},%OUT${i - 2}:%OUT${i})/3)` });
     });
   }
   return out.done();
@@ -700,11 +710,11 @@ export function sample(xs: number[], how: { periodic: number } | { random: numbe
   const out = new Out();
   if ('periodic' in how) {
     const p = Math.trunc(how.periodic);
-    if (p < 1 || p > xs.length) return `The period is from 1 to the count of numbers (${xs.length}).`;
+    if (!(p >= 1 && p <= xs.length)) return `The period is from 1 to the count of numbers (${xs.length}).`;
     for (let i = p - 1, r = 0; i < xs.length; i += p) out.put(r++, 0, xs[i]);
   } else {
     const n = Math.trunc(how.random);
-    if (n < 1) return 'The number of samples must be 1 or more.';
+    if (!(n >= 1)) return 'The number of samples must be 1 or more.';
     if (n > 1_000_000) return 'That is more than a million samples.';
     // with replacement, as the ToolPak samples
     for (let r = 0; r < n; r++) out.put(r, 0, xs[Math.floor(rnd() * xs.length)]);
@@ -736,7 +746,7 @@ export function randomNumbers(dist: RandomDistribution, variables: number, count
     return out.done();
   }
   const n = Math.trunc(count);
-  if (n < 1) return 'Give the number of random numbers (1 or more).';
+  if (!(n >= 1)) return 'Give the number of random numbers (1 or more).';
   if (nv * n > 1_000_000) return 'That is more than a million numbers.';
   let draw: () => number;
   switch (dist.kind) {

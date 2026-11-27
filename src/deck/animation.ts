@@ -267,7 +267,8 @@ export function pathPoints(path: string): { x: number; y: number }[] {
     const at = (x: number, y: number) => (rel ? { x: cur.x + x, y: cur.y + y } : { x, y });
     const c = cmd.toUpperCase();
     if (c === 'E') break;
-    if (c === 'Z') { cur = start; out.push({ ...cur }); continue; }
+    // (a number after Z is not a command: it is passed over, not read as Z again for ever)
+    if (c === 'Z') { cur = start; out.push({ ...cur }); cmd = ''; continue; }
     if (c === 'M' || c === 'L') {
       const x = num(), y = num();
       if (!Number.isFinite(x) || !Number.isFinite(y)) break;
@@ -474,7 +475,7 @@ export function partName(doc: Doc, part: Part | undefined): string {
 function colourName(hex: string): string {
   const v = parseInt(hex.replace('#', ''), 16);
   const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
-  const names: [string, number, number, number][] = [['yellow', 255, 230, 128], ['green', 158, 217, 168], ['blue', 169, 200, 255], ['pink', 242, 167, 195], ['orange', 246, 179, 138], ['teal', 26, 163, 163], ['red', 230, 80, 80], ['purple', 180, 140, 220], ['grey', 190, 190, 190]];
+  const names: [string, number, number, number][] = [['yellow', 255, 230, 128], ['green', 158, 217, 168], ['blue', 169, 200, 255], ['pink', 242, 167, 195], ['orange', 246, 179, 138], ['teal', 26, 163, 163], ['red', 230, 80, 80], ['purple', 180, 140, 220], ['gray', 190, 190, 190]];
   let best = '', d = Infinity;
   for (const [n, R, G, B] of names) { const e = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2; if (e < d) { d = e; best = n; } }
   return d < 2500 ? best : hex.toUpperCase();
@@ -911,7 +912,7 @@ export function readTiming(sld: Element, targetOfSpid: (spid: number) => AnimTar
           const effect: Effect = preset === 1 ? 'appear' : preset === 2 ? 'fly' : preset === 22 ? 'wipe' : preset === 10 ? 'fade' : 'fade';
           if (![1, 2, 10, 22].includes(preset)) warn('Animations other than Appear, Fade, Wipe and Fly were imported as Fade.');
           // how long: the first behaviour that takes time
-          const durs = Array.from(tn.getElementsByTagNameNS(P, 'cTn')).slice(1).map((c) => Number(c.getAttribute('dur'))).filter((d) => Number.isFinite(d) && d > 1);
+          const durs = Array.from(tn.getElementsByTagNameNS(P, 'cTn')).map((c) => Number(c.getAttribute('dur'))).filter((d) => Number.isFinite(d) && d > 1);
           const sub = Number(tn.getAttribute('presetSubtype'));
           const same = prev && startOf === 'with' && prev.target.kind === target.kind && prev.target.id === target.id && prev.effect === effect && !!prev.exit === (cls === 'exit');
           if (same) continue; // the same object moving in two PowerPoint shapes (a table and its title)

@@ -169,8 +169,23 @@ export function answerText(p: AiPrefs, reply: unknown): string {
   if (p.provider === 'anthropic') text = Array.isArray(r?.content) ? r.content.filter((c: any) => c?.type === 'text').map((c: any) => c.text).join('') : undefined;
   else if (p.provider === 'gemini') text = r?.candidates?.[0]?.content?.parts?.map((x: any) => x?.text ?? '').join('');
   else text = r?.choices?.[0]?.message?.content;
-  if (typeof text !== 'string') throw new Error(errorText(reply) ?? 'The AI model sent back an answer the app could not read.');
-  return text;
+  const cut = answerCut(p, reply);
+  if (typeof text !== 'string' || (cut && !text.trim())) {
+    throw new Error(errorText(reply) ?? (cut ? CUT_OFF_EMPTY : 'The AI model sent back an answer the app could not read.'));
+  }
+  return cut ? `${text}\n\n${CUT_OFF}` : text;
+}
+
+/** Said after an answer the service stopped at its length limit (what came is kept, so it can be read). */
+export const CUT_OFF = '(The answer was cut off at the length limit, so it is not complete. Ask for a shorter answer, or send less.)';
+const CUT_OFF_EMPTY = 'The answer was cut off at the length limit before any text came back. Ask for a shorter answer, or send less.';
+
+/** Whether the service says it stopped the answer at the length limit. */
+export function answerCut(p: AiPrefs, reply: unknown): boolean {
+  const r = reply as any;
+  if (p.provider === 'anthropic') return r?.stop_reason === 'max_tokens';
+  if (p.provider === 'gemini') return r?.candidates?.[0]?.finishReason === 'MAX_TOKENS';
+  return r?.choices?.[0]?.finish_reason === 'length';
 }
 
 /** The service's own words about what went wrong, if it said. */
@@ -275,7 +290,7 @@ export async function rememberAiKey(p: AiPrefs, remember: boolean): Promise<void
 /** Whether a key is kept for this service. */
 export async function hasAiKey(p: AiPrefs): Promise<boolean> {
   if (p.provider === 'none') return false;
-  if (isTauri()) return invoke<boolean>('ai_key_has', { provider: p.provider });
+  if (isTauri()) return invoke<boolean>('ai_key_has', { provider: p.provider, base: aiBase(p) });
   return !!webKey(p);
 }
 

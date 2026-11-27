@@ -26,7 +26,7 @@ export function askPlate(kind: PlateKind, editing: PlateData | null, L: number, 
     form.innerHTML = `<h2>${title}</h2>
       <canvas class="plate-preview" aria-label="Preview" role="img"></canvas>
       <div class="plate-table-wrap"><table class="plate-table plate-spots"><thead><tr><th>Lane</th>${tlc ? '<th class="plate-rf">Rf</th>' : '<th class="plate-rf">Size</th>'}<th>Description</th><th></th></tr></thead><tbody></tbody></table></div>
-      <p class="plate-rows"><button type="button" data-act="lane">+ Lane</button>${tlc ? ' <button type="button" data-act="co" title="A lane with every spot of the lanes either side of it, as a co-spot shows">+ Co-spot lane</button>' : ` <label class="plate-ladder">Marker <select name="ladder"><option value="">Add a marker lane…</option>${LADDERS.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select></label>`}</p>
+      <p class="plate-rows"><button type="button" data-act="lane">+ Lane</button>${tlc ? ' <button type="button" data-act="co" title="A lane with every spot of the lanes either side of it, as a co-spot shows">+ Co-Spot Lane</button>' : ` <label class="plate-ladder">Marker <select name="ladder"><option value="">Add a marker lane…</option>${LADDERS.map((l) => `<option value="${l.id}">${l.name}</option>`).join('')}</select></label>`}</p>
       <p class="muted small plate-help">${tlc
         ? 'Each spot\'s Rf, from 0 (the start line) to 1 (the solvent front). + Spot adds one to the lane. On the canvas, drag a spot up or down to change its Rf.'
         : 'Each band\'s size, in the units under Sizes in. Bands run by size on a log scale. + Band adds one to the lane; check Marker for a lane of size markers (their sizes can be written beside the gel).'}</p>

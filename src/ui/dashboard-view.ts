@@ -39,6 +39,8 @@ interface Drag {
 
 /** New structure pictures made in one frame at most. */
 const PICTURES_PER_FRAME = 12;
+/** Text sorted the way people read it (item 2 before item 10), one comparer for the whole sort. */
+const NUMERIC_TEXT = new Intl.Collator(undefined, { numeric: true });
 
 export class DashboardView {
   readonly el: HTMLDivElement;
@@ -230,7 +232,7 @@ export class DashboardView {
     if (part?.drill) {
       const to = part.drill;
       const { path: _from, ...closed } = t.chart;
-      const label = t.chart.kind === 'decomp' ? (to.length ? 'Expand tree' : 'Collapse tree') : to.length > (t.chart.path?.length ?? 0) ? 'Drill down' : 'Drill up';
+      const label = t.chart.kind === 'decomp' ? (to.length ? 'Expand Tree' : 'Collapse Tree') : to.length > (t.chart.path?.length ?? 0) ? 'Drill Down' : 'Drill Up';
       const pick = to.length ? to.map((value, level) => ({ level, value })) : undefined;
       this.update(t.id, { chart: to.length ? { ...closed, path: to } : closed, pick } as Partial<ChartTile>, label);
       return;
@@ -270,11 +272,14 @@ export class DashboardView {
     let rows = shownRows(res, mask);
     const sc = columnOf(res, t.sortBy);
     if (sc !== null) {
-      rows = [...rows].sort((a, b) => {
-        const va = res.sheet.value(a, sc), vb = res.sheet.value(b, sc);
-        const k = typeof va === 'number' && typeof vb === 'number' ? va - vb : slicerText(va).localeCompare(slicerText(vb), undefined, { numeric: true });
+      // each row's value (and its text, when needed) is read once, not again at every comparison of the sort
+      const keyed = rows.map((r) => ({ r, v: res.sheet.value(r, sc), s: undefined as string | undefined }));
+      const text = (x: (typeof keyed)[number]) => (x.s ??= slicerText(x.v));
+      keyed.sort((a, b) => {
+        const k = typeof a.v === 'number' && typeof b.v === 'number' ? a.v - b.v : NUMERIC_TEXT.compare(text(a), text(b));
         return t.descending ? -k : k;
       });
+      rows = keyed.map((x) => x.r);
     }
     const max = t.maxRows ?? 200;
     const table = document.createElement('table');
@@ -316,7 +321,7 @@ export class DashboardView {
       clear.className = 'dash-clear';
       clear.textContent = '✕';
       clear.title = 'Show everything again';
-      clear.addEventListener('click', (e) => { e.stopPropagation(); this.update(t.id, { selected: undefined }, 'Clear slicer'); });
+      clear.addEventListener('click', (e) => { e.stopPropagation(); this.update(t.id, { selected: undefined }, 'Clear Slicer'); });
       head.append(clear);
     }
     const box = document.createElement('div');

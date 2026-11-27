@@ -12,9 +12,9 @@ import { TextEditing, type Move, type RichText } from '../text/editing';
 import { drawLayout } from '../text/draw';
 import { layoutText, selectionRects, type Measure } from '../text/layout';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
-import { afterTyping, finishWord, setTypingPrefs, typingPrefs } from '../text/typing';
+import { afterTyping, finishWord, leftAsWritten, setTypingPrefs, typingPrefs } from '../text/typing';
 import { findIssues, type Issue } from '../text/chemtext';
-import { loadSpeller, type Speller } from '../text/spelling';
+import { loadSpeller, SPELLER_RETRY_MS, type Speller } from '../text/spelling';
 import { linkAtPoint } from '../links';
 import { askLink, followLink, linkMenuLines, linkTip, type LinkPlace } from './links-ui';
 import { touchOn } from './touch-ui';
@@ -69,7 +69,7 @@ const SELECTION = 'rgba(40, 120, 255, 0.25)';
 const MISSPELLED = '#e0302f';
 const FORMATTING = '#2f6fdf';
 /** Words ignored with "Ignore" or "Leave as written" while the program is open (lower case). */
-const ignored = new Set<string>();
+const ignored = leftAsWritten;
 /** The dashed box round the text being typed: the usual blue, or Canvas mode's teal (setCaptionTint). */
 let FRAME = 'rgba(47, 111, 223, 0.6)';
 
@@ -387,7 +387,12 @@ export class CaptionEditor {
     // the word lists are read the first time there is text to check, not when the app starts
     if (!sp && typingPrefs.spelling && !this.spellerAsked) {
       this.spellerAsked = true;
-      void loadSpeller().then((got) => { this.speller = got; this.checked = null; this.h.redraw(); });
+      void loadSpeller().then((got) => {
+        this.speller = got;
+        // (word lists that could not be read: asked for again a little later)
+        if (!got) setTimeout(() => { this.spellerAsked = false; }, SPELLER_RETRY_MS);
+        this.checked = null; this.h.redraw();
+      });
     }
     if (sp && this.dictSeen !== typingPrefs.dictionary) {
       sp.setPersonal(typingPrefs.dictionary);
@@ -414,7 +419,9 @@ export class CaptionEditor {
   /** Right-click on the text: suggestions for a misspelled word, or the fix for a formatting slip. */
   contextMenu(p: Vec, clientX: number, clientY: number): void {
     this.closeMenu();
-    const o = this.ed.offsetAt(p.x - this.at.x, p.y - this.at.y);
+    // (the point turned back, for text typed turned: linkAt below does the same itself)
+    const q = this.local(p);
+    const o = this.ed.offsetAt(q.x - this.at.x, q.y - this.at.y);
     const c = this.checks();
     const near = (a: number, b: number) => o >= a && o <= b;
     const word = c.spell.find(([a, b]) => near(a, b));
@@ -438,7 +445,7 @@ export class CaptionEditor {
     };
     if (issue) {
       item(`${issue.message}: change to ${issue.fixed}`, () => this.ed.fix(issue.edits, 'fix'));
-      item('Leave as written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
+      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
     }
     if (word) {
       if (issue) menu.appendChild(d.createElement('hr'));

@@ -51,7 +51,8 @@ export const VOLUMES: { name: string; vol: number; mute?: boolean }[] = [
 /** A length as a clock with tenths: 75.25 → "1:15.3". */
 export function mediaTime(s: number): string {
   if (!Number.isFinite(s)) return '–';
-  const t = Math.max(0, s);
+  // rounded to the tenth first, so 59.96 s is 1:00.0 and not 0:60.0
+  const t = Math.round(Math.max(0, s) * 10) / 10;
   const m = Math.floor(t / 60);
   const r = t - m * 60;
   return `${m}:${r < 10 ? '0' : ''}${r.toFixed(1)}`;

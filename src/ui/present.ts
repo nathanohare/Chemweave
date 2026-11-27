@@ -30,6 +30,13 @@ import { paintSlide } from '../deck/slide-view';
 const NOTES_KEY = 'chem-illustrator.rehearse-notes';
 /** How long the end of a rehearsal waits for the recordings to finish (ms). */
 const RECORDING_WAIT_MS = 5000;
+/** The wheel's travel (pixels) that is one step in the show: less than one notch of any mouse wheel, more than a trackpad's first touch. */
+const WHEEL_STEP = 30;
+/** Wheel events closer together than this (ms) are one gesture (a trackpad swipe and its coasting), not separate notches. */
+const WHEEL_STREAM_MS = 40;
+/** After a step the wheel is let go for this long (ms), and as long again after each event of the same gesture; a part step is forgotten after the stale time. */
+const WHEEL_LOCK_MS = 250;
+const WHEEL_STALE_MS = 400;
 
 /** Whether the notes show under the slide in a rehearsal (on unless turned off). */
 function notesWanted(): boolean {
@@ -143,6 +150,8 @@ export class Presenter {
     player.onPastEnd = () => {
       if ((opts.loop || opts.kiosk) && !opts.rehearse) { player.show(player.first, { transition: true }); return; }
       this.blank = 'end';
+      // a rehearsal's last slide ends here, not when the end screen is left (that wait is not its time)
+      this.closeSlide();
       this.paint();
     };
     this.player = player;
@@ -192,7 +201,7 @@ export class Presenter {
         this.player.zoomAt(Math.exp(-dy * 0.0015), p.x, p.y);
         return;
       }
-      if (e.deltaY > 0) this.next(); else if (e.deltaY < 0) this.prev();
+      this.wheelSlide(e);
     }, { passive: false });
     root.addEventListener('pointermove', () => this.showCursor());
     if (opts.windowed) this.addShowBar(root);
@@ -213,6 +222,37 @@ export class Presenter {
     this.showCursor();
     // painted again once the fonts it asked for have come (not when none was still to come)
     if (document.fonts && document.fonts.status !== 'loaded') void document.fonts.ready.then(() => { if (this.player === player) player.refresh(); });
+  }
+
+  /** The wheel's travel so far towards one step, when it last turned, and until when it is let go after a step. */
+  private wheelSum = 0;
+  private wheelAt = -Infinity;
+  private wheelLockUntil = -Infinity;
+
+  /**
+   * The wheel on a slide that isn't a canvas slide: one step (the next animation or slide, or the
+   * one before) for each notch of the wheel, and one for a whole swipe on a trackpad, which sends
+   * dozens of small turns, and more while it coasts. Not over the notes or the bars, which scroll.
+   */
+  private wheelSlide(e: WheelEvent): void {
+    if ((e.target as Element | null)?.closest?.('.rehearse-notes, .show-bar, .rehearse-bar')) return;
+    e.preventDefault();
+    const now = performance.now();
+    const gap = now - this.wheelAt, streaming = gap < WHEEL_STREAM_MS;
+    this.wheelAt = now;
+    // (the rest of a swipe after a step is let go for as long as it goes on, as is part of a step turned a while ago)
+    if (now < this.wheelLockUntil) {
+      if (streaming) this.wheelLockUntil = now + WHEEL_LOCK_MS;
+      this.wheelSum = 0;
+      return;
+    }
+    if (gap > WHEEL_STALE_MS) this.wheelSum = 0;
+    this.wheelSum += e.deltaMode === 1 ? e.deltaY * 34 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
+    if (Math.abs(this.wheelSum) < WHEEL_STEP) return;
+    const down = this.wheelSum > 0;
+    this.wheelSum = 0;
+    this.wheelLockUntil = now + WHEEL_LOCK_MS;
+    if (down) this.next(); else this.prev();
   }
 
   /** Back and Next, and where the show is, below a show in the window (Reading View). */
@@ -240,7 +280,7 @@ export class Presenter {
     const p = this.player, d = this.deck;
     if (!this.bar || !p || !d) return;
     const order = p.order ?? d.slides.map((_, i) => i).filter((i) => !d.slides[i].hidden);
-    const k = order.indexOf(p.i);
+    const k = p.order ? p.position : order.indexOf(p.i);
     this.bar.count.textContent = `Slide ${k >= 0 ? k + 1 : p.i + 1} of ${order.length}`;
   }
 
@@ -254,6 +294,8 @@ export class Presenter {
         await ask('Record', [], { noCancel: true, note: 'The microphone could not be used (there is none, or it was not allowed), so the show will only be timed. Allow the microphone in your system settings to record narration.' });
       }
     }
+    // the show may have been ended while the microphone or its question was waited for
+    if (this.root !== root) { rec?.close(); return; }
     const bar = document.createElement('div');
     bar.className = 'rehearse-bar';
     const label = document.createElement('span');
@@ -356,7 +398,7 @@ export class Presenter {
 
   private elapsed(): number {
     const r = this.rehearse;
-    if (!r) return 0;
+    if (!r || r.i < 0) return 0;
     return ((r.paused ?? performance.now()) - r.t0) / 1000;
   }
 
@@ -365,7 +407,8 @@ export class Presenter {
     if (!r) return;
     const t = this.elapsed();
     r.slide.textContent = clockText(t);
-    r.total.textContent = clockText(r.before + t);
+    // (a slide visited again counts its new time in place of the old)
+    r.total.textContent = clockText(r.before + t - (r.i >= 0 ? r.times.get(r.i) ?? 0 : 0));
   }
 
   /** A slide came on: the one before gets its time (and recording). */
@@ -385,8 +428,9 @@ export class Presenter {
     const r = this.rehearse;
     if (!r || r.i < 0) return;
     const t = +this.elapsed().toFixed(1);
+    // a slide visited again (Back, Home) has its latest visit's time, and so its recording: the total is of those
+    r.before += t - (r.times.get(r.i) ?? 0);
     r.times.set(r.i, t);
-    r.before += t;
     const i = r.i;
     if (r.rec) r.pending.push(r.rec.finish().then((blob) => { if (blob) r.recordings.set(i, blob); }));
     r.i = -1;
@@ -402,7 +446,8 @@ export class Presenter {
 
   private repeatSlide(): void {
     const r = this.rehearse;
-    if (!r) return;
+    // (not on the end screen: no slide is being timed there)
+    if (!r || r.i < 0) return;
     r.t0 = performance.now();
     if (r.paused !== null) r.paused = r.t0;
     if (r.rec) { void r.rec.finish(); r.rec.start(r.paused !== null); }
@@ -410,17 +455,13 @@ export class Presenter {
   }
 
   /** The end of a rehearsal: ask whether to keep the new times (and recordings). */
-  private async endRehearsal(): Promise<void> {
-    const r = this.rehearse;
-    if (!r) return;
-    this.closeSlide();
+  private async endRehearsal(r: NonNullable<Presenter['rehearse']>): Promise<void> {
     clearInterval(r.tick);
     if (r.countdown) clearInterval(r.countdown);
     this.endCountdown = null;
     // (a recording that never says it has stopped, a microphone unplugged, is not waited for long)
     await Promise.race([Promise.all(r.pending), new Promise((done) => setTimeout(done, RECORDING_WAIT_MS))]);
     r.rec?.close();
-    this.rehearse = null;
     if (!r.times.size) return;
     const lines = rehearsalLines(r.times, r.recordings, this.deck?.slides.length ?? 0);
     const recorded = r.recordings.size > 0;
@@ -444,8 +485,10 @@ export class Presenter {
   stop(): void {
     this.closeMenu();
     if (!this.root) return;
-    const rehearsing = !!this.rehearse;
-    if (rehearsing) this.closeSlide();
+    // (the rehearsal is let go of now, not when its recordings have finished: a show started in the meantime has its own)
+    const rehearsal = this.rehearse;
+    if (rehearsal) this.closeSlide();
+    this.rehearse = null;
     this.bar = null;
     this.corner = null;
     this.grid = null;
@@ -465,7 +508,7 @@ export class Presenter {
     this.canvas = null;
     if (!this.opts.windowed) void this.fullscreen(false);
     this.onEnd(i);
-    const after = rehearsing ? this.endRehearsal() : Promise.resolve();
+    const after = rehearsal ? this.endRehearsal(rehearsal) : Promise.resolve();
     this.asked = after.then(() => (ink ? askKeepInk() : false)).then((keep) => { if (keep && ink) this.onKeepInk(ink); }).catch((e: unknown) => console.error('Ending the show:', e));
   }
 
@@ -515,13 +558,25 @@ export class Presenter {
 
   private next(): void {
     if (this.rehearse?.countdown) { this.endCountdown?.(); return; }
-    if (this.blank === 'black' || this.blank === 'white') { this.blank = null; this.paint(); return; }
+    if (this.blank === 'black' || this.blank === 'white') { this.blank = null; this.paint(); this.timeShown(); return; }
     if (this.blank === 'end') { this.stop(); return; }
     this.player?.next();
   }
 
+  /** A rehearsal times the slide showing again (it was not timed on the end screen, which ends its last slide). */
+  private timeShown(): void {
+    if (this.rehearse && this.player) this.slideShown(this.player.i);
+  }
+
   private prev(): void {
-    if (this.blank) { this.blank = null; this.paint(); return; }
+    if (this.blank) {
+      const fromEnd = this.blank === 'end';
+      this.blank = null;
+      this.paint();
+      // back on the last slide from the end screen: its time starts again
+      if (fromEnd || this.rehearse) this.timeShown();
+      return;
+    }
     this.player?.prev();
   }
 
@@ -541,18 +596,18 @@ export class Presenter {
     if (this.menu) { this.menuKey(e); return; }
     if (this.ink?.key(e)) return;
     const k = e.key;
+    // at a kiosk only Esc (and clicks on links and buttons) do anything: no jumping to a typed slide number either
+    if (this.opts.kiosk && k !== 'Escape') return;
     if (/^[0-9]$/.test(k)) { this.typed += k; return; }
     if (k === 'Enter' && this.typed) { this.go(Number(this.typed) - 1); this.typed = ''; return; }
     this.typed = '';
     if (k === 'Escape') { if (!this.player?.lookBack()) this.stop(); }
-    // at a kiosk only Esc (and clicks on links and buttons) do anything
-    else if (this.opts.kiosk) return;
     else if (['ArrowRight', 'ArrowDown', ' ', 'Enter', 'PageDown', 'n', 'N'].includes(k)) this.next();
     else if (['ArrowLeft', 'ArrowUp', 'Backspace', 'PageUp', 'p', 'P'].includes(k)) this.prev();
     else if (k === 'Home') this.go(this.player!.first);
     else if (k === 'End') this.go(this.player!.last);
-    else if (k === 'b' || k === 'B' || k === '.') { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); }
-    else if (k === 'w' || k === 'W' || k === ',') { this.blank = this.blank === 'white' ? null : 'white'; this.paint(); }
+    else if (k === 'b' || k === 'B' || k === '.') { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); if (!this.blank) this.timeShown(); }
+    else if (k === 'w' || k === 'W' || k === ',') { this.blank = this.blank === 'white' ? null : 'white'; this.paint(); if (!this.blank) this.timeShown(); }
     else if (k === 'g' || k === 'G') this.openGrid();
     else if (k === 'm' || k === 'M') this.toggleMap();
     else if (k === 'l' || k === 'L') this.lookRound();
@@ -699,7 +754,7 @@ export class Presenter {
     else item('Look Around Freely', 'L', () => this.lookRound(), !p.canLookRound);
     item(p.mapOn ? 'Hide the Map' : 'Show the Map', 'M', () => this.toggleMap(), !p.canLookRound);
     line();
-    item(this.blank === 'black' ? 'Back from Black' : 'Black Screen', 'B', () => { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); });
+    item(this.blank === 'black' ? 'Back from Black' : 'Black Screen', 'B', () => { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); if (!this.blank) this.timeShown(); });
     item('End Show', 'Esc', () => this.stop());
     m.addEventListener('click', (e) => e.stopPropagation());
     m.addEventListener('pointerdown', (e) => e.stopPropagation());

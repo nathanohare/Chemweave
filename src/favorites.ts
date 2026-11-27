@@ -29,6 +29,15 @@ export function withFavorite(list: FormatFavorite[], f: FormatFavorite): FormatF
   return [...list, f].slice(-FAVORITES_MAX);
 }
 
+/**
+ * A favorite renamed, keeping its place; a message instead when another favorite already has the
+ * new name (never removed in its place: there is no undo for favorites).
+ */
+export function renamedFavorite(list: FormatFavorite[], from: string, to: string): FormatFavorite[] | string {
+  if (to !== from && list.some((x) => x.name === to)) return `There is already a favorite named “${to}”. Choose another name, or delete that one first.`;
+  return list.map((x) => (x.name === from ? { ...x, name: to } : x));
+}
+
 
 // ---------------------------------------------------------------- in a spreadsheet's cells
 
@@ -68,7 +77,8 @@ export function cellFavoriteLook(s: CellStyle): ObjectLook {
   for (const k of ['bold', 'italic', 'underline', 'font', 'size', 'color'] as const) if (s[k] !== undefined) run[k] = s[k];
   const edge = s.borders?.top ?? s.borders?.left ?? s.borders?.bottom ?? s.borders?.right;
   return {
-    shape: { filled: !!s.fill, ...(s.fill ? { fillColor: s.fill } : {}), ...(edge?.color ? { color: edge.color } : {}), ...(edge?.style === 'dashed' ? { dashed: true } : {}) },
+    // (a cell with no border says so: a shape given this favorite gets no outline, not its default one)
+    shape: { filled: !!s.fill, ...(s.fill ? { fillColor: s.fill } : {}), ...(edge?.color ? { color: edge.color } : {}), ...(edge?.style === 'dashed' ? { dashed: true } : {}), lineWidth: !edge ? 0 : edge.style === 'medium' || edge.style === 'thick' ? 2 : 1 },
     text: { run: run as RunLook, ...(s.align ? { justify: s.align } : {}) },
     ...(s.color ? { colour: { color: s.color } } : {}),
   };

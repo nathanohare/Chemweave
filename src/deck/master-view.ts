@@ -168,6 +168,8 @@ export function readMasterPage(d: Doc, m: Master, base: Record<Placeholder, Text
     const para = captionLook(c).para;
     const usual = ph === 'body' ? 'bullet' : 'none';
     const f = stripUndefined({
+      // (the title's bold is the master's own, titleBold)
+      bold: ph === 'body' && eff.bold ? true : undefined,
       italic: eff.italic ? true : undefined,
       lineSpacing: para.lineSpacing !== 1 ? para.lineSpacing : undefined,
       spaceBefore: para.spaceBefore || undefined, spaceAfter: para.spaceAfter || undefined,

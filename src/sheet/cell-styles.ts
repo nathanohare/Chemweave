@@ -71,7 +71,9 @@ export function cellStylePatch(name: string, theme: WorkbookTheme | null): Parti
   if (def.group === 'Number Format') return { ...look, cellStyle: def.name };
   return {
     bold: look.bold, italic: look.italic, underline: undefined, color: look.color, fill: look.fill,
-    font: look.font, size: look.size, borders: undefined, numFmt: undefined,
+    font: look.font, size: look.size, borders: undefined,
+    // the number format stays (a date stays a date), except that Normal puts back General, as in Excel
+    ...(def.name === 'Normal' ? { numFmt: undefined } : {}),
     cellStyle: def.name === 'Normal' ? undefined : def.name,
   };
 }

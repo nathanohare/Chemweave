@@ -4,6 +4,7 @@
 // a slide, a cell) comes from the mode, through the LinkHost the app sets up.
 
 import { showDialog } from './dialog-host';
+import { addInfo } from './info-tip';
 import { describeLink, doiOf, filePath, linkKind, normalizeLink, type LinkKind, type LinkPlace } from '../links';
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -118,11 +119,44 @@ export interface LinkAsk {
 
 export type LinkAnswer = { link: string; text?: string } | { remove: true };
 
+/** Text decoded from a link's %-escapes, or as it stands when it has a stray % that isn't one. */
+function unescaped(text: string): string {
+  try { return decodeURIComponent(text); } catch { return text; }
+}
+
+/**
+ * A mailto: link as the window shows it: the address, the subject, and the other fields (cc, body…)
+ * the window has no box for, in their order with the subject's place marked, so OK keeps them.
+ */
+export function mailFields(link: string): { address: string; subject: string; fields: (string | null)[] } {
+  const rest = link.replace(/^mailto:/i, '');
+  const q = rest.indexOf('?');
+  const address = unescaped(q < 0 ? rest : rest.slice(0, q));
+  let subject = '';
+  const fields: (string | null)[] = [];
+  for (const part of q < 0 ? [] : rest.slice(q + 1).split('&')) {
+    if (!part) continue;
+    // (null marks where the subject goes)
+    if (/^subject=/i.test(part) && !fields.includes(null)) { subject = unescaped(part.slice(8)); fields.push(null); }
+    else fields.push(part);
+  }
+  return { address, subject, fields };
+}
+
+/** The mailto: link for an address (already `mailto:…`), the subject typed and the other fields kept. */
+export function mailLink(to: string, subject: string, fields: (string | null)[]): string {
+  const sub = subject.trim() ? `subject=${encodeURIComponent(subject.trim())}` : '';
+  const parts = fields.map((f) => (f === null ? sub : f)).filter(Boolean);
+  // (a subject typed where the link had none goes first)
+  if (sub && !fields.includes(null)) parts.unshift(sub);
+  return parts.length ? `${to}?${parts.join('&')}` : to;
+}
+
 const KINDS: { id: LinkKind; label: string }[] = [
-  { id: 'web', label: 'Web page or DOI' },
-  { id: 'place', label: 'Place in this file' },
+  { id: 'web', label: 'Web Page or DOI' },
+  { id: 'place', label: 'Place in This File' },
   { id: 'file', label: 'File' },
-  { id: 'mail', label: 'Email address' },
+  { id: 'mail', label: 'Email Address' },
 ];
 
 /** Pick a file for a file link (the desktop app's Open window). */
@@ -189,10 +223,9 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     const addr = document.createElement('input');
     addr.placeholder = 'URL or DOI (e.g. 10.1021/acs.orglett.5b00001)';
     addr.value = startKind === 'web' ? (doiOf(start) ?? start) : '';
-    const webHelp = document.createElement('p');
-    webHelp.className = 'ask-help muted';
-    webHelp.textContent = 'A DOI links through doi.org, so it finds the paper wherever the journal moves it.';
-    web.append(row('Address', addr), webHelp);
+    const addrRow = row('Address', addr);
+    addInfo(addrRow.firstElementChild, 'A DOI links through doi.org, so it finds the paper wherever the journal moves it.');
+    web.append(addrRow);
     panes.set('web', web);
 
     // a place here
@@ -225,10 +258,9 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     pick.textContent = 'Browse…';
     pick.hidden = !isTauri();
     pick.addEventListener('click', () => void browse().then((p) => { if (p) { pathIn.value = p; if (!textIn.value) textIn.value = p.split(/[\\/]/).pop() ?? p; } }));
-    const fileHelp = document.createElement('p');
-    fileHelp.className = 'ask-help muted';
-    fileHelp.textContent = 'Canvases, documents, presentations and spreadsheets open here; other files open in their default program. A relative path is relative to this file.';
-    file.append(row('File', pathIn, pick), fileHelp);
+    const fileRow = row('File', pathIn, pick);
+    addInfo(fileRow.firstElementChild, 'Canvases, documents, presentations and spreadsheets open here; other files open in their default program. A relative path is relative to this file.');
+    file.append(fileRow);
     panes.set('file', file);
 
     // an e-mail address
@@ -237,10 +269,13 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     mailIn.type = 'email';
     mailIn.placeholder = 'name@university.edu';
     const subj = document.createElement('input');
+    // the fields the link has besides the address and subject (cc, body…): kept when OK is pressed
+    let mailRest: (string | null)[] = [];
     if (startKind === 'mail') {
-      const m = /^mailto:([^?]*)(?:\?subject=(.*))?$/i.exec(start);
-      mailIn.value = decodeURIComponent(m?.[1] ?? '');
-      try { subj.value = decodeURIComponent(m?.[2] ?? ''); } catch { subj.value = m?.[2] ?? ''; }
+      const m = mailFields(start);
+      mailIn.value = m.address;
+      subj.value = m.subject;
+      mailRest = m.fields;
     }
     mail.append(row('Email address', mailIn), row('Subject', subj));
     panes.set('mail', mail);
@@ -294,7 +329,7 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
         case 'file': return normalizeLink(pathIn.value, 'file');
         case 'mail': {
           const to = normalizeLink(mailIn.value, 'mail');
-          return to && subj.value.trim() ? `${to}?subject=${encodeURIComponent(subj.value.trim())}` : to;
+          return to ? mailLink(to, subj.value, mailRest) : to;
         }
         default: return null;
       }

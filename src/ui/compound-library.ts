@@ -156,10 +156,13 @@ export class CompoundLibraryWindow {
     d.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
+      // Select All works from a button too (its own keys are Enter, Space and the arrows)
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); this.selected = new Set(this.shown().map((c) => c.id)); this.paintSelection(); return; }
+      // a button (or link) has its own Enter, Space and arrow keys
+      if (e.target instanceof Element && e.target.closest('button, a, [role="button"]')) return;
       if (e.key === 'Delete' && this.selected.size) { e.preventDefault(); void this.remove(); }
-      else if (e.key === 'Enter' && this.selected.size) { e.preventDefault(); this.insert(); }
+      else if (e.key === 'Enter' && this.selected.size) { e.preventDefault(); if (!this.insertBtn.disabled) this.insert(); }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); this.step(e.key === 'ArrowDown' ? 1 : -1); }
-      else if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'a') { e.preventDefault(); this.selected = new Set(this.shown().map((c) => c.id)); this.fill(); }
     });
     this.search = el('input', { type: 'search', placeholder: 'Find by number, name, formula, CAS, tag or note' });
     this.search.setAttribute('aria-label', 'Find a compound');
@@ -205,7 +208,7 @@ export class CompoundLibraryWindow {
           button('Location…', 'Where your library is kept: on this computer, or in a folder such as OneDrive to use it on other computers or share it', () => void this.host.location()),
           this.insertBtn)),
     );
-    d.addEventListener('close', () => { d.remove(); this.d = null; this.off?.(); this.off = null; });
+    d.addEventListener('close', () => { d.remove(); this.d = null; this.off?.(); this.off = null; this.seen?.disconnect(); this.seen = null; this.rowCache.clear(); });
     this.off = this.lib.onChange(() => this.fill());
     addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
@@ -228,6 +231,47 @@ export class CompoundLibraryWindow {
     return this.pictures.get(key)!;
   }
 
+  /** A row's picture cell: its picture, or the SMILES where there is none. */
+  private drawPicture(td: HTMLElement, c: LibCompound): void {
+    const src = this.picture(c);
+    td.className = '';
+    td.replaceChildren(src ? el('img', { src, alt: c.smiles, className: 'compound-pic' }) : el('span', { className: 'muted', textContent: c.smiles }));
+  }
+
+  /** Pictures are drawn as their rows scroll into view (all at once where the browser can't tell), not for the whole library when it opens. */
+  private seen: IntersectionObserver | null = null;
+  private rowCache = new Map<string, { sig: string; tr: HTMLTableRowElement }>();
+  private lazyPicture(td: HTMLElement, c: LibCompound): void {
+    if (typeof IntersectionObserver === 'undefined') { this.drawPicture(td, c); return; }
+    this.seen ??= new IntersectionObserver((entries) => {
+      for (const en of entries) {
+        if (!en.isIntersecting) continue;
+        const cell = en.target as HTMLElement;
+        this.seen?.unobserve(cell);
+        const id = cell.parentElement?.dataset.id;
+        const comp = this.lib.now.compounds.find((x) => x.id === id);
+        if (comp) this.drawPicture(cell, comp);
+      }
+    }, { root: this.body.closest('.refs-table-wrap'), rootMargin: '200px' });
+    const key = `${c.id}@${c.modified}`;
+    if (this.pictures.has(key)) { this.drawPicture(td, c); return; }
+    td.className = 'compound-pic-cell';
+    this.seen.observe(td);
+  }
+
+  /** Mark the rows picked and set Insert to match, without making the table again. */
+  private paintSelection(): void {
+    for (const tr of this.body.querySelectorAll<HTMLElement>('tr[data-id]')) tr.classList.toggle('picked', this.selected.has(tr.dataset.id!));
+    this.body.querySelector('tr.picked')?.scrollIntoView({ block: 'nearest' });
+    this.setInsert();
+  }
+
+  private setInsert(): void {
+    const into = this.host.insertsInto();
+    this.insertBtn.disabled = !into || this.selected.size !== 1;
+    this.insertBtn.title = into ? `Insert the selected compound into ${into} as drawn (Enter)` : 'Show a drawing, slide, document or spreadsheet to insert into';
+  }
+
   fill(): void {
     if (!this.d) return;
     const data = this.lib.now;
@@ -239,12 +283,27 @@ export class CompoundLibraryWindow {
     const known = new Set(data.compounds.map((c) => c.id));
     for (const id of [...this.selected]) if (!known.has(id)) this.selected.delete(id);
     const list = this.shown();
+    this.seen?.disconnect();
+    // (pictures of compounds no longer there, or changed, are let go)
+    const live = new Set(data.compounds.map((c) => `${c.id}@${c.modified}`));
+    for (const k of this.pictures.keys()) if (!live.has(k)) this.pictures.delete(k);
+    // (a row is made once for a compound as it is now and kept: typing in the search box shows and hides the rows it has already made)
+    const live2 = new Set(data.compounds.map((c) => c.id));
+    for (const id of this.rowCache.keys()) if (!live2.has(id)) this.rowCache.delete(id);
     const rows = list.map((c) => {
-      const src = this.picture(c);
-      const img = src ? el('img', { src, alt: c.smiles, className: 'compound-pic' }) : el('span', { className: 'muted', textContent: c.smiles });
+      const sig = [c.id, c.modified, c.label, c.name, c.synonyms[0] ?? '', c.tags.join(','), c.formula, c.mw, c.files.map((f) => `${f.path}|${f.label ?? ''}`).join(';'), c.notes, c.spectra?.length ?? 0, c.smiles].join('\u0001');
+      const had = this.rowCache.get(c.id);
+      if (had?.sig === sig) {
+        const pic = had.tr.firstElementChild as HTMLElement;
+        if (pic.className === 'compound-pic-cell') this.lazyPicture(pic, c);
+        had.tr.classList.toggle('picked', this.selected.has(c.id));
+        return had.tr;
+      }
+      const pic = el('td');
+      this.lazyPicture(pic, c);
       const files = c.files.length ? `${c.files.length} file${c.files.length === 1 ? '' : 's'}` : '';
       const tr = el('tr', {},
-        el('td', {}, img),
+        pic,
         el('td', { textContent: c.label }),
         el('td', { textContent: [c.name || c.synonyms[0] || '', c.tags.length ? `#${c.tags.join(' #')}` : ''].filter(Boolean).join('  ') }),
         el('td', { textContent: c.formula }),
@@ -253,6 +312,7 @@ export class CompoundLibraryWindow {
       tr.dataset.id = c.id;
       tr.title = [compoundTitle(c), c.smiles, c.notes, c.spectra?.length ? `${c.spectra.length} NMR spectr${c.spectra.length === 1 ? 'um' : 'a'} saved` : '', ...c.files.slice(0, 8).map((f) => `• ${fileOf(f.path)}${f.label ? ` (as ${f.label})` : ''}`)].filter(Boolean).join('\n');
       if (this.selected.has(c.id)) tr.classList.add('picked');
+      this.rowCache.set(c.id, { sig, tr });
       return tr;
     });
     if (!data.compounds.length) rows.push(el('tr', {}, el('td', { colSpan: 6, className: 'muted', textContent: 'No compounds yet. Select structures in a drawing and click Add Selected, or add one by name or SMILES, every numbered structure in a file, or an SD file.' })));
@@ -261,9 +321,7 @@ export class CompoundLibraryWindow {
     this.body.querySelector('tr.picked')?.scrollIntoView({ block: 'nearest' });
     this.count.textContent = `${data.compounds.length} compound${data.compounds.length === 1 ? '' : 's'}`;
     this.queryNote.textContent = this.query ? `Containing ${this.query.smiles}: ${this.query.ids.size} found.` : '';
-    const into = this.host.insertsInto();
-    this.insertBtn.disabled = !into || this.selected.size !== 1;
-    this.insertBtn.title = into ? `Insert the selected compound into ${into} as drawn (Enter)` : 'Show a drawing, slide, document or spreadsheet to insert into';
+    this.setInsert();
     this.problem.textContent = this.lib.problem;
     this.problem.hidden = !this.lib.problem;
   }
@@ -281,7 +339,8 @@ export class CompoundLibraryWindow {
       this.selected = new Set([id]);
       this.anchor = id;
     }
-    this.fill();
+    // (the rows stay as they are: a click or arrow key only changes which are marked)
+    this.paintSelection();
   }
 
   private step(dir: 1 | -1): void {

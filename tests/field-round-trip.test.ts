@@ -439,6 +439,7 @@ const SAMPLES: Record<string, Record<string, Sample>> = {
   ElectronCountSettings: { types: { v: { Cl: 'L', PPh3: 'L2X' } } },
   Frame: { atoms: { v: (i) => [i.a1, i.a2, i.a3] }, arrows: { v: (i) => [i.arrow] }, captions: { v: [] }, shapes: { v: (i) => [i.shape] } },
   HighlightStyle: { pattern: { v: 'crosshatch' } },
+  StereoLabel: { typedOver: { v: { text: '(S)', fromFile: true } } },
   MadeLabel: { runs: { v: [{ text: 'OMe', bold: true }] } },
   MorphStep: { pairs: { v: (i) => [[i.a1, i.a3]] }, shifts: { v: (i) => [[i.a1, i.a2, i.a3]] }, slides: { v: (i) => [[[i.a1, i.a2], [i.a3, i.a2]]] } },
   OrbitalTag: { colours: { v: ['#ff0000', '#0000ff'] } },

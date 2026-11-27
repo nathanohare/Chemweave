@@ -2,6 +2,7 @@
 // page of a PDF, a picture file itself, or an icon with the file's name for anything else
 // (and whenever the person asks for the icon).
 
+import { cssFamily } from './css-string';
 import { dataUrl, imageSize, pictureMime } from './images';
 import type { Workbook } from '../sheet/workbook';
 
@@ -79,17 +80,37 @@ export function cellsPicture(book: Workbook): ObjectPicture | null {
   const W = xs[cols], H = ys[rows];
   if (W <= 0 || H <= 0) return null;
   const out: string[] = [`<svg xmlns="http://www.w3.org/2000/svg" width="${W}" height="${H}" viewBox="0 0 ${W} ${H}"><rect width="${W}" height="${H}" fill="#fff"/>`];
+  // a merged block is drawn as one cell, its anchor's (the top-left), spanning the cells of the block shown
+  const blockAt = (r: number, c: number) => {
+    const m = s.mergeAt(r, c);
+    return m ? { r1: m.r1, c1: m.c1, r2: Math.min(m.r2, rows - 1), c2: Math.min(m.c2, cols - 1) } : null;
+  };
+  const sameBlock = (r: number, c: number, r2: number, c2: number) => {
+    const m = s.mergeAt(r, c);
+    return !!m && m === s.mergeAt(r2, c2);
+  };
+  // gridlines, left out inside merged blocks
   const lines: string[] = [];
-  for (let c = 0; c <= cols; c++) lines.push(`M${xs[c] + 0.5} 0V${H}`);
-  for (let r = 0; r <= rows; r++) lines.push(`M0 ${ys[r] + 0.5}H${W}`);
+  for (let c = 0; c <= cols; c++) {
+    for (let r = 0; r < rows; r++) if (c === 0 || c === cols || !sameBlock(r, c - 1, r, c)) lines.push(`M${xs[c] + 0.5} ${ys[r]}V${ys[r + 1]}`);
+  }
+  for (let r = 0; r <= rows; r++) {
+    for (let c = 0; c < cols; c++) if (r === 0 || r === rows || !sameBlock(r - 1, c, r, c)) lines.push(`M${xs[c]} ${ys[r] + 0.5}H${xs[c + 1]}`);
+  }
   const fills: string[] = [], texts: string[] = [], borders: string[] = [], clips: string[] = [];
+  /** Does a cell stop text running into it: it shows something, or is in a merged block? */
+  const filled = (r: number, cc: number) => s.shownText(r, cc) !== '' || !!s.mergeAt(r, cc);
   for (let r = 0; r < rows; r++) {
     for (let c = 0; c < cols; c++) {
-      const cw = xs[c + 1] - xs[c], ch = ys[r + 1] - ys[r];
+      const block = blockAt(r, c);
+      if (block && (block.r1 !== r || block.c1 !== c)) continue;
+      const c2 = block ? block.c2 : c, r2 = block ? block.r2 : r;
+      const left = xs[c], right = xs[c2 + 1], top = ys[r], bottom = ys[r2 + 1];
+      const cw = right - left, ch = bottom - top;
       if (cw <= 0 || ch <= 0) continue;
       const st = s.styleAt(r, c);
-      if (st?.fill) fills.push(`<rect x="${xs[c]}" y="${ys[r]}" width="${cw}" height="${ch}" fill="${esc(st.fill)}"/>`);
-      for (const [side, d] of [['top', `M${xs[c]} ${ys[r] + 0.5}h${cw}`], ['bottom', `M${xs[c]} ${ys[r + 1] + 0.5}h${cw}`], ['left', `M${xs[c] + 0.5} ${ys[r]}v${ch}`], ['right', `M${xs[c + 1] + 0.5} ${ys[r]}v${ch}`]] as const) {
+      if (st?.fill) fills.push(`<rect x="${left}" y="${top}" width="${cw}" height="${ch}" fill="${esc(st.fill)}"/>`);
+      for (const [side, d] of [['top', `M${left} ${top + 0.5}h${cw}`], ['bottom', `M${left} ${bottom + 0.5}h${cw}`], ['left', `M${left + 0.5} ${top}v${ch}`], ['right', `M${right + 0.5} ${top}v${ch}`]] as const) {
         const b = st?.borders?.[side];
         if (b) borders.push(`<path d="${d}" stroke="${esc(b.color ?? '#000')}" stroke-width="${b.style === 'thick' ? 3 : b.style === 'medium' ? 2 : 1}"/>`);
       }
@@ -97,15 +118,20 @@ export function cellsPicture(book: Workbook): ObjectPicture | null {
       if (!text) continue;
       const v = s.value(r, c);
       const align = st?.align ?? (typeof v === 'number' ? 'right' : 'left');
-      const x = align === 'right' ? xs[c + 1] - 3 : align === 'center' ? (xs[c] + xs[c + 1]) / 2 : xs[c] + 3;
+      const x = align === 'right' ? right - 3 : align === 'center' ? (left + right) / 2 : left + 3;
       const size = (st?.size ?? 11) * (96 / 72);
-      const y = st?.valign === 'top' ? ys[r] + size : st?.valign === 'middle' ? (ys[r] + ys[r + 1]) / 2 + size * 0.35 : ys[r + 1] - 4;
+      const y = st?.valign === 'top' ? top + size : st?.valign === 'middle' ? (top + bottom) / 2 + size * 0.35 : bottom - 4;
       const look = `${st?.bold ? ' font-weight="bold"' : ''}${st?.italic ? ' font-style="italic"' : ''}${st?.underline ? ' text-decoration="underline"' : ''}`;
-      // text runs on over empty cells beside it, as in Excel, and is cut off at a filled one (numbers always stay in their cell)
-      const filled = (cc: number) => cc < 0 || cc >= cols || s.shownText(r, cc) !== '';
-      const clip = typeof v === 'number' || (align !== 'right' && filled(c + 1)) || (align !== 'left' && filled(c - 1));
-      if (clip) clips.push(`<clipPath id="k${r}_${c}"><rect x="${xs[c]}" y="${ys[r]}" width="${cw}" height="${ch}"/></clipPath>`);
-      texts.push(`<text x="${x}" y="${y}" font-family="${esc(st?.font || 'Calibri')}, Carlito, Arial, sans-serif" font-size="${size.toFixed(2)}" fill="${esc(st?.color ?? '#000')}" text-anchor="${align === 'right' ? 'end' : align === 'center' ? 'middle' : 'start'}"${look}${clip ? ` clip-path="url(#k${r}_${c})"` : ''}>${esc(text)}</text>`);
+      // text runs on over empty cells beside it, as in Excel, up to the first filled one (numbers,
+      // and the text of a merged block, always stay in their cell)
+      let from = c, to = c2;
+      if (typeof v !== 'number' && !block) {
+        if (align !== 'right') while (to + 1 < cols && !filled(r, to + 1)) to++;
+        if (align !== 'left') while (from > 0 && !filled(r, from - 1)) from--;
+      }
+      const cut = { x1: xs[from], x2: xs[to + 1] };
+      clips.push(`<clipPath id="k${r}_${c}"><rect x="${cut.x1}" y="${top}" width="${cut.x2 - cut.x1}" height="${ch}"/></clipPath>`);
+      texts.push(`<text x="${x}" y="${y}" font-family="${esc(cssFamily(st?.font || 'Calibri'))}, Carlito, Arial, sans-serif" font-size="${size.toFixed(2)}" fill="${esc(st?.color ?? '#000')}" text-anchor="${align === 'right' ? 'end' : align === 'center' ? 'middle' : 'start'}"${look} clip-path="url(#k${r}_${c})">${esc(text)}</text>`);
     }
   }
   out.push(clips.length ? `<defs>${clips.join('')}</defs>` : '', ...fills, `<path d="${lines.join('')}" stroke="#d4d4d4" stroke-width="1" fill="none"/>`, ...borders, ...texts, '</svg>');

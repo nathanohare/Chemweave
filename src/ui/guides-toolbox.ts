@@ -4,7 +4,7 @@
 // the drawing goes. Each drawing has its own guides.
 
 import { infoIcon } from './toolboxes';
-import { DEFAULT_GUIDES, GUIDE_COLOURS, parseGuideLength, showGuideLength, GUIDE_SNAPS, type CanvasGuides, type Guide, type GuideKind, type GuideSnap } from '../editor/guides';
+import { DEFAULT_GUIDES, MAX_GUIDES, GUIDE_COLOURS, parseGuideLength, showGuideLength, GUIDE_SNAPS, type CanvasGuides, type Guide, type GuideKind, type GuideSnap } from '../editor/guides';
 
 export interface GuidesToolboxHooks {
   get(): CanvasGuides | null;
@@ -64,6 +64,8 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
       if (a.kind === 'grid') { change({ grid: !now().grid, shown: true }); return; }
       const c = h.centre();
       const g = now();
+      // (no more than a file keeps, so none is lost when it is opened again)
+      if (g.list.length >= MAX_GUIDES) return;
       // (a new guide lands on a tick, so what snaps to it lines up with the rest)
       const r = (v: number) => Math.round(v / g.minor) * g.minor;
       const guide: Guide = { kind: a.kind, x: r(c.x), y: r(c.y) };
@@ -91,9 +93,11 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     input.className = 'gt-num';
     input.setAttribute('aria-label', `${label} tick spacing`);
     input.title = `${label} tick spacing, with its unit: 1" (inches), 2.5 cm, 30 mm or 12 pt`;
+    // (back to the spacing in use: refresh() leaves a box alone while it has the keyboard, so it can't do this)
+    const revert = () => { input.value = showGuideLength(now()[key], h.units()); };
     input.addEventListener('change', () => {
       const pt = parseGuideLength(input.value, h.units());
-      if (pt === null) { refresh(); return; }
+      if (pt === null) { revert(); refresh(); return; }
       const g = now();
       if (key === 'major') change({ major: pt, minor: Math.min(g.minor, pt) });
       else change({ minor: Math.min(pt, g.major) });
@@ -101,7 +105,7 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') { e.preventDefault(); input.dispatchEvent(new Event('change')); }
-      if (e.key === 'Escape') { e.preventDefault(); refresh(); }
+      if (e.key === 'Escape') { e.preventDefault(); revert(); refresh(); }
     });
     l.append(s, input);
     ticks.append(l);
@@ -201,6 +205,17 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     press('shown', any && shown);
     buttons.get('shown')!.disabled = !any;
     buttons.get('clear')!.disabled = !any;
+    // at the most guides a drawing keeps, adding is off, and the tip says why
+    const full = (g?.list.length ?? 0) >= MAX_GUIDES;
+    for (const a of ADD) {
+      if (a.kind === 'grid') continue;
+      const b = buttons.get(a.kind);
+      if (!b) continue;
+      b.disabled = full;
+      const tip = full ? `${a.title} (a drawing keeps up to ${MAX_GUIDES.toLocaleString('en-US')} guides: remove one first)` : a.title;
+      b.title = tip;
+      b.setAttribute('aria-label', tip);
+    }
     const u = h.units();
     const at = g ?? DEFAULT_GUIDES;
     if (d.activeElement !== major) major.value = showGuideLength(at.major, u);

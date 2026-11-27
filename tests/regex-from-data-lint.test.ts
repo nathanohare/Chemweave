@@ -33,9 +33,7 @@ const BASELINE: Record<string, number> = {
   'src/io/cdxml.ts': 1,
   'src/io/docx-read.ts': 10,
   'src/io/docx-write.ts': 1,
-  'src/io/odt.ts': 1,
   'src/io/pptx-keep.ts': 1,
-  'src/io/xlsx-ole.ts': 3,
   'src/io/xlsx.ts': 1,
   'src/kb/pretty.ts': 1,
   // (reflag's copy of a pattern, moved here from src/si/chemtext.ts)
@@ -54,7 +52,7 @@ const BASELINE: Record<string, number> = {
   'src/si/nmr.ts': 3,
   'src/si/py.ts': 3,
   'src/si/si-import-pdf.ts': 1,
-  'src/si/si-import-spectra.ts': 6,
+  'src/si/si-import-spectra.ts': 5,
   'src/si/spectra.ts': 1,
   'src/text/chemtext.ts': 5,
   'tests/cdxml-write.test.ts': 1,

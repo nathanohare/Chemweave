@@ -108,13 +108,13 @@ export function sideSlot(doc: Doc, m: Measure, r: Arrow, side: ArrowSide, have?:
  * The text guide on one side of an arrow (drawing coordinates): where a click starts the text.
  * The Results guide sits under the text below the arrow (`m` places it).
  */
-export function helperBox(doc: Doc, r: Arrow, side: ArrowSide, m?: Measure): Rect {
+export function helperBox(doc: Doc, r: Arrow, side: ArrowSide, m?: Measure, items?: Item[]): Rect {
   const f = arrowFrame(r);
   const bond = doc.style.bondLength;
   const shaft = Math.max(1, f.length - headOf(r));
   const w = Math.min(shaft * 0.9, 2.6 * bond), h = textSize(doc, side) * 1.5;
   const sign = side === 'above' ? 1 : -1;
-  const gap = side === 'results' && m ? resultsGapOf(doc, m, r, arrowTexts(doc, m, r).below) : textGapOn(spacing(bond, prefsOf(doc)), side === 'above' ? 'above' : 'below');
+  const gap = side === 'results' && m ? resultsGapOf(doc, m, r, arrowTexts(doc, m, r, items).below) : textGapOn(spacing(bond, prefsOf(doc)), side === 'above' ? 'above' : 'below');
   const c = add(add(f.tail, mul(f.u, shaft / 2)), mul(f.n, sign * (gap + h / 2)));
   return { x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2 };
 }

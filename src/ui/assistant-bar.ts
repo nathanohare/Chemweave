@@ -21,6 +21,11 @@ export interface AssistantHost {
   /** Select a scheme step's arrow; false when there is no such step. */
   markStep(n: number): boolean;
   undo(): void;
+  /**
+   * Where the page's Undo history stands now, as a few values that are the same only while nothing
+   * has been done since (a card's Undo takes back its own proposal, never a later change).
+   */
+  position?(): readonly unknown[];
   /** Edit > Settings > AI Model. */
   openSettings(): Promise<void>;
   /** The work area, to sit over. */
@@ -62,9 +67,10 @@ export class AssistantBar {
   private looks: HTMLSpanElement;
   private head: HTMLDivElement;
   private items: SendItem[] = [];
-  /** Things the person switched off, kept while the bar is open between questions. */
-  private off = new Set<SendItem['id']>();
-  private busy = 0;
+  /** What the person switched on or off (either way), kept while the bar is open between questions. */
+  private choice = new Map<SendItem['id'], boolean>();
+  /** Changes when the conversation starts afresh (another tab); a reply to an older one is not shown. */
+  private convo = 0;
   private tab: object | null = null;
   /** Where the floating window was left, and whether it has been given its size yet. */
   private at: { x: number; y: number } | null = null;
@@ -109,7 +115,7 @@ export class AssistantBar {
     links.append(
       button('Request Log', () => this.showLog(), 'ai-link', `Every question sent, kept ${requestLogPlace()}`),
       this.looks,
-      button('Settings', () => void this.host.openSettings().then(() => { this.applyLook(); return this.refresh(); }), 'ai-link', 'Edit > Settings > AI Model'),
+      button('Settings', () => void this.host.openSettings().then(() => { this.applyLook(); return this.refresh(); }), 'ai-link', 'Edit ▸ Settings ▸ AI Model'),
     );
     foot.append(this.chips, links);
     box.append(row, foot);
@@ -127,7 +133,7 @@ export class AssistantBar {
     this.el.hidden = false;
     // a conversation is about one tab's page; Accept on another's proposals would land in the wrong place
     const tab = this.host.tab();
-    if (tab !== this.tab) { this.tab = tab; this.msgs.replaceChildren(); this.off.clear(); this.busy++; }
+    if (tab !== this.tab) { this.tab = tab; this.msgs.replaceChildren(); this.choice.clear(); this.convo++; }
     this.applyLook();
     this.input.placeholder = MODE_HINT[this.host.mode()];
     await this.refresh();
@@ -211,9 +217,14 @@ export class AssistantBar {
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       head.setPointerCapture(e.pointerId);
       const move = (m: PointerEvent) => { this.at = { x: m.clientX - dx, y: m.clientY - dy }; this.place(); };
-      const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); };
+      const up = () => {
+        head.removeEventListener('pointermove', move);
+        head.removeEventListener('pointerup', up);
+        head.removeEventListener('pointercancel', up);
+      };
       head.addEventListener('pointermove', move);
       head.addEventListener('pointerup', up);
+      head.addEventListener('pointercancel', up);
       e.preventDefault();
     });
   }
@@ -232,8 +243,13 @@ export class AssistantBar {
     this.input.disabled = this.sendBtn.disabled = !ready;
     if (p.provider === 'none') this.setup();
     else if (!p.assistant) this.consent(p);
-    this.items = (await this.host.items().catch(() => [])).map((i) => ({ ...i, on: i.on && !this.off.has(i.id) }));
+    this.items = await this.fetchItems();
     this.drawChips();
+  }
+
+  /** What could be sent now: each item as the page offers it, unless the person turned it on or off. */
+  private async fetchItems(): Promise<SendItem[]> {
+    return (await this.host.items().catch(() => [])).map((i) => ({ ...i, on: this.choice.get(i.id) ?? i.on }));
   }
 
   private drawChips(): void {
@@ -242,7 +258,7 @@ export class AssistantBar {
     for (const it of this.items) {
       const b = button(it.label, () => {
         it.on = !it.on;
-        if (it.on) this.off.delete(it.id); else this.off.add(it.id);
+        this.choice.set(it.id, it.on);
         this.drawChips();
       }, 'ai-chip' + (it.on ? '' : ' off'), (it.on ? 'Sent with your question. Click to leave it out.' : 'Left out. Click to send it.') + '\n\n' + it.text.slice(0, 600) + (it.text.length > 600 ? '…' : ''));
       b.setAttribute('aria-pressed', String(it.on));
@@ -310,39 +326,51 @@ export class AssistantBar {
     if (blocked) { this.note(blocked, 'warn'); return; }
     // another tab chosen while the bar stayed open: a new conversation, about that tab's page
     const tab = this.host.tab();
-    if (tab !== this.tab) { this.tab = tab; this.msgs.replaceChildren(); this.busy++; }
+    if (tab !== this.tab) { this.tab = tab; this.msgs.replaceChildren(); this.choice.clear(); this.convo++; }
+    // the box is emptied before anything is awaited, so Enter twice sends one question, not two
+    this.input.value = '';
+    this.fit();
+    const convo = this.convo;
     // what is on the page now (the selection may have changed since the bar opened)
-    this.items = (await this.host.items().catch(() => [])).map((i) => ({ ...i, on: i.on && !this.off.has(i.id) }));
+    this.items = await this.fetchItems();
     this.drawChips();
     const mode = this.host.mode();
     const q = buildQuestion(this.items, question, mode);
     logRequest({ time: Date.now(), service: aiName(p), local: isLocalAddress(aiBase(p)), sent: sendSummary(this.items), text: q.text, images: q.images?.length ?? 0 });
     this.msgs.append(h('div', 'ai-me', question));
-    this.input.value = '';
-    this.fit();
     const wait = this.note('Thinking…', 'ai-muted');
-    const seq = ++this.busy;
+    // (a second question while this one is out is fine: each answer is shown when it arrives)
     try {
       const answer = await aiAsk(p, q);
-      if (seq !== this.busy) return;
-      wait.remove();
-      this.answer(answer, tab);
+      if (convo !== this.convo) { wait.remove(); return; }
+      this.answer(answer, tab, wait);
     } catch (e) {
-      if (seq !== this.busy) return;
-      wait.remove();
-      this.note(`The model didn't answer: ${e instanceof Error ? e.message : String(e)}`, 'warn');
+      if (convo !== this.convo) { wait.remove(); return; }
+      // (in the place of its Thinking… line: under its own question, however the answers are ordered)
+      const said = this.note(`The model didn't answer: ${e instanceof Error ? e.message : String(e)}`, 'warn');
+      if (wait.isConnected) wait.replaceWith(said);
     }
   }
 
   /** The answer's words, then a card for each change it proposes. */
-  private answer(text: string, tab: object): void {
+  private answer(text: string, tab: object, wait?: HTMLElement): void {
     const { prose, actions } = parseAnswer(text);
     const d = h('div', 'ai-it');
     for (const para of prose.split(/\n{2,}/).filter((x) => x.trim())) d.append(h('p', '', para.trim()));
     for (const a of actions) d.append(this.card(a, tab));
     if (!d.childNodes.length) d.append(h('p', 'ai-muted', '(No answer.)'));
-    this.msgs.append(d);
+    // in the place of its Thinking… line, so each answer sits under its own question
+    if (wait?.isConnected) wait.replaceWith(d); else this.msgs.append(d);
     this.msgs.scrollTop = this.msgs.scrollHeight;
+  }
+
+  /** Where the page's history stands (nothing to tell it by when the host doesn't say). */
+  private position(): readonly unknown[] {
+    return this.host.position?.() ?? [];
+  }
+
+  private samePosition(a: readonly unknown[], b: readonly unknown[]): boolean {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
   }
 
   private card(a: AssistantAction, tab: object): HTMLElement {
@@ -378,10 +406,26 @@ export class AssistantBar {
     const accept = button('Accept', () => void (async () => {
       if (this.host.tab() !== tab) { status.textContent = 'This was asked about another tab. Go back to that tab to accept it.'; return; }
       accept.disabled = reject.disabled = true;
+      const start = this.position();
       const said = await this.host.apply(a).catch((e) => `Could not: ${String(e)}`);
       status.textContent = said;
-      if (!/^(Replaced|Drew|Added)/.test(said)) return;
-      const undo = button('Undo', () => { this.host.undo(); status.textContent = 'Undone.'; undo.remove(); }, '', 'Undo (Ctrl+Z)');
+      // nothing was changed (the message says why, often "try again"): Accept and Reject stay usable.
+      // Not when something was (a failure after the structure was drawn): a second Accept would draw it twice.
+      if (!/^(Replaced|Drew|Added)/.test(said)) {
+        if (this.samePosition(start, this.position())) accept.disabled = reject.disabled = false;
+        return;
+      }
+      const after = this.position();
+      const undo = button('Undo', () => {
+        // only while this proposal is still the last thing done: Undo would otherwise take back something later
+        if (!this.samePosition(after, this.position())) {
+          status.textContent = 'Something else was changed after this. Use Edit ▸ Undo to go back step by step.';
+        } else {
+          this.host.undo();
+          status.textContent = 'Undone.';
+        }
+        undo.remove();
+      }, '', 'Undo (Ctrl+Z)');
       row.append(undo);
     })(), 'primary');
     const reject = button('Reject', () => { accept.disabled = reject.disabled = true; status.textContent = 'Rejected.'; });

@@ -28,8 +28,8 @@ export interface Fit {
 }
 
 export const FIT_NAMES: Record<FitKind, string> = {
-  linear: 'Straight line', poly2: 'Polynomial (x²)', poly3: 'Polynomial (x³)', exp: 'Exponential', log: 'Logarithmic', power: 'Power',
-  order1: 'First-order decay', order2: 'Second-order decay', arrhenius: 'Arrhenius (k against T)', eyring: 'Eyring (k against T)', hammett: 'Hammett (against σ)',
+  linear: 'Linear', poly2: 'Polynomial (x²)', poly3: 'Polynomial (x³)', exp: 'Exponential', log: 'Logarithmic', power: 'Power',
+  order1: 'First-Order Decay', order2: 'Second-Order Decay', arrhenius: 'Arrhenius (k Against T)', eyring: 'Eyring (k Against T)', hammett: 'Hammett (Against σ)',
 };
 
 /** The chemistry fits, in menu order (Excel has none of them). */
@@ -64,6 +64,11 @@ function solve(a: number[][], b: number[]): number[] | null {
 function polyFit(xs: number[], ys: number[], degree: number, intercept?: number): number[] | null {
   const start = intercept === undefined ? 0 : 1;
   const terms = degree + 1 - start;
+  // too few different x values for the terms (every x 0.1, say) has no fit: rounding would
+  // otherwise leave a tiny pivot and a huge, meaningless line instead of a singular system
+  const distinct = new Set(xs.map((x) => Number(x.toPrecision(12))));
+  if (intercept !== undefined) distinct.delete(0);
+  if (distinct.size < terms) return null;
   const a = Array.from({ length: terms }, () => new Array<number>(terms).fill(0));
   const b = new Array<number>(terms).fill(0);
   for (let i = 0; i < xs.length; i++) {
@@ -110,7 +115,9 @@ export function fitPoints(kind: FitKind, xs: number[], ys: number[], intercept?:
     case 'linear': case 'poly2': case 'poly3': {
       const c = polyFit(px, py, degree, intercept);
       if (!c) return null;
-      return { kind, coef: c, r2: rSquared(py, px.map((x) => polyAt(c, x)), intercept !== undefined), n: px.length };
+      // only a line through the origin (intercept 0) takes R² about zero, as LINEST does with no
+      // constant; any other fixed intercept takes it about the mean of y
+      return { kind, coef: c, r2: rSquared(py, px.map((x) => polyAt(c, x)), intercept === 0), n: px.length };
     }
     case 'exp': {
       const ly = py.map(Math.log);
@@ -136,9 +143,11 @@ export function fitPoints(kind: FitKind, xs: number[], ys: number[], intercept?:
 /** A chemistry fit of usable points (temperatures already in kelvin). */
 function chemFit(kind: ChemFitKind, px: number[], py: number[], intercept: number | undefined, celsius: boolean): Fit | null {
   if (px.length < (intercept !== undefined && (kind === 'order1' || kind === 'hammett') ? 1 : 2) || px.length < 2) return null;
-  const line = (xs: number[], ys: number[], icpt?: number) => {
+  // R² about zero only for a Hammett line fixed through the origin; first-order decay's fixed
+  // intercept is ln y₀ (0 when y₀ = 1), which is not a line through the origin of the data
+  const line = (xs: number[], ys: number[], icpt?: number, throughOrigin = false) => {
     const c = polyFit(xs, ys, 1, icpt);
-    return c ? { c, r2: rSquared(ys, xs.map((x) => c[0] + c[1] * x), icpt !== undefined && icpt === 0) } : null;
+    return c ? { c, r2: rSquared(ys, xs.map((x) => c[0] + c[1] * x), throughOrigin) } : null;
   };
   const extra = celsius && isTemperatureFit(kind) ? { celsius: true } : {};
   switch (kind) {
@@ -163,7 +172,7 @@ function chemFit(kind: ChemFitKind, px: number[], py: number[], intercept: numbe
       return l ? { kind, coef: [-l.c[1] * R_GAS, (l.c[0] - Math.log(KB / H_PLANCK)) * R_GAS], r2: l.r2, n: px.length, ...extra } : null;
     }
     case 'hammett': {
-      const l = line(px, py, intercept);
+      const l = line(px, py, intercept, intercept === 0);
       return l ? { kind, coef: l.c, r2: l.r2, n: px.length } : null;
     }
   }
@@ -205,7 +214,8 @@ export function fitEquation(f: Fit, digits = 4): string {
       const parts: string[] = [];
       for (let i = f.coef.length - 1; i >= 0; i--) {
         const c = f.coef[i];
-        if (i > 0 && c === 0) continue;
+        // a zero term is left out (y = 2x for a line through the origin), but a lone zero stays
+        if (c === 0 && (i > 0 || parts.length)) continue;
         const term = i === 0 ? '' : i === 1 ? 'x' : `x${i === 2 ? '²' : '³'}`;
         if (!parts.length) parts.push(`${n(c)}${term}`);
         else parts.push(`${signed(c)}${term}`);

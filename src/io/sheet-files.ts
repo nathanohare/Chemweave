@@ -60,9 +60,13 @@ function withMacroNote(got: { book: Workbook; warnings: string[] }, ext: string)
   return got;
 }
 
-/** UTF-8 (with or without a byte-order mark), else Windows' Western European code page, as Excel writes CSV. */
+/**
+ * UTF-8 (with or without a byte-order mark), UTF-16 with its byte-order mark (FF FE little-endian,
+ * FE FF big-endian: the Unicode Standard, 23.8), else Windows' Western European code page, as Excel writes CSV.
+ */
 export function decodeText(bytes: Uint8Array): string {
   if (bytes[0] === 0xff && bytes[1] === 0xfe) return new TextDecoder('utf-16le').decode(bytes.subarray(2));
+  if (bytes[0] === 0xfe && bytes[1] === 0xff) return new TextDecoder('utf-16be').decode(bytes.subarray(2));
   try {
     return new TextDecoder('utf-8', { fatal: true }).decode(bytes).replace(/^﻿/, '');
   } catch {
@@ -202,14 +206,20 @@ function structureColumn(s: Sheet): number {
   return best;
 }
 
+/** Marks the title column's entry among a record's data items. */
+const TITLE = Symbol('title');
+
 /** A sheet as an SD file: a record for each row with a structure, the other columns as data items named by their headers. */
 export function sdfText(s: Sheet, style: DocStyle): string {
   const col = structureColumn(s);
   if (col < 0) throw new Error('There are no structures in this sheet to save as an SD file.');
   // the header row: the first row with text and no structure in the structure column
+  // (found upward from the first structure, past blank rows between them)
   let first = 0;
   while (first <= s.lastRow && !s.cell(first, col)?.structure) first++;
-  const headRow = first - 1;
+  let headRow = first - 1;
+  const hasText = (r: number) => { for (let c = 0; c <= s.lastCol; c++) if (c !== col && s.shownText(r, c).trim()) return true; return false; };
+  while (headRow >= 0 && !hasText(headRow)) headRow--;
   const names: [number, string][] = [];
   for (let c = 0; c <= s.lastCol; c++) {
     if (c === col) continue;
@@ -221,7 +231,8 @@ export function sdfText(s: Sheet, style: DocStyle): string {
   const last = Math.max(s.lastRow, s.lastDataRow);
   for (let r = first; r <= last; r++) {
     const st = s.cell(r, col)?.structure;
-    const data = names.map(([c, h]) => [h, cellText(s, r, c)] as const).filter(([, v]) => v !== '');
+    // (the title column's text is the record's title, not a data item; another column of the same header is one)
+    const data = names.map(([c, h]) => [c === titleCol ? TITLE : h, cellText(s, r, c)] as const).filter(([, v]) => v !== '');
     if (!st && !data.length) continue;
     // a record read from an SD file goes back as it was while its drawing is unchanged; any other
     // is written as a file molfile (labels kept as aliases, abbreviations as superatom groups)
@@ -232,7 +243,7 @@ export function sdfText(s: Sheet, style: DocStyle): string {
     lines[0] = titleCol !== undefined ? cellText(s, r, titleCol).replace(/\n/g, ' ').slice(0, 80) : '';
     out.push(lines.join('\n'));
     for (const [h, v] of data) {
-      if (titleCol !== undefined && h === names.find(([c]) => c === titleCol)![1]) continue;
+      if (h === TITLE) continue;
       out.push(`> <${h.replace(/[<>]/g, '')}>`, v.replace(/\n\s*\n/g, '\n'), '');
     }
     out.push('$$$$');

@@ -31,6 +31,8 @@ export class ToolWindow {
   private lastRef: HTMLInputElement | null = null;
   private buttons: HTMLParagraphElement;
   onClose: (() => void) | null = null;
+  /** Set when the person pressed Escape (rather than another window or the program taking this one away). */
+  dismissed = false;
   /** The sheet the window was opened on (cells picked on another sheet carry its name). */
   home: string | null = null;
 
@@ -51,16 +53,20 @@ export class ToolWindow {
     this.form.addEventListener('submit', (e) => e.preventDefault());
     this.d.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Escape') { e.preventDefault(); this.close(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.dismissed = true; this.close(); }
     });
     // the window can be moved by its title
     h.addEventListener('pointerdown', (e) => {
+      // (the main button only: a right-click on the title doesn't carry the window along)
+      if (e.button !== 0) return;
       const r = this.d.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       const move = (m: PointerEvent) => { this.d.style.left = `${Math.max(0, m.clientX - dx)}px`; this.d.style.top = `${Math.max(0, m.clientY - dy)}px`; this.d.style.right = 'auto'; };
-      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+      // (a pointer the system takes away, a touch gesture for one, ends the drag too)
+      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
       addEventListener('pointermove', move);
       addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
     });
   }
 

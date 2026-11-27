@@ -8,6 +8,7 @@ import type { DocText } from '../document/document';
 import { OBJECT_CHAR } from '../document/document';
 import * as rt from '../richtext';
 import { findAll, lookPatch, replaceRanges, trackedReplaceRanges, withoutDeleted, type FindOptions, type ReplaceLook } from '../document/find';
+import { addInfo } from './info-tip';
 
 export interface DocFindHost {
   file(): DocFile | null;
@@ -79,13 +80,12 @@ export class DocFind {
         <div class="df-row">
           <input type="text" class="df-with" placeholder="Replace with" aria-label="Replace with" spellcheck="false" />
           <button type="button" data-act="one" title="Replace this one and go to the next (Enter in this box)">Replace</button>
-          <button type="button" data-act="all" title="Replace every one (one step to undo)">All</button>
+          <button type="button" data-act="all" title="Replace every one (one step to undo)">Replace All</button>
         </div>
         <div class="df-row df-look" role="group" aria-label="How the replacement looks">
           <span class="muted">Make it</span>
           ${LOOKS.map((l) => `<button type="button" data-look="${l.key}" aria-pressed="false" title="${l.title}">${l.label}</button>`).join('')}
         </div>
-        <p class="df-hint muted">Leave “Replace with” empty to change only how the found words look.</p>
       </div>`;
     parent.append(el);
     this.el = el;
@@ -95,7 +95,8 @@ export class DocFind {
     this.replaceEl = el.querySelector('.df-replace')!;
     this.toggleEl = el.querySelector('.df-toggle')!;
     if (this.findOnly) { this.toggleEl.remove(); this.replaceEl.remove(); }
-    if (this.replacer) { el.querySelector('.df-look')?.remove(); el.querySelector('.df-hint')?.remove(); }
+    if (this.replacer) el.querySelector('.df-look')?.remove();
+    else addInfo(el.querySelector('.df-look > span'), 'Leave “Replace with” empty to change only how the found words look.');
 
     this.findBox.addEventListener('input', () => { this.refresh(); this.go(0); });
     for (const c of el.querySelectorAll<HTMLInputElement>('input[type=checkbox]')) c.addEventListener('change', () => { this.refresh(); this.go(0); });

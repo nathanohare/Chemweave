@@ -5108,7 +5108,7 @@
    "mentioned": [],
    "tokens": [],
    "notes": [],
-   "error": "“s.cdx” is a ChemDraw .cdx file, which this program can't read. In ChemDraw, use File ▸ Save As… and choose “CDXML” as the type, then add that file instead.",
+   "error": "“s.cdx” is a ChemDraw .cdx file, which Chemweave can't read. In ChemDraw, use File ▸ Save As… and choose “CDXML” as the type, then add that file instead.",
    "figure_text": true,
    "pages": 0,
    "transient": false

@@ -241,9 +241,13 @@ export function leastSquares(y: number[], xs: number[][], constant: boolean): Fi
   const inv: number[][] = A.map((row, a) => row.map((_, b) => (a === b ? 1 : 0)));
   const M = A.map((r) => [...r]);
   const dropped = new Array<boolean>(k).fill(false);
-  const scale = Math.max(1e-300, ...A.map((r, a) => Math.abs(r[a])));
+  // a column is collinear when what is left of it, once the columns before it are taken out, is
+  // a vanishing part of its own sum of squares (judged against itself, not the largest column:
+  // time in seconds beside its cube differ by 1e14 in scale and are still independent); and a
+  // column that doesn't vary (every x 0.1) is one when its spread is nothing beside its size
+  const raw = Array.from({ length: k }, (_, j) => xs.reduce((s, r) => s + r[j] * r[j], 0));
   for (let c = 0; c < k; c++) {
-    if (Math.abs(M[c][c]) <= 1e-12 * scale) { dropped[c] = true; continue; }
+    if (!(A[c][c] > 1e-24 * raw[c]) || Math.abs(M[c][c]) <= 1e-12 * A[c][c]) { dropped[c] = true; continue; }
     const piv = M[c][c];
     for (let j = 0; j < k; j++) { M[c][j] /= piv; inv[c][j] /= piv; }
     for (let r = 0; r < k; r++) {

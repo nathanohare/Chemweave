@@ -11,6 +11,7 @@ import { chartTab, type ChartChoice, type ChartHost } from './newman-chart-tab';
 import type { NewmanText } from '../design/newman-prefs';
 import { addInfo, infoIcon, setInfo } from './info-tip';
 import { FONT_GROUPS } from '../fonts';
+import { minusText } from './minus-text';
 
 /** What the window settles on; the caller makes the projection from it. */
 export interface NewmanChoice {
@@ -55,7 +56,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function torsionText(c: NewmanConformer): string {
   const phi = Math.round(norm180(c.view.dihedral));
   const name = commonName(phi);
-  return `${phi}°${name ? ' ' + name : ''}`;
+  return `${minusText(phi)}°${name ? ' ' + name : ''}`;
 }
 
 /** The Energy Chart tab, when the window offers one. */
@@ -74,7 +75,8 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
     const choice: NewmanChoice = { ...start };
     let confs: NewmanConformer[] = [];
     let drawnConf: NewmanConformer | null = null;
-    let busy = 0;
+    /** Each search made (a newer one makes the answer of an older one not count), whether the newest is still running, and whether the window is over. */
+    let req = 0, loading = false, over = false;
     const d = el('dialog', { className: 'ask newman-dialog' });
     d.setAttribute('aria-label', 'Newman projection');
     const form = el('form', { method: 'dialog' });
@@ -134,7 +136,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
     const paint = () => {
       if (tab === 'chart') { submit.disabled = !chart?.result(); return; }
       const c = current();
-      submit.disabled = !c || busy > 0;
+      submit.disabled = !c || loading;
       for (const [kind, cv] of canvases) {
         if (!c) { cv.getContext('2d')?.clearRect(0, 0, cv.width, cv.height); continue; }
         try { host.paint(choice, c, cv, kind); } catch { /* drawn on the next change */ }
@@ -164,30 +166,31 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
       paint();
     };
     const load = async () => {
-      const ask = ++busy;
+      const ask = ++req;
+      loading = true;
       paint();
       status.textContent = choice.source === 'drawn' ? 'Building the shape the wedges draw…' : 'Searching conformers…';
       try {
         if (choice.source === 'drawn') {
           const got = await host.drawn(choice.reversed);
-          if (ask !== busy) return;
+          if (ask !== req || over) return;
           drawnConf = typeof got === 'string' ? null : got;
           status.textContent = typeof got === 'string' ? got : '';
         } else {
-          const got = await host.list(choice.reversed, choice.method, (t) => { if (ask === busy) status.textContent = t; });
-          if (ask !== busy) return;
+          const got = await host.list(choice.reversed, choice.method, (t) => { if (ask === req && !over) status.textContent = t; });
+          if (ask !== req || over) return;
           confs = got;
           if (choice.index >= confs.length) choice.index = 0;
           status.textContent = confs.length ? '' : 'No conformers were found.';
           setInfo(listInfo, `${confs.length} conformer${confs.length === 1 ? '' : 's'} looking down this bond, most stable first (${choice.method === 'xtb' ? 'GFN2-xTB' : 'MMFF94s+'}). Tab in a preview: next conformer. Shift+Tab: previous.`);
         }
       } catch (e) {
-        if (ask !== busy) return;
+        if (ask !== req || over) return;
         const msg = (e as Error)?.message ?? String(e);
         status.textContent = msg === 'stopped' ? '' : msg;
         if (choice.source !== 'drawn' && choice.method === 'xtb') { choice.method = 'mmff'; methodSel.value = 'mmff'; }
       } finally {
-        if (ask === busy) busy = 0;
+        if (ask === req) loading = false;
       }
       fillList();
       paint();
@@ -199,7 +202,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
     choice.method = methodSel.value as 'mmff' | 'xtb';
     methodSel.disabled = choice.source === 'drawn';
     turn.value = String(choice.turn);
-    turnOut.textContent = `${choice.turn}°`;
+    turnOut.textContent = `${minusText(choice.turn)}°`;
     choice.text = { ...choice.text };
     const flags = ['ideal', 'wedges', 'rs', 'mark', 'linked'] as const;
     for (const k of flags) {
@@ -221,7 +224,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
       b.addEventListener('click', () => { if (choice.text[k]) delete choice.text[k]; else choice.text[k] = true; b.setAttribute('aria-pressed', String(!!choice.text[k])); paint(); });
     }
 
-    turn.addEventListener('input', () => { choice.turn = Number(turn.value) || 0; turnOut.textContent = `${choice.turn}°`; paint(); });
+    turn.addEventListener('input', () => { choice.turn = Number(turn.value) || 0; turnOut.textContent = `${minusText(choice.turn)}°`; paint(); });
     turn.addEventListener('dblclick', () => { choice.turn = 0; turn.value = '0'; turnOut.textContent = '0°'; paint(); });
     const reverse = () => { choice.reversed = !choice.reversed; choice.index = 0; void load(); chartStale = true; if (tab === 'chart') { chartStale = false; chart?.open(true); } };
     for (const b of form.querySelectorAll<HTMLButtonElement>('[data-act=swap]')) b.addEventListener('click', (e) => { e.stopPropagation(); reverse(); });
@@ -235,7 +238,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
         if (e.button !== 0 || (e.target as Element).closest('button')) return;
         pickKind(kind);
         const c = current();
-        if (editing || !c || busy > 0) return;
+        if (editing || !c || loading) return;
         const x0 = e.clientX, y0 = e.clientY;
         const move = (ev: PointerEvent) => {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
@@ -243,9 +246,11 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
           d.close();
           finish({ choice: { ...choice, text: { ...choice.text } }, conf: c, drag: { x: ev.clientX, y: ev.clientY } });
         };
-        const stopDrag = () => { window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', stopDrag, true); };
+        const stopDrag = () => { window.removeEventListener('pointermove', move, true); window.removeEventListener('pointerup', stopDrag, true); window.removeEventListener('pointercancel', stopDrag, true); };
         window.addEventListener('pointermove', move, true);
         window.addEventListener('pointerup', stopDrag, true);
+        // (a touch the browser takes for a scroll ends in pointercancel, not pointerup)
+        window.addEventListener('pointercancel', stopDrag, true);
       });
     }
     // Tab steps through the conformers while the preview has focus; past either end it moves on as usual
@@ -276,7 +281,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
 
     d.append(form);
     document.body.append(d);
-    const finish = (v: NewmanResult<S> | null) => { busy = -1; chart?.stop(); if (!v) host.stop(); d.remove(); resolve(v); };
+    const finish = (v: NewmanResult<S> | null) => { over = true; loading = false; chart?.stop(); if (!v) host.stop(); d.remove(); resolve(v); };
     $<HTMLButtonElement>('[data-act=cancel]').addEventListener('click', () => { d.close(); finish(null); });
     d.addEventListener('cancel', () => finish(null));
     d.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });

@@ -83,5 +83,6 @@ export function show(x: number | undefined): string {
   if (x === undefined || !Number.isFinite(x)) return '';
   if (x === 0) return '0';
   const digits = Math.max(0, 3 - Math.floor(Math.log10(Math.abs(x))));
-  return String(Number(x.toFixed(Math.min(digits, 8))));
+  // (four figures however small: a 2 nM concentration is 2e-9 mol/L, not 0)
+  return String(Number(x.toFixed(Math.min(digits, 100))));
 }

@@ -2,6 +2,7 @@
 // change the replacements made as you type, and edit the words added to the spelling check.
 // Everything takes effect at once and is saved in the settings file.
 
+import { askChoice } from './ask';
 import { showDialog } from './dialog-host';
 import { DEFAULT_REPLACEMENTS } from '../text/chemtext';
 import type { TypingPrefs } from '../text/typing';
@@ -37,7 +38,7 @@ export class TypingDialog {
       <label class="hk-opt"><input type="checkbox" data-opt="spell" /><span data-info="Red underlines for spelling, with chemistry words known; blue underlines for chemistry formatting. Right-click an underlined word for suggestions.">Check spelling and chemistry formatting in text being typed</span></label>
       <h3 data-info="When you finish a word with a space or punctuation, text on the left becomes text on the right. A replacement that starts with a letter only applies as a whole word (65 oC, not ZnoC).">Replacements as you type</h3>
       <div class="ty-table-wrap"><table class="ty-table"><thead><tr><th>Type</th><th>Becomes</th><th></th></tr></thead><tbody></tbody></table></div>
-      <div class="ty-row-buttons"><button type="button" data-act="add">Add a replacement</button><button type="button" data-act="reset">Use the standard list</button></div>
+      <div class="ty-row-buttons"><button type="button" data-act="add">Add a Replacement</button><button type="button" data-act="reset">Use the Standard List</button></div>
       <h3 data-info="Words the spelling check accepts, one per line (Add to Dictionary on an underlined word adds it here).">My dictionary</h3>
       <textarea class="ty-words" rows="6" spellcheck="false" aria-label="My dictionary, one word per line"></textarea>
       <div class="hk-foot">
@@ -60,7 +61,7 @@ export class TypingDialog {
     this.spell.addEventListener('change', () => opts.set({ spelling: this.spell.checked }));
     this.words.addEventListener('input', () => opts.set({ dictionary: this.words.value.split(/\r?\n/).map((w) => w.trim()).filter(Boolean) }));
     d.querySelector('[data-act=add]')!.addEventListener('click', () => { this.addRow('', ''); (this.rows.lastElementChild?.querySelector('input') as HTMLInputElement | null)?.focus(); });
-    d.querySelector('[data-act=reset]')!.addEventListener('click', () => { this.fill(DEFAULT_REPLACEMENTS); this.saveRows(); });
+    d.querySelector('[data-act=reset]')!.addEventListener('click', () => void this.useStandard());
     d.querySelector('[data-act=close]')!.addEventListener('click', () => d.close());
     // keys typed here are for the window, not the drawing
     d.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
@@ -79,6 +80,19 @@ export class TypingDialog {
     this.words.value = v.dictionary.join('\n');
     void this.opts.location().then((w) => { this.d.querySelector('.ty-where')!.textContent = w; });
     showDialog(this.d);
+  }
+
+  /** Use the Standard List: asks first when that would replace custom replacements (nothing here undoes it). */
+  private async useStandard(): Promise<void> {
+    const mine = this.opts.get().replacements;
+    const same = mine.length === DEFAULT_REPLACEMENTS.length && mine.every(([a, b], i) => a === DEFAULT_REPLACEMENTS[i][0] && b === DEFAULT_REPLACEMENTS[i][1]);
+    if (!same) {
+      const pick = await askChoice('Use the Standard List?', 'The standard list replaces the custom replacements here, and they can\'t be brought back.',
+        [{ value: 'keep', label: 'Cancel' }, { value: 'use', label: 'Use the Standard List', primary: true }], 'keep');
+      if (pick !== 'use') return;
+    }
+    this.fill(DEFAULT_REPLACEMENTS);
+    this.saveRows();
   }
 
   private fill(list: readonly [string, string][]): void {

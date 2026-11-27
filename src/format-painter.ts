@@ -43,6 +43,16 @@ function relook<T extends object>(o: T, keys: readonly string[], look: object): 
   return { ...out, ...look } as T;
 }
 
+/**
+ * A patch that gives each look key the look's value, or takes it off (undefined) where the look has none:
+ * painting something plain over something styled makes it plain, as in Office, not a patch of only what the source has.
+ */
+function wholeLook(keys: readonly string[], look: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) out[k] = (look as Record<string, unknown>)[k];
+  return out;
+}
+
 export const runLook = (s: rt.RunStyle): RunLook => pick(s as TextRun, RUN_LOOK_KEYS);
 export const paraLook = (p: ParaStyle): ParaLook => pick(p, PARA_LOOK_KEYS);
 
@@ -167,15 +177,15 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
   const colour = look.colour;
   for (const id of sel.atoms) {
     const p = look.atom ?? look.bond ?? colour;
-    if (p && doc.atoms.has(id)) { doc.updateAtom(id, relook({}, look.atom || look.bond ? ATOM_KEYS : ['color'], p)); n++; }
+    if (p && doc.atoms.has(id)) { doc.updateAtom(id, look.atom || look.bond ? wholeLook(ATOM_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.bonds) {
     const p = look.bond ?? look.atom ?? colour;
-    if (p && doc.bonds.has(id)) { doc.updateBond(id, relook({}, look.bond || look.atom ? BOND_KEYS : ['color'], p)); n++; }
+    if (p && doc.bonds.has(id)) { doc.updateBond(id, look.bond || look.atom ? wholeLook(BOND_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.arrows) {
     const p = look.arrow ?? colour;
-    if (p && doc.arrows.has(id)) { doc.updateArrow(id, relook({}, look.arrow ? ARROW_KEYS : ['color'], p)); n++; }
+    if (p && doc.arrows.has(id)) { doc.updateArrow(id, look.arrow ? wholeLook(ARROW_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.shapes) {
     const s = doc.shapes.get(id);
@@ -186,7 +196,7 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
     }
     if (!paintableShape(s)) continue;
     const p = look.shape ?? colour;
-    const patch: Partial<Shape> = p ? relook({}, look.shape ? SHAPE_KEYS : ['color'], p) : {};
+    const patch: Partial<Shape> = p ? (look.shape ? wholeLook(SHAPE_KEYS, p) : relook({}, ['color'], p)) : {};
     if (s.text?.runs.length && look.text) patch.text = paintAllText(s.text.runs, s.text.paras, look.text);
     if (Object.keys(patch).length) { doc.updateShape(id, patch); n++; }
   }
@@ -211,7 +221,12 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
  * Where cells picked up with the brush go: a single cell clicked takes the whole block (as many
  * rows and columns as were picked); a range dragged over is filled, the block repeated across it.
  */
-export function cellPaintTarget(block: { rows: number; cols: number }, target: Range): Range {
+export function cellPaintTarget(block: { rows: number; cols: number; colStyles?: unknown[] }, target: Range): Range {
+  // whole columns picked up go onto whole columns, from the column clicked or across those dragged over
+  if (block.colStyles) {
+    const single = target.c1 === target.c2 && target.r1 === target.r2;
+    return { r1: 0, c1: target.c1, r2: block.rows - 1, c2: single ? target.c1 + block.cols - 1 : Math.max(target.c2, target.c1 + block.cols - 1) };
+  }
   if (target.r1 === target.r2 && target.c1 === target.c2) return { r1: target.r1, c1: target.c1, r2: target.r1 + block.rows - 1, c2: target.c1 + block.cols - 1 };
   return target;
 }
@@ -220,6 +235,21 @@ export function cellPaintTarget(block: { rows: number; cols: number }, target: R
 export function paintCells(sheet: Sheet, block: CellBlock, target: Range): Range {
   const to = cellPaintTarget(block, target);
   const rows = to.r2 - to.r1 + 1, cols = to.c2 - to.c1 + 1;
+  // the block as it is (whole columns: only their rows in use, with the columns' own formatting)
+  if (rows === block.rows && cols === block.cols) {
+    sheet.paste({ row: to.r1, col: to.c1 }, { ...block, origin: null }, 'formats');
+    return to;
+  }
+  // whole columns over more columns: the block once for each group of its columns, so each column
+  // takes the picked column's own formatting and only the rows in use are visited
+  if (block.colStyles && to.r1 === 0 && rows === block.rows) {
+    for (let c = to.c1; c <= to.c2; c += block.cols) {
+      const n = Math.min(block.cols, to.c2 - c + 1);
+      const part: CellBlock = { rows: block.rows, cols: n, cells: block.cells.map((line) => line.slice(0, n)), origin: null, colStyles: block.colStyles.slice(0, n) };
+      sheet.paste({ row: 0, col: c }, part, 'formats');
+    }
+    return to;
+  }
   const cells = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => block.cells[i % block.rows]?.[j % block.cols]));
   sheet.paste({ row: to.r1, col: to.c1 }, { rows, cols, cells, origin: null }, 'formats');
   return to;

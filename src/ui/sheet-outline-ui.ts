@@ -16,7 +16,7 @@ export interface OutlineHost {
   edit(label: string, fn: (s: Sheet) => void, after?: () => Range): void;
   flash(msg: string, ms?: number): void;
   /** The table around the selection: its cells and header row. */
-  table(): { data: Range; header: number | null } | null;
+  table(at?: { range: Range; active: { r: number; c: number } }): { data: Range; header: number | null } | null;
 }
 
 export class SheetOutline {
@@ -124,13 +124,13 @@ export class SheetOutline {
   settings(): void {
     const s = this.view.sheet;
     if (!s) return;
-    const w = new ToolWindow('Outline settings');
-    w.note('Where the summary rows and columns (the totals) are, beside their details.');
+    const w = new ToolWindow('Outline Settings');
+    w.info('Where the summary rows and columns (the totals) are, beside their details.');
     const below = w.check('Summary rows below detail', !s.outline?.summaryAbove);
     const right = w.check('Summary columns to right of detail', !s.outline?.summaryLeft);
     const symbols = w.check('Show outline symbols', s.viewOpts?.outlineSymbols !== false);
     w.actions('OK', () => {
-      this.host.edit('Outline settings', (sh) => {
+      this.host.edit('Outline Settings', (sh) => {
         const o = { summaryAbove: below.checked ? undefined : true, summaryLeft: right.checked ? undefined : true };
         sh.setOutline(o.summaryAbove || o.summaryLeft ? o : null);
         const v = { ...sh.viewOpts, outlineSymbols: symbols.checked ? undefined : false as const };
@@ -143,24 +143,36 @@ export class SheetOutline {
   /** Data > Subtotal. */
   subtotal(): void {
     const s = this.view.sheet;
+    const here = { range: { ...this.view.sel.range }, active: { ...this.view.sel.active } };
     const t = this.host.table();
     if (!s || !t) { this.host.flash('Click in a table of data first (with a header row).'); return; }
+    // Subtotal always reads the first row as the headings, as Excel does; when none was found
+    // (headings that are numbers, or text that isn't bold) the window says so
     const R: Range = { ...t.data, r1: t.header ?? t.data.r1 };
     if (R.r2 <= R.r1) { this.host.flash('Subtotal needs a header row and rows of data under it.'); return; }
     const cols: [string, string][] = [];
     for (let c = R.c1; c <= R.c2; c++) cols.push([String(c), s.shownText(R.r1, c) || `Column ${colName(c)}`]);
     const w = new ToolWindow('Subtotal');
+    if (t.header === null) w.note(`No header row was found, so row ${R.r1 + 1} is read as the headings (it is not subtotaled). Close this window and put headings over the data if that is not right.`);
     const by = w.select('At each change in', cols, cols[0][0]);
     const fn = w.select('Use function', SUBTOTAL_FUNCTIONS.map(([n, k]) => [String(k), n] as [string, string]), '9');
     const box = w.group('Add subtotal to');
     // the last column that holds numbers is ticked, as in Excel
     let lastNum = -1;
-    for (let c = R.c1; c <= R.c2; c++) if (typeof s.value(R.r1 + 1, c) === 'number') lastNum = c;
+    for (let c = R.c1; c <= R.c2; c++) for (let r = R.r1 + 1; r <= R.r2; r++) if (typeof s.value(r, c) === 'number') { lastNum = c; break; }
     const ticks = cols.map(([c, name]) => [Number(c), w.check(name, Number(c) === lastNum, box)] as const);
     const replace = w.check('Replace current subtotals', true);
     const breaks = w.check('Page break between groups', false);
     const below = w.check('Summary below data', !s.outline?.summaryAbove);
+    // the window floats beside the sheet, so it may be used after another sheet is showing
+    const stillHere = () => {
+      if (this.view.sheet !== s) return `Go back to ${s.name} to add subtotals there (the window was opened on it).`;
+      // (and the table may have grown or moved while it stayed open: looked for where it was found, not where the selection is now)
+      return JSON.stringify(this.host.table(here)) === JSON.stringify(t) ? null : 'The table has changed since this window was opened. Close it and open Subtotal again.';
+    };
     w.actions('OK', () => {
+      const away = stillHere();
+      if (away) return away;
       const picked = ticks.filter(([, b]) => b.checked).map(([c]) => c);
       if (!picked.length) return 'Select at least one column to add a subtotal to.';
       let out: Range | string = R;
@@ -171,6 +183,8 @@ export class SheetOutline {
       this.view.select(out);
       return undefined;
     }, [['Remove All', () => {
+      const away = stillHere();
+      if (away) { w.error(away); return; }
       let out = R;
       this.host.edit('Remove subtotals', (sh) => { out = removeSubtotals(sh, R); }, () => out);
       w.close();

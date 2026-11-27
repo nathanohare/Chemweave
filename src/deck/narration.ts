@@ -133,8 +133,9 @@ export class Recorder {
     const piece = this.piece;
     this.piece = null;
     this.waiting = false;
-    if (!piece || piece.rec.state === 'inactive') return Promise.resolve(null);
-    piece.rec.stop();
+    if (!piece) return Promise.resolve(null);
+    // (a recorder the browser has stopped by itself, a microphone unplugged, still has what it caught)
+    if (piece.rec.state !== 'inactive') piece.rec.stop();
     return piece.done;
   }
 

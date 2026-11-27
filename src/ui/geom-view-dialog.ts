@@ -4,6 +4,7 @@
 // hydrogens show, and parts hidden or faded (click atoms). Or take the geometry away, to draw
 // your own structure in its place.
 
+import { foldIntoInfo } from './info-tip';
 import { geomBestRotation, geomSpec, type GeomLook, type GeomView } from '../design/energy';
 import { atomPoints, crystalShapes, fittingZoom, paintShapes, shapesBounds, turnView, type XShape } from '../design/xray';
 import type { QmAtom } from '../chem/qm-output';
@@ -18,6 +19,25 @@ const LOOKS: { id: GeomLook | '2d'; name: string; tip: string }[] = [
   { id: 'wire', name: 'Lines', tip: 'Thin lines in the atoms\' colors' },
   { id: '2d', name: '2-D', tip: 'A 2-D structure (carbons as corners); hiding atoms works on it too' },
 ];
+
+/**
+ * What a click on atom `i` does to the hidden and faded atoms (`group`: the atom, or its whole
+ * molecule). Clicking what is already faded (or hidden) with that tool undoes it, and an undo
+ * only takes back what that tool did: atoms of the group that are hidden stay hidden when a
+ * fade is undone.
+ */
+export function pickAtoms(v: { hidden?: number[]; faded?: number[] }, pick: 'fade' | 'hide' | 'show', i: number, group: number[]): { hidden: number[]; faded: number[] } {
+  const hidden = new Set(v.hidden), faded = new Set(v.faded);
+  // a click on what is already so undoes it
+  const undo = pick === 'fade' ? faded.has(i) && !hidden.has(i) : pick === 'hide' ? hidden.has(i) : false;
+  for (const a of group) {
+    if (pick === 'show') { hidden.delete(a); faded.delete(a); }
+    else if (undo) { if (pick === 'fade') faded.delete(a); else hidden.delete(a); }
+    else if (pick === 'fade') { faded.add(a); hidden.delete(a); }
+    else { hidden.add(a); faded.delete(a); }
+  }
+  return { hidden: [...hidden], faded: [...faded] };
+}
 
 /** The window's own size for the figure (points): a species' box on the diagram is about this shape. */
 const FIG = { w: 200, h: 160 };
@@ -37,20 +57,20 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
     const form = document.createElement('form');
     form.method = 'dialog';
     form.innerHTML = `<h2>Geometry View: <span class="gv-name"></span></h2>
-      <div class="gv-looks" role="radiogroup" aria-label="Look"></div>
+      <div class="gv-looks" role="radiogroup" aria-label="Style"></div>
       <div class="gv-body">
         <canvas class="gv-canvas" tabindex="0" aria-label="The geometry: drag to rotate it, Shift+drag to rotate it in the plane of the page, click an atom to fade or hide it"></canvas>
         <div class="gv-side">
           <div class="gv-label">Click an atom to</div>
           <div class="gv-pick" role="radiogroup" aria-label="Click an atom to"></div>
           <label class="gv-check"><input type="checkbox" name="whole" /> its whole molecule</label>
-          <button type="button" data-act="spectators" ${ts ? '' : 'disabled'} title="${ts ? 'Fade everything but the atoms of the bonds being made or broken and those bonded to them' : 'For a transition state (a bond being made or broken)'}">Fade all but the reacting atoms</button>
-          <button type="button" data-act="showall" title="Show every atom again, none faded">Show all</button>
+          <button type="button" data-act="spectators" ${ts ? '' : 'disabled'} title="${ts ? 'Fade everything but the atoms of the bonds being made or broken and those bonded to them' : 'For a transition state (a bond being made or broken)'}">Fade All but the Reacting Atoms</button>
+          <button type="button" data-act="showall" title="Show every atom again, none faded">Show All</button>
           <label class="gv-row"><span>Hydrogens</span><select name="hyd">
             <option value="all">All</option><option value="moving">Only on bonds being made or broken</option><option value="none">None</option>
           </select></label>
           <label class="gv-row"><span>Faded parts</span><input type="range" name="fade" min="20" max="90" step="5" /><output class="gv-fade"></output></label>
-          <div class="gv-label">Turn</div>
+          <div class="gv-label">Rotate</div>
           <div class="gv-turn">
             <button type="button" data-turn="best" title="Back to the side that spreads it out most">Best side</button>
             <button type="button" data-turn="cw" title="Rotate 90° clockwise in the page">↻ 90°</button>
@@ -59,7 +79,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
         </div>
       </div>
       <p class="muted small gv-note"></p>
-      <label class="gv-check"><input type="checkbox" name="all" /> Use this look and these hydrogens for every species</label>
+      <label class="gv-check"><input type="checkbox" name="all" /> Use this style and these hydrogens for every species</label>
       <p class="ask-buttons"><button type="button" data-act="remove" class="gv-remove" title="Remove the file's geometry from this species (draw one in the Structure column instead)">Remove Geometry</button><span class="gv-gap"></span><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Apply</button></p>`;
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     $('.gv-name').textContent = name;
@@ -101,7 +121,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       $('.gv-fade').textContent = `${fade.value}%`;
       const flat = styleOf() === '2d';
       $('.gv-note').textContent = flat
-        ? 'Drawn as a 2-D structure by its level (shown here in lines). Hiding atoms works on it; fading and turning are for the 3-D styles.'
+        ? 'Drawn as a 2-D structure by its level (shown here in lines). Hiding atoms works on it; fading and rotating are for the 3-D styles.'
         : 'Drag to rotate it (Shift+drag rotates in the page plane; arrow keys also rotate). The box shows the space available at its level.';
       ghosts = new Set(v.hidden);
       const pv: GeomView = { ...v, style: flat ? 'wire' : styleOf() as GeomLook, rot: rotation(), hidden: [], faded: [...new Set([...(v.faded ?? []), ...ghosts])] };
@@ -171,16 +191,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       return [...seen];
     };
     const apply = (i: number) => {
-      const g = group(i);
-      const hidden = new Set(v.hidden), faded = new Set(v.faded);
-      // a click on what is already so undoes it
-      const undo = pick === 'fade' ? faded.has(i) && !hidden.has(i) : pick === 'hide' ? hidden.has(i) : false;
-      for (const a of g) {
-        if (pick === 'show' || undo) { hidden.delete(a); faded.delete(a); }
-        else if (pick === 'fade') { faded.add(a); hidden.delete(a); }
-        else { hidden.add(a); faded.delete(a); }
-      }
-      v = { ...v, hidden: [...hidden], faded: [...faded] };
+      v = { ...v, ...pickAtoms(v, pick, i, group(i)) };
       draw();
     };
 
@@ -247,6 +258,8 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
     d.showModal();
     requestAnimationFrame(draw);
     draw();
+    // the explanation of the picture sits behind an "i" by the title (it changes with the style)
+    foldIntoInfo($('.gv-note'), form.querySelector('h2'));
   });
 }
 

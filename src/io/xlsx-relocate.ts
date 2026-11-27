@@ -56,7 +56,9 @@ export function gridOf(ms: ModelSheet, sheet: string): Grid | null {
   }
   for (const c of ms.chemCols) cols.add(c);
   if (ms.filter) {
+    // (its first and last rows, so rows put in or taken out inside it in Excel move its end too)
     rows.add(ms.filter.range.r1);
+    rows.add(ms.filter.range.r2);
     cols.add(ms.filter.range.c1);
     cols.add(ms.filter.range.c2);
     for (const c of Object.keys(ms.filter.conditions)) cols.add(Number(c));
@@ -154,14 +156,15 @@ export function moveFormula(text: string, sheet: string, from: { row: number; co
 /** A filter with its range and columns moved as the grid says (null when its columns were taken out). */
 export function moveFilter(f: Filter, m: Mover): Filter | null {
   const r1 = m.row(f.range.r1), c1 = m.col(f.range.c1), c2 = m.col(f.range.c2), r2 = m.row(f.range.r2);
-  if (r1 === null || c1 === null || c2 === null) return null;
+  // (its last row taken out in Excel: Excel's own range for it stands)
+  if (r1 === null || c1 === null || c2 === null || r2 === null) return null;
   const conditions: Record<number, Condition> = {};
   for (const [c, cond] of Object.entries(f.conditions)) {
     const to = m.col(Number(c));
     if (to !== null) conditions[to] = cond;
   }
   // (its keys in a range's own order, r1, c1, r2, c2, so the next save writes the same part)
-  return { range: { r1, c1, r2: Math.max(r1, r2 ?? r1), c2 }, conditions };
+  return { range: { r1, c1, r2: Math.max(r1, r2), c2 }, conditions };
 }
 
 /** A value as a key for finding cells holding it (numbers to 12 significant figures, as files round them). */
@@ -214,16 +217,39 @@ export function restoreSheet(
   const wanted = new Set(ms.cells.filter((x, i) => !at.has(i) && x.wrote !== null && x.wrote !== '').map((x) => valueKey(x.wrote)));
   if (wanted.size) {
     const byValue = new Map<string, number[]>();
+    // the same by value and column, rows in order (a cell other than a structure's looks in its own column only)
+    const byCol = new Map<string, number[]>();
     for (const [k, v] of raw) {
       if (v === null || v === '') continue;
       const key = valueKey(v);
       if (!wanted.has(key)) continue;
       const list = byValue.get(key);
       if (list) list.push(k); else byValue.set(key, [k]);
+      const ck = `${key}|${colOf(k)}`;
+      const rows = byCol.get(ck);
+      if (rows) rows.push(rowOf(k)); else byCol.set(ck, [rowOf(k)]);
     }
+    for (const rows of byCol.values()) rows.sort((a, b) => a - b);
     ms.cells.forEach((x, i) => {
       if (at.has(i) || x.wrote === null || x.wrote === '') return;
       const r0 = m.row(x.r) ?? x.r, c0 = m.col(x.c);
+      if (!x.structure) {
+        // the nearest row holding it in its column, outward from where it was (the upper one of two
+        // as near); one found is taken off the list, so a column of few values isn't searched again and again
+        const rows = c0 === null ? undefined : byCol.get(`${valueKey(x.wrote)}|${c0}`);
+        if (!rows || c0 === null) return;
+        let lo = 0, hi = rows.length;
+        while (lo < hi) { const mid = (lo + hi) >> 1; if (rows[mid] < r0) lo = mid + 1; else hi = mid; }
+        let L = lo - 1, R = lo;
+        while (L >= 0 || R < rows.length) {
+          const dl = L >= 0 ? r0 - rows[L] : Infinity, dr = R < rows.length ? rows[R] - r0 : Infinity;
+          const left = dl <= dr;
+          const j = left ? L : R;
+          if (holds(i, rows[j], c0)) { claim(i, rows[j], c0); rows.splice(j, 1); return; }
+          if (left) L--; else R++;
+        }
+        return;
+      }
       let best: number | null = null, bestD = Infinity;
       for (const k of byValue.get(valueKey(x.wrote)) ?? []) {
         const r = rowOf(k), c = colOf(k);

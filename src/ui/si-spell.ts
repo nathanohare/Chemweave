@@ -19,8 +19,8 @@
 // next problem on the page. Where the browser can't draw highlights (older Linux and Mac web
 // views) its own spelling check is left on.
 
-import { loadSpeller, type Speller } from '../text/spelling';
-import { typingPrefs, setTypingPrefs } from '../text/typing';
+import { loadSpeller, SPELLER_RETRY_MS, type Speller } from '../text/spelling';
+import { leftAsWritten, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, typingFormats, ISSUE_MESSAGES, type CharLook, type FixEdit, type Issue } from '../text/chemtext';
 import { popupMenu } from './popup-menu';
 
@@ -33,9 +33,11 @@ export interface SiDictionary {
 }
 
 /** Words ignored in SI text while Chemweave is open (lower case). */
-const ignored = new Set<string>();
+const ignored = leftAsWritten;
 let speller: Speller | null = null;
 let asked = false;
+/** The speller could not be loaded: the browser's own check stays on for the boxes. */
+let spellerFailed = false;
 let project: SiDictionary | null = null;
 let projectWords = new Set<string>();
 let personalSeen = '';
@@ -121,7 +123,8 @@ function paint(): void {
 /** Check a box's text again (spelling once the speller has loaded, the first time). */
 export function checkSpelling(box: HTMLElement): void {
   if (!supported()) { box.spellcheck = typingPrefs.spelling; return; }
-  box.spellcheck = false;
+  // (Chemweave's own check draws the lines: the browser's is off, unless the speller could not be loaded)
+  box.spellcheck = spellerFailed && typingPrefs.spelling;
   // (the word being typed is not underlined until the caret leaves it)
   const sel = getSelection();
   const caret = sel && sel.rangeCount && sel.isCollapsed && box.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
@@ -143,7 +146,8 @@ export function checkSpelling(box: HTMLElement): void {
       asked = true;
       void loadSpeller().then((got) => {
         speller = got;
-        if (!got) { for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = true; return; }
+        if (!got) { spellerFailed = true; setTimeout(() => { asked = false; }, SPELLER_RETRY_MS); for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = typingPrefs.spelling; return; }
+        spellerFailed = false;
         recheckAll();
       });
     }

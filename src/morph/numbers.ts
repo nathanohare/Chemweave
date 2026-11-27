@@ -70,7 +70,8 @@ export function readMapping(doc: Doc, text: string, steps: number): MorphStep[] 
     if (cfg.stages.length !== steps) throw new MappingFileError(`The file has ${cfg.stages.length} steps but this scheme has ${steps}.`);
     blocks = cfg.stages;
   } else {
-    if (steps > 1 && (cfg.pairs || cfg.shifts)) throw new MappingFileError(`The file pairs one step but this scheme has ${steps}.`);
+    // (anything a step's settings can hold: a file with only a slide is one step's too; review F650)
+    if (steps > 1 && (cfg.pairs || cfg.shifts || cfg.slides || cfg.exact)) throw new MappingFileError(`The file pairs one step but this scheme has ${steps}.`);
     blocks = steps === 1 ? [cfg] : Array.from({ length: steps }, () => ({}));
   }
   const byNum = new Map<string, number>();
@@ -85,6 +86,17 @@ export function readMapping(doc: Doc, text: string, steps: number): MorphStep[] 
     if (v === undefined) throw new MappingFileError(`"${s}" should name a bond as two atom numbers, like "7-8".`);
     return [at(u), at(v)];
   };
+  // each step's block as the file format has it, else a message rather than a script error
+  // (atom numbers and bonds written as text, or as plain numbers)
+  const word = (x: unknown) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x));
+  const twos = (v: unknown): v is unknown[][] => Array.isArray(v) && v.every((x) => Array.isArray(x) && x.length === 2 && x.every(word));
+  for (const [i, b] of blocks.entries()) {
+    const where = blocks.length > 1 ? `Step ${i + 1} of the file` : 'The file';
+    if (!b || typeof b !== 'object' || Array.isArray(b)) throw new MappingFileError(`${where} holds no settings for its step.`);
+    if (b.pairs !== undefined && (!b.pairs || typeof b.pairs !== 'object' || Array.isArray(b.pairs) || !Object.values(b.pairs).every(word))) throw new MappingFileError(`${where} lists its pairs in the wrong form.`);
+    if (b.shifts !== undefined && !twos(b.shifts)) throw new MappingFileError(`${where} lists its shifts in the wrong form.`);
+    if (b.slides !== undefined && !twos(b.slides)) throw new MappingFileError(`${where} lists its slides in the wrong form.`);
+  }
   return blocks.map((b) => {
     const m: MorphStep = {};
     if (b.pairs && Object.keys(b.pairs).length) m.pairs = Object.entries(b.pairs).map(([x, y]) => [at(x), at(y)]);

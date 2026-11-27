@@ -18,7 +18,7 @@ import type { Measure, Selection } from '../editor/arrange';
 import { applyArrange, planArrange, readScheme, schemeNet, schemeTree, type ArrangePlan, type Scope } from './scheme-arrange';
 import { crowdedLinks, type NetJoin } from './cycle-net';
 import { arrowFrame, type Item } from './reaction';
-import { spacing, withSchemePrefs } from './scheme-layout';
+import { prefsOf, spacing } from './scheme-layout';
 import { cleanFormat, formatPrefs, restyleSmart, type SmartFormat } from './smart-format';
 import { arrowMid, sweepThrough } from '../objects';
 import { bezFrom, pathPoints } from '../arrow-path';
@@ -169,7 +169,16 @@ export function smartFrameOf(doc: Doc, kind: 'atom' | 'bond' | 'caption' | 'arro
     if (kind === 'shape' && f.shapes.includes(id)) return s.id;
     if (kind === 'atom' || kind === 'bond') {
       const atom = kind === 'atom' ? id : doc.bonds.get(id)?.a1;
-      if (atom !== undefined && f.atoms.some((a) => a === atom || (doc.atoms.has(a) && doc.fragmentOf(a).has(atom)))) return s.id;
+      if (atom === undefined) continue;
+      if (f.atoms.includes(atom)) return s.id;
+      // (each structure of the frame walked once: it keeps every atom that was selected, not one per structure)
+      const seen = new Set<number>();
+      for (const a of f.atoms) {
+        if (seen.has(a) || !doc.atoms.has(a)) continue;
+        const frag = doc.fragmentOf(a);
+        if (frag.has(atom)) return s.id;
+        for (const x of frag) seen.add(x);
+      }
     }
   }
   return null;
@@ -465,16 +474,16 @@ export function arrangeSmart(doc: Doc, m: Measure, frameId: number, patch?: Part
 function planSmart(doc: Doc, m: Measure, frameId: number, read: SmartRead, data: SmartData, meshes?: [number, number][], sides?: [number, 1 | -1 | 0][], flow?: Vec): ArrangePlan | null {
   const scope = scopeOf(doc, doc.shapes.get(frameId)!.frame!);
   const first = read.slots[0]?.items[0]?.ref;
-  const lay = () => planArrange(doc, m, scope, {
+  // (its own format's settings over the drawing style's, else the drawing style's)
+  const own = formatPrefs(doc, data.fmt);
+  return planArrange(doc, m, scope, {
     kind: data.layout === 'tree' ? 'fan' : data.layout, perRow: data.perRow ?? 3, anticlockwise: data.anticlockwise, reagentArrows: data.reagentArrows,
     ...(data.layout === 'cycle' && first && !read.net ? { start: first, startAngle: -Math.PI / 2 } : {}),
     ...(meshes ? { meshes } : {}),
     ...(sides ? { sides } : {}),
     ...(flow ? { flow } : {}),
     branches: true,
-  });
-  const own = formatPrefs(doc, data.fmt);
-  return own ? withSchemePrefs(own, lay) : lay();
+  }, own ?? undefined);
 }
 
 /**
@@ -600,8 +609,7 @@ export function insertSlot(doc: Doc, m: Measure, frameId: number, after: number,
   const near = slots[Math.max(0, k)]?.box ?? frameBox(doc, s.frame, m)!;
   const L = doc.style.bondLength;
   const cap = doc.addCaption({ x: near.x2 + 2 * L, y: (near.y1 + near.y2) / 2, runs: chemRuns(text), justify: 'center' });
-  const like = links[0]?.arrow;
-  const look = like ? { headStyle: like.headStyle, tailStyle: like.tailStyle, headType: like.headType, line: like.line, headLength: like.headLength, headWidth: like.headWidth, ...(like.color ? { color: like.color } : {}), ...(like.lineWidth ? { lineWidth: like.lineWidth } : {}) } : { headLength: doc.style.lineWidth * 10, headWidth: doc.style.lineWidth * 2.5 };
+  const look = arrowLike(doc, links[0]?.arrow);
   const arrow = doc.addArrow({ ...DEFAULT_LOOK, ...look, sweep: 0, equilibrium: false, tail: { x: near.x2 + 0.5 * L, y: near.y2 }, head: { x: near.x2 + 1.5 * L, y: near.y2 } });
   const newSlot: Slot = { items: [{ ref: 'c' + cap.id, box: m.captionBox(cap), plus: false, atoms: [], caption: cap.id }], labels: [], box: m.captionBox(cap), caption: cap.id };
   const blank = { arrow, above: [], below: [], inside: [], plusses: [] };
@@ -998,8 +1006,9 @@ export function stretch(read: SmartRead, from: number, to: number): number[] | n
     const a = lp.indexOf(from), b = lp.indexOf(to);
     if (a < 0 || b < 0 || a === b) continue;
     const n = lp.length, len = ((b - a + n) % n) + 1;
-    // some of the loop has to be left over for the loop that is there already
-    if (len < 2 || len > n) continue;
+    // some of the loop has to be left over for the loop that is there already: not every species
+    // of it (but a loop of two has only the one step to share, with the other step left over)
+    if (len < 2 || (len >= n && n > 2)) continue;
     return Array.from({ length: len }, (_, k) => lp[(a + k) % n]);
   }
   return null;
@@ -1276,7 +1285,7 @@ export function refitSmart(doc: Doc, before: ReadonlyMap<string, Entity | null>,
     if (retypedTidy(doc, m, s.id, mem, before)) { arrangeSmart(doc, m, s.id); continue; }
     const read = readSmart(doc, m, s.id);
     if (!read) continue;
-    const gap = s.smart.fmt?.structGap ?? spacing(doc.style.bondLength).gap;
+    const gap = s.smart.fmt?.structGap ?? spacing(doc.style.bondLength, prefsOf(doc)).gap;
     // round a cycle, every step's arrow follows one smooth path through all the species (once one
     // of them has moved: one only retyped or recolored leaves the arrows where they are)
     if (simpleLoop(s.smart, read)) {
@@ -1372,7 +1381,7 @@ export function cleanUpCycle(doc: Doc, m: Measure, frameId: number): boolean {
   const e = fitEllipse(read.slots.map((sl) => mid(sl.box)));
   if (!e) return false;
   for (const sl of read.slots) { const c = mid(sl.box), p = ontoEllipse(e, c); shiftSlot(doc, sl, { x: p.x - c.x, y: p.y - c.y }); }
-  refitCycle(doc, read, data.fmt?.structGap ?? spacing(doc.style.bondLength).gap, e);
+  refitCycle(doc, read, data.fmt?.structGap ?? spacing(doc.style.bondLength, prefsOf(doc)).gap, e);
   return true;
 }
 
@@ -1524,7 +1533,7 @@ export function branchSpots(doc: Doc, m: Measure, frameId: number, slot: number)
   if (!s?.smart || !read || !sl || read.net || read.closed || !(read.chain || read.tree)) return [];
   const layout = smartLayoutOf(s.smart, read);
   if (layout === 'cycle' || smartIsFree(s.smart, read)) return [];
-  const L = doc.style.bondLength, g = s.smart.fmt?.structGap ?? spacing(L).gap;
+  const L = doc.style.bondLength, g = s.smart.fmt?.structGap ?? spacing(L, prefsOf(doc)).gap;
   const c = mid(sl.box), hw = (sl.box.x2 - sl.box.x1) / 2, hh = (sl.box.y2 - sl.box.y1) / 2;
   const reach = g + 1.5 * L;
   return ([1, -1] as const).map((side) => {
@@ -1607,7 +1616,7 @@ export function smartMarks(doc: Doc, m: Measure, frameId: number): SmartMarks | 
     });
     return { boxes, adds };
   }
-  if (!read.chain) return { boxes, adds };
+  if (!read.chain || !boxes.length) return { boxes, adds };
   const all = boxes.reduce((a, b) => ({ x1: Math.min(a.x1, b.x1), y1: Math.min(a.y1, b.y1), x2: Math.max(a.x2, b.x2), y2: Math.max(a.y2, b.y2) }));
   const centre = mid(all);
   const cycle = s.smart?.layout === 'cycle';

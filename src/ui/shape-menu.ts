@@ -9,6 +9,8 @@ export class ShapeMenu {
   private pick: (id: string) => void = () => {};
   /** Where the keys went before the menu opened (a document's caret): Escape goes back there. */
   private back: Element | null = null;
+  /** The button it was opened from: pressing it again closes the menu (its click does that), so the press alone leaves it open. */
+  private anchor: HTMLElement | null = null;
   private close = (e: Event) => {
     if (e instanceof KeyboardEvent) {
       if (e.key !== 'Escape') return;
@@ -17,7 +19,7 @@ export class ShapeMenu {
       e.stopPropagation();
       this.hide();
       if (this.back instanceof HTMLElement && this.back.isConnected) this.back.focus({ preventScroll: true });
-    } else if (!this.pop.contains(e.target as Node)) this.hide();
+    } else if (!this.pop.contains(e.target as Node) && !this.anchor?.contains(e.target as Node)) this.hide();
   };
 
   constructor() {
@@ -38,6 +40,8 @@ export class ShapeMenu {
   show(button: HTMLElement, tip: string, pick: (id: string) => void, tab: LibraryTab = 'shapes'): void {
     if (this.shown) { this.hide(); return; }
     this.pick = pick;
+    // (only a real button toggles: a fallback place, such as the strip of ribbon tabs, must not keep the menu open for a click on a tab)
+    this.anchor = button instanceof HTMLButtonElement ? button : null;
     this.back = document.activeElement;
     // shown first: the library draws its pictures only once it can be seen
     this.pop.hidden = false;

@@ -5,11 +5,12 @@ import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import type { SheetCharts } from './sheet-chart-ui';
 import { ask, Field } from './ask';
-import { refText, readRef, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
+import { addInfo, withInfo } from './info-tip';
+import { refText, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
 import {
   Dashboard, Tile, TileKind, Source, Aggregate, KpiTile, TableTile, SlicerTile, GalleryTile, TextTile, ChartTile,
   AGGREGATE_NAMES, TILE_NAMES, resolveSource, sourceKey, sourceName, columnOf, newTileId, freeSpot, chartOfColumns,
-  levelChartOfSource, hasFilters, withoutFilters, describePick, type Resolved,
+  levelChartOfSource, hasFilters, withoutFilters, describePick, labelsName, type Resolved,
 } from '../sheet/dashboard';
 
 export interface DashUiHost {
@@ -176,7 +177,7 @@ export class DashboardUi {
         const got = await ask('Add Table', checks('c:', res.names, () => true), { ok: 'Add', note: 'Check the columns to show. Click a heading on the dashboard to sort by it.' });
         if (!got) return;
         const columns = picked(got, 'c:');
-        this.add({ ...base, kind: 'table', source: src, ...(columns.length < res.names.length ? { columns } : {}), title: sourceName(src) });
+        this.add({ ...base, kind: 'table', source: src, ...(columns.length && columns.length < res.names.length ? { columns } : {}), title: sourceName(src) });
         return;
       }
       case 'slicer': {
@@ -235,10 +236,16 @@ export class DashboardUi {
     if (!t) { popupMenu(x, y, [...add, null, ['Clear All Filters', () => this.clearFilters()], ['Dashboard Settings', () => this.focusPanel()]]); return; }
     const items: MenuItem[] = [];
     if (t.kind === 'chart') items.push(['Clear Chart Filter', () => this.clearPick(t), !!t.pick?.length], ...this.chartItems(t), null);
-    if (t.kind === 'slicer') items.push(['Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear slicer'), !!t.selected?.length], null);
+    if (t.kind === 'slicer') items.push(['Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear Slicer'), !!t.selected?.length], null);
     items.push(
       ['Settings…', () => this.focusPanel()],
-      ['Duplicate', () => { const d = this.dash!; const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile; this.add(copy); }],
+      ['Duplicate', () => {
+        const d = this.dash!;
+        const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile;
+        // (a chart's id is the key its drawn data is saved under in .xlsx, so the copy needs its own; dashboard charts take their ids from the tile counter)
+        if (copy.kind === 'chart') copy.chart = { ...copy.chart, id: newTileId() };
+        this.add(copy);
+      }],
       ['Delete Tile', () => this.view.dash.remove(t.id)],
       null,
       ...add,
@@ -270,10 +277,7 @@ export class DashboardUi {
 
   /** What a chart tile picked, in words, its levels named by the header cells over their categories. */
   private pickWords(t: ChartTile): string {
-    const names = t.chart.series.map((s) => {
-      const at = s.x ? readRef(this.wb, s.x, this.wb.sheet) : null;
-      return at && at.range.r1 > 0 ? at.sheet.shownText(at.range.r1 - 1, at.range.c1) : '';
-    });
+    const names = t.chart.series.map((s) => labelsName(this.wb, s.x));
     return describePick(t, names);
   }
 
@@ -294,10 +298,14 @@ export class DashboardUi {
     const head = (s: string) => Object.assign(document.createElement('h4'), { textContent: s, className: 'cp-head' });
     const note = (s: string, cls = 'muted small') => Object.assign(document.createElement('p'), { textContent: s, className: cls });
     if (!t) {
-      out.push(note('Click a tile to change it. Drag a tile to move it, or its corner to resize it. Slicer buttons filter every tile fed by the same table, and so does clicking a bar, slice, Sankey node or band, treemap box or decomposition tree node.'));
-      out.push(head('Dashboard'));
-      out.push(row('Columns', numberBox(d.cols, (v) => v && this.set({ ...d, cols: Math.max(2, Math.min(24, Math.round(v))), tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, Math.max(2, Math.round(v))), x: Math.min(x.x, Math.max(0, Math.round(v) - x.w)) })) }, 'Dashboard columns'))));
-      out.push(row('Row height', numberBox(d.rowH, (v) => v && this.set({ ...d, rowH: Math.max(20, v) }, 'Dashboard row height'), '', 'px')));
+      out.push(withInfo(head('Dashboard'), 'Click a tile to change it. Drag a tile to move it, or its corner to resize it. Slicer buttons filter every tile fed by the same table, and so does clicking a bar, slice, Sankey node or band, treemap box or decomposition tree node.'));
+      out.push(row('Columns', numberBox(d.cols, (v) => {
+        if (!v) return;
+        // the tiles keep inside the grid as it will be (at most 24 columns), not as typed
+        const n = Math.max(2, Math.min(24, Math.round(v)));
+        this.set({ ...d, cols: n, tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, n), x: Math.min(x.x, Math.max(0, n - x.w)) })) }, 'Dashboard Columns');
+      })));
+      out.push(row('Row height', numberBox(d.rowH, (v) => v && this.set({ ...d, rowH: Math.max(20, v) }, 'Dashboard Row Height'), '', 'px')));
       out.push(row('Gap', numberBox(d.gap, (v) => v !== undefined && this.set({ ...d, gap: Math.max(0, v) }, 'Dashboard gap'), '', 'px')));
       out.push(row('Background', colour(d.background ?? '#f3f4f6', (v) => this.set({ ...d, background: v }, 'Dashboard background')), d.background ? button('Default', () => this.set({ ...d, background: undefined }, 'Dashboard background')) : null));
       out.push(head('Add a tile'));
@@ -311,7 +319,7 @@ export class DashboardUi {
           const words = x.kind === 'slicer' && x.selected?.length ? `${x.column}: ${x.selected.join(', ')}` : x.kind === 'chart' && x.pick?.length ? this.pickWords(x) : '';
           if (words) out.push(note(words, 'cp-value'));
         }
-        out.push(rowOf(button('Clear all filters', () => this.clearFilters())));
+        out.push(rowOf(button('Clear All Filters', () => this.clearFilters())));
       }
       return out;
     }
@@ -339,8 +347,9 @@ export class DashboardUi {
         // the tile sets the chart's size, background and border, so those rows go
         const tileSets = new Set(['Size', 'Background', 'Border']);
         if (!hasLevels(t.chart.kind) && t.chart.kind !== 'scatter') {
-          out.push(row('Same labels', select([['', 'One bar or point per row'], ...(['average', 'sum', 'count', 'median', 'min', 'max'] as Aggregate[]).map((a): [string, string] => [a, `${AGGREGATE_NAMES[a]} of each`])], t.group ?? '', (v) => this.update(t.id, { group: (v as Aggregate) || undefined } as Partial<ChartTile>, 'Combine rows'))));
-          if (t.group === 'average' || t.group === 'median') out.push(note('Turn on error bars to show the standard deviation of each label.'));
+          const same = row('Same labels', select([['', 'One bar or point per row'], ...(['average', 'sum', 'count', 'median', 'min', 'max'] as Aggregate[]).map((a): [string, string] => [a, `${AGGREGATE_NAMES[a]} of each`])], t.group ?? '', (v) => this.update(t.id, { group: (v as Aggregate) || undefined } as Partial<ChartTile>, 'Combine Rows')));
+          if (t.group === 'average' || t.group === 'median') addInfo(same.firstElementChild, 'Turn on error bars to show the standard deviation of each label.');
+          out.push(same);
         }
         if (t.pick?.length) out.push(note(`Filtering by ${this.pickWords(t)}`, 'cp-value'), rowOf(button('Clear Chart Filter', () => this.clearPick(t))));
         out.push(...this.host.charts.panel(t.chart).slice(1).filter((el) => !tileSets.has(el.querySelector(':scope > span')?.textContent ?? '')));
@@ -358,20 +367,27 @@ export class DashboardUi {
       }
       case 'table': {
         out.push(sourceRow(t.source, (s) => this.update(t.id, { source: s, columns: undefined, sortBy: undefined } as Partial<TableTile>)));
-        const shown = new Set(t.columns ?? res?.names ?? []);
-        for (const [n] of names) out.push(row('', check(shown.has(n), (v) => {
-          const next = (res?.names ?? []).filter((m) => (m === n ? v : shown.has(m)));
-          this.update(t.id, { columns: next.length === res?.names.length ? undefined : next } as Partial<TableTile>, 'Table columns');
-        }, n)));
+        const shown = new Set(t.columns?.length ? t.columns : res?.names ?? []);
+        for (const [n] of names) {
+          const box: HTMLElement = check(shown.has(n), (v) => {
+            const next = (res?.names ?? []).filter((m) => (m === n ? v : shown.has(m)));
+            // (an empty list would mean every column, so the last one stays checked)
+            if (!next.length) { (box.querySelector('input') ?? box as HTMLInputElement).checked = true; return; }
+            this.update(t.id, { columns: next.length === res?.names.length ? undefined : next } as Partial<TableTile>, 'Table columns');
+          }, n);
+          out.push(row('', box));
+        }
         out.push(row('Sort by', select([['', '(sheet order)'], ...names], t.sortBy ?? '', (v) => this.update(t.id, { sortBy: v || undefined } as Partial<TableTile>)), check(!!t.descending, (v) => this.update(t.id, { descending: v || undefined } as Partial<TableTile>), 'Largest first')));
         out.push(row('Most rows', numberBox(t.maxRows, (v) => this.update(t.id, { maxRows: v } as Partial<TableTile>), '200')));
         break;
       }
       case 'slicer': {
         out.push(sourceRow(t.source, (s) => this.update(t.id, { source: s, selected: undefined } as Partial<SlicerTile>)));
-        out.push(row('Filter by', select(names, t.column, (v) => this.update(t.id, { column: v, selected: undefined } as Partial<SlicerTile>))));
-        out.push(note(t.selected?.length ? `Showing only: ${t.selected.join(', ')}` : 'Showing everything. Click buttons on the tile to filter (click again to remove one).'));
-        if (t.selected?.length) out.push(rowOf(button('Clear this slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear slicer'))));
+        const filterBy = row('Filter by', select(names, t.column, (v) => this.update(t.id, { column: v, selected: undefined } as Partial<SlicerTile>)));
+        addInfo(filterBy.firstElementChild, 'Click buttons on the tile to filter (click again to remove one).');
+        out.push(filterBy);
+        out.push(note(t.selected?.length ? `Showing only: ${t.selected.join(', ')}` : 'Showing everything.'));
+        if (t.selected?.length) out.push(rowOf(button('Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear Slicer'))));
         break;
       }
       case 'gallery': {
@@ -397,7 +413,7 @@ export class DashboardUi {
         break;
       }
     }
-    out.push(rowOf(button('Delete tile', () => this.view.dash.remove(t.id))));
+    out.push(rowOf(button('Delete Tile', () => this.view.dash.remove(t.id))));
     return out;
   }
 }

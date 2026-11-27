@@ -326,6 +326,8 @@ export class SmartPane {
     const read = readSmart(doc, m, id);
     if (!s?.smart || !read) { this.hide(); return; }
     this.el.classList.remove('sp-none');
+    // (a row last typed in belongs to the scheme it was in, not to the next one shown)
+    if (this.shown !== id) { this.active = null; this.activeKey = ''; }
     this.shown = id;
     this.drawnFor = `${id} ${doc.version} ${folded}`;
     this.drawnShape = this.shapeOf(id);
@@ -710,14 +712,20 @@ export class SmartPane {
     });
   }
 
+  /** The key of the row last typed in, when that row is still one of the rows shown (else ''). */
+  private caretKey(): string { return this.fields.has(this.activeKey) ? this.activeKey : ''; }
+
   /** What Add Loop and Add Off-Cycle Species offer for this cycle, starting at `at` (else where the caret is). */
   private loopAsk(read: SmartRead, at?: { slot?: number; step?: number }) {
     const doc = this.hooks.doc();
     const species = read.slots.map((sl, k) => ({ k, name: slotName(doc, sl) }));
     // what the caret is in (a species' row or a step's) is where the new thing goes
-    const row = /^s(\d+)$/.exec(this.activeKey), stepRow = /^p(\d+)/.exec(this.activeKey);
-    const step = at ? at.step : stepRow ? Number(stepRow[1]) : undefined;
-    const slot = at?.slot ?? (step !== undefined ? read.links[step]?.from : row ? Number(row[1]) : undefined) ?? 0;
+    const key = this.caretKey();
+    const row = /^s(\d+)$/.exec(key), stepRow = /^p(\d+)/.exec(key);
+    let step = at ? at.step : stepRow ? Number(stepRow[1]) : undefined;
+    if (step !== undefined && !read.links[step]) step = undefined;
+    let slot = at?.slot ?? (step !== undefined ? read.links[step]?.from : row ? Number(row[1]) : undefined) ?? 0;
+    if (!read.slots[slot]) slot = 0;
     const steps = read.links.map((l, k) => ({ k, from: l.from, to: l.to, name: stepParts(doc, l, 'inside').map((p) => p.text).join('') }));
     const loops = read.net ? read.net.loops.map((lp) => lp.slots) : [read.slots.map((_, i) => i)];
     // only steps round one loop (not ones two loops share, or a branch's) can have a loop turn with them
@@ -758,7 +766,7 @@ export class SmartPane {
   private addMenu(id: number, anchor: HTMLElement, read: SmartRead, round = true): void {
     const { slot } = this.loopAsk(read);
     const r = anchor.getBoundingClientRect();
-    const typing = /^[sp]\d/.test(this.activeKey);
+    const typing = /^[sp]\d/.test(this.caretKey());
     if (!round) {
       // in a line: after the species the caret is in, else at the end of the main route
       const end = read.tree ? read.tree.runs[0].slots[read.tree.runs[0].slots.length - 1] : read.slots.length - 1;
@@ -798,14 +806,17 @@ export class SmartPane {
       const up = (u: PointerEvent) => {
         head.removeEventListener('pointermove', move);
         head.removeEventListener('pointerup', up);
+        head.removeEventListener('pointercancel', up);
         if (box) { box.style.transform = ''; box.style.zIndex = ''; }
-        if (!moved) return;
+        // (a drag the system took away, a touch gesture say, ends where it is: it docks nowhere)
+        if (!moved || u.type === 'pointercancel') return;
         const w = this.hooks.work();
         const dock = dropTarget(u.clientX, u.clientY, { left: w.left, top: w.top, right: w.right, bottom: w.bottom });
         this.hooks.dock(dock === 'float' ? { dock, x: Math.round(u.clientX - dx), y: Math.round(u.clientY - dy) } : { dock });
       };
       head.addEventListener('pointermove', move);
       head.addEventListener('pointerup', up);
+      head.addEventListener('pointercancel', up);
     });
   }
 

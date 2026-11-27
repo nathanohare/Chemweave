@@ -36,17 +36,22 @@ export function dragRow(e: PointerEvent, row: HTMLElement, rows: () => HTMLEleme
     }
     mark(to);
   };
-  const up = () => {
+  const end = () => {
     window.removeEventListener('pointermove', move, true);
     window.removeEventListener('pointerup', up, true);
-    window.removeEventListener('pointercancel', up, true);
+    window.removeEventListener('pointercancel', cancel, true);
     row.classList.remove('row-dragging');
     mark(from);
+  };
+  const up = () => {
+    end();
     if (moved && to !== from && to !== from + 1) drop(from, to);
   };
+  // a drag the browser took over (a touch gesture, a lost capture) is dropped, not carried out where it was last
+  const cancel = () => end();
   window.addEventListener('pointermove', move, true);
   window.addEventListener('pointerup', up, true);
-  window.addEventListener('pointercancel', up, true);
+  window.addEventListener('pointercancel', cancel, true);
 }
 
 /** `list` with the item at `from` moved to before place `to` (as dragRow gives them). */

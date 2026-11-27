@@ -524,6 +524,9 @@ export function freeSpot(w: number, h: number, area: Box, taken: Box[], gap = 8,
 
 const DOCK_LABEL: Record<Dock, string> = { left: 'Dock Left', right: 'Dock Right', top: 'Dock at the Top', bottom: 'Dock at the Bottom', float: 'Float' };
 
+/** What a toolbox's × says it does (it names the toolbox, so it changes when the toolbox is renamed). */
+export const hideTip = (title: string): string => `Hide ${title} (View ▸ Toolboxes shows it again)`;
+
 export class Toolboxes {
   private frames = new Map<string, HTMLElement>();
   private toldLocked = false;
@@ -580,6 +583,8 @@ export class Toolboxes {
       f.classList.toggle('locked', locked);
       const fold = f.querySelector<HTMLElement>('.tb-fold');
       if (fold) { fold.textContent = folded ? '▸' : '▾'; fold.title = folded ? `Open ${def.title} out` : `Collapse ${def.title} to its title`; }
+      const close = f.querySelector<HTMLElement>('.tb-close');
+      if (close) { close.title = hideTip(def.title); close.setAttribute('aria-label', close.title); }
       const tab = f.querySelector<HTMLElement>('.tb-tab-fold');
       if (tab) { tab.title = `Collapse ${def.title} to its title`; tab.setAttribute('aria-label', tab.title); }
       for (const lock of f.querySelectorAll<HTMLElement>(':scope > :is(.tb-head, .tb-tab) > .tb-lock')) { lock.innerHTML = lockIcon(locked, 14); lock.title = locked ? `Lock this toolbox's place (locked). Click to unlock it, then drag it by its title. The drawing itself is never locked.` : `Lock this toolbox's place (unlocked: drag it by its title). Click to lock it where it is.`; lock.setAttribute('aria-pressed', String(locked)); }
@@ -707,7 +712,7 @@ export class Toolboxes {
     close.type = 'button';
     close.className = 'tb-close';
     close.textContent = '×';
-    close.title = `Hide ${def.title} (View ▸ Toolboxes shows it again)`;
+    close.title = hideTip(def.title);
     close.setAttribute('aria-label', close.title);
     close.addEventListener('click', () => this.toggle(def.id, false));
     // fold the box up to its title, and lock or unlock it, from the title bar
@@ -866,13 +871,15 @@ export class Toolboxes {
       target = dropTarget(m.clientX, m.clientY, w, undefined, m.ctrlKey || m.metaKey);
       for (const [d, el] of Object.entries(this.docks)) el.classList.toggle('drop', d === target);
     };
-    const up = () => {
+    const up = (ev?: Event) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       for (const el of Object.values(this.docks)) el.classList.remove('drop');
       f.classList.remove('dragging');
       if (!moved) return;
+      // a drag the system cancelled: the toolbox goes back where it was
+      if (ev?.type === 'pointercancel') { this.render(); return; }
       const fr = f.getBoundingClientRect();
       this.place(id, target === 'float' ? { dock: 'float', x: Math.round(fr.left), y: Math.round(fr.top), corner: undefined } : { dock: target, corner: undefined });
     };

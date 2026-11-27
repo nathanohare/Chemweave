@@ -2,16 +2,16 @@
 // and the panel on the right where every setting can be changed by hand, down to each series'
 // cell references, axis limits and fitted-line options.
 
-import { withInfo } from './info-tip';
+import { addInfo, withInfo } from './info-tip';
 import { askAltText } from './accessibility-pane';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import { ask, Field } from './ask';
 import type { Sheet } from '../sheet/workbook';
-import { Range, colName, parseCellRef } from '../sheet/refs';
+import { colName, parseCellRef } from '../sheet/refs';
 import {
   Chart, ChartKind, ChartAxis, Series, SeriesFit, ErrorBars, MarkerShape, CHART_NAMES, CHART_PALETTES, MARKERS,
-  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
+  chartFromRange, chartData, readRef, refText, unionParts, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
 } from '../sheet/chart';
 import { CHEM_FITS, FIT_NAMES, FitKind, fitEquation, fitResults, isChemFit, isTemperatureFit, r2Text, fitNumber } from '../sheet/fit';
 import { histogram } from '../sheet/chart-stats';
@@ -34,22 +34,6 @@ const KINDS = Object.keys(CHART_NAMES) as ChartKind[];
 /** Charts that take fitted lines and error bars. */
 const FITTED = new Set<ChartKind>(['scatter', 'line', 'column', 'bar', 'area', 'bubble']);
 const FITS = (Object.keys(FIT_NAMES) as FitKind[]).filter((k) => !isChemFit(k));
-
-/** The block of filled cells around a cell (Excel's current region), for charting one cell's table. */
-export function currentRegion(s: Sheet, r: number, c: number): Range {
-  const filled = (row: number, col: number) => row >= 0 && col >= 0 && s.value(row, col) !== null && s.value(row, col) !== '';
-  const R = { r1: r, c1: c, r2: r, c2: c };
-  for (let grew = true, guard = 0; grew && guard < 10000; guard++) {
-    grew = false;
-    const rowHas = (row: number) => { for (let col = R.c1 - 1; col <= R.c2 + 1; col++) if (filled(row, col)) return true; return false; };
-    const colHas = (col: number) => { for (let row = R.r1 - 1; row <= R.r2 + 1; row++) if (filled(row, col)) return true; return false; };
-    if (R.r1 > 0 && rowHas(R.r1 - 1)) { R.r1--; grew = true; }
-    if (rowHas(R.r2 + 1)) { R.r2++; grew = true; }
-    if (R.c1 > 0 && colHas(R.c1 - 1)) { R.c1--; grew = true; }
-    if (colHas(R.c2 + 1)) { R.c2++; grew = true; }
-  }
-  return R;
-}
 
 const num = (s: string): number | undefined => (s.trim() !== '' && Number.isFinite(Number(s)) ? Number(s) : undefined);
 
@@ -94,7 +78,7 @@ export class SheetCharts {
     let R = v.sel.range;
     if (R.r1 === R.r2 && R.c1 === R.c2) {
       const t = s.tableAt(R.r1, R.c1);
-      R = t ? t.range : currentRegion(s, R.r1, R.c1);
+      R = t ? t.range : s.currentRegion(R.r1, R.c1);
     } else R = s.clip(R) ?? R;
     if (s.value(R.r1, R.c1) === null && R.r1 === R.r2 && R.c1 === R.c2) {
       this.host.flash('Select the numbers to chart first (with their header row, and for a scatter chart the x column first).', 6000);
@@ -125,7 +109,8 @@ export class SheetCharts {
       const out: Chart = { ...c, kind: k };
       if (k === 'pie' && c.legend === 'none') out.legend = 'right';
       if (k !== 'pie' && c.kind === 'pie' && c.series.length === 1) out.legend = 'none';
-      out.y = { ...c.y, grid: k === 'pie' ? false : c.y.grid ?? true };
+      // (a pie has no axes, so its grid setting is left as it was and comes back with the next kind)
+      out.y = { ...c.y, grid: c.y.grid ?? true };
       return out;
     }, 'Chart type');
   }
@@ -144,7 +129,7 @@ export class SheetCharts {
       null,
       [`${first?.showEq ? '✓ ' : ''}Show Equation`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, showEq: !s.fit.showEq } } : s)), !!first],
       [`${first?.showR2 ? '✓ ' : ''}Show R²`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, showR2: !s.fit.showR2 } } : s)), !!first],
-      ['Through the Origin', () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, intercept: s.fit.intercept === 0 ? undefined : 0 } } : s)), !!first && (first.kind === 'linear' || first.kind.startsWith('poly') || first.kind === 'hammett')],
+      [`${first?.intercept === 0 ? '✓ ' : ''}Through the Origin`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, intercept: s.fit.intercept === 0 ? undefined : 0 } } : s)), !!first && (first.kind === 'linear' || first.kind.startsWith('poly') || first.kind === 'hammett')],
       null,
       ['More Options (each series)…', () => this.focusPanel()],
     ]);
@@ -210,6 +195,12 @@ export class SheetCharts {
   asRef(text: string | undefined): string | undefined {
     const t = text?.trim();
     if (!t) return undefined;
+    // a union of blocks (a PivotChart's labels over a Tabular report) stays a union
+    const parts = unionParts(t);
+    if (parts) {
+      const each = parts.map((p) => readRef(this.view.wb!, p, this.sheet));
+      return each.every(Boolean) ? `=(${each.map((g) => refText(g!.sheet.name, g!.range).replace(/^=/, '')).join(',')})` : t.startsWith('=') ? t : '=' + t;
+    }
     const got = readRef(this.view.wb!, t, this.sheet);
     return got ? refText(got.sheet.name, got.range) : t.startsWith('=') ? t : '=' + t;
   }
@@ -326,13 +317,14 @@ export class SheetCharts {
     const c = this.chart;
     if (!c) return;
     const s = c.series[i];
+    if (unionParts(s.y) || unionParts(s.x)) { this.host.flash('Fitted Line in Cells needs the series\' values and labels each in one block of cells.'); return; }
     const yr = readRef(this.view.wb!, s.y, this.sheet);
     const xr = s.x ? readRef(this.view.wb!, s.x, this.sheet) : null;
     if (!yr) return;
     const at = { r: yr.range.r2 + 2, c: xr && xr.sheet === yr.sheet ? xr.range.c1 : yr.range.c1 };
     const got = await ask('Fitted Line in Cells', [{ name: 'at', label: 'Top-left cell', value: `${colName(at.c)}${at.r + 1}` }], {
       ok: 'Insert into Cells',
-      note: 'Writes Slope, Intercept and R² with formulas (SLOPE, INTERCEPT, RSQ) that follow the data, plus their standard errors (LINEST) as Excel does.',
+      note: 'Writes Slope, Intercept and R² with formulas (SLOPE, INTERCEPT, RSQ) that follow the data, and the standard error of y (STEYX).',
     });
     const ref = got ? parseCellRef(got.at.trim()) : null;
     if (!ref) return;
@@ -423,12 +415,14 @@ export class SheetCharts {
     if (c.kind === 'histogram') {
       const b = c.bins ?? {};
       const setB = (q: Partial<Bins>) => this.patch((x) => { const bins = clean({ ...x.bins, ...q }); return clean({ ...x, bins: Object.keys(bins).length ? bins : undefined }); }, 'Bins');
-      out.push(row('Bin width', numberBox(b.width, (v) => setB({ width: v && v > 0 ? v : undefined }), 'auto')));
+      const widthRow = row('Bin width', numberBox(b.width, (v) => setB({ width: v && v > 0 ? v : undefined }), 'auto'));
+      addInfo(widthRow.firstElementChild, 'Each bin holds the numbers above its start, up to and including its end.');
+      out.push(widthRow);
       out.push(row('Or bins', numberBox(b.count, (v) => setB({ count: v && v >= 1 ? Math.round(v) : undefined }), 'auto', 'of them')));
       out.push(row('Overflow', numberBox(b.overflow, (v) => setB({ overflow: v }), 'none', 'and above in one bin')));
       out.push(row('Underflow', numberBox(b.underflow, (v) => setB({ underflow: v }), 'none', 'and below in one bin')));
       const h = histogram(chartData(this.view.wb!, this.sheet, c)[0]?.ys ?? [], b);
-      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}; each holds the numbers above its start, up to and including its end.`));
+      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${h.widened ? ' (widened so the data fits in 1000 bins)' : b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}.`));
     }
     if (c.kind === 'box') {
       const o = c.boxes ?? {};
@@ -448,11 +442,13 @@ export class SheetCharts {
     // treemaps and decomposition trees open up by clicks on the chart once it is selected
     const opened = c.path?.length ? c.path.join(' › ') : '';
     if (c.kind === 'treemap') {
-      out.push(row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill up')) : null));
-      out.push(note('Click a box of the chart to drill into it, and a step of the trail above it to go back up.'));
+      const drilled = row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill Up')) : null);
+      addInfo(drilled.firstElementChild, 'Click a box of the chart to drill into it, and a step of the trail above it to go back up.');
+      out.push(drilled);
     } else if (c.kind === 'decomp') {
-      out.push(row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse tree')) : null));
-      out.push(note('Click a node of the chart to split it by the next level, and click it again to close it.'));
+      const expanded = row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse Tree')) : null);
+      addInfo(expanded.firstElementChild, 'Click a node of the chart to split it by the next level, and click it again to close it.');
+      out.push(expanded);
     }
 
     // charts of levels have no axes, and their series are the levels
@@ -509,7 +505,7 @@ export class SheetCharts {
         out.push(row('Line style', select([['solid', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']], s.dash ?? 'solid', (v) => this.patchSeries(i, { dash: v === 'solid' ? undefined : (v as 'dash') }, 'Line style')),
           numberBox(s.lineWidth, (v) => this.patchSeries(i, { lineWidth: v }, 'Line width'), '2', 'px')));
       }
-      const remove = () => row('', button('Remove this series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove series')));
+      const remove = () => row('', button('Remove Series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove Series')));
       if (c.kind !== 'box') out.push(row('Values shown', check(!!s.labels, (v) => this.patchSeries(i, { labels: v || undefined }, 'Data labels')),
         c.kind === 'scatter' ? check(!!s.labelX, (v) => this.patchSeries(i, { labelX: v || undefined, ...(v ? { labels: true } : {}) }, 'Data labels'), 'Show x (m/z)') : null));
       if (!FITTED.has(c.kind)) { if (c.series.length > 1 && c.kind !== 'pie') out.push(remove()); return; }
@@ -532,7 +528,7 @@ export class SheetCharts {
         out.push(row('Extend', numberBox(f.backward, (v) => setFit({ backward: v }), '0', 'back'), numberBox(f.forward, (v) => setFit({ forward: v }), '0', 'forward')));
         out.push(row('Color', colour(f.color ?? data[i]?.color ?? '#4472c4', (v) => setFit({ color: v })), f.color ? button('Auto', () => setFit({ color: undefined })) : null));
         out.push(row('Legend', check(f.legend !== false, (v) => setFit({ legend: v ? undefined : false }), 'List it')));
-        if (f.labelAt) out.push(row('Equation', button('Reset position (beside the line)', () => setFit({ labelAt: undefined }))));
+        if (f.labelAt) out.push(row('Equation', button('Reset Position', () => setFit({ labelAt: undefined }))));
         const fit = fits[i];
         if (fit) {
           const box = document.createElement('div');
@@ -549,7 +545,7 @@ export class SheetCharts {
           if (how[fit.kind]) box.append(note(how[fit.kind]!, 'muted small'));
           const btns = document.createElement('div');
           btns.className = 'cp-buttons';
-          btns.append(button('Copy equation', () => void navigator.clipboard?.writeText([fitEquation(fit, 6), ...fitResults(fit, 6), r2Text(fit, 5)].join('\n')).then(() => this.host.flash('Copied the equation.'), () => this.host.flash('This browser would not copy.'))));
+          btns.append(button('Copy Equation', () => void navigator.clipboard?.writeText([fitEquation(fit, 6), ...fitResults(fit, 6), r2Text(fit, 5)].join('\n')).then(() => this.host.flash('Copied the equation.'), () => this.host.flash('This browser would not copy.'))));
           if (fit.kind === 'linear' && f.intercept === undefined && s.x && c.kind === 'scatter' && !this.target) btns.append(button('Insert into Cells…', () => void this.fitToCells(i)));
           box.append(btns);
           out.push(box);
@@ -559,7 +555,7 @@ export class SheetCharts {
       }
       if (c.series.length > 1) out.push(remove());
     });
-    out.push(rowOf(button('Add series…', () => void this.addSeries()), button('Copy as picture', () => void this.copyPicture()), button('Delete chart', () => this.deleteChart())));
+    out.push(rowOf(button('Add Series…', () => void this.addSeries()), button('Copy as Picture', () => void this.copyPicture()), button('Delete Chart', () => this.deleteChart())));
     return out;
   }
 }

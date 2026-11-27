@@ -22,7 +22,7 @@ g.cancelAnimationFrame = noop;
 g.ResizeObserver ??= class { observe() {} unobserve() {} disconnect() {} };
 
 /** A DocumentMode showing a new document made from `t` (its runs, paragraphs and objects). */
-export async function docMode(t: Partial<DocText>): Promise<{ dm: DocumentMode; f: DocFile; ta: HTMLTextAreaElement }> {
+export async function docMode(t: Partial<DocText>, calls: Record<string, unknown> = {}): Promise<{ dm: DocumentMode; f: DocFile; ta: HTMLTextAreaElement }> {
   const html = readFileSync(join(__dirname, '../index.html'), 'utf8');
   document.body.innerHTML = html.slice(html.indexOf('<body'), html.lastIndexOf('</body>')).replace(/^<body[^>]*>/, '');
   // innerHTML never runs scripts; take them out so none is left in the page either
@@ -30,8 +30,8 @@ export async function docMode(t: Partial<DocText>): Promise<{ dm: DocumentMode; 
   const { DocumentMode } = await import('../src/ui/doc-mode');
   const { DocFile } = await import('../src/document/doc-file');
   const { newDocument } = await import('../src/document/document');
-  // the app: nothing to do for the document's calls to it
-  const host = new Proxy({}, { get: () => () => false }) as never;
+  // the app: nothing to do for the document's calls to it (but those the test gives)
+  const host = new Proxy({}, { get: (_t, k) => (typeof k === 'string' && k in calls ? calls[k] : () => false) }) as never;
   const dm = new DocumentMode(host);
   const f = new DocFile({ ...newDocument(), ...t } as DocText);
   dm.show({ id: 1, mode: 'document', name: 'Test', document: f, sheetState: null } as never);

@@ -3,7 +3,7 @@
 // and margins), the header and footer with the page numbers, and the figure picked. Every
 // value can be typed in; lengths take inches, cm, mm or pt ("2.5 cm").
 
-import { addInfo } from './info-tip';
+import { addInfo, setInfo } from './info-tip';
 import type { Justify } from '../model';
 import { FloatBox, PINNED_ICON } from './float-box';
 import type { DocFile } from '../document/doc-file';
@@ -65,13 +65,15 @@ type Field = HTMLInputElement | HTMLSelectElement;
 export { DOC_BOXES, docBoxPrefs, parseDocPins, type DocBoxKey } from './mode-prefs';
 import { DOC_BOXES, docBoxPrefs, type DocBoxKey } from './mode-prefs';
 import { scrollToItem } from './motion';
-const BOX_TITLES: Record<DocBoxKey, string> = { para: 'Paragraph', style: 'Style', page: 'Page Setup', hf: 'Header, footer and page numbers' };
+const BOX_TITLES: Record<DocBoxKey, string> = { para: 'Paragraph', style: 'Style', page: 'Page Setup', hf: 'Header, Footer and Page Numbers' };
 
 export class DocPanel {
   private fields = new Map<string, Field>();
   private sections: Record<'para' | 'style' | 'page' | 'hf' | 'figure', HTMLElement>;
   private styleTitle!: HTMLElement;
   private figureInfo!: HTMLElement;
+  /** The "i" on the Figure heading, saying how to work with the kind of figure picked. */
+  private figureTip: HTMLElement | null = null;
   private figButtons!: HTMLElement;
   private floats = {} as Record<DocBoxKey, FloatBox>;
   private emptyNote: HTMLElement;
@@ -252,6 +254,7 @@ export class DocPanel {
     this.figureInfo = document.createElement('p');
     this.figureInfo.className = 'muted small dp-note';
     s.append(this.figureInfo);
+    this.figureTip = addInfo(s.querySelector('h3'), ' ');
     this.row(s, 'Size (%)', this.input('fig-scale', (v) => {
       const id = this.host.picked();
       const n = Number(v.replace('%', ''));
@@ -316,7 +319,8 @@ export class DocPanel {
     const lay = f.layout();
     const placed = lay.objects.find((o) => o.id === id);
     if (!placed) return;
-    const pg = f.t.page;
+    // the margins of the page the figure is on (its section's own), as the layout measures them
+    const pg = lay.pages[placed.page]?.setup ?? f.t.page;
     const pageTop = lay.pages[placed.page]?.top ?? 0;
     if (axis === 'x') {
       const abs = cur.xFrom === 'page' ? cur.x : cur.x + pg.left;
@@ -367,12 +371,12 @@ export class DocPanel {
     this.row(s, 'Space after (pt)', this.input('p-after', (v) => { const n = parseLength(v, 'pt'); if (n !== null) paras({ spaceAfter: Math.max(0, n) }, 'spacing'); }));
     this.row(s, 'Right indent (in)', this.input('p-right', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indentRight: n || undefined }, 'indent'); }), 'From the right margin; less than 0 goes into it');
     this.row(s, 'Line spacing', this.select('p-rule', [['multiple', 'Multiple'], ['atLeast', 'At least'], ['exact', 'Exactly']], (v) => {
-      const p = this.host.file()?.ed.currentPara();
+      const p = this.host.file()?.textEd.currentPara();
       if (v === 'multiple') paras({ linePt: undefined, lineRule: undefined }, 'spacing');
       else paras({ linePt: p?.linePt ?? 12, lineRule: v as 'exact' | 'atLeast', line: undefined }, 'spacing');
     }), 'Multiple: times single spacing. At least or Exactly: a height in points (Exactly can cut off tall figures, as in Word)');
     this.row(s, 'At', this.input('p-line', (v) => {
-      const p = this.host.file()?.ed.currentPara();
+      const p = this.host.file()?.textEd.currentPara();
       if (p?.linePt) { const n = parseLength(v, 'pt'); if (n !== null && n > 0 && n <= 1584) paras({ linePt: n }, 'spacing'); return; }
       const n = Number(v);
       if (n > 0 && n <= 10) paras({ line: Math.abs(n - 1) < 1e-6 ? undefined : n }, 'spacing');
@@ -524,7 +528,12 @@ export class DocPanel {
     this.row(s, 'Number format', this.select('hf-format', FORMATS.map((v) => [v, [1, 2, 3].map((n) => pageNumText(n, v)).join(', ')]), (v) => this.changeSec('Page numbers', () => ({ format: v as Section['format'] }))),
       'Front matter is often numbered i, ii, iii, and the text after a section break 1, 2, 3');
     this.check(s, 'hf-continue', 'Continue from previous section', (v) => this.changeSec('Page numbers', (x) => ({ restart: v ? undefined : x.restart ?? 1 })));
-    this.row(s, 'First page number', this.input('hf-start', (v) => { const n = Math.round(Number(v)); if (Number.isFinite(n)) this.changeSec('Page numbers', () => ({ restart: n })); }));
+    this.row(s, 'First page number', this.input('hf-start', (v) => {
+      // (0 is allowed, as in Word: the page after a cover is then 1; a box cleared or not a number goes back to what the section has)
+      const n = Math.round(Number(v));
+      if (v.trim() !== '' && Number.isFinite(n) && n >= 0) this.changeSec('Page numbers', () => ({ restart: n }));
+      else this.update();
+    }));
     this.check(s, 'hf-first', 'Number the first page', (v) => hf((h) => ({ ...h, onFirst: v })), 'Leave off for a title page');
     // a first page and even pages of their own (Word's Different First Page and Different Odd & Even Pages)
     const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
@@ -596,13 +605,20 @@ export class DocPanel {
       put('fig-frame', lk?.frame ? String(lk.frame) : '');
       put('fig-frame-colour', lk?.frameColor ?? '#000000');
       put('fig-shadow', lk?.shadow ?? 'none');
-      this.figureInfo.textContent = (isBox ? 'A text box: click inside it to type, drag its edge to move it. ' : o?.kind === 'picture' ? 'A picture. ' : o?.kind === 'drawing' && o.contents.shapes.some((x) => x.diagram) ? 'A diagram: double-click it to change its text, layout or colors (Edit Drawing opens the drawing tools on it). ' : 'A drawing: double-click it to change it with the drawing tools. ')
-        + (sz ? `Shown ${showLength(sz.w, 'in')} × ${showLength(sz.h, 'in')} in${fitted ? ', made smaller to fit between the margins' : ''}.` : '');
+      // how to work with it goes behind the "i" on the heading; the line keeps only the size
+      if (this.figureTip) setInfo(this.figureTip, isBox ? 'A text box: click inside it to type, drag its edge to move it.' : o?.kind === 'picture' ? '' : o?.kind === 'drawing' && o.contents.shapes.some((x) => x.diagram) ? 'A diagram: double-click it to change its text, layout or colors (Edit Drawing opens the drawing tools on it).' : 'A drawing: double-click it to change it with the drawing tools.');
+      this.figureInfo.textContent = (o?.kind === 'picture' ? 'A picture. ' : '') + (sz ? `Shown ${showLength(sz.w, 'in')} × ${showLength(sz.h, 'in')} in${fitted ? ', made smaller to fit between the margins' : ''}.` : '');
       const [edit, own, format] = this.figButtons.querySelectorAll('button');
       edit.style.display = o?.kind === 'drawing' ? '' : 'none';
       format.style.display = o?.kind === 'picture' && !o.chart ? '' : 'none';
       own.style.display = isBox ? 'none' : '';
     }
+    // named styles belong to the document's own paragraphs: while a table cell, text box or note is
+    // typed in, they are left alone (not applied to the paragraph that holds the box) until the text is clicked
+    const inBox = !!f.box;
+    const why = 'Styles are for the text of the document: click it first (not inside a table cell, text box or note)';
+    for (const [k, el] of this.fields) if (k === 'p-style' || k.startsWith('s-')) { (el as HTMLInputElement).disabled = inBox; el.title = inBox ? why : ''; }
+    this.sections.style.querySelectorAll('button').forEach((b) => { b.disabled = inBox; });
     // the paragraph
     const p = ed.currentPara();
     const st = styleOf(t, p);

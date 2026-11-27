@@ -60,18 +60,45 @@ export function planSwaps(A: MScene, B: MScene, M: Mapping, ts: number[], opt: F
     for (const l of frame(A, B, M, t, opt).lines) if (l.alpha > 0.5) { const g = vis.get(l.grp); if (g) g.push(l); else vis.set(l.grp, [l]); }
     return [t, vis] as const;
   });
-  const signs = new Map<string, [string, string, boolean[]]>();
+  // Only pairs of groups that come near each other at some moment can need a swap (one is moved
+  // only where they overlap): each group's box over the whole clip, grown by half its widest line
+  // and half the margin, and only pairs whose boxes meet are followed (review F651).
+  const reach = new Map<string, [number, number, number, number]>();
   for (const [, vis] of frames) {
-    const gs = [...vis.keys()].sort();
-    for (let i = 0; i < gs.length; i++) for (let j = i + 1; j < gs.length; j++) {
-      const k = gs[i] + '\u0000' + gs[j];
-      let s = signs.get(k);
-      if (!s) signs.set(k, (s = [gs[i], gs[j], []]));
-      s[2].push(vis.get(gs[i])![0].z > vis.get(gs[j])![0].z);
+    for (const [g, ls] of vis) {
+      let b = reach.get(g);
+      if (!b) reach.set(g, (b = [Infinity, Infinity, -Infinity, -Infinity]));
+      for (const l of ls) {
+        const e = l.w / 2 + margin / 2;
+        b[0] = Math.min(b[0], l.p0.x - e, l.p1.x - e); b[1] = Math.min(b[1], l.p0.y - e, l.p1.y - e);
+        b[2] = Math.max(b[2], l.p0.x + e, l.p1.x + e); b[3] = Math.max(b[3], l.p0.y + e, l.p1.y + e);
+      }
+    }
+  }
+  const gs = [...reach.keys()].sort();
+  // (by left edge, so each group is tried only against those that start before it ends)
+  const byLeft = gs.map((_, i) => i).sort((a, b) => reach.get(gs[a])![0] - reach.get(gs[b])![0]);
+  const near: [string, string][] = [];
+  for (let x = 0; x < byLeft.length; x++) {
+    const bi = reach.get(gs[byLeft[x]])!;
+    for (let y = x + 1; y < byLeft.length; y++) {
+      const bj = reach.get(gs[byLeft[y]])!;
+      if (bj[0] > bi[2]) break;
+      if (bj[1] > bi[3] || bi[1] > bj[3]) continue;
+      const [i, j] = byLeft[x] < byLeft[y] ? [byLeft[x], byLeft[y]] : [byLeft[y], byLeft[x]];
+      near.push([gs[i], gs[j]]);
+    }
+  }
+  near.sort((p, q) => (p[0] < q[0] ? -1 : p[0] > q[0] ? 1 : p[1] < q[1] ? -1 : p[1] > q[1] ? 1 : 0));
+  const signs: [string, string, boolean[]][] = near.map(([g1, g2]) => [g1, g2, []]);
+  for (const [, vis] of frames) {
+    for (const s of signs) {
+      const a = vis.get(s[0]), b = vis.get(s[1]);
+      if (a && b) s[2].push(a[0].z > b[0].z);
     }
   }
   const out: Swaps = new Map();
-  for (const [g1, g2, s] of signs.values()) {
+  for (const [g1, g2, s] of signs) {
     if (!s.some((x) => x !== s[0])) continue;
     const s0 = s[0], s1 = s[s.length - 1];
     const seq = frames.map(([t, vis]) => {
@@ -237,10 +264,15 @@ export function paintFrame(ctx: Ctx, F: FrameData, style: MStyle, t: number, swa
   // ---- crossing gaps: the bond in front cuts the one behind
   const half = margin + style.lineWidth;
   const cuts: [number, number][][] = raw.map(() => []);
+  // (two lines can only cross where their boxes meet: tested first, before any lookup; review F652)
+  const boxes = raw.map((r) => [Math.min(r.p0.x, r.p1.x), Math.min(r.p0.y, r.p1.y), Math.max(r.p0.x, r.p1.x), Math.max(r.p0.y, r.p1.y)]);
+  const anySwaps = !!swaps?.size;
   for (let i = 0; i < raw.length; i++) for (let j = i + 1; j < raw.length; j++) {
+    const bi0 = boxes[i], bj0 = boxes[j];
+    if (bi0[0] > bj0[2] || bj0[0] > bi0[2] || bi0[1] > bj0[3] || bj0[1] > bi0[3]) continue;
     const r = raw[i], s = raw[j];
     if (r.grp === s.grp || r.ends.some((e) => s.ends.includes(e))) continue;
-    const sched = swaps?.get(pairKey(r.grp, s.grp));
+    const sched = anySwaps ? swaps!.get(pairKey(r.grp, s.grp)) : undefined;
     let bi: number, fi: number;
     if (sched) { const front = t < sched[0] ? sched[1] : sched[2]; [bi, fi] = r.grp === front ? [j, i] : [i, j]; } else if (r.z < s.z) [bi, fi] = [i, j];
     else [bi, fi] = [j, i];

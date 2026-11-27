@@ -45,7 +45,7 @@ export function colourPopup(x: number, y: number, wb: Workbook | null, pick: (c:
     input.type = 'color';
     input.dataset.systemPicker = '';
     input.addEventListener('change', () => done(input.value));
-    more.append('More colors ', input);
+    more.append('More Colors… ', input);
     m.append(grid, more);
   });
 }
@@ -79,7 +79,7 @@ export class SheetSparklines {
     const block = R.r1 === R.r2 && R.c1 === R.c2 ? null : (s.clip(R) ?? R);
     const w = new ToolWindow(`Create ${KIND_NAMES[kind]} Sparklines`);
     w.home = s.name;
-    w.note('Choose the data range, then the location range: one cell per row (or column) of data.');
+    w.info('Choose the data range, then the location range: one cell per row (or column) of data.');
     const data = w.ref('Data Range', block ? absText(block, null) : '');
     // a column of cells just right of the data is the usual place
     const place = w.ref('Location Range', block ? absText({ r1: block.r1, c1: block.c2 + 1, r2: block.r2, c2: block.c2 + 1 }, null) : '');
@@ -93,12 +93,17 @@ export class SheetSparklines {
       if (p.sheet !== home) return 'Put the sparklines on this sheet.';
       const g = makeSparklines(kind, d.range, p.range, d.sheet !== home ? d.sheet.name : undefined);
       if (typeof g === 'string') return g;
-      this.host.edit('Insert sparklines', (sh) => {
+      // on the sheet the window was opened on, whichever sheet is showing now (cells can be picked on another)
+      this.view.commitEdit();
+      wb.edit('Insert sparklines', () => {
         const taken = new Set(g.items.map((it) => `${it.row},${it.col}`));
         // a cell holds one sparkline: the new one replaces any there
-        const kept = sh.sparklines.map((x) => ({ ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) })).filter((x) => x.items.length);
-        sh.setSparklines([...kept, g]);
-      });
+        const kept = home.sparklines.map((x) => ({ ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) })).filter((x) => x.items.length);
+        home.setSparklines([...kept, g]);
+      }, { sheet: home, sel: p.range });
+      const at = wb.sheets.indexOf(home);
+      if (at >= 0 && at !== wb.active) this.view.goSheet(at);
+      this.view.refresh();
       this.view.select(p.range);
       return undefined;
     });
@@ -198,11 +203,11 @@ export class SheetSparklines {
     if (!h) return;
     const g = h.group, tick = (on: boolean) => (on ? '✓ ' : '');
     popupMenu(x, y, [
-      [`${tick(!g.empty)}Show empty cells as Gaps`, () => this.setGroup('Empty cells', { empty: undefined })],
-      [`${tick(g.empty === 'zero')}Show empty cells as Zero`, () => this.setGroup('Empty cells', { empty: 'zero' })],
-      [`${tick(g.empty === 'span')}Connect data points with line`, () => this.setGroup('Empty cells', { empty: 'span' }), g.kind === 'line'],
+      [`${tick(!g.empty)}Show Empty Cells as Gaps`, () => this.setGroup('Empty cells', { empty: undefined })],
+      [`${tick(g.empty === 'zero')}Show Empty Cells as Zero`, () => this.setGroup('Empty cells', { empty: 'zero' })],
+      [`${tick(g.empty === 'span')}Connect Data Points with Line`, () => this.setGroup('Empty cells', { empty: 'span' }), g.kind === 'line'],
       null,
-      [`${tick(!!g.hidden)}Show data in hidden rows and columns`, () => this.setGroup('Hidden cells', { hidden: !g.hidden || undefined })],
+      [`${tick(!!g.hidden)}Show Data in Hidden Rows and Columns`, () => this.setGroup('Hidden cells', { hidden: !g.hidden || undefined })],
     ]);
   }
 
@@ -259,7 +264,17 @@ export class SheetSparklines {
       if (p.sheet !== s) return 'Put the sparklines on this sheet.';
       const made = makeSparklines(g.kind, d.range, p.range, d.sheet !== s ? d.sheet.name : undefined);
       if (typeof made === 'string') return made;
-      this.host.edit('Edit sparklines', (sh) => sh.setSparklines(sh.sparklines.map((x) => (x.id === g.id ? { ...g, items: made.items } : x))));
+      if (!wb.sheets.includes(s)) return 'The sheet this window was opened on is gone.';
+      this.view.commitEdit();
+      // on the sheet the group is on, whichever sheet is showing now
+      wb.edit('Edit sparklines', () => {
+        // a cell holds one sparkline: the cells the group now has are taken from any other group
+        const taken = new Set(made.items.map((it) => `${it.row},${it.col}`));
+        s.setSparklines(s.sparklines
+          .map((x) => (x.id === g.id ? { ...g, items: made.items } : { ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) }))
+          .filter((x) => x.items.length));
+      }, { sheet: s, sel: p.range });
+      this.view.refresh();
       return undefined;
     });
     w.show();

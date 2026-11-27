@@ -453,7 +453,8 @@ export class SheetData {
     const sync = () => {
       unit.box.disabled = type.value() !== 'date';
       trend.box.disabled = type.value() === 'date' || type.value() === 'auto';
-      step.disabled = trend.box.checked || type.value() === 'auto';
+      // (a Trend tick made under Linear does nothing under Date, which greys the tick box)
+      step.disabled = (trend.box.checked && (type.value() === 'linear' || type.value() === 'growth')) || type.value() === 'auto';
     };
     for (const r of [...type.inputs.values()]) r.addEventListener('change', sync);
     trend.box.addEventListener('change', sync);
@@ -640,7 +641,8 @@ export class SheetData {
     none.addEventListener('click', () => boxes.forEach((b) => { b.checked = false; }));
     const btns = el('div', 'cp-buttons');
     btns.append(selAll, none);
-    w.form.append(el('p', 'muted small', `In ${rangeName(all)}: rows whose checked columns match an earlier row (ignoring capitals; structures by their SMILES) are removed.`), btns, header.row, list);
+    addInfo(w.form.querySelector('h2'), `In ${rangeName(all)}: rows whose checked columns match an earlier row (ignoring capitals; structures by their SMILES) are removed.`);
+    w.form.append(btns, header.row, list);
     w.onOk(() => {
       const cols = boxes.filter((b) => b.checked).map((b) => Number(b.value));
       if (!cols.length) return 'Select at least one column.';
@@ -713,6 +715,11 @@ export class SheetData {
     type Level = { key: HTMLSelectElement; order: HTMLSelectElement; custom: HTMLInputElement; line: HTMLElement };
     const levels: Level[] = [];
     const list = el('div', 'sd-levels');
+    /** The key a level starts with: the active cell's, then the next one along, as Excel offers it. */
+    const defaultKey = (sel: HTMLSelectElement, i: number): string => {
+      if (i) return sel.options[Math.min(sel.options.length - 1, i)]?.value ?? sel.value;
+      return String(across.box.checked ? Math.min(Math.max(v.sel.active.r, all.r1), all.r2) : Math.min(Math.max(v.sel.active.c, all.c1), all.c2));
+    };
     const keyOptions = (sel: HTMLSelectElement) => {
       const was = sel.value;
       sel.replaceChildren();
@@ -751,7 +758,7 @@ export class SheetData {
         // the next column along, as Excel offers it
         const next = key.options[Math.min(key.options.length - 1, levels.length)];
         if (next) key.value = next.value;
-      } else key.value = String(across.box.checked ? Math.min(Math.max(v.sel.active.r, all.r1), all.r2) : Math.min(Math.max(v.sel.active.c, all.c1), all.c2));
+      } else key.value = defaultKey(key, 0);
       line.append(el('span', 'sd-level-name'), key, order, custom);
       const level: Level = { key, order, custom, line };
       line.addEventListener('focusin', () => { picked = levels.indexOf(level); for (const l of levels) l.line.classList.toggle('on', l === level); });
@@ -774,7 +781,9 @@ export class SheetData {
     down.addEventListener('click', () => move(1));
     const bar = el('div', 'cp-buttons');
     bar.append(add, del, copy, up, down);
-    for (const b of [header.box, across.box]) b.addEventListener('change', () => levels.forEach((l) => keyOptions(l.key)));
+    header.box.addEventListener('change', () => levels.forEach((l) => keyOptions(l.key)));
+    // the options mean something else left to right (rows, not columns), so each level starts again
+    across.box.addEventListener('change', () => levels.forEach((l, i) => { keyOptions(l.key); l.key.value = defaultKey(l.key, i); }));
     w.form.append(bar, list, header.row, caseBox.row, across.row);
     w.onOk(() => {
       const keys = levels.map((l) => ({
@@ -786,7 +795,7 @@ export class SheetData {
       const byCols = across.box.checked;
       // the header row (or, left to right, nothing: Excel's headers are only for top to bottom)
       const R: Range = byCols ? all : { ...all, r1: header.box.checked ? all.r1 + 1 : all.r1 };
-      if (byCols ? R.c2 <= R.c1 : R.r2 <= R.r1) return 'There is only one row to sort.';
+      if (byCols ? R.c2 <= R.c1 : R.r2 <= R.r1) return byCols ? 'There is only one column to sort.' : 'There is only one row to sort.';
       this.host.edit('Sort', (sh) => sh.sort(R, keys, { caseSensitive: caseBox.box.checked, byColumns: byCols }));
       this.host.flash(`Sorted ${byCols ? `${R.c2 - R.c1 + 1} columns` : `${R.r2 - R.r1 + 1} rows`} by ${keys.length} level${keys.length === 1 ? '' : 's'}.`);
       return undefined;
@@ -842,12 +851,20 @@ export class SheetData {
     const v = this.view;
     const s = v.sheet;
     if (!s) return;
-    if (s.filter) { this.host.edit('Clear filter', (sh) => { for (const c of Object.keys(sh.filter!.conditions)) sh.setCondition(Number(c), null); }); return; }
     const t = this.host.table();
-    const R = t ? { ...t.data, r1: t.header ?? t.data.r1 } : { r1: 0, c1: 0, r2: MAX_ROWS - 1, c2: MAX_COLS - 1 };
-    let n = 0;
-    this.host.edit('Clear filter', (sh) => { n = showAllRows(sh, R); });
-    this.host.flash(n ? `${n} hidden row${n === 1 ? '' : 's'} show again.` : 'No rows are hidden here.');
+    // the filter's own block when it has one: rows an Advanced Filter hid in place are hidden by hand, not by its conditions
+    const R = s.filter ? { ...s.filter.range, r2: Math.max(s.filter.range.r2, s.filterRows()?.r2 ?? 0) } : t ? { ...t.data, r1: t.header ?? t.data.r1 } : { r1: 0, c1: 0, r2: MAX_ROWS - 1, c2: MAX_COLS - 1 };
+    // the table's own rows too, when it is not the filter's (a list an Advanced Filter hid rows of in place)
+    const T = s.filter && t ? { ...t.data, r1: t.header ?? t.data.r1 } : null;
+    // (a row in both blocks is counted once)
+    const was = [...s.hiddenRows.keys()].filter((r) => (r >= R.r1 && r <= R.r2) || (T !== null && r >= T.r1 && r <= T.r2)).length;
+    const conditions = s.filter ? Object.keys(s.filter.conditions).length : 0;
+    this.host.edit('Clear filter', (sh) => {
+      if (sh.filter) for (const c of Object.keys(sh.filter.conditions)) sh.setCondition(Number(c), null);
+      showAllRows(sh, R);
+      if (T) showAllRows(sh, T);
+    });
+    this.host.flash(was ? `${was} hidden row${was === 1 ? '' : 's'} show again.` : conditions ? 'The filter is cleared.' : 'No rows are hidden here.');
   }
 
   // ---------------------------------------------------------------- freeze panes and split
@@ -879,6 +896,8 @@ export class SheetData {
       if (!rows && !cols) { this.host.flash('Select the cell below the rows and right of the columns to keep in view, then Freeze Panes.', 6000); return; }
     } else if (how === 'row') rows = 1;
     else if (how === 'col') cols = 1;
+    // frozen rows are counted from row 1, so freezing far down a long sheet would leave no room to scroll
+    if (!v.roomToFreeze(rows, cols)) { this.host.flash('Freezing here would fill the window with frozen rows and columns. Select a cell nearer the top left, then Freeze Panes, or use Split.', 8000); return; }
     v.keepPlaceForFreeze();
     this.host.edit(how === 'off' ? 'Unfreeze Panes' : 'Freeze Panes', (sh) => { sh.setSplit(null); sh.setFrozen(rows, cols); });
     if (how === 'off') { this.host.flash('Panes unfrozen.'); return; }
@@ -896,7 +915,6 @@ export class SheetData {
     let { r, c } = v.sel.active;
     // from the top left cell, Excel splits the window in four through its middle
     if (!r && !c) { r = Math.max(1, Math.floor(v.visibleRows() / 2)); c = Math.max(1, Math.floor(v.visibleCols() / 2)); }
-    if (s.frozen.rows || s.frozen.cols) this.host.edit('Unfreeze Panes', (sh) => sh.setFrozen(0, 0));
     v.splitAt(r, c);
     this.host.flash('Split: each pane scrolls separately. Drag the bar to move the split; double-click it or click Split again to remove it.', 8000);
   }

@@ -8,6 +8,7 @@
 import type { PictureFx, Recolor } from '../model';
 import { BG_TOL, PICTURE_SHAPES, makeFxCanvas, tidyFx } from '../render/picture-fx';
 import { loadImage } from '../render/images';
+import { addInfo, foldIntoInfo } from './info-tip';
 
 type Crop = { l: number; t: number; r: number; b: number };
 
@@ -82,6 +83,8 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     const hint = document.createElement('p');
     hint.className = 'muted pic-hint';
     form.append(h, note, preview, hint);
+    // the help sits behind an "i" by the title, not on a line of its own
+    foldIntoInfo(note, h);
 
     const grid = document.createElement('div');
     grid.className = 'md-grid';
@@ -176,23 +179,23 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     });
     const swatch = document.createElement('span');
     swatch.className = 'pic-swatch';
-    const pickClear = button('Choose in the picture', 'Click the color in the preview to make transparent (a white or colored background)', () => { clickDoes = clickDoes === 'clear' ? 'none' : 'clear'; show(); });
+    const pickClear = button('Choose in Picture', 'Click the color in the preview to make transparent (a white or colored background)', () => { clickDoes = clickDoes === 'clear' ? 'none' : 'clear'; show(); });
     const noClear = button('None', 'No transparent color', () => { fx.clear = undefined; clickDoes = clickDoes === 'clear' ? 'none' : clickDoes; show(); draw(); });
     row(grid, 'Transparent Color', swatch, pickClear, noClear);
     const alpha = slider((fx.alpha ?? 0) * 100, 0, 100, (v) => { fx.alpha = v / 100; draw(); }, 'Transparency: how much the whole picture lets show through');
     row(grid, 'Transparency', alpha);
 
     // ------------------------------------------------ remove background
-    head('Remove background');
+    head('Remove Background');
     const bgOn = document.createElement('input');
     bgOn.type = 'checkbox';
     bgOn.checked = !!fx.bg;
-    row(grid, 'Remove background', bgOn, unit('(what joins the edges in color goes)'));
+    addInfo(row(grid, 'Remove Background', bgOn).querySelector('span'), 'What joins the edges in color goes.');
     const tol = slider((fx.bg?.tol ?? BG_TOL) * 100, 1, 60, (v) => { if (fx.bg) fx.bg = { ...fx.bg, tol: v / 100 }; draw(); }, 'How near in color to the background a part must be to go: raise it if background is left, lower it if the subject loses parts');
     const tolRow = row(grid, 'How near counts', tol);
-    const keepBtn = button('Mark to keep', 'Click parts of the preview that should stay', () => { clickDoes = clickDoes === 'keep' ? 'none' : 'keep'; show(); });
-    const dropBtn = button('Mark to remove', 'Click parts of the preview that should go', () => { clickDoes = clickDoes === 'drop' ? 'none' : 'drop'; show(); });
-    const clearMarks = button('Clear marks', 'Take off the marks', () => { if (fx.bg) fx.bg = { ...(fx.bg.tol !== undefined ? { tol: fx.bg.tol } : {}) }; show(); draw(); });
+    const keepBtn = button('Mark Areas to Keep', 'Click parts of the preview that should stay', () => { clickDoes = clickDoes === 'keep' ? 'none' : 'keep'; show(); });
+    const dropBtn = button('Mark Areas to Remove', 'Click parts of the preview that should go', () => { clickDoes = clickDoes === 'drop' ? 'none' : 'drop'; show(); });
+    const clearMarks = button('Clear Marks', 'Take off the marks', () => { if (fx.bg) fx.bg = { ...(fx.bg.tol !== undefined ? { tol: fx.bg.tol } : {}) }; show(); draw(); });
     const marksRow = row(grid, 'Marks', keepBtn, dropBtn, clearMarks);
     bgOn.addEventListener('change', () => {
       fx.bg = bgOn.checked ? { ...(Number(tol.querySelector('input')!.value) / 100 !== BG_TOL ? { tol: Number(tol.querySelector('input')!.value) / 100 } : {}) } : undefined;
@@ -209,15 +212,18 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     row(grid, 'Crop to shape', shape);
     const ratio = document.createElement('select');
     for (const [v, name] of ASPECTS) ratio.add(new Option(name, v));
-    ratio.addEventListener('change', () => {
+    const applyRatio = () => {
       const img = small;
-      if (!img || !ratio.value) { aspect = undefined; crop = { ...(o.crop ?? { l: 0, t: 0, r: 0, b: 0 }) }; draw(); return; }
+      if (!ratio.value) { aspect = undefined; crop = { ...(o.crop ?? { l: 0, t: 0, r: 0, b: 0 }) }; draw(); return; }
+      // (picked before the picture has loaded: it is applied as soon as it has, below)
+      if (!img) return;
       const want = ratio.value === 'own' ? img.width / img.height : Number(ratio.value);
       crop = aspectCrop(img.width, img.height, want);
       aspect = want;
       draw();
-    });
-    row(grid, 'Crop to proportions', ratio, unit('(centered; drag the crop handles to move it)'));
+    };
+    ratio.addEventListener('change', applyRatio);
+    addInfo(row(grid, 'Crop to proportions', ratio).querySelector('span'), 'Centered; drag the crop handles to move it.');
 
     // ------------------------------------------------ buttons
     const buttons = document.createElement('p');
@@ -227,6 +233,12 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
       crop = { l: 0, t: 0, r: 0, b: 0 };
       aspect = small ? small.width / small.height : undefined;
       for (const s of [bright, contrast, sharp, alpha]) s.set(0);
+      // (the sliders and colors that only matter once a setting is turned on again start from their usual values)
+      tol.set(BG_TOL * 100);
+      level.set(50);
+      tint = { kind: 'tint', dark: '#1f3864', light: '#ddebf7' };
+      dark.value = tint.dark;
+      light.value = tint.light;
       recolor.value = 'none';
       bgOn.checked = false;
       shape.value = 'rect';
@@ -257,8 +269,8 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
       dropBtn.setAttribute('aria-pressed', String(clickDoes === 'drop'));
       preview.style.cursor = clickDoes === 'none' ? '' : 'crosshair';
       hint.textContent = clickDoes === 'clear' ? 'Click the color in the picture to make transparent.'
-        : clickDoes === 'keep' ? 'Click parts of the picture to keep (green dots). Click Mark to keep again to stop.'
-          : clickDoes === 'drop' ? 'Click parts of the picture to remove (red dots). Click Mark to remove again to stop.'
+        : clickDoes === 'keep' ? 'Click parts of the picture to keep (green dots). Click Mark Areas to Keep again to stop.'
+          : clickDoes === 'drop' ? 'Click parts of the picture to remove (red dots). Click Mark Areas to Remove again to stop.'
             : '';
     }
 
@@ -348,7 +360,7 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
       c.height = Math.max(1, Math.round(ih * k));
       c.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, c.width, c.height);
       small = c;
-      draw();
+      if (ratio.value) applyRatio(); else draw();
     }).catch(() => { hint.textContent = 'This picture could not be read.'; });
   });
 }

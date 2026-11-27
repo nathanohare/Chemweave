@@ -16,8 +16,8 @@ import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
 import { Chart, mapChartRefs } from './chart';
 import { Dashboard, mapDashboardRefs } from './dashboard';
-import { type RefToken, Node, parseFormula, shiftFormula, shiftTree, adjustFormula, renameSheetInFormula, formulaRefs, SheetChange, normalizeFormula, FormulaSyntaxError, moveRefs, tokenize, type Token } from './formula';
-import { evaluate, evaluateArg, tidyValue, EvalHost, VOLATILE_FUNCTIONS } from './evaluate';
+import { type RefToken, Node, parseFormula, shiftFormula, shiftTree, adjustFormula, renameSheetInFormula, formulaRefs, SheetChange, normalizeFormula, FormulaSyntaxError, moveRefs, qualifyRefs, tokenize, type Token } from './formula';
+import { evaluate, evaluateArg, tidyValue, EvalHost, VOLATILE_FUNCTIONS, sumRangeSized } from './evaluate';
 import { Arg, isBlock, isMulti, rowsOf } from './args';
 import { DefinedName, resolveName } from './names';
 import { CellError, ERR, Value, readTyped, compareValues, isError } from './values';
@@ -194,6 +194,7 @@ export interface ColumnDef {
 
 export type CompareOp = '<' | '<=' | '>' | '>=' | '=' | '<>';
 
+
 export type Condition =
   /** Only rows whose cell shows one of these texts ('' for empty cells). */
   | { kind: 'values'; allowed: string[] }
@@ -247,6 +248,11 @@ export interface CellBlock {
   shown?: (string | undefined)[][];
   /** Notes and comments on the cells (pasted with everything else, as in Excel). */
   notes?: (CellNote | undefined)[][];
+  /**
+   * Whole columns copied: each column's own formatting (the empty cells below the ones in use
+   * take it). `cells` then holds only the rows in use; the rows past them are empty.
+   */
+  colStyles?: (CellStyle | undefined)[];
 }
 
 /**
@@ -353,8 +359,19 @@ interface Entry {
 
 let nextSheetUid = 1;
 
-/** Selections up to this many cells keep formatting in their empty cells too. */
-const SMALL_BLOCK = 10000;
+/** A map that counts its changes (so what is worked out from it can tell when to work it out again). */
+class CountedMap<K, V> extends Map<K, V> {
+  changes = 0;
+  override set(k: K, v: V): this { this.changes = (this.changes ?? 0) + 1; return super.set(k, v); }
+  override delete(k: K): boolean { this.changes = (this.changes ?? 0) + 1; return super.delete(k); }
+  override clear(): void { this.changes = (this.changes ?? 0) + 1; super.clear(); }
+}
+
+/**
+ * Blocks of cells up to this many keep formatting in their empty cells too (whole rows and
+ * columns, and blocks larger than this, change only the cells in use).
+ */
+export const SMALL_BLOCK = 50_000;
 
 export class Sheet {
   readonly uid = nextSheetUid++;
@@ -383,9 +400,11 @@ export class Sheet {
   colStyles = new Map<number, CellStyle>();
   /** Property columns. */
   colDefs = new Map<number, ColumnDef>();
-  hiddenRows = new Map<number, true>();
+  hiddenRows = new CountedMap<number, true>();
   hiddenCols = new Map<number, true>();
   merges: Range[] = [];
+  /** The hidden rows in order, kept while hiddenRows doesn't change (for a table's stripes). */
+  private hiddenSorted: { changes: number; rows: number[] } | null = null;
   filter: Filter | null = null;
   /** Rows and columns that stay put while scrolling. */
   frozen = { rows: 0, cols: 0 };
@@ -520,6 +539,16 @@ export class Sheet {
     return this.tables.find((t) => inRange(t.range, row, col));
   }
 
+  /** How many rows from `first` up to (not including) `row` are hidden. */
+  private hiddenBetween(first: number, row: number): number {
+    if (!this.hiddenSorted || this.hiddenSorted.changes !== this.hiddenRows.changes) {
+      this.hiddenSorted = { changes: this.hiddenRows.changes, rows: [...this.hiddenRows.keys()].sort((a, b) => a - b) };
+    }
+    const rows = this.hiddenSorted.rows;
+    const below = (x: number) => { let lo = 0, hi = rows.length; while (lo < hi) { const m = (lo + hi) >> 1; if (rows[m] < x) lo = m + 1; else hi = m; } return lo; };
+    return row > first ? below(row) - below(first) : 0;
+  }
+
   /**
    * The formatting a cell shows: its table's look, then its own formatting, then conditional
    * formatting on top. (Saving uses styleAt: tables and rules are saved as themselves.)
@@ -528,7 +557,7 @@ export class Sheet {
     let st = this.styleAt(row, col);
     const t = this.tables.length ? this.tableAt(row, col) : undefined;
     if (t) {
-      const look = tableCellLook(t, row, col, (r) => this.hiddenRows.has(r));
+      const look = tableCellLook(t, row, col, this.hiddenRows.size ? (first, r) => this.hiddenBetween(first, r) : undefined);
       if (look) st = mergeStyle(look as CellStyle, st);
     }
     const cf = this.condLook(row, col);
@@ -694,8 +723,9 @@ export class Sheet {
     if (whole) for (let c = r.c1; c <= Math.min(r.c2, MAX_COLS - 1); c++) this.put('colStyles', this.colStyles, c, patchStyleWith(this.colStyles.get(c), patch));
     // a block of cells keeps its formatting even where they are empty, so a number typed in later
     // shows in it (a temperature column formatted before it is filled in); for whole rows and
-    // columns only the cells in use change, and empty ones only for what shows without content
-    const small = !whole && (r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) <= SMALL_BLOCK;
+    // columns (and blocks of more than SMALL_BLOCK cells) only the cells in use change, and empty
+    // ones only for what shows without content
+    const small = this.smallBlock(r);
     const used = small ? r : this.clip(r);
     if (!used) return;
     for (let row = used.r1; row <= used.r2; row++) {
@@ -707,11 +737,40 @@ export class Sheet {
     }
   }
 
+  /** A block small enough that its empty cells take formatting too (not whole rows or columns). */
+  private smallBlock(r: Range): boolean {
+    const wholeCols = r.r1 === 0 && r.r2 >= MAX_ROWS - 1, wholeRows = r.c1 === 0 && r.c2 >= MAX_COLS - 1;
+    return !wholeCols && !wholeRows && (r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) <= SMALL_BLOCK;
+  }
+
   /** Borders round and inside a range, as Excel's border button sets them. */
   setBorders(r: Range, how: 'all' | 'outside' | 'none' | 'bottom' | 'top' | 'thick-bottom' | 'top-bottom', style: BorderStyle = 'thin'): void {
     const b: Border = { style };
-    for (let row = r.r1; row <= Math.min(r.r2, Math.max(this.lastRow, r.r1)); row++) {
-      for (let col = r.c1; col <= Math.min(r.c2, Math.max(this.lastCol, r.c1)); col++) {
+    // the whole of a block, empty cells too, as patchStyle formats it; along whole rows or columns
+    // (and in blocks too large for that) only as far as the cells in use, but always the block's
+    // own first row and column, so its top, left and (for rows) bottom edges are drawn
+    const wholeCols = r.r1 === 0 && r.r2 >= MAX_ROWS - 1, wholeRows = r.c1 === 0 && r.c2 >= MAX_COLS - 1;
+    const small = this.smallBlock(r);
+    const used: Range = {
+      r1: r.r1, c1: r.c1,
+      r2: wholeCols || (!small && !wholeRows) ? Math.min(r.r2, Math.max(this.lastRow, this.lastDataRow, r.r1)) : r.r2,
+      c2: wholeRows || (!small && !wholeCols) ? Math.min(r.c2, Math.max(this.lastCol, r.c1)) : r.c2,
+    };
+    // whole columns: the columns' own formatting takes the sides that run down them, so cells typed later show them
+    if (wholeCols && (how === 'all' || how === 'none' || how === 'outside')) {
+      for (let col = r.c1; col <= Math.min(r.c2, MAX_COLS - 1); col++) {
+        const sides: Partial<Record<Side, Border | undefined>> = {};
+        if (how === 'none') Object.assign(sides, { top: undefined, right: undefined, bottom: undefined, left: undefined });
+        else if (how === 'all') Object.assign(sides, { top: b, right: b, bottom: b, left: b });
+        else { if (col === r.c1) sides.left = b; if (col === r.c2) sides.right = b; }
+        if (!Object.keys(sides).length) continue;
+        const old = this.colStyles.get(col);
+        const borders = { ...old?.borders, ...sides } as Partial<Record<Side, Border>>;
+        this.put('colStyles', this.colStyles, col, patchStyleWith({ ...old, borders: undefined }, { borders }));
+      }
+    }
+    for (let row = used.r1; row <= used.r2; row++) {
+      for (let col = used.c1; col <= used.c2; col++) {
         const sides: Partial<Record<Side, Border | undefined>> = {};
         if (how === 'none') Object.assign(sides, { top: undefined, right: undefined, bottom: undefined, left: undefined });
         else if (how === 'all') Object.assign(sides, { top: b, right: b, bottom: b, left: b });
@@ -874,12 +933,14 @@ export class Sheet {
   clear(r: Range, what: 'contents' | 'formats' | 'all' | 'notes' = 'contents'): void {
     if (what === 'all' || what === 'notes') for (const k of [...this.notes.keys()]) if (inRange(r, rowOf(k), colOf(k))) this.put('notes', this.notes, k, undefined);
     if (what === 'notes') return;
-    if (what !== 'contents' && r.r1 === 0 && r.r2 >= MAX_ROWS - 1) for (let c = r.c1; c <= Math.min(r.c2, this.lastCol); c++) this.setColStyle(c, undefined);
+    // every formatted column in the range, also those past the cells in use
+    if (what !== 'contents' && r.r1 === 0 && r.r2 >= MAX_ROWS - 1) for (const c of [...this.colStyles.keys()]) if (c >= r.c1 && c <= r.c2) this.setColStyle(c, undefined);
     for (const k of this.keysIn(r)) {
       const c = this.cells.get(k)!;
       if (what === 'all') this.setCell(rowOf(k), colOf(k), undefined);
       else if (what === 'contents') this.setCell(rowOf(k), colOf(k), { style: c.style });
-      else this.setCell(rowOf(k), colOf(k), { input: c.input, structure: c.structure, link: c.link });
+      // only the formatting goes: a Compound card or an array formula stays what it is
+      else this.setCell(rowOf(k), colOf(k), { ...c, style: undefined, runs: undefined });
     }
     // clearing a property column's header and cells together takes the property column away
     if (what !== 'formats') {
@@ -890,23 +951,36 @@ export class Sheet {
   /** Put a block of copied cells at a place, moving formulas by the distance (Excel's paste). */
   paste(at: { row: number; col: number }, block: CellBlock, what: 'all' | 'values' | 'formats' = 'all'): Range {
     const target: Range = { r1: at.row, c1: at.col, r2: at.row + block.rows - 1, c2: at.col + block.cols - 1 };
-    for (let i = 0; i < block.rows; i++) {
-      for (let j = 0; j < block.cols; j++) {
-        const src = block.cells[i]?.[j];
-        const row = at.row + i, col = at.col + j;
-        if (row >= MAX_ROWS || col >= MAX_COLS) continue;
-        const old = this.cell(row, col);
-        if (what === 'formats') { this.setCell(row, col, { ...old, style: src?.style }); continue; }
-        let input = src?.input;
-        // Paste Values puts in what the formulas showed (worked out when copied)
-        if (what === 'values' && input?.startsWith('=') && block.shown?.[i]?.[j] !== undefined) input = block.shown[i][j];
-        else if (input?.startsWith('=') && block.origin) input = shiftFormula(input, row - (block.origin.row + i), col - (block.origin.col + j));
-        const style = what === 'values' ? old?.style : src?.style;
-        const runs = what === 'all' && input === src?.input ? runsOf(src) : undefined;
-        this.setCell(row, col, { input, structure: src?.structure, style, link: what === 'values' ? old?.link : src?.link, ...(runs ? { runs } : {}) });
-        const note = block.notes?.[i]?.[j];
-        if (what === 'all' && note) this.setNote(row, col, copyNote(note));
-      }
+    // whole columns pasted at the top take the copied columns' own formatting
+    if (block.colStyles && at.row === 0 && what !== 'values') {
+      for (let j = 0; j < block.cols && at.col + j < MAX_COLS; j++) this.setColStyle(at.col + j, block.colStyles[j] ?? undefined);
+    }
+    const one = (i: number, j: number) => {
+      const src = block.cells[i]?.[j];
+      const row = at.row + i, col = at.col + j;
+      if (row >= MAX_ROWS || col >= MAX_COLS) return;
+      const old = this.cell(row, col);
+      if (what === 'formats') { this.setCell(row, col, { ...old, style: src?.style }); return; }
+      let input = src?.input;
+      // Paste Values puts in what the formulas showed (worked out when copied)
+      if (what === 'values' && input?.startsWith('=') && block.shown?.[i]?.[j] !== undefined) input = block.shown[i][j];
+      else if (input?.startsWith('=') && block.origin) input = shiftFormula(input, row - (block.origin.row + i), col - (block.origin.col + j));
+      const style = what === 'values' ? old?.style : src?.style;
+      const same = what === 'all' && input === src?.input;
+      const runs = same ? runsOf(src) : undefined;
+      // a Compound card goes with its name, and a legacy array formula stays one
+      const compound = same && src?.compound ? { compound: src.compound } : {};
+      const array = what === 'all' && src?.array && input?.startsWith('=') ? { array: { ...src.array } } : {};
+      this.setCell(row, col, { input, structure: src?.structure, style, link: what === 'values' ? old?.link : src?.link, ...(runs ? { runs } : {}), ...compound, ...array });
+      const note = block.notes?.[i]?.[j];
+      if (what === 'all' && note) this.setNote(row, col, copyNote(note));
+    };
+    // the rows the block holds; past them (whole columns copied) only the cells there are emptied
+    const held = Math.min(block.rows, block.cells.length);
+    for (let i = 0; i < held; i++) for (let j = 0; j < block.cols; j++) one(i, j);
+    if (held < block.rows) {
+      const rest: Range = { r1: at.row + held, c1: at.col, r2: Math.min(target.r2, MAX_ROWS - 1), c2: Math.min(target.c2, MAX_COLS - 1) };
+      if (rest.r1 <= rest.r2) for (const k of this.keysIn(rest)) one(rowOf(k) - at.row, colOf(k) - at.col);
     }
     return target;
   }
@@ -926,30 +1000,61 @@ export class Sheet {
     return this.paste(at, { ...block, origin: null }, what);
   }
 
-  /** The cells of a range, for Copy (property columns give their formulas). */
+  /**
+   * Cut and Paste onto another sheet of the workbook: the block goes to `dest` as it is, its old
+   * place is emptied, and formulas anywhere that pointed at its cells point at them in their new
+   * place (with the sheet's name). The block's own formulas keep pointing at the cells they did.
+   */
+  moveTo(from: Range, dest: Sheet, at: { row: number; col: number }, what: 'all' | 'values' | 'formats' = 'all'): Range {
+    if (dest === this) return this.move(from, at, what);
+    const dr = at.row - from.r1, dc = at.col - from.c1;
+    const block = this.copy(from);
+    this.clear(from, 'all');
+    const follow = (f: string, home: string) => moveRefs(f, home, this.name, from, dr, dc, dest.name);
+    // (a formula that moves to another sheet names the sheet its other references are on)
+    block.cells = block.cells.map((line) => line.map((c) => (c?.input?.startsWith('=') ? { ...c, input: qualifyRefs(follow(c.input, this.name), this.name) } : c)));
+    this.wb.rewriteAllFormulas(follow);
+    return dest.paste(at, { ...block, origin: null }, what);
+  }
+
+  /**
+   * The cells of a range, for Copy (property columns give their formulas). Whole columns are read
+   * only down to the cells in use, with each column's own formatting kept for the rest.
+   */
   copy(r: Range): CellBlock {
     const cells: (Cell | undefined)[][] = [];
     const shown: (string | undefined)[][] = [];
     const notes: (CellNote | undefined)[][] = [];
     let formulas = false;
-    for (let row = r.r1; row <= r.r2; row++) {
+    const wholeCols = r.r1 === 0 && r.r2 >= MAX_ROWS - 1;
+    let last = r.r2;
+    if (wholeCols) {
+      last = Math.max(this.lastRow, this.lastDataRow);
+      for (const k of this.notes.keys()) last = Math.max(last, rowOf(k));
+      last = Math.min(r.r2, last);
+    }
+    for (let row = r.r1; row <= last; row++) {
       if (this.notes.size) notes.push(Array.from({ length: r.c2 - r.c1 + 1 }, (_, j) => this.noteAt(row, r.c1 + j)));
       const line: (Cell | undefined)[] = [];
       const seen: (string | undefined)[] = [];
       for (let col = r.c1; col <= r.c2; col++) {
         const c = this.cell(row, col);
-        // a cell an array spilled into is copied as its value, as in Excel
-        const input = this.effectiveInput(row, col) ?? (this.spillOwner.has(keyOf(row, col)) ? valueInput(this.value(row, col)) || undefined : undefined);
+        // a cell an array spilled into is copied as its value, as in Excel, unless the array's own
+        // formula is copied too (it fills those cells again where it is pasted)
+        const owner = this.spillOwner.get(keyOf(row, col));
+        const ownerCopied = owner !== undefined && inRange(r, rowOf(owner), colOf(owner));
+        const input = this.effectiveInput(row, col) ?? (owner !== undefined && !ownerCopied ? valueInput(this.value(row, col)) || undefined : undefined);
         const style = this.styleAt(row, col);
         const runs = runsOf(c);
-        line.push(input || c?.structure || style || c?.link ? { input, structure: c?.structure, style, ...(c?.link ? { link: c.link } : {}), ...(runs ? { runs } : {}) } : undefined);
+        line.push(input || c?.structure || style || c?.link ? { input, structure: c?.structure, style, ...(c?.link ? { link: c.link } : {}), ...(runs ? { runs } : {}), ...(c?.compound ? { compound: c.compound } : {}), ...(c?.array ? { array: { ...c.array } } : {}) } : undefined);
         if (input?.startsWith('=')) { formulas = true; seen.push(valueInput(this.value(row, col))); } else seen.push(undefined);
       }
       cells.push(line);
       shown.push(seen);
     }
     const noted = notes.some((line) => line.some(Boolean));
-    return { rows: r.r2 - r.r1 + 1, cols: r.c2 - r.c1 + 1, cells, origin: { row: r.r1, col: r.c1 }, ...(formulas ? { shown } : {}), ...(noted ? { notes } : {}) };
+    const colStyles = wholeCols ? Array.from({ length: r.c2 - r.c1 + 1 }, (_, j) => this.colStyles.get(r.c1 + j)) : undefined;
+    return { rows: r.r2 - r.r1 + 1, cols: r.c2 - r.c1 + 1, cells, origin: { row: r.r1, col: r.c1 }, ...(formulas ? { shown } : {}), ...(noted ? { notes } : {}), ...(colStyles ? { colStyles } : {}) };
   }
 
   /** The used part of a range (null when it holds nothing). */
@@ -1004,7 +1109,11 @@ export class Sheet {
           input = textStep !== null ? countOn(srcCells[0].input!, textStep * pos) : countOn(input, Math.floor(pos / srcLen));
         }
         const keepsDef = !s.cell?.input && this.defAt(r, c) && input === this.effectiveInput(r, c);
-        this.setCell(r, c, { input: keepsDef ? undefined : input, structure: s.cell?.structure, style: s.cell?.style, link: s.cell?.link });
+        // a cell copied as it is keeps its rich text and its Compound card
+        const same = !!s.cell?.input && input === s.cell.input;
+        const runs = same ? runsOf(s.cell) : undefined;
+        const array = s.cell?.array && input?.startsWith('=') ? { array: { ...s.cell.array } } : {};
+        this.setCell(r, c, { input: keepsDef ? undefined : input, structure: s.cell?.structure, style: s.cell?.style, link: s.cell?.link, ...(runs ? { runs } : {}), ...(same && s.cell?.compound ? { compound: s.cell.compound } : {}), ...array });
       }
     }
   }
@@ -1237,7 +1346,15 @@ export class Sheet {
 
   /** Turn the filter on for a table (its first row holding the headers), or off with null. */
   setFilter(f: Filter | null): void {
+    // the rows the old filter could have hidden: shown again where the new one doesn't reach
+    // (rows hidden by hand or by a collapsed group elsewhere on the sheet stay hidden, as in Excel)
+    const before = this.filter && Object.keys(this.filter.conditions).length ? this.filterRows() : null;
     this.assign('filter', f ? { range: { ...f.range }, conditions: { ...f.conditions } } : null);
+    if (before) {
+      // with no conditions left (or no filter), every row the old filter could have hidden shows again
+      const now = f && Object.keys(f.conditions).length ? this.filterRows() : null;
+      for (const r of [...this.hiddenRows.keys()]) if (r >= before.r1 && r <= before.r2 && (!now || r < now.r1 || r > now.r2)) this.setRowHidden(r, false);
+    }
     this.applyFilter();
   }
 
@@ -1267,6 +1384,8 @@ export class Sheet {
     if (cond) conditions[col] = cond;
     else delete conditions[col];
     this.assign('filter', { range: this.filter.range, conditions });
+    // the last condition taken away: the rows it hid show again
+    if (!Object.keys(conditions).length) this.showFilterRows();
     this.applyFilter();
   }
 
@@ -1280,26 +1399,33 @@ export class Sheet {
   }
 
   /** Hide the rows that fail the filter's conditions and show the rest (as Excel, once, not as cells change). */
+  /**
+   * Only rows of the filtered table are touched; a filter with no conditions changes none (rows
+   * hidden by hand, or by a collapsed group, stay as they are).
+   */
   applyFilter(): void {
     const rows = this.filterRows();
-    const old = [...this.hiddenRows.keys()];
-    if (!rows) {
-      for (const r of old) this.setRowHidden(r, false);
-      return;
-    }
-    for (const r of old) if (r < rows.r1 || r > rows.r2) this.setRowHidden(r, false);
+    if (!rows) return;
     const conds = Object.entries(this.filter!.conditions).map(([c, cond]) => [Number(c), cond] as const);
+    if (!conds.length) return;
     for (let row = rows.r1; row <= rows.r2; row++) {
       const pass = conds.every(([col, cond]) => this.passes(row, col, cond) !== false);
       this.setRowHidden(row, !pass);
     }
   }
 
+  /** Show the hidden rows of the filtered table. */
+  private showFilterRows(): void {
+    const rows = this.filterRows();
+    if (!rows) return;
+    for (const r of [...this.hiddenRows.keys()]) if (r >= rows.r1 && r <= rows.r2) this.setRowHidden(r, false);
+  }
+
   /** Does a cell pass a condition? Null when it can't be told yet (a substructure still being matched). */
   passes(row: number, col: number, cond: Condition): boolean | null {
     const v = this.value(row, col);
     switch (cond.kind) {
-      case 'values': return cond.allowed.includes(this.shownText(row, col));
+      case 'values': return allowedSet(cond).has(this.shownText(row, col));
       case 'contains': return this.shownText(row, col).toLowerCase().includes(cond.text.toLowerCase());
       case 'compare': {
         const one = (op: CompareOp, want: number | string): boolean => {
@@ -1335,6 +1461,37 @@ export class Sheet {
 const READER_COLS = 1 << 15;
 /** The most running totals (SUM down one column) kept while sheets are worked out. */
 const RUNNING_MAX = 4_000_000;
+
+/** A value-list condition's values as a set (worked out once per condition, not once per row). */
+const allowedSets = new WeakMap<object, Set<string>>();
+function allowedSet(cond: { allowed: string[] }): Set<string> {
+  let set = allowedSets.get(cond.allowed);
+  if (!set) { set = new Set(cond.allowed); allowedSets.set(cond.allowed, set); }
+  return set;
+}
+
+/** The sum ranges SUMIF and AVERAGEIF read, sized to the range tested (see sumRangeSized). */
+function sumRangesIn(n: Node): RefToken[] {
+  const out: RefToken[] = [];
+  const walk = (x: Node): void => {
+    switch (x.t) {
+      case 'fn':
+        if ((x.name === 'SUMIF' || x.name === 'AVERAGEIF') && x.args.length === 3 && x.args[0].t === 'ref' && x.args[2].t === 'ref') {
+          const sized = sumRangeSized(x.args[0].v, x.args[2].v);
+          if (sized) out.push(sized);
+        }
+        x.args.forEach(walk);
+        break;
+      case 'call': walk(x.f); x.args.forEach(walk); break;
+      case 'bin': walk(x.l); walk(x.r); break;
+      case 'neg': case 'pct': case 'at': walk(x.x); break;
+      case 'arr': x.rows.forEach((r) => r.forEach(walk)); break;
+      default: break;
+    }
+  };
+  walk(n);
+  return out;
+}
 
 /** Changes that leave every value as it was. */
 const NO_VALUES = new Set<string>(['colWidths', 'rowHeights', 'fittedRows', 'colStyles', 'hiddenRows', 'hiddenCols', 'merges', 'filter', 'frozen', 'split', 'condFormats', 'tables', 'charts', 'dashboard', 'notes', 'validations', 'objects', 'pageSetup', 'pivots',
@@ -1372,7 +1529,23 @@ function spillState(s: Sheet, key: number): string {
 }
 
 /** A formula to work out: a cell's own (which can spill an array), or a property column's in one of its rows. */
-interface FormulaNode { s: Sheet; key: number; text: string; def?: true }
+interface FormulaNode {
+  s: Sheet;
+  key: number;
+  text: string;
+  def?: true;
+  /**
+   * Not a formula: a stand-in for a run of formula cells down one column, read after all of them,
+   * so a block reference over thousands of formulas (a running total) needs a few links, not one
+   * per cell. It is never worked out and holds no value.
+   */
+  link?: true;
+}
+
+/** A block reference over more formula cells of one column than this is linked through stand-ins. */
+const LINK_MIN = 64;
+/** The formula cells one stand-in links to directly (larger runs are split in two). */
+const LINK_LEAF = 16;
 
 /** The formulas of a workbook and the order they are worked out in, as the last full recalculation found them. */
 interface Graph {
@@ -1457,6 +1630,8 @@ export class Workbook {
   private parsed = new Map<string, Node | CellError>();
   /** The references in each formula's text (for the order formulas are worked out in). */
   private refsByText = new Map<string, RefToken[]>();
+  /** The formulas refsIn is following names through just now. */
+  private refsBusy = new Set<string>();
   /** A property column's formula as written in each of its rows. */
   private shifted = new Map<string, string>();
   /** What the last full recalculation found, so an edit to plain values works out only what reads them. */
@@ -1558,6 +1733,45 @@ export class Workbook {
     this.recalcAfter(e.changes);
     this.onChange();
     return e.after ?? e.before ?? null;
+  }
+
+  /**
+   * Make a change that the person may still turn down (Goal Seek's answer, Solver's): a step like
+   * any other, with a way to take it back as if it had never been made, leaving nothing to undo or
+   * redo. `made` is false when the change altered nothing, so there is no step to take back.
+   */
+  preview<T>(label: string, fn: () => T, before?: Place): { result: T; made: boolean; applied(): boolean; retract(): boolean } {
+    const top = this.undoList[this.undoList.length - 1];
+    const result = this.edit(label, fn, before);
+    const entry = this.undoList[this.undoList.length - 1];
+    const made = entry !== undefined && entry !== top;
+    return {
+      result, made,
+      // still made (not undone meanwhile)
+      applied: () => !made || this.undoList.includes(entry),
+      retract: () => {
+        if (!made) return true;
+        if (this.tx) return false;
+        // undone meanwhile (Ctrl+Z while its window stayed open): only the step to redo is left to drop,
+        // with the steps made on top of it (they sit under it in the list, having been undone before it)
+        const at = this.redoList.indexOf(entry);
+        if (at >= 0) { this.redoList.splice(0, at + 1); return true; }
+        // something else was done since: the step stays, and the caller puts the cells back by hand
+        if (this.undoList[this.undoList.length - 1] !== entry) return false;
+        this.undoList.pop();
+        for (let i = entry.changes.length - 1; i >= 0; i--) this.applyChange(entry.changes[i], 'before');
+        // (counted as a change, so a file saved while the preview showed is known to differ)
+        this.edits++;
+        this.recalcAfter(entry.changes, 'before');
+        this.onChange();
+        return true;
+      },
+    };
+  }
+
+  /** Inside an edit: bring every value up to date with what the edit has changed so far, so what comes next reads them. */
+  settle(): void {
+    if (this.tx) this.recalc();
   }
 
   private applyChange(c: Change, which: 'before' | 'after'): void {
@@ -1815,7 +2029,26 @@ export class Workbook {
   private refsIn(text: string): RefToken[] {
     let refs = this.refsByText.get(text);
     if (refs) return refs;
-    refs = formulaRefs(text);
+    // names that use each other (Rate =Base*2, Base =Rate+1): a name already being followed adds only its own references
+    if (this.refsBusy.has(text)) return formulaRefs(text);
+    this.refsBusy.add(text);
+    try {
+      refs = this.namedRefsIn(text);
+    } finally {
+      this.refsBusy.delete(text);
+    }
+    if (this.refsByText.size > 500000) this.refsByText.clear();
+    this.refsByText.set(text, refs);
+    return refs;
+  }
+
+  private namedRefsIn(text: string): RefToken[] {
+    let refs = formulaRefs(text);
+    // SUMIF(A1:A10,">0",B1) reads B1:B10
+    if (/\b(?:SUMIF|AVERAGEIF)\s*\(/i.test(text)) {
+      const tree = this.parse(text);
+      if (!isError(tree)) refs = [...refs, ...sumRangesIn(tree)];
+    }
     if (this.names.length) {
       let toks: Token[];
       try { toks = tokenize(text.startsWith('=') ? text.slice(1) : text); } catch { toks = []; }
@@ -1828,8 +2061,6 @@ export class Workbook {
         for (const n of this.names) if (n.name.toLowerCase() === low && n.formula !== text) refs = [...refs, ...this.refsIn(n.formula)];
       }
     }
-    if (this.refsByText.size > 500000) this.refsByText.clear();
-    this.refsByText.set(text, refs);
     return refs;
   }
 
@@ -1907,7 +2138,30 @@ export class Workbook {
     const indeg = new Array<number>(nodes.length).fill(0);
     // which formulas read each column: [first row, last row, formula] for each reference
     const readers = new Map<number, number[]>();
+    // stand-ins for runs of formula cells down a column (rows[a] up to rows[b - 1]), made as needed
+    const links = new Map<string, number>();
+    const linkNode = (s: Sheet, si: number, col: number, rows: number[], a: number, b: number): number => {
+      const id = `${si}|${col}|${a}|${b}`;
+      let v = links.get(id);
+      if (v !== undefined) return v;
+      v = nodes.length;
+      nodes.push({ s, key: -1, text: '', link: true });
+      dependents.push([]);
+      indeg.push(0);
+      links.set(id, v);
+      const from = (dep: number) => { dependents[dep].push(v!); indeg[v!]++; };
+      if (b - a <= LINK_LEAF) {
+        for (let j = a; j < b; j++) { const dep = byId.get(gid(si, keyOf(rows[j], col))); if (dep !== undefined) from(dep); }
+      } else {
+        const m = (a + b) >> 1;
+        from(linkNode(s, si, col, rows, a, m));
+        from(linkNode(s, si, col, rows, m, b));
+      }
+      return v;
+    };
+    const formulaCount = nodes.length;
     nodes.forEach((n, i) => {
+      if (i >= formulaCount) return;
       const seen = new Set<number>();
       const refs = this.refsIn(n.text);
       for (const ref of refs) {
@@ -1938,18 +2192,33 @@ export class Workbook {
         }
         const cols = formulaRowsByCol.get(s);
         if (!cols) continue;
+        const add = (dep: number | undefined) => {
+          if (dep === undefined || seen.has(dep)) return;
+          seen.add(dep);
+          dependents[dep].push(i);
+          indeg[i]++;
+        };
         for (const [col, rows] of cols) {
           if (col < c1 || col > c2) continue;
-          // the formula rows of this column inside the block
+          // the formula rows of this column inside the block: rows[lo] up to rows[hi - 1]
           let lo = 0, hi = rows.length;
           while (lo < hi) { const mid = (lo + hi) >> 1; if (rows[mid] < r1) lo = mid + 1; else hi = mid; }
-          for (let j = lo; j < rows.length && rows[j] <= r2; j++) {
-            const dep = byId.get(gid(si, keyOf(rows[j], col)));
-            if (dep === undefined || seen.has(dep)) continue;
-            seen.add(dep);
-            dependents[dep].push(i);
-            indeg[i]++;
+          let end = lo, top = rows.length;
+          while (end < top) { const mid = (end + top) >> 1; if (rows[mid] <= r2) end = mid + 1; else top = mid; }
+          if (end - lo <= LINK_MIN) {
+            for (let j = lo; j < end; j++) add(byId.get(gid(si, keyOf(rows[j], col))));
+            continue;
           }
+          // many: through the stand-ins for the runs of the column that lie wholly inside the block
+          const cover = (a: number, b: number) => {
+            if (end <= a || b <= lo) return;
+            if (lo <= a && b <= end) { add(linkNode(s, si, col, rows, a, b)); return; }
+            if (b - a <= LINK_LEAF) { for (let j = Math.max(a, lo); j < Math.min(b, end); j++) add(byId.get(gid(si, keyOf(rows[j], col)))); return; }
+            const m = (a + b) >> 1;
+            cover(a, m);
+            cover(m, b);
+          };
+          cover(0, rows.length);
         }
       }
     });
@@ -1964,7 +2233,7 @@ export class Workbook {
       for (const j of dependents[i]) if (--indeg[j] === 0) queue.push(j);
     }
     if (queue.length < nodes.length) {
-      for (let i = 0; i < nodes.length; i++) if (!done[i]) nodes[i].s.values.set(nodes[i].key, ERR.circ());
+      for (let i = 0; i < nodes.length; i++) if (!done[i] && !nodes[i].link) nodes[i].s.values.set(nodes[i].key, ERR.circ());
     }
     const volatile: number[] = [];
     nodes.forEach((n, i) => { if (done[i] && (VOLATILE.test(n.text) || this.usesVolatileName(n.text))) volatile.push(i); });
@@ -2030,10 +2299,14 @@ export class Workbook {
     if (!g || g.sheets.length !== this.sheets.length || g.sheets.some((s, i) => s !== this.sheets[i])) return false;
     const typed: { s: Sheet; si: number; key: number; cell: Cell | undefined }[] = [];
     this.spillsMoved = false;
+    // worked out once (a filter changes thousands of hidden rows at a time)
+    let subtotals: boolean | undefined;
     for (const c of changes) {
       if (c.field !== 'cells') {
         // formatting, sizes, hidden rows, rules and charts change no value (but SUBTOTAL leaves out hidden rows)
-        if (c.field === 'hiddenRows' && this.usesSubtotal()) return false;
+        if (c.field === 'hiddenRows' && (subtotals ??= this.usesSubtotal())) return false;
+        // a merged block stops an array spilling across it (and unmerging lets it spill again)
+        if (c.field === 'merges' && c.sheet && (c.sheet.spills.size || c.sheet.spillWanted.size)) return false;
         if ((c.sheet || c.field === 'theme' || c.field === 'customViews' || c.field === 'queries') && NO_VALUES.has(c.field)) continue;
         return false;
       }
@@ -2092,9 +2365,12 @@ export class Workbook {
       worked++;
       for (const j of g.dependents[i]) if (todo.has(j)) { const d = indeg.get(j)! - 1; indeg.set(j, d); if (!d) queue.push(j); }
     }
-    if (worked < todo.size) for (const i of todo) if (indeg.get(i)) g.nodes[i].s.values.set(g.nodes[i].key, ERR.circ());
+    if (worked < todo.size) for (const i of todo) if (indeg.get(i) && !g.nodes[i].link) g.nodes[i].s.values.set(g.nodes[i].key, ERR.circ());
     for (const s of new Set(typed.map((t) => t.s))) s.valuesGen++;
     for (const i of todo) g.nodes[i].s.valuesGen++;
+    // a conditional format's formula may read another sheet (=Sheet1!$A$1>5): its looks are worked out again
+    // (only rules that can: ones naming a sheet, or any when the workbook has defined names)
+    for (const s of this.sheets) if (s.condFormats.length && (this.names.length || s.condFormats.some((cf) => JSON.stringify(cf.rule).includes('!')))) s.valuesGen++;
     this.settleVolatile(g);
     // an array now a different size: what reads the cells around it needs the full order again
     return !this.spillsMoved;
@@ -2265,6 +2541,7 @@ export class Workbook {
     return {
       formulaAt: (f, home, row, col) => this.formulaAt(s, f, home, row, col),
       sheetNamed: (name) => this.sheetNamed(name),
+      formulaArg: (f, home) => this.formulaArg(s, f, home.row, home.col),
     };
   }
 
@@ -2272,6 +2549,7 @@ export class Workbook {
   private spillsMoved = false;
 
   private evaluateNode(n: FormulaNode): void {
+    if (n.link) return;
     const tree = this.parse(n.text);
     const s = n.s;
     const host = this.hostFor(s);
@@ -2415,6 +2693,7 @@ export class Workbook {
         return out.length ? out : [[null]];
       },
       hasSheet: (name) => !!this.sheetNamed(name),
+      sameSheet: (a, b) => { const x = sheetOf(a); return !!x && x === sheetOf(b); },
       sumColumn: (sheet, col, r1, r2) => {
         const s = sheetOf(sheet);
         if (!s || this.colHasFormulas(s, col)) return undefined;

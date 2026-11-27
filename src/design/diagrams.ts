@@ -24,7 +24,7 @@ import { frameBox } from '../editor/frames';
 import { hasPins, followPins } from '../chem/pins';
 import { gluePoint, shapeBox } from '../objects';
 import { HEX_CELL, geoDef, sectorBox, sectorId, sliceId, textArea } from './geo';
-import { findIcons, isIconId, ICON_PREFIX } from './icons';
+import { findIcons, iconsLoaded, isIconId, ICON_PREFIX } from './icons';
 import { axisMarks, parseTaskLine, placeOnAxis, type TimeSpan } from './timescale';
 import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
@@ -78,7 +78,7 @@ export interface DiagramLayout {
 const STEPS = 'Starting material\nReaction\nWork-up\nPurification\nAnalysis';
 
 export const DIAGRAM_LAYOUTS: DiagramLayout[] = [
-  { id: 'blocks', name: 'Block list', category: 'List', blurb: 'Boxes in rows, one for each item; lines below an item are listed in its box.', sample: 'Synthesis\nCharacterisation\nKinetics\nComputation\nApplications', size: [480, 260] },
+  { id: 'blocks', name: 'Block list', category: 'List', blurb: 'Boxes in rows, one for each item; lines below an item are listed in its box.', sample: 'Synthesis\nCharacterization\nKinetics\nComputation\nApplications', size: [480, 260] },
   { id: 'vertical-list', name: 'Vertical bullet list', category: 'List', blurb: 'A bar for each item with the lines below it as bullets underneath.', sample: 'Aims\n\tMake the ligand in three steps\n\tScreen the catalysts\nResults\n\tFive new complexes\n\tUp to 96% ee', size: [480, 300] },
   { id: 'horizontal-list', name: 'Horizontal bullet list', category: 'List', blurb: 'A heading for each item with its lines as bullets in a column below.', sample: 'NMR\n\t¹H and ¹³C\n\tNOESY\nMass spec\n\tHRMS (ESI)\nX-ray\n\tSingle crystal', size: [480, 280] },
   { id: 'honeycomb', name: 'Honeycomb', category: 'List', blurb: 'Six-sided cells packed edge to edge, one for each item; any lines under an item go inside its cell.', sample: 'Air-stable\nScalable\nCheap ligand\nRoom temperature\nGreen solvent\nFew steps', size: [480, 340] },
@@ -137,14 +137,21 @@ const LEAD = /^[\t ]*/;
 const BULLET = /^[•\-*–·▪◦]\s+/;
 const ICON = /^\[([a-z0-9-]+)\]\s*/i;
 
-/** A line's level (Tabs, or two spaces each) and its text without a bullet typed in front. */
-export function lineParts(line: string): { level: number; text: string; icon?: string } {
+/** Whether a layout reads "[name]" in front of a line as its icon (only the icon list draws icons). */
+export const readsIcons = (layout: string | undefined): boolean => layout === undefined || layout === 'icon-list';
+
+/**
+ * A line's level (Tabs, or two spaces each) and its text without a bullet typed in front. With
+ * `icons` (the icon list), "[name]" in front is the item's icon; in the other layouts it is kept
+ * as words ("[Pd] oxidative addition", "[M]-H").
+ */
+export function lineParts(line: string, icons = true): { level: number; text: string; icon?: string } {
   const lead = LEAD.exec(line)![0];
   let level = 0;
   for (const ch of lead) level += ch === '\t' ? 1 : 0.5;
   let text = line.slice(lead.length).trim().replace(BULLET, '');
   let icon: string | undefined;
-  const m = ICON.exec(text);
+  const m = icons ? ICON.exec(text) : null;
   if (m) { icon = ICON_PREFIX + m[1].toLowerCase(); text = text.slice(m[0].length); }
   // a line of just "[]" is an item without words: room for a structure and nothing else
   if (/^\[\s*\]$/.test(text)) text = '';
@@ -152,13 +159,13 @@ export function lineParts(line: string): { level: number; text: string; icon?: s
 }
 
 /** The items as a tree: each line under the nearest line above it that is less indented. */
-export function parseOutline(text: string): DiagramItem[] {
+export function parseOutline(text: string, icons = true): DiagramItem[] {
   const roots: DiagramItem[] = [];
   const stack: { level: number; item: DiagramItem }[] = [];
   let n = 0;
   for (const line of text.split(/\r?\n/)) {
     if (!line.trim()) continue;
-    const p = lineParts(line);
+    const p = lineParts(line, icons);
     while (stack.length && stack[stack.length - 1].level >= p.level) stack.pop();
     const item: DiagramItem = { text: p.text, kids: [], n: ++n, depth: stack.length, ...(p.icon ? { icon: p.icon } : {}) };
     if (stack.length) stack[stack.length - 1].item.kids.push(item);
@@ -168,14 +175,14 @@ export function parseOutline(text: string): DiagramItem[] {
   return roots;
 }
 
-/** The text with item `n`'s words changed (its indent and icon kept). */
-export function setItemText(text: string, n: number, words: string): string {
+/** The text with item `n`'s words changed (its indent and, with `icons`, its icon kept). */
+export function setItemText(text: string, n: number, words: string, icons = true): string {
   let k = 0;
   return text.split(/\r?\n/).map((line) => {
     if (!line.trim() || ++k !== n) return line;
     const lead = LEAD.exec(line)![0];
     const rest = line.slice(lead.length);
-    const icon = ICON.exec(rest.replace(BULLET, ''))?.[0] ?? '';
+    const icon = icons ? ICON.exec(rest.replace(BULLET, ''))?.[0] ?? '' : '';
     return lead + icon + words;
   }).join('\n');
 }
@@ -293,7 +300,7 @@ function wordShapes(laid: DiagramLaid): Map<number, PartShape> {
 
 /** The shapes and lines of a diagram's layout, laid out in its box. */
 function layoutParts(d: DiagramData): DiagramLaid {
-  const items = withRich(parseOutline(d.text), d.rich);
+  const items = withRich(parseOutline(d.text, readsIcons(d.layout)), d.rich);
   const w = Math.max(20, d.w), h = Math.max(20, d.h);
   const g = Math.max(3, 0.03 * Math.min(w, h));
   const box = d.rounded ? 'roundRect' : 'rect';
@@ -1125,6 +1132,8 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
   // (a frame changed in another program is redrawn too, in this edit's undo step; review F1d-R01)
   frameRedrawn(doc, old);
   const was = readLabels(doc, old);
+  // the icons the icon list had, in order: kept for items whose icon comes from their words while the icon data isn't loaded yet
+  const hadIcons = old?.frame && old.diagram?.layout === 'icon-list' && !iconsLoaded() ? old.frame.shapes.map((x) => doc.shapes.get(x)?.geo).filter(isIconId) : [];
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -1134,6 +1143,7 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
     kept.atoms = f.atoms.filter((a) => doc.atoms.has(a));
   }
   const parts = diagramParts(d);
+  if (hadIcons.length && d.layout === 'icon-list') keepIcons(parts.shapes, parseOutline(d.text), parseOutline(old!.diagram!.text), hadIcons, movedLines(old!.diagram!.text, d.text));
   const move = (p: Vec) => ({ x: p.x + at.x, y: p.y + at.y });
   const made = parts.shapes.map((s) => doc.addShape({ ...s, x1: s.x1 + at.x, y1: s.y1 + at.y, x2: s.x2 + at.x, y2: s.y2 + at.y }).id);
   const arrows = parts.lines.map(({ fromIndex, toIndex, ...l }) => {
@@ -1151,6 +1161,24 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
   const madeLabels = keepLabels(doc, was, frame);
   if (old) { doc.updateShape(old.id, { ...b, frame, diagram, madeLabels, editedOutside: undefined }); return old.id; }
   return doc.addShape({ kind: 'geo', geo: 'rect', ...b, filled: false, lineWidth: 0, color: '#000000', frame, diagram, name: 'Diagram', madeLabels }).id;
+}
+
+/**
+ * Before the icon data has loaded, an item's icon can't be matched to its words and would fall
+ * back to a plain circle (saved as such): the item keeps the icon it had instead (review F428).
+ */
+function keepIcons(shapes: Omit<Shape, 'id'>[], items: DiagramItem[], before: DiagramItem[], had: string[], moved: Map<number, number>): void {
+  // each item's line before (lines added or taken out above it move it), and the icon it had there
+  const iconOn = new Map(before.map((it, j) => [it.n, had[j]] as const));
+  const lineWas = new Map([...moved].map(([was, now]) => [now, was]));
+  let i = 0;
+  for (const s of shapes) {
+    if (!isIconId(s.geo)) continue;
+    const it = items[i++];
+    const was = it && lineWas.get(it.n);
+    const icon = was === undefined ? undefined : iconOn.get(was);
+    if (it && !it.icon && icon) s.geo = icon;
+  }
 }
 
 /** The diagram a thing belongs to (its frame's id), if any. */
@@ -1194,9 +1222,10 @@ export function textFromShapes(doc: Doc, frame: Shape): string {
       if (was === undefined) return;
       const now = paras[i].trim();
       // a step's lane and a task's dates aren't in its shape: they go back round the new words
-      const { level, text: lineText } = lineParts(was);
+      const icons = readsIcons(d.layout);
+      const { level, text: lineText } = lineParts(was, icons);
       const { lead, words, tail } = splitLine(d.layout, lineText, level);
-      if (now && now !== shownText(words)) text = setItemText(text, n, lead + now + tail);
+      if (now && now !== shownText(words)) text = setItemText(text, n, lead + now + tail, icons);
     });
   }
   return text;
@@ -1293,6 +1322,59 @@ export function diagramContents(doc: Doc, frame: Shape): number[] {
   return [...holders(doc, slots, doc.fragments(), () => true).values()].flatMap((atoms) => [...atoms]);
 }
 
+/**
+ * Where each line of an old diagram text went in the new one (lines with something on them, from
+ * 1): lines kept as they were are matched in order (a longest common subsequence), and between two
+ * matches the same number of old and new lines are taken as the same lines with new words (where
+ * the numbers differ, those most alike in words, in order). A line taken out maps nowhere.
+ */
+export function movedLines(was: string, now: string): Map<number, number> {
+  const a = linesOf(was).map((l) => l.trim()), b = linesOf(now).map((l) => l.trim());
+  const n = a.length, m = b.length;
+  // lcs[i][j]: the longest common run of a[i…] and b[j…]
+  const lcs = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) for (let j = m - 1; j >= 0; j--) lcs[i][j] = a[i] === b[j] ? lcs[i + 1][j + 1] + 1 : Math.max(lcs[i + 1][j], lcs[i][j + 1]);
+  const out = new Map<number, number>();
+  let i = 0, j = 0, gi = 0, gj = 0;
+  const gap = (): void => {
+    if (i - gi === j - gj) { for (let k = 0; k < i - gi; k++) out.set(gi + k + 1, gj + k + 1); return; }
+    // as many lines in as out: taken in order, the pairs most alike in words (a line renamed while
+    // another is added or taken out still finds itself; review F060 round 2)
+    const p = i - gi, q = j - gj;
+    if (!p || !q) return;
+    const sim = (x: string, y: string) => likeness(x, y);
+    const best = Array.from({ length: p + 1 }, () => new Array<number>(q + 1).fill(0));
+    for (let x = p - 1; x >= 0; x--) for (let y = q - 1; y >= 0; y--) {
+      const s0 = sim(a[gi + x], b[gj + y]);
+      best[x][y] = Math.max(best[x + 1][y], best[x][y + 1], s0 > 0.3 ? best[x + 1][y + 1] + s0 : 0);
+    }
+    for (let x = 0, y = 0; x < p && y < q;) {
+      const s0 = sim(a[gi + x], b[gj + y]);
+      if (s0 > 0.3 && best[x][y] === best[x + 1][y + 1] + s0) { out.set(gi + x + 1, gj + y + 1); x++; y++; }
+      else if (best[x + 1][y] >= best[x][y + 1]) x++;
+      else y++;
+    }
+  };
+  while (i < n && j < m) {
+    if (a[i] === b[j]) { gap(); out.set(i + 1, j + 1); i++; j++; gi = i; gj = j; }
+    else if (lcs[i + 1][j] >= lcs[i][j + 1]) i++;
+    else j++;
+  }
+  i = n; j = m;
+  gap();
+  return out;
+}
+
+/** How alike two lines' words are, from 0 to 1 (the share of pairs of letters they have in common). */
+function likeness(x: string, y: string): number {
+  const pairs = (t: string) => { const u = ` ${t.toLowerCase()} `; const out: string[] = []; for (let k = 0; k + 1 < u.length; k++) out.push(u.slice(k, k + 2)); return out; };
+  const px = pairs(x), py = pairs(y);
+  const left = [...py];
+  let common = 0;
+  for (const g of px) { const k = left.indexOf(g); if (k >= 0) { common++; left.splice(k, 1); } }
+  return (2 * common) / (px.length + py.length);
+}
+
 /** Are two sets of structure spaces the same, to half a point? */
 function sameSpaces(a: DiagramData['figs'], b: NonNullable<DiagramData['figs']>): boolean {
   const lines = Object.keys(b);
@@ -1320,8 +1402,15 @@ export function refitDiagramStructures(doc: Doc, before: ReadonlyMap<string, Ent
     const justMoved = (atoms: Set<number>) => [...atoms].some((id) => before.has('a' + id));
     const then = prior?.diagram && prior.frame ? prior : frame;
     const shapeThen = (id: number) => (before.has('s' + id) ? (before.get('s' + id) as Shape | null) : doc.shapes.get(id));
+    // the items held before keep their structures when lines were added or taken out above them (review F060)
+    const was = then !== frame && then.diagram!.text !== frame.diagram!.text ? movedLines(then.diagram!.text, frame.diagram!.text) : null;
+    const heldThen = [...holders(doc, itemSlots(then, shapeThen), structures, (a) => !justMoved(a))].flatMap(([line, atoms]): [number, Set<number>][] => {
+      if (!was) return [[line, atoms]];
+      const to = was.get(line);
+      return to === undefined ? [] : [[to, atoms]];
+    });
     const held = new Map<number, Set<number>>([
-      ...holders(doc, itemSlots(then, shapeThen), structures, (a) => !justMoved(a)),
+      ...heldThen,
       ...holders(doc, itemSlots(frame, (id) => doc.shapes.get(id)), structures, justMoved),
     ]);
     const spaces: NonNullable<DiagramData['figs']> = {};

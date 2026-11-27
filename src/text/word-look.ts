@@ -22,6 +22,16 @@ export interface WordLook {
 
 const OFF = /^(0|false|off|none|nil)$/;
 
+/**
+ * Theme colours by the names a glow's w14:schemeClr uses (ECMA-376 Part 1 20.1.10.54), in Office's
+ * own default theme (the same twelve colours as a new workbook's, sheet/themes.ts): a glow in a
+ * document's theme colour is drawn in that, as the layout has no document theme to ask.
+ */
+const OFFICE_THEME: Record<string, string> = {
+  dk1: '000000', tx1: '000000', lt1: 'ffffff', bg1: 'ffffff', dk2: '44546a', tx2: '44546a', lt2: 'e7e6e6', bg2: 'e7e6e6',
+  accent1: '4472c4', accent2: 'ed7d31', accent3: 'a5a5a5', accent4: 'ffc000', accent5: '5b9bd5', accent6: '70ad47', hlink: '0563c1', folHlink: '954f72',
+};
+
 /** An element's on/off value in Word's XML (no w:val: on). */
 function onIn(xml: string, name: string): boolean {
   const tag = tagIn(xml, name);
@@ -68,7 +78,9 @@ export function wordLook(r: Pick<TextRun, 'wrx' | 'wfx'>): WordLook | undefined 
     const rad = Number(attr(glow[1], 'w14:rad') ?? 0);
     const c = attr(glow[2], 'w14:val');
     const alpha = Number(/<w14:alpha\s+w14:val="(\d+)"/.exec(glow[2])?.[1] ?? 0);
-    if (rad > 0 && c && /^[0-9a-f]{6}$/i.test(c)) out.glow = { color: `#${c.toLowerCase()}`, r: rad / 12700, alpha: Math.max(0, 1 - alpha / 100000) };
+    // (a theme colour, w14:schemeClr, by its name; an sRGB one, w14:srgbClr, by its six hex digits)
+    const hex = c && /^[0-9a-f]{6}$/i.test(c) ? c.toLowerCase() : c ? OFFICE_THEME[c] ?? OFFICE_THEME[c.toLowerCase()] : undefined;
+    if (rad > 0 && hex) out.glow = { color: `#${hex}`, r: rad / 12700, alpha: Math.max(0, 1 - alpha / 100000) };
   }
   return Object.keys(out).length ? out : undefined;
 }

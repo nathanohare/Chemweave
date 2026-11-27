@@ -20,12 +20,15 @@ export interface BondChange { id: number; lines: number }
 /** The bonds of the drawing that one step breaks (in its starting materials) and forms (in its products). */
 export interface BondChanges { breaking: BondChange[]; forming: BondChange[] }
 
-/** Whole bond orders: an aromatic (1.5) bond is no count of pairs. */
-const pairs = (order: number) => (Number.isInteger(order) ? order : null);
+/**
+ * Whole bond orders: an aromatic (1.5) bond is no count of pairs. (The scene draws an aromatic
+ * bond as two lines, order 2 with its `aromatic` flag, so the flag is what says so; review F653.)
+ */
+const pairs = (b: { order: number; aromatic?: boolean } | undefined) => (b && !b.aromatic && Number.isInteger(b.order) ? b.order : null);
 
 export function bondChanges(s: Step): BondChanges {
   const breaking: BondChange[] = [], forming: BondChange[] = [];
-  if (s.kind === 'turn') return { breaking, forming };
+  if (s.kind === 'turn' || s.kind === 'next') return { breaking, forming };
   const carried = new Map<string, string>(s.map.bmap);
   for (const [k, sh] of s.map.shifts) carried.set(k, sh.tgt);
   const back = new Map([...carried].map(([a, b]) => [b, a]));
@@ -35,14 +38,14 @@ export function bondChanges(s: Step): BondChanges {
     const to = carried.get(k);
     if (to === undefined) { breaking.push({ id: Number(k), lines: 0 }); continue; }
     if (kek.has(k)) continue;
-    const was = pairs(b.order), now = pairs(s.B.bonds.get(to)?.order ?? 0);
+    const was = pairs(b), now = pairs(s.B.bonds.get(to) ?? { order: 0 });
     if (was !== null && now !== null && now < was) breaking.push({ id: Number(k), lines: was - now });
   }
   for (const [k, b] of s.B.bonds) {
     const from = back.get(k);
     if (from === undefined) { forming.push({ id: Number(k), lines: 0 }); continue; }
     if (kek.has(from)) continue;
-    const was = pairs(s.A.bonds.get(from)?.order ?? 0), now = pairs(b.order);
+    const was = pairs(s.A.bonds.get(from) ?? { order: 0 }), now = pairs(b);
     if (was !== null && now !== null && now > was) forming.push({ id: Number(k), lines: now - was });
   }
   const real = (c: BondChange) => Number.isFinite(c.id);

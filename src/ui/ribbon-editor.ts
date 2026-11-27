@@ -6,6 +6,7 @@
 // list on the left. Every change shows at once in the ribbon; Undo takes them back one at a time.
 
 import { inserted, moved, type Pickable } from './toolboxes';
+import { addInfo, setInfo } from './info-tip';
 import { groupLayout, tabOrder, type RibbonInfo, type RibbonPrefs, type RibbonsPrefs } from './ribbon-custom';
 import { dragTile, inside } from './tile-drag';
 import { initials } from './toolbox-editor';
@@ -40,6 +41,23 @@ function buttonIcon(b: Element | null | undefined): string | undefined {
 }
 
 const keyOf = (b: HTMLElement) => (b.dataset.cmd ? `cmd:${b.dataset.cmd}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : '');
+
+/**
+ * A tab's groups with `keys` (the ones showing, in their new order) and the hidden groups among
+ * `all` that are not in `keys` kept where they were: each stays right after the group it followed
+ * (a hidden one that began the tab stays at its start).
+ */
+export function withHiddenKept(all: readonly string[], keys: readonly string[], hidden: ReadonlySet<string>): string[] {
+  const after = new Map<string | null, string[]>();
+  let last: string | null = null;
+  for (const x of all) {
+    if (hidden.has(x) && !keys.includes(x)) after.set(last, [...(after.get(last) ?? []), x]);
+    else if (keys.includes(x)) last = x;
+  }
+  const out = [...(after.get(null) ?? [])];
+  for (const k of keys) out.push(k, ...(after.get(k) ?? []));
+  return out;
+}
 
 export class RibbonEditor {
   private d: HTMLDialogElement | null = null;
@@ -287,9 +305,12 @@ export class RibbonEditor {
     back.textContent = `‹ ${this.tabName(this.tab)}`;
     back.addEventListener('click', () => { this.group = null; this.draw(); });
     const own = this.group.startsWith('own:');
-    const t = document.createElement('span');
-    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for a custom choice, make a New Group.';
-    crumb.append(back, t);
+    crumb.append(back);
+    // what the group is, behind an "i" by its name (it differs for your own groups)
+    const tip = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for a custom choice, make a New Group.';
+    const nameLabel = gnameRow.querySelector('label');
+    const have = nameLabel?.querySelector<HTMLElement>('.info-icon');
+    if (have) setInfo(have, tip); else addInfo(nameLabel, tip);
     gname.value = this.groupName(this.group);
     gdel.hidden = !own;
   }
@@ -400,8 +421,7 @@ export class RibbonEditor {
     const tab = this.tab;
     const hidden = new Set(this.prefs().hiddenGroups ?? []);
     const all = this.layout()[tab] ?? [];
-    const kept = all.filter((x) => hidden.has(x) && !keys.includes(x));
-    this.change((p) => this.setGroups(tab, [...keys, ...kept], { ...p, hiddenGroups: (p.hiddenGroups ?? []).filter((x) => !keys.includes(x)) }));
+    this.change((p) => this.setGroups(tab, withHiddenKept(all, keys, hidden), { ...p, hiddenGroups: (p.hiddenGroups ?? []).filter((x) => !keys.includes(x)) }));
   }
 
   private remove(i: number): void {

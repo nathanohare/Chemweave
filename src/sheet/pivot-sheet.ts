@@ -123,7 +123,8 @@ export function writePivot(s: Sheet, pt: PivotTable): PivotTable | string {
     rep.cells.forEach((row, r) => {
       const v = row[c];
       if (v === null || v === undefined || r < rep.filterRows - 1) return;
-      const indent = rep.styles.find((st) => st.style.indent && r >= st.r1 && r <= st.r2 && c >= st.c1 && c <= st.c2)?.style.indent ?? 0;
+      // (read from each cell's look worked out above, not by searching every style for each cell)
+      const indent = looks.get(keyOf(r, c))?.indent ?? 0;
       chars = Math.max(chars, (typeof v === 'number' ? Math.min(11, String(Math.round(v * 100) / 100).length) : String(v).length) + indent * 1.3);
     });
     const want = Math.min(300, Math.ceil(chars * 7.5 + 14));

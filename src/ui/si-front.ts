@@ -55,6 +55,18 @@ export class SiFrontPage {
     return this.pending;
   }
 
+  /**
+   * An author or affiliation moved or taken off, and the page drawn again once saved. The buttons
+   * of the page as it was stay live until then: a second click is not another move or removal.
+   */
+  private listEdit(change: () => void): void {
+    if (this.listBusy) return;
+    this.listBusy = true;
+    change();
+    void this.save(true).then(() => { this.listBusy = false; });
+  }
+  private listBusy = false;
+
   private save(redraw = false): Promise<void> {
     return this.track(async () => {
       try { await this.p.saveSettings(); } catch (e) { this.host.flash(`The change could not be saved: ${e instanceof Error ? e.message : String(e)}`, 8000); }
@@ -94,6 +106,8 @@ export class SiFrontPage {
       if (i.value === last) return;
       const v = Number(i.value);
       if (i.value.trim() === '' || !Number.isFinite(v) || v < 0) { i.value = last; return; }
+      // (more than the most is put back as the most, in the box as well as in the file)
+      i.value = String(Math.min(400, v));
       last = i.value;
       save(Math.min(400, v));
     };
@@ -172,8 +186,8 @@ export class SiFrontPage {
       const email = this.input(str(a.email), 'Email', `Author ${i + 1}'s email`, (v) => { a.email = v; void this.save(); }, 'si-front-email');
       email.hidden = !corr.checked;
       corr.addEventListener('change', () => { a.corresponding = corr.checked; email.hidden = !corr.checked; void this.save(); });
-      const up = this.mini('▲', 'Move up', () => { authors.splice(i - 1, 0, ...authors.splice(i, 1)); this.s.authors = authors; void this.save(true); }, i === 0);
-      const rm = this.mini('✕', 'Take this author off', () => { authors.splice(i, 1); this.s.authors = authors; void this.save(true); });
+      const up = this.mini('▲', 'Move up', () => this.listEdit(() => { authors.splice(i - 1, 0, ...authors.splice(i, 1)); this.s.authors = authors; }), i === 0);
+      const rm = this.mini('✕', 'Take this author off', () => this.listEdit(() => { authors.splice(i, 1); this.s.authors = authors; }));
       r.append(name, affs, corrLab, email, el('span', 'si-fill'), up, rm);
       aList.append(r);
     });
@@ -187,8 +201,8 @@ export class SiFrontPage {
       const r = el('div', 'si-front-aff');
       const mark = this.input(str(f.marker), 'a', `Affiliation ${i + 1}'s letter`, (v) => { f.marker = v; void this.save(); }, 'si-front-mark');
       const text = this.input(str(f.text), 'Department, university, city, country', `Affiliation ${i + 1}`, (v) => { f.text = v; void this.save(); }, 'si-front-afftext');
-      const up = this.mini('▲', 'Move up', () => { affs.splice(i - 1, 0, ...affs.splice(i, 1)); this.s.affiliations = affs; void this.save(true); }, i === 0);
-      const rm = this.mini('✕', 'Take this affiliation off', () => { affs.splice(i, 1); this.s.affiliations = affs; void this.save(true); });
+      const up = this.mini('▲', 'Move up', () => this.listEdit(() => { affs.splice(i - 1, 0, ...affs.splice(i, 1)); this.s.affiliations = affs; }), i === 0);
+      const rm = this.mini('✕', 'Take this affiliation off', () => this.listEdit(() => { affs.splice(i, 1); this.s.affiliations = affs; }));
       r.append(mark, text, up, rm);
       fList.append(r);
     });

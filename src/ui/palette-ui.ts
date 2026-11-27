@@ -78,7 +78,7 @@ export function paletteRows(value: string | undefined, pick: (c: string) => void
   const edit = document.createElement('button');
   edit.type = 'button';
   edit.className = 'colour-auto palette-edit';
-  edit.textContent = palettes.length ? 'Edit palettes…' : 'New Custom Palette…';
+  edit.textContent = palettes.length ? 'Edit Palettes…' : 'New Custom Palette…';
   edit.addEventListener('click', () => { close(); editPalettes(); });
   box.append(edit);
   return box;
@@ -122,7 +122,7 @@ function openFor(input: HTMLInputElement): void {
   sys.dataset.systemPicker = '';
   sys.value = value || '#000000';
   sys.addEventListener('change', () => pick(sys.value.toLowerCase()));
-  more.append(document.createTextNode('More colors…'), sys);
+  more.append(document.createTextNode('More Colors…'), sys);
   p.append(grid, paletteRows(value, pick, closePop), more);
   // inside an open window the menu has to be in the window too, or it can't be clicked
   (input.closest('dialog[open]') ?? document.body).append(p);
@@ -168,7 +168,7 @@ export function editPalettes(): void {
   if (!dialog) {
     dialog = document.createElement('dialog');
     dialog.className = 'palette-dialog';
-    dialog.setAttribute('aria-label', 'Edit palettes');
+    dialog.setAttribute('aria-label', 'Color Palettes');
     dialog.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
     document.body.append(dialog);
   }
@@ -201,8 +201,9 @@ function fillDialog(d: HTMLDialogElement): void {
     name.value = p.name;
     name.setAttribute('aria-label', 'Palette name');
     name.addEventListener('change', () => {
+      const cur = palettes[i] ?? p;
       const next = palettes.slice();
-      next[i] = { ...p, name: name.value.trim() || p.name };
+      next[i] = { ...cur, name: name.value.trim() || cur.name };
       setPalettes(next);
     });
     const tools = document.createElement('span');
@@ -236,10 +237,12 @@ function fillDialog(d: HTMLDialogElement): void {
       inp.value = c;
       inp.title = `${c.toUpperCase()}: click to change`;
       inp.addEventListener('change', () => {
-        const colors = p.colors.slice();
+        // (the row as it is now: its name may have been changed since the row was drawn)
+        const cur = palettes[i] ?? p;
+        const colors = cur.colors.slice();
         colors[j] = inp.value.toLowerCase();
         const next = palettes.slice();
-        next[i] = { ...p, colors };
+        next[i] = { ...cur, colors };
         change(next);
       });
       const x = document.createElement('button');
@@ -248,8 +251,9 @@ function fillDialog(d: HTMLDialogElement): void {
       x.textContent = '×';
       x.title = `Take ${c.toUpperCase()} out`;
       x.addEventListener('click', () => {
+        const cur = palettes[i] ?? p;
         const next = palettes.slice();
-        next[i] = { ...p, colors: p.colors.filter((_, k) => k !== j) };
+        next[i] = { ...cur, colors: cur.colors.filter((_, k) => k !== j) };
         change(next);
       });
       wrap.append(inp, x);
@@ -264,7 +268,7 @@ function fillDialog(d: HTMLDialogElement): void {
     addInp.value = '#000000';
     addInp.addEventListener('change', () => {
       const next = palettes.slice();
-      next[i] = withColour(p, addInp.value);
+      next[i] = withColour(palettes[i] ?? p, addInp.value);
       change(next);
     });
     add.append('+', addInp);
@@ -278,9 +282,10 @@ function fillDialog(d: HTMLDialogElement): void {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       // several codes at once, separated by spaces or commas
-      let q = p;
+      const cur = palettes[i] ?? p;
+      let q = cur;
       for (const part of hex.value.split(/[\s,;]+/)) if (cleanColour(part)) q = withColour(q, part);
-      if (q === p) { hex.select(); return; }
+      if (q === cur) { hex.select(); return; }
       const next = palettes.slice();
       next[i] = q;
       change(next);

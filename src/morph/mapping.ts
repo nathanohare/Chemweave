@@ -52,11 +52,18 @@ export function resolve(cfg: StepConfig, A: MScene, B: MScene, equiv = false): M
   let nmap: NodeMap;
   if (cfg.exact && cfg.pairs) nmap = forced;
   else if (equiv) {
-    let iso = matchEquivalent(A, B);
-    if (forced.size) {
-      const keep: NodeMap = new Map([...iso].filter(([k, v]) => (forced.get(k) ?? v) === v && !forced.has(k)));
-      for (const [k, v] of forced) keep.set(k, v);
-      iso = keep;
+    // the pairs chosen by hand pin the search, so the rest of a symmetric molecule's pairing
+    // follows them; where no pairing of the bonds honours them, they are imposed on the best one,
+    // each product atom keeping one partner (review F140)
+    let iso = forced.size ? matchEquivalent(A, B, undefined, forced) : new Map<string, string>();
+    if (!iso.size) {
+      iso = matchEquivalent(A, B);
+      if (forced.size) {
+        const taken = new Set(forced.values());
+        const keep: NodeMap = new Map([...iso].filter(([k, v]) => !forced.has(k) && !taken.has(v)));
+        for (const [k, v] of forced) keep.set(k, v);
+        iso = keep;
+      }
     }
     nmap = iso.size ? iso : matchNodes(A, B, forced);
   } else {

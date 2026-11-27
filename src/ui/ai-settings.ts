@@ -13,7 +13,11 @@ const NOTE = 'Optional. Link an AI model with your API key to use it where the a
 /** Show the settings; `save` keeps the new choice. */
 export async function aiSettingsDialog(now: AiPrefs, save: (p: AiPrefs) => void): Promise<void> {
   let cur = now;
+  // a key pasted and a Remember choice made in a window that is shown again (a missing address), so neither is lost
+  let typed: { key: string; remember: boolean } | null = null;
   for (;;) {
+    const carried = typed;
+    typed = null;
     const had = await hasAiKey(cur).catch(() => false);
     const models = [...new Set(Object.values(PROVIDERS).flatMap((p) => p.models))];
     const r = await ask('AI Model', [
@@ -21,13 +25,13 @@ export async function aiSettingsDialog(now: AiPrefs, save: (p: AiPrefs) => void)
         { value: 'none', label: 'None (nothing is sent)' },
         ...(Object.keys(PROVIDERS) as Exclude<AiProvider, 'none'>[]).map((k) => ({ value: k, label: PROVIDERS[k].name })),
       ] },
-      { name: 'key', label: 'API key', type: 'password', value: '', placeholder: had ? 'Saved (leave empty to keep it)' : 'Paste your key',
+      { name: 'key', label: 'API key', type: 'password', value: carried?.key ?? '', placeholder: had ? 'Saved (leave empty to keep it)' : 'Paste your key',
         help: Object.values(PROVIDERS).map((p) => p.keyHelp).join(' ') },
       { name: 'model', label: 'Model', value: cur.model, placeholder: 'The service\'s suggested model', suggestions: models,
         help: 'Leave empty for: ' + (['anthropic', 'openai', 'gemini'] as const).map((k) => `${PROVIDERS[k].name.split(' ')[0]} ${PROVIDERS[k].model}`).join(', ') + '. A model must read pictures to read structures.' },
       { name: 'base', label: 'Server URL (Other only)', value: cur.base, placeholder: 'http://localhost:11434/v1',
         help: 'For Other: the service\'s OpenAI-style address, such as https://openrouter.ai/api/v1 or Ollama\'s http://localhost:11434/v1.' },
-      ...(isTauri() ? [] : [{ name: 'remember', label: 'Remember the key in this browser', type: 'checkbox' as const, value: String(aiKeyRemembered(cur)) }]),
+      ...(isTauri() ? [] : [{ name: 'remember', label: 'Remember the key in this browser', type: 'checkbox' as const, value: String(carried?.remember ?? aiKeyRemembered(cur)) }]),
       { name: 'localOnly', label: 'Local only: never send anything off this computer', type: 'checkbox', value: String(cur.localOnly),
         help: 'Only a model on this computer (Ollama or LM Studio, under Other, at a localhost address) is asked; requests to any other address are blocked. For unpublished structures.' },
       { name: 'look', label: 'Assistant shows as', value: cur.assistantLook ?? 'bar', options: [
@@ -47,7 +51,17 @@ export async function aiSettingsDialog(now: AiPrefs, save: (p: AiPrefs) => void)
     if (provider === 'compatible' && !/^https?:\/\//i.test(next.base)) {
       await ask('AI Model', [], { noCancel: true, note: 'For Other, type the service\'s address, starting with http:// or https://.' });
       cur = next;
+      typed = { key: r.key, remember: r.remember === 'true' };
       continue;
+    }
+    // a key is sent only to the address it was saved for: after the address was changed here, the one saved is not sent
+    if (provider === 'compatible' && had && !r.key.trim() && r.forget !== 'true' && !(await hasAiKey(next).catch(() => true))) {
+      const go = await ask('AI Model', [], { ok: 'Save Without Key', note: 'The key saved here was for another address, and a key is only sent to the address it was saved for, so none is sent to this one. Choose Cancel to paste a key for this address, or Save Without Key if this service needs none.' });
+      if (!go) {
+        cur = next;
+        typed = { key: '', remember: r.remember === 'true' };
+        continue;
+      }
     }
     try {
       if (r.forget === 'true') await setAiKey(next, '');

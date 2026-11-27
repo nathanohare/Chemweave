@@ -4,7 +4,7 @@
 
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
-import { fitParas, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
+import { fitParas, paraCount, splitParagraphs } from '../text/paragraphs';
 import { coveringCell } from '../table';
 import { cellHolding, objectOffsets, styleOf, type DocText } from './document';
 import { subtreeEnd } from './doc-views';
@@ -74,14 +74,21 @@ export function moveHeading(t: DocText, from: number, to: number): { t: DocText;
   const n = levels.length;
   const end = subtreeEnd(levels, from);
   if (to >= from && to <= end) return null;
-  const text = rt.plainText(t.runs);
   const paras = allParas(t);
-  // each paragraph's runs, and the break after it (the last has none)
-  const body = (p: number) => { const r = paraRange(text, p); return rt.sliceRuns(t.runs, r.start, r.end); };
-  const brk = (p: number): TextRun[] => {
-    const r = paraRange(text, p);
-    const got = rt.sliceRuns(t.runs, r.end, r.end + 1);
-    return got.length ? got : [{ ...(body(p).length ? rt.styleOf(body(p)[body(p).length - 1]) : {}), text: '\n' }];
+  // each paragraph's runs, and the break after it (the last has none), in one walk over the runs
+  const bodies: TextRun[][] = [[]];
+  const breaks: TextRun[] = [];
+  for (const r of t.runs) {
+    r.text.split('\n').forEach((piece, i) => {
+      if (i > 0) { breaks.push({ ...r, text: '\n' }); bodies.push([]); }
+      if (piece) bodies[bodies.length - 1].push({ ...r, text: piece });
+    });
+  }
+  const body = (p: number): TextRun[] => bodies[p] ?? [];
+  const brk = (p: number): TextRun => {
+    if (breaks[p]) return breaks[p];
+    const b = body(p);
+    return { ...(b.length ? rt.styleOf(b[b.length - 1]) : {}), text: '\n' };
   };
   const order: number[] = [];
   for (let p = 0; p < n; p++) {
@@ -93,7 +100,7 @@ export function moveHeading(t: DocText, from: number, to: number): { t: DocText;
   const runs: TextRun[] = [];
   order.forEach((p, i) => {
     runs.push(...body(p));
-    if (i < order.length - 1) runs.push(...brk(p).map((r) => ({ ...r, text: '\n' })));
+    if (i < order.length - 1) runs.push(brk(p));
   });
   return { t: { ...t, runs: rt.normalizeRuns(runs), paras: order.map((p) => paras[p]) }, para: order.indexOf(from) };
 }

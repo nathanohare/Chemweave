@@ -145,6 +145,10 @@ function readRef(src: string, i: number): { ref: RefToken; end: number } | null 
     if (m) { sheet = m[1]; j += m[0].length; }
   }
   const s = src.slice(j);
+  // Sheet2!#REF!: a reference to cells that are gone, as refText writes it (and Excel saves it)
+  if (sheet !== undefined && s.slice(0, 5).toUpperCase() === '#REF!') {
+    return { ref: { sheet, kind: 'cell', a: { row: 0, col: 0, absRow: false, absCol: false }, broken: true }, end: j + 5 };
+  }
   // the character after a reference can't continue a name or open a function call
   const ends = (k: number) => !/^[A-Za-z0-9_.(!]/.test(src.slice(j + k));
   let m = /^(\$?[A-Za-z]{1,3}\$?\d{1,7}):(\$?[A-Za-z]{1,3}\$?\d{1,7})/.exec(s);
@@ -471,16 +475,23 @@ export function adjustRef(r: RefToken, home: string, ch: SheetChange): RefToken 
 /**
  * Keep a formula pointing at cells that were moved (Cut and Paste): a reference to a cell of the
  * block, or to a range inside it, follows the block by dr rows and dc columns, fixed ($) or not,
- * as in Excel. References to anything else stay as they are.
+ * as in Excel. References to anything else stay as they are. With `to`, the block goes to
+ * another sheet of that name, and the references that follow it name that sheet.
  */
-export function moveRefs(text: string, home: string, sheet: string, block: { r1: number; c1: number; r2: number; c2: number }, dr: number, dc: number): string {
+export function moveRefs(text: string, home: string, sheet: string, block: { r1: number; c1: number; r2: number; c2: number }, dr: number, dc: number, to?: string): string {
   const inside = (c: CellRef) => c.row >= block.r1 && c.row <= block.r2 && c.col >= block.c1 && c.col <= block.c2;
   const move = (c: CellRef): CellRef => ({ ...c, row: c.row + dr, col: c.col + dc });
+  const there = to !== undefined && to.toLowerCase() !== sheet.toLowerCase() ? { sheet: to } : {};
   return mapRefs(text, (r) => {
     if (r.broken || r.kind === 'cols' || !onSheet(r, home, sheet)) return r;
-    if (r.kind === 'cell') return inside(r.a) ? { ...r, a: move(r.a) } : r;
-    return inside(r.a) && inside(r.b!) ? { ...r, a: move(r.a), b: move(r.b!) } : r;
+    if (r.kind === 'cell') return inside(r.a) ? { ...r, ...there, a: move(r.a) } : r;
+    return inside(r.a) && inside(r.b!) ? { ...r, ...there, a: move(r.a), b: move(r.b!) } : r;
   });
+}
+
+/** A formula's references that name no sheet, made to name this one (a formula cut and pasted onto another sheet keeps pointing where it did). */
+export function qualifyRefs(text: string, sheet: string): string {
+  return mapRefs(text, (r) => (r.sheet === undefined ? { ...r, sheet } : r));
 }
 
 /** Rename a sheet in a formula's references. */

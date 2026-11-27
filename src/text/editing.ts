@@ -116,8 +116,10 @@ export class TextEditing {
   frame(): TextFrame {
     if (this.composing === null || !this.composing) return this.t;
     const style = { ...this.typingStyle(), underline: true };
-    const runs = rt.replaceRange(this.t.runs, this.focus, this.focus, [{ ...style, text: this.composing }]);
-    return { ...this.t, runs, paras: editParas(this.t.paras, this.text, this.focus, this.focus, this.composing) };
+    // (shown in place of the selected text, which the confirmed text will replace in one step of Undo)
+    const a = this.start, b = this.end;
+    const runs = rt.replaceRange(this.t.runs, a, b, [{ ...style, text: this.composing }]);
+    return { ...this.t, runs, paras: editParas(this.t.paras, this.text, a, b, this.composing) };
   }
 
   layout(): TextLayout {
@@ -133,7 +135,7 @@ export class TextEditing {
   /** The caret: x, top and bottom of its line, relative to the text's origin. */
   caret(): { x: number; y1: number; y2: number; line: number } {
     const lay = this.layout();
-    const at = this.focus + (this.composing?.length ?? 0);
+    const at = (this.composing ? this.start : this.focus) + (this.composing?.length ?? 0);
     const c = caretPos(lay, at);
     const l = lay.lines[c.line];
     return { x: c.x, y1: l.y - l.ascent, y2: l.y + l.descent, line: c.line };
@@ -545,6 +547,22 @@ export class TextEditing {
     this.commit('style', { ...this.t, runs: this.restyled(rt.applyStyle(this.t.runs, this.start, this.end, patch)) }, this.anchor, this.focus);
   }
 
+  /**
+   * A change that depends on each run's own look (a size stepped up from the size it has): on
+   * every run in the selection, as one step of Undo; with nothing selected, on what is typed next.
+   */
+  setStyleEach(patchOf: (style: rt.RunStyle) => Partial<rt.RunStyle>): void {
+    if (this.collapsed) { this.setStyle(patchOf(this.typingStyle())); return; }
+    const edits: { start: number; end: number; patch: Partial<rt.RunStyle> }[] = [];
+    let at = 0;
+    for (const r of this.t.runs) {
+      const a = Math.max(this.start, at), b = Math.min(this.end, at + r.text.length);
+      if (b > a) edits.push({ start: a, end: b, patch: patchOf(rt.cleanStyle(r)) });
+      at += r.text.length;
+    }
+    this.commit('style', { ...this.t, runs: this.restyled(rt.applyStyles(this.t.runs, edits)) }, this.anchor, this.focus);
+  }
+
   /** The selection restyled: while changes are tracked, its look before is kept as a formatting change. */
   private restyled(runs: TextRun[]): TextRun[] {
     const who = this.track?.();
@@ -681,6 +699,8 @@ export class TextEditing {
       if (e.bold !== undefined) patch.bold = e.bold || undefined;
       if (Object.keys(patch).length) runs = rt.applyStyle(runs, e.start, e.end, patch);
     }
+    // (nothing changed, the look was already there: no step of Undo that does nothing)
+    if (!edits.some((e) => e.text !== undefined) && sameRunsByValue(this.t.runs, runs)) return;
     let anchor = this.anchor, focus = this.focus;
     const moved = (at: number, e: FixEdit, len: number) => (at >= e.end ? at + len - (e.end - e.start) : at > e.start ? e.start + len : at);
     const who = this.track?.();
@@ -752,7 +772,7 @@ export class TextEditing {
   // ------------------------------------------------------------------ input methods
 
   compositionStart(): void {
-    if (!this.collapsed) this.replace(this.start, this.end, [], undefined, 'delete');
+    // a selection is not deleted here: the confirmed text replaces it in one step (Undo puts both back at once)
     this.composing = '';
   }
 
@@ -805,6 +825,18 @@ export function wordEnd(text: string, at: number): number {
 /** Start of the next word (Ctrl+Right), as on Windows. */
 export function nextWord(text: string, at: number): number {
   return wordEnd(text, at);
+}
+
+/** Whether two lists of runs are the same, run for run and look for look. */
+function sameRunsByValue(a: readonly TextRun[], b: readonly TextRun[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as unknown as Record<string, unknown>, y = b[i] as unknown as Record<string, unknown>;
+    const kx = Object.keys(x);
+    if (kx.length !== Object.keys(y).length || kx.some((k) => x[k] !== y[k])) return false;
+  }
+  return true;
 }
 
 /**

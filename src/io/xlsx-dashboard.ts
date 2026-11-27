@@ -13,6 +13,7 @@ import { Chart, Series, SeriesData, chartData, refText } from '../sheet/chart';
 import {
   Dashboard, Tile, AGGREGATE_NAMES, groupSeries, tileMask, kpiValue, resolveSource, shownRows, columnOf, sourceName,
 } from '../sheet/dashboard';
+import { maxOf } from './min-max';
 
 /** How wide the dashboard is laid out for Excel, in pixels (about a laptop screen). */
 export const EXCEL_DASH_WIDTH = 1200;
@@ -45,6 +46,10 @@ export function dashboardStandIn(book: Workbook, s: Sheet): { sheet: Sheet; data
   const later: (() => void)[] = [];
   const merges: Range[] = [];
   const cellAt = (px: number, size: number) => Math.max(0, Math.floor(px / size));
+  // the first column right of every tile: a chart's numbers that don't fit under it go there, each
+  // chart's in columns of its own, so they never run into another tile's cells
+  let spare = 0;
+  for (const t of d.tiles) { const b = tileBox(d, t); spare = Math.max(spare, cellAt(b.x + b.w, DEFAULT_COL_W) + 2); }
   tmp.build(() => {
     const put = (r: number, c: number, text: string | number, style?: CellStyle) => {
       if (out.cell(r, c)?.input) return; // tiles that overlap in cells: the first one wins
@@ -61,17 +66,22 @@ export function dashboardStandIn(book: Workbook, s: Sheet): { sheet: Sheet; data
           // cells under the chart, and the Excel chart reads those
           const shown = groupSeries(chartData(book, book.sheet, t.chart, mask), t.chart.kind, t.group);
           const scatter = t.chart.kind === 'scatter';
-          const n = Math.max(0, ...shown.map((d) => d.ys.length));
+          const n = Math.max(0, maxOf(shown.map((d) => d.ys.length)));
           const ref = (c: number, r1: number, r2: number) => refText(s.name, { r1, c1: c, r2, c2: c });
           const series: Series[] = [];
+          // under the chart while they fit in its tile (its rows, and its columns), else right of all the tiles
+          const need = 1 + shown.length + shown.filter((d) => d.plus).length;
+          const fits = n + 1 <= rows && need <= Math.max(1, Math.floor(b.w / DEFAULT_COL_W));
+          const dc = fits ? c0 : spare;
+          if (!fits) spare += need + 1;
           later.push(() => {
             for (let j = 0; j < n; j++) {
               const first = shown[0];
-              if (scatter) { if (Number.isFinite(first?.xs[j])) put(r0 + 1 + j, c0, first.xs[j]); }
-              else if (first?.cats[j]) put(r0 + 1 + j, c0, first.cats[j]);
+              if (scatter) { if (Number.isFinite(first?.xs[j])) put(r0 + 1 + j, dc, first.xs[j]); }
+              else if (first?.cats[j]) put(r0 + 1 + j, dc, first.cats[j]);
             }
           });
-          let col = c0 + 1;
+          let col = dc + 1;
           shown.forEach((d, i) => {
             const yc = col++;
             const ec = d.plus ? col++ : null;
@@ -84,7 +94,7 @@ export function dashboardStandIn(book: Workbook, s: Sheet): { sheet: Sheet; data
             series.push({
               ...own,
               name: ref(yc, r0, r0),
-              ...(n ? { x: ref(c0, r0 + 1, r0 + n), y: ref(yc, r0 + 1, r0 + n) } : { y: ref(yc, r0 + 1, r0 + 1) }),
+              ...(n ? { x: ref(dc, r0 + 1, r0 + n), y: ref(yc, r0 + 1, r0 + n) } : { y: ref(yc, r0 + 1, r0 + 1) }),
               ...(own?.errors && ec !== null && n ? { errors: { kind: 'cells' as const, plus: ref(ec, r0 + 1, r0 + n) } } : {}),
             });
           });
@@ -141,7 +151,8 @@ export function dashboardStandIn(book: Workbook, s: Sheet): { sheet: Sheet; data
               });
             }
           }
-          list.slice(0, Math.max(1, rows - 2)).forEach((r, j) => cols.forEach(({ c }, i) => {
+          // (the rows under its title and header, none when the tile has no more)
+          list.slice(0, Math.max(0, rows - 2)).forEach((r, j) => cols.forEach(({ c }, i) => {
             const v = res.sheet.value(r, c);
             const st = res.sheet.cell(r, c)?.structure;
             if (st) put(r0 + 2 + j, c0 + i, typeof v === 'string' && v ? v : '(structure)');

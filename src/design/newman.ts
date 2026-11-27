@@ -12,7 +12,8 @@ import { chemRuns } from '../text/chemtext';
 import { frameBox, frameMembers } from '../editor/frames';
 import { tokenize } from '../chem/labels';
 import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
-import { elementNumber } from '../chem/elements';
+import { elementNumber, GROUP_LIKE } from '../chem/elements';
+import { writeMark } from '../chem/label-marks';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
 import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
@@ -89,8 +90,9 @@ export interface NewmanPlace {
  * at the end of its own bond with the bond aimed at the atom it joins (the C of CH3, written H3C
  * on the left), so a label can never come away from its bond. Labels that would touch are kept
  * apart, in this order: one above or below its bond is written the other way round; an eclipsed
- * pair is fanned further apart; the text
- * is made smaller (down to 70%, with `look.text.auto`); and last the bonds are drawn longer.
+ * pair is fanned further apart; the bond of the label that gives way is drawn longer, up to 1.4
+ * radii (2.4 when the projection isn't crowded); then the text is made smaller (down to 70%, with
+ * `look.text.auto`); and last that bond is drawn longer again, up to 3 radii.
  * Returns the places and the text scale used.
  */
 export function layoutNewman(d: Pick<NewmanData, 'front' | 'back' | 'turn' | 'look'>, c: Vec, L: number, measure: (text: string, rank: number, scale: number) => { w: number; h: number }): { places: NewmanPlace[]; scale: number; R: number } {
@@ -319,10 +321,18 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
       const rl = look.ranks[rk[i]];
       const ring = g.ring !== undefined && ringBoth;
       const el = /^[A-Z][a-z]?/.exec(g.label)?.[0] ?? 'C';
-      const plain = ring || (g.label === el && elementNumber(el) !== undefined);
-      const a = doc.addAtom(p.x, p.y, ring ? 6 : elementNumber(el) ?? 6, {
-        ...(plain ? {} : { label: g.label }), ...(rl.color !== '#000000' && !ring ? { color: rl.color } : {}),
-        ...(scale && Math.abs(scale - 1) > 0.01 ? { s: scale } : {}), ...(tx?.font ? { font: tx.font } : {}), ...(rl.bold || tx?.bold ? { face: 1 } : {}),
+      // a label such as Ac (acetyl) or Pr (propyl) is a group on a carbon, not actinium or praseodymium (review F063)
+      const group = GROUP_LIKE.has(el);
+      const plain = ring || (g.label === el && elementNumber(el) !== undefined && !group);
+      // the label's bold (its face) and italic (each of its characters marked italic, as a label is
+      // drawn in italics; review F437), as a Newman projection writes them
+      const bold = rl.bold || tx?.bold, italic = !ring && (rl.italic || tx?.italic);
+      // (an element written alone gets its symbol as a label, so its letters can be italic)
+      const labelled = !plain || italic;
+      const a = doc.addAtom(p.x, p.y, ring || group ? 6 : elementNumber(el) ?? 6, {
+        ...(labelled ? { label: g.label } : {}), ...(rl.color !== '#000000' && !ring ? { color: rl.color } : {}),
+        ...(scale && Math.abs(scale - 1) > 0.01 ? { s: scale } : {}), ...(tx?.font ? { font: tx.font } : {}), ...(bold ? { face: 1 } : {}),
+        ...(italic ? { labelMarks: writeMark({ italic: true }).repeat(g.label.length) } : {}),
       });
       out.atoms!.push(a.id);
       const display = marks?.wedge === i ? 'wedge' : marks?.hash === i ? 'hashWedge' : 'solid';

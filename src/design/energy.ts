@@ -217,7 +217,7 @@ export const ENERGY_PRESETS: EnergyPreset[] = [
     data: {
       quantity: 'ΔG', unit: 'kcal/mol', paths: [
         { name: 'uncatalyzed', color: '#c00000', points: pts([['SM', 0], ['', null], ['TS‡', 32], ['', null], ['P', -10]]) },
-        { name: 'catalysed', color: '#000000', points: pts([['SM', 0], ['TS1‡', 17], ['Int', 4], ['TS2‡', 14], ['P', -10]]) },
+        { name: 'catalyzed', color: '#000000', points: pts([['SM', 0], ['TS1‡', 17], ['Int', 4], ['TS2‡', 14], ['P', -10]]) },
       ],
     },
   },
@@ -250,7 +250,11 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
   const look = d.look ?? {};
   const cols = columnXs(n, d.w, d.xs);
   // levels are as wide as the closest pair of columns allows
-  const closest = cols.slice(1).reduce((mn, c, k) => Math.min(mn, Math.abs(c - cols[k])), d.w / n);
+  // (two species given the same position don't count: they would make every level zero wide; review F430)
+  const closest = cols.slice(1).reduce((mn, c, k) => {
+    const apart = Math.abs(c - cols[k]);
+    return apart > 1e-6 ? Math.min(mn, apart) : mn;
+  }, d.w / n);
   const bar = Math.min(closest * 0.55, 4 * L);
   const y = (g: number) => (hi === lo ? at.y + d.h / 2 : at.y + ((hi - g) / (hi - lo)) * d.h);
   const x = (k: number) => at.x + (cols[k] ?? (k + 0.5) * (d.w / n));
@@ -289,34 +293,60 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
   const gap = 0.25 * L;
   const joinW = look.joinWidth ? { lineWidth: look.joinWidth } : {};
   const fmt = (g: number) => (g < 0 ? '−' : '') + Math.abs(g).toFixed(d.digits);
-  // the column's name goes under the lowest level drawn in it, so pathways share it
+  /** On a curve, a peak's name goes over it (the curve falls away beneath). */
+  const peakAt = (shown: { q: EnergyPoint }[], i: number): boolean => {
+    const prev = shown[i - 1]?.q.g ?? -Infinity, next = shown[i + 1]?.q.g ?? -Infinity;
+    return d.style === 'curve' && shown[i].q.g! > prev && shown[i].q.g! > next;
+  };
+  const shownOf = (p: EnergyPath) => p.points.map((q, k) => ({ q, k })).filter(({ q }) => q.g !== null && isFinite(q.g));
+  // a name pathways share in a column goes under the lowest level drawn with it (or over the
+  // highest peak, when every one of them is a peak), so it is written once, clear of the others (review F432)
+  // (`paths`: how many pathways give it there; a name more than one gives is written in black)
+  const nameAt = new Map<string, { g: number; peak: boolean; paths: Set<number> }>();
+  d.paths.forEach((p, pi) => {
+    const shown = shownOf(p);
+    shown.forEach(({ q, k }, i) => {
+      if (!q.label) return;
+      const key = `${k}|${q.label}`, peak = peakAt(shown, i), had = nameAt.get(key);
+      const better = !had || (had.peak && !peak) || (had.peak === peak && (peak ? q.g! > had.g : q.g! < had.g));
+      const paths = had?.paths ?? new Set<number>();
+      paths.add(pi);
+      if (better) nameAt.set(key, { g: q.g!, peak, paths });
+    });
+  });
   const labelled = new Set<string>();
+  // how far the text round each drawn level reaches (above and below), so a second name there goes beyond it
+  const reach = new Map<string, { top: number; bottom: number }>();
   d.paths.forEach((p, pi) => {
     const color = p.color || '#000000';
     const tint = color !== '#000000' ? { color } : {};
-    const shown = p.points.map((q, k) => ({ q, k })).filter(({ q }) => q.g !== null && isFinite(q.g));
+    const shown = shownOf(p);
     shown.forEach(({ q, k }, i) => {
       const yy = y(q.g!);
+      const spot = `${k}|${q.g}`;
       // a species pathways share (same column, same energy) is drawn once, by the first, in black
-      if (d.paths.slice(0, pi).some((o) => o.points[k]?.g === q.g)) return;
+      const shared = d.paths.slice(0, pi).some((o) => o.points[k]?.g === q.g);
       const both = d.paths.slice(pi + 1).some((o) => o.points[k]?.g === q.g);
       const own = both ? '#000000' : color;
-      if (d.style === 'levels') line(x(k) - bar / 2, yy, x(k) + bar / 2, yy, { bold: true, ...(look.levelWidth ? { lineWidth: look.levelWidth } : {}), ...(own !== '#000000' ? { color: own } : {}) });
-      // on a curve, a peak's name goes over it (the curve falls away beneath)
-      const prev = shown[i - 1]?.q.g ?? -Infinity, next = shown[i + 1]?.q.g ?? -Infinity;
-      const peak = d.style === 'curve' && q.g! > prev && q.g! > next;
-      // on a curve, a trough's energy goes under it too (the curve rises on either side)
-      const under = d.style === 'curve' && !peak;
-      let top = yy - gap - (d.style === 'levels' ? lw : 0), bottom = yy + gap + lw;
-      if (d.values && under) bottom = m.captionBox(caption(fmt(q.g!), { x: x(k), y: bottom }, 'below', own)).y2;
-      else if (d.values) top = m.captionBox(caption(fmt(q.g!), { x: x(k), y: top }, 'above', own)).y1 - gap / 2;
-      const key = `${k}|${q.label}`;
-      if (q.label && !labelled.has(key)) {
-        labelled.add(key);
-        const ink2 = pi && d.paths.length > 1 && !both ? color : undefined;
-        if (peak) caption(q.label, { x: x(k), y: top }, 'above', ink2, {}, 'label', q.rich);
-        else caption(q.label, { x: x(k), y: bottom }, 'below', ink2, {}, 'label', q.rich);
+      const peak = peakAt(shown, i);
+      let { top, bottom } = reach.get(spot) ?? { top: yy - gap - (d.style === 'levels' ? lw : 0), bottom: yy + gap + lw };
+      if (!shared) {
+        if (d.style === 'levels') line(x(k) - bar / 2, yy, x(k) + bar / 2, yy, { bold: true, ...(look.levelWidth ? { lineWidth: look.levelWidth } : {}), ...(own !== '#000000' ? { color: own } : {}) });
+        // on a curve, a trough's energy goes under it too (the curve rises on either side)
+        const under = d.style === 'curve' && !peak;
+        if (d.values && under) bottom = m.captionBox(caption(fmt(q.g!), { x: x(k), y: bottom }, 'below', own)).y2;
+        else if (d.values) top = m.captionBox(caption(fmt(q.g!), { x: x(k), y: top }, 'above', own)).y1 - gap / 2;
       }
+      const key = `${k}|${q.label}`;
+      const mine = nameAt.get(key);
+      // (a pathway's own name for a species it shares with an earlier one is still written, under the first; review F431)
+      if (q.label && !labelled.has(key) && mine?.g === q.g && mine.peak === peak) {
+        labelled.add(key);
+        const ink2 = pi && d.paths.length > 1 && !both && mine.paths.size < 2 ? color : undefined;
+        if (peak) top = m.captionBox(caption(q.label, { x: x(k), y: top }, 'above', ink2, {}, 'label', q.rich)).y1;
+        else bottom = m.captionBox(caption(q.label, { x: x(k), y: bottom }, 'below', ink2, {}, 'label', q.rich)).y2;
+      }
+      reach.set(spot, { top, bottom });
     });
     // joined: dashed between the ends of the levels, or a smooth S from middle to middle (or
     // in the pathway's own line style)
@@ -334,7 +364,7 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
       if (dash === 'dotted') {
         for (let t = 0; t < 1 - 1e-9; t += 1 / 16) {
           const u = cosineAt(p0, p1, t), v = cosineAt(p0, p1, t + 1 / 16);
-          out.shapes.push(doc.addShape({ kind: 'line', x1: u.x, y1: u.y, x2: v.x, y2: v.y, color, dashed: true, dotted: true }).id);
+          out.shapes.push(doc.addShape({ kind: 'line', x1: u.x, y1: u.y, x2: v.x, y2: v.y, color, dashed: true, dotted: true, ...joinW }).id);
         }
         continue;
       }
@@ -447,13 +477,17 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
     const taken: Rect[] = out.captions.map((id) => m.captionBox(doc.captions.get(id)!));
     const clear = (r: Rect) => !taken.some((o) => o.x1 < r.x2 && r.x1 < o.x2 && o.y1 < r.y2 && r.y1 < o.y2)
       && !ink.some((q) => q.x > r.x1 && q.x < r.x2 && q.y > r.y1 && q.y < r.y2);
-    const done = new Set<number>();
+    // (one structure per species: two pathways' species in one column at different energies, or
+    // named differently, each get theirs; review F061)
+    const done = new Set<string>();
     d.paths.forEach((p) => {
       const shown = p.points.map((q, k) => ({ q, k })).filter(({ q }) => q.g !== null && isFinite(q.g));
       shown.forEach(({ q, k }, i) => {
         const drawn = q.drawn?.atoms.length ? q.drawn : null;
-        if ((!drawn && (!d.structures || !q.geom?.length)) || done.has(k)) return;
-        done.add(k);
+        // (a species pathways share is the same column, energy and name; review F061)
+        const one = `${k}|${q.g}|${q.label}`;
+        if ((!drawn && (!d.structures || !q.geom?.length)) || done.has(one)) return;
+        done.add(one);
         const prev = shown[i - 1]?.q.g ?? -Infinity, next = shown[i + 1]?.q.g ?? -Infinity;
         const up = place === 'above' ? -1 : place === 'below' ? 1 : q.g! > prev && q.g! > next ? -1 : 1;
         const yy = y(q.g!);
@@ -491,7 +525,7 @@ export function drawEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec): Energy
     // under everything, at the left
     const all = [...out.captions.map((id) => m.captionBox(doc.captions.get(id)!)), ...out.shapes.map((id) => shapeBox(doc.shapes.get(id)!))];
     const low = Math.max(at.y + d.h, ...all.map((r) => r.y2));
-    caption(d.theory.trim(), { x: d.axis ? at.x - 0.6 * L : at.x, y: low + gap }, 'right', undefined, { runs: [{ text: d.theory.trim(), size: doc.style.captionSize * 0.85 }] });
+    caption(d.theory.trim(), { x: d.axis ? at.x - 0.6 * L : at.x, y: low + gap }, 'right', undefined, { runs: [{ text: d.theory.trim(), size: doc.style.captionSize * 0.85, ...(look.font ? { font: look.font } : {}) }] });
     const c = doc.captions.get(out.captions[out.captions.length - 1])!;
     const b = m.captionBox(c);
     doc.updateCaption(c.id, { y: c.y + (low + gap - b.y1) });
@@ -589,14 +623,38 @@ export function putEnergy(doc: Doc, m: Measure, d: EnergyData, at: Vec, id?: num
       if (sh && (sh.kind === 'line' || (sh.kind === 'oval' && sh.fill === 'shaded') || (sh.kind === 'geo' && isInkId(sh.geo)))) doc.removeShape(s); else if (sh) kept.shapes.push(s);
     }
     // structures drawn for species are drawn again; ones put on the diagram by hand stay
-    const sigs = new Set([...(old.energy?.paths ?? []), ...d.paths].flatMap((p) => p.points.map((q) => (q.drawn ? drawnSig(q.drawn.atoms) : ''))).filter(Boolean));
+    // (a structure of several separate molecules is found as all of them, each where it sits
+    // from the others, so a lone ion put on by hand isn't taken for one of them; review F062)
+    const frags: { atoms: number[]; first: number; sig: string; corner: Vec }[] = [];
     const seen = new Set<number>();
     for (const a of f.atoms) {
       if (!doc.atoms.has(a) || seen.has(a)) continue;
-      const frag = [...doc.fragmentOf(a)];
-      for (const x of frag) seen.add(x);
-      if (sigs.has(drawnSig(frag.map((x) => doc.atoms.get(x)!)))) for (const x of frag) doc.removeAtom(x);
-      else kept.atoms.push(a);
+      const atoms = [...doc.fragmentOf(a)];
+      for (const x of atoms) seen.add(x);
+      const placed = atoms.map((x) => doc.atoms.get(x)!);
+      frags.push({ atoms, first: a, sig: drawnSig(placed), corner: cornerOf(placed) });
+    }
+    const drawnFor = new Set<number>();
+    for (const q of [...(old.energy?.paths ?? []), ...d.paths].flatMap((p) => p.points)) {
+      if (!q.drawn?.atoms.length) continue;
+      const pieces = drawnPieces(q.drawn).map((ps) => ({ sig: drawnSig(ps), corner: cornerOf(ps) }));
+      const [lead, ...rest] = pieces;
+      for (const f0 of frags) {
+        if (drawnFor.has(f0.first) || f0.sig !== lead.sig) continue;
+        const dx = f0.corner.x - lead.corner.x, dy = f0.corner.y - lead.corner.y;
+        const found = [f0];
+        for (const pc of rest) {
+          const hit = frags.find((g) => !found.includes(g) && !drawnFor.has(g.first) && g.sig === pc.sig
+            && Math.abs(g.corner.x - pc.corner.x - dx) < 0.15 && Math.abs(g.corner.y - pc.corner.y - dy) < 0.15);
+          if (!hit) break;
+          found.push(hit);
+        }
+        if (found.length === pieces.length) for (const g of found) drawnFor.add(g.first);
+      }
+    }
+    for (const g of frags) {
+      if (drawnFor.has(g.first)) for (const x of g.atoms) doc.removeAtom(x);
+      else kept.atoms.push(g.first);
     }
   }
   const parts = drawEnergy(doc, m, d, at);
@@ -898,6 +956,32 @@ export function placeContents(doc: Doc, c: Contents, dx: number, dy: number): { 
     out.captions.push(doc.addCaption({ ...rest, x: t.x + dx, y: t.y + dy }).id);
   }
   return out;
+}
+
+/** A drawn structure's separate molecules (atoms joined by its bonds), each as its atoms. */
+export function drawnPieces(c: Pick<Contents, 'atoms' | 'bonds'>): Contents['atoms'][] {
+  const up = new Map<number, number>(c.atoms.map((a) => [a.id, a.id]));
+  const root = (x: number): number => {
+    let r = x;
+    while (up.get(r) !== r) r = up.get(r)!;
+    up.set(x, r);
+    return r;
+  };
+  for (const b of c.bonds) if (up.has(b.a1) && up.has(b.a2)) up.set(root(b.a1), root(b.a2));
+  const pieces = new Map<number, Contents['atoms']>();
+  for (const a of c.atoms) {
+    const r = root(a.id);
+    const list = pieces.get(r);
+    if (list) list.push(a); else pieces.set(r, [a]);
+  }
+  return [...pieces.values()];
+}
+
+/** The top left corner of the box round some atoms. */
+function cornerOf(atoms: { x: number; y: number }[]): Vec {
+  let x = Infinity, y = Infinity;
+  for (const a of atoms) { if (a.x < x) x = a.x; if (a.y < y) y = a.y; }
+  return { x, y };
 }
 
 /** A drawn structure's fingerprint wherever it is put: its atoms and where they sit from its corner (so it is found again to be drawn anew). */

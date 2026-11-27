@@ -78,7 +78,8 @@ interface Section {
   condition?: { op: string; value: number };
 }
 
-type Part = { k: 'lit'; s: string } | { k: 'code'; s: string };
+/** `gen`: the word General inside a longer format (General" mg", [Red]General), the number shown as General shows it. */
+type Part = { k: 'lit'; s: string } | { k: 'code'; s: string } | { k: 'gen'; s: string };
 
 /** Split a format into its sections (positive; negative; zero; text) and each into literal and code parts. */
 function parseSections(code: string): Section[] {
@@ -119,6 +120,8 @@ function parseSections(code: string): Section[] {
       if (/^(h+|m+|s+)$/i.test(inner)) pushCode(`[${inner}]`); // elapsed time
       continue;
     }
+    // the word General (any case) in a longer format: the number as General shows it, the text round it kept
+    if ((ch === 'G' || ch === 'g') && code.slice(i, i + 7).toLowerCase() === 'general') { cur.parts.push({ k: 'gen', s: 'General' }); i += 6; continue; }
     // a fraction's fixed denominator (# ?/16): its digits right after the /
     if (/[1-9]/.test(ch) && /[0#?]\/\d*$/.test(lastCode(cur)) && !isDateCode(lastCode(cur)) && cur.parts[cur.parts.length - 1]?.k === 'code') { pushCode(ch); continue; }
     if ('0#?.,%Ee+-@'.includes(ch) || /[ymdhsAP/:]/i.test(ch)) {
@@ -259,7 +262,7 @@ export function formatValue(v: Value, code?: string): Shown {
     const secs = parseSections(fmt);
     const textSec = secs.length >= 4 ? secs[3] : secs.find((s) => s.parts.some((p) => p.k === 'code' && p.s.includes('@')));
     if (!textSec) return { text: v, align: 'left' };
-    const text = textSec.parts.map((p) => (p.k === 'lit' ? p.s : p.s.replace(/@/g, v))).join('');
+    const text = textSec.parts.map((p) => (p.k === 'lit' ? p.s : p.k === 'gen' ? v : p.s.replace(/@/g, v))).join('');
     return { text, color: textSec.color, align: 'left' };
   }
   if (!fmt) return { text: generalNumber(v), align: 'right' };
@@ -273,6 +276,11 @@ export function formatValue(v: Value, code?: string): Shown {
   } else if (v < 0 && secs.length >= 2) { sec = secs[1]; abs = true; }
   else if (v === 0 && secs.length >= 3) sec = secs[2];
   else sec = secs[0];
+  if (sec.parts.some((p) => p.k === 'gen')) {
+    const n = generalNumber(abs ? Math.abs(v) : v);
+    const text = sec.parts.map((p) => (p.k === 'lit' ? p.s : p.k === 'gen' ? n : p.s.replace(/[0#?.,]/g, ''))).join('');
+    return { text, color: sec.color, align: 'right' };
+  }
   if (sectionIsDate(sec)) return { text: formatDate(v, sec), color: sec.color, align: 'right' };
   const frac = fractionAt(sec);
   if (frac) return { text: formatFraction(abs ? Math.abs(v) : v, sec, frac, abs), color: sec.color, align: 'right' };
@@ -304,12 +312,15 @@ function formatNumber(v: number, sec: Section): string {
   const mant = sci ? code.slice(0, sci.index) : code;
   const dot = mant.indexOf('.');
   const intCode = (dot < 0 ? mant : mant.slice(0, dot)).replace(/[^0#?,]/g, '');
-  const fracCode = dot < 0 ? '' : mant.slice(dot + 1).replace(/[^0#?]/g, '');
+  const fracRaw = dot < 0 ? '' : mant.slice(dot + 1).replace(/[^0#?,]/g, '');
+  const fracCode = fracRaw.replace(/,/g, '');
   const intMin = (intCode.match(/0/g) ?? []).length;
   const group = /[0#?],[0#?]/.test(intCode);
-  // commas at the end of the number divide by 1000
-  const scale = (/(,+)$/.exec(intCode.replace(/[^0#?,]/g, ''))?.[1].length ?? 0);
-  if (scale && dot < 0) x /= Math.pow(1000, scale);
+  // commas right after the number's last digit placeholder divide it by 1000 each, before or after the
+  // point: 0,  0.0,,  #,##0.0,  0,.0 (ECMA-376 Part 1, 18.8.31: "a comma that follows a digit placeholder
+  // scales the number by 1,000")
+  const scale = (/(,+)$/.exec(intCode)?.[1].length ?? 0) + (/(,+)$/.exec(fracRaw)?.[1].length ?? 0);
+  if (scale) x /= Math.pow(1000, scale);
   let exp = 0;
   if (sci) {
     if (x !== 0) {
@@ -340,6 +351,49 @@ function formatNumber(v: number, sec: Section): string {
   if (sci) {
     const ed = sci[2].length;
     num += `E${exp < 0 ? '-' : sci[1] === '+' ? '+' : ''}${String(Math.abs(exp)).padStart(ed, '0')}`;
+  }
+  // the whole number's digits split over code parts with text between them (000-0000, 000-00-0000):
+  // filled from the right, each part its own placeholders' worth, the first taking what is left
+  const intCounts: number[] = [];
+  let pastPoint = false;
+  for (const p of sec.parts) {
+    if (p.k !== 'code') { intCounts.push(0); continue; }
+    let n = 0;
+    for (const ch of p.s) {
+      if (pastPoint) break;
+      if (ch === '.' || ch === 'E' || ch === 'e') pastPoint = true;
+      else if (ch === '0' || ch === '#' || ch === '?') n++;
+    }
+    intCounts.push(n);
+  }
+  if (intCounts.filter((n) => n > 0).length >= 2) {
+    let digits = r.toFixed(fracCode.length).split('.')[0];
+    if (digits === '0') digits = '';
+    const rest = num.slice(ip.length);
+    const pieces: string[] = sec.parts.map(() => '');
+    const first = intCounts.findIndex((n) => n > 0);
+    for (let i = sec.parts.length - 1; i >= 0; i--) {
+      const n = intCounts[i];
+      if (!n) continue;
+      const take = i === first ? digits : digits.slice(Math.max(0, digits.length - n));
+      digits = digits.slice(0, digits.length - take.length);
+      // placeholders left without a digit: 0 shows a zero, ? a space, # nothing
+      const holders = (sec.parts[i].s.split(/[.Ee]/)[0].match(/[0#?]/g) ?? []);
+      const pad = holders.slice(0, Math.max(0, n - take.length)).map((h) => (h === '0' ? '0' : h === '?' ? ' ' : '')).join('');
+      pieces[i] = pad + take;
+    }
+    // the point, decimals and power of ten go with the part that holds the point (else the last digits)
+    let restAt = sec.parts.findIndex((p) => p.k === 'code' && /[.Ee]/.test(p.s));
+    if (restAt < 0) for (let i = intCounts.length - 1; i >= 0; i--) if (intCounts[i] > 0) { restAt = i; break; }
+    let out = '';
+    sec.parts.forEach((p, i) => {
+      if (p.k !== 'code') { out += p.s; return; }
+      out += pieces[i] + (i === restAt ? rest : '');
+      if (p.s.includes('%')) out += '%'.repeat((p.s.match(/%/g) ?? []).length);
+      out += p.s.replace(/[0#?.,%Ee+-]/g, '');
+    });
+    const neg = v < 0 && roundTo(Math.abs(v) * Math.pow(100, pct), fracCode.length + (sci ? 10 : 0)) !== 0;
+    return (neg ? '-' : '') + out;
   }
   // put the number where its code was, literals around it
   let out = '';
@@ -428,7 +482,9 @@ export function changeDecimals(code: string | undefined, delta: 1 | -1, shown = 
   return fmt.split(';').map((sec) => {
     const parsed = parseSections(sec)[0];
     if (parsed && (sectionIsDate(parsed) || fractionAt(parsed))) return sec;
-    const m = /([0#?](?:[0#?,]*))(\.([0#?]*))?/.exec(sec.replace(/"[^"]*"/g, (q) => '\u0000'.repeat(q.length)));
+    // (quoted text, [$€-407] [>=100] [Red] codes, \-escaped characters and the one after _ or * aren't the number)
+    const masked = sec.replace(/"[^"]*"|\[[^\]]*\]|\\.|[_*]./g, (q) => '\u0000'.repeat(q.length));
+    const m = /([0#?](?:[0#?,]*))(\.([0#?]*))?/.exec(masked);
     if (!m) return sec;
     const start = m.index, end = start + m[0].length;
     const ip = m[1], fp = m[3] ?? '';

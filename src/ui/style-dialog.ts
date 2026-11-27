@@ -12,7 +12,7 @@ import { schemePrefs, spacing } from '../chem/scheme-layout';
 import { SINGLE } from '../text/layout';
 import { keepInRange } from './num-range';
 import { FONT_GROUPS } from '../fonts';
-import { STYLE_PRESETS, presetNamed, sameLook, scaleStyle, type RestyleHow } from '../drawing-styles';
+import { STYLE_PRESETS, presetLike, presetNamed, sameLook, scaleStyle, type RestyleHow } from '../drawing-styles';
 
 export interface StyleChoice {
   style: DocStyle;
@@ -41,6 +41,11 @@ export interface StyleDialogOptions {
   noForNew?: boolean;
   /** A note under the settings (what the style is used for). */
   note?: string;
+  /**
+   * Your own styles, with the one just saved: called as soon as Save is clicked, so the style is kept
+   * even if the window is then cancelled (the window says it is saved).
+   */
+  saveOwn?: (own: DocStyle[]) => void;
 }
 
 
@@ -74,6 +79,8 @@ const el = <K extends keyof HTMLElementTagNameMap>(tag: K, props: Partial<HTMLEl
 export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | null> {
   return new Promise((resolve) => {
     let own = o.own.map((s) => ({ ...s }));
+    // your own styles as kept so far: what Save added, but not a Delete that Apply has not made final
+    let kept = o.own.map((s) => ({ ...s }));
     const d = el('dialog', { className: 'master-dialog style-dialog' });
     const form = el('form');
     d.append(form);
@@ -206,7 +213,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     for (const i of [arrowWidth, inputs.get('lineWidth')!]) i.addEventListener('input', showArrowLook);
 
     // ID labels and linked captions: each kind's look and place, side by side (blank: the
-    // captions' font and size, or the usual gap of a third of a bond length)
+    // captions' font and size, or the usual gap of 30% of a bond length)
     const tiedHead = el('h3', { textContent: 'ID labels and captions' });
     tiedHead.append(infoIcon('ID labels: compound numbers from Add ID Label and Number Compounds, and text that reads as an ID when you link it to a structure. Linked captions: names, CAS numbers, descriptors and other text linked to a structure. Linking text gives it this look and place.'));
     const tiedGrid = el('div', { className: 'md-tied' });
@@ -230,7 +237,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       for (const [v, t] of [['center', 'Centered'], ['left', 'Left edges lined up'], ['right', 'Right edges lined up']]) align.append(new Option(t, v));
       align.title = 'Above or below the structure: centered under it, or lined up with its left or right edge';
       const gap = el('input', { type: 'number', className: 'md-num', step: 'any' });
-      gap.title = 'Leave blank for a third of the bond length. From 0 to 100 pt';
+      gap.title = 'Leave blank for 30% of the bond length. From 0 to 100 pt';
       keepInRange(gap, 0, 100, 'pt');
       side.addEventListener('change', () => { align.disabled = side.value === 'left' || side.value === 'right'; });
       return { font, size, b: toggle('<b>B</b>', 'Bold'), i: toggle('<i>I</i>', 'Italic'), u: toggle('<u>U</u>', 'Underline'), color: el('span'), side, align, gap };
@@ -355,7 +362,8 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       const st: DocStyle = { ...shown, name: name.value.trim() || shown.name };
       for (const [k, i] of inputs) {
         const v = parseFloat(i.value);
-        if (Number.isFinite(v) && v > 0) st[k] = within(LIMITS[k], v);
+        // (a box whose range starts at 0 takes 0; one below the range is brought up to it)
+        if (Number.isFinite(v) && (v > 0 || (v === 0 && LIMITS[k][0] === 0))) st[k] = within(LIMITS[k], v);
       }
       st.labelFont = labelFont.value.trim() || shown.labelFont;
       st.captionFont = captionFont.value.trim() || shown.captionFont;
@@ -419,7 +427,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
 
     // start on whatever matches what is in use now
     const now = own.find((s) => s.name === o.current.name && sameLook(s, o.current)) ? 'own:' + o.current.name
-      : STYLE_PRESETS.find((p) => sameLook(p.style, o.current)) ? 'preset:' + STYLE_PRESETS.find((p) => sameLook(p.style, o.current))!.style.name
+      : presetLike(o.current) ? 'preset:' + presetLike(o.current)!.style.name
       : 'file:';
     fillPick(now);
     fill(o.current);
@@ -448,6 +456,9 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       if (!name.value.trim()) { said.textContent = 'Type a name for your style first.'; name.focus(); return; }
       const had = own.findIndex((s) => s.name === st.name);
       if (had >= 0) own[had] = st; else own.push(st);
+      const keptAt = kept.findIndex((s) => s.name === st.name);
+      if (keptAt >= 0) kept[keptAt] = { ...st }; else kept.push({ ...st });
+      o.saveOwn?.(kept.map((s) => ({ ...s })));
       fillPick('own:' + st.name);
       shown = { ...st };
       describe();
@@ -460,7 +471,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       fillPick(now.startsWith('own:') && now.slice(4) === v.slice(4) ? 'file:' : now);
       fill(chosen());
       describe();
-      said.textContent = `Deleted "${v.slice(4)}".`;
+      said.textContent = `Removed "${v.slice(4)}" from the list. Apply deletes it; Cancel keeps it.`;
     });
 
     let finished = false;

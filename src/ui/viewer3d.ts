@@ -20,7 +20,7 @@ import { ask } from './ask';
 import { infoIcon, setInfo } from './info-tip';
 import { DEFAULT_SEARCH, type SearchOptions } from '../chem/conformer-rank';
 import { KCAL_PER_HARTREE, refineWithXtb, XTB_SOLVENTS, type XtbOptions, type XtbRunner } from '../chem/xtb';
-import { chargeAndMultiplicity, qmInput, xyzFile, QM_METHODS, type QmOptions, type QmProgram } from '../chem/qm-input';
+import { chargeAndMultiplicity, qmInput, xyzFile, QM_METHODS, methodFor, type QmOptions, type QmProgram } from '../chem/qm-input';
 
 /** What the conformer tiers need from the app. */
 export interface ConformerTools {
@@ -84,6 +84,9 @@ export class Viewer3d {
   private showH = true;
   private labels = false;
   private spinning = false;
+  private spinBtn!: HTMLButtonElement;
+  /** Closes the Export menu while it is open. */
+  private closeMenu: (() => void) | null = null;
   /** Depth shading: the back of the model fades (follows Format ▸ Rotate and Flip ▸ Depth Shading; its own box here). */
   private fog = depthShadePrefs.on;
   private fogBox: HTMLInputElement | null = null;
@@ -108,7 +111,8 @@ export class Viewer3d {
   private run = 0;
 
   constructor(private flash: (msg: string) => void) {
-    this.box = new FloatBox('3-D Model', () => {});
+    // (closing it, by × or Esc as well as close(), stops a search or xTB run and the spinning)
+    this.box = new FloatBox('3-D Model', () => {}, () => { this.setSpin(false); this.abandon(); });
     this.box.el.classList.add('viewer3d');
     this.box.el.querySelector<HTMLElement>('.fb-pin')!.hidden = true;
     const b = this.box.body;
@@ -137,9 +141,10 @@ export class Viewer3d {
     const spin = document.createElement('button');
     spin.type = 'button';
     spin.textContent = 'Spin';
-    spin.title = 'Turn the model slowly around and around';
+    spin.title = 'Rotate the model slowly around and around';
     spin.setAttribute('aria-pressed', 'false');
-    spin.addEventListener('click', () => { this.spinning = !this.spinning; spin.setAttribute('aria-pressed', String(this.spinning)); if (this.spinning) this.tick(); });
+    this.spinBtn = spin;
+    spin.addEventListener('click', () => this.setSpin(!this.spinning));
     const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Rotate and Flip ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
     this.fogBox = fog.querySelector('input');
     bar.append(style, check('H', 'Show hydrogens', this.showH, (v) => (this.showH = v)), check('Labels', 'Show element symbols (not C or H)', this.labels, (v) => (this.labels = v)), fog, spin);
@@ -252,6 +257,9 @@ export class Viewer3d {
     this.drawn = drawn ?? null;
     this.results = { quick: model };
     this.tier = 'quick';
+    for (const el of this.tierBar.querySelectorAll<HTMLButtonElement>('[data-tier]')) el.disabled = false;
+    this.exportBtn.disabled = false;
+    this.again.disabled = false;
     this.reset();
     this.box.show();
     this.showTier();
@@ -264,6 +272,11 @@ export class Viewer3d {
   showBusy(title: string): void {
     this.abandon();
     this.model = null;
+    // (the last structure's results are not this one's, and its methods and Export can't be used until it is built)
+    this.results = {};
+    for (const el of this.tierBar.querySelectorAll<HTMLButtonElement>('[data-tier]')) el.disabled = true;
+    this.exportBtn.disabled = true;
+    this.again.disabled = true;
     this.box.title = title;
     this.info.textContent = 'Building the 3-D model…';
     this.list.replaceChildren();
@@ -274,9 +287,14 @@ export class Viewer3d {
   }
 
   close(): void {
-    this.spinning = false;
-    this.abandon();
     this.box.close();
+  }
+
+  /** Start or stop the spinning, and show it on the Spin button. */
+  private setSpin(on: boolean): void {
+    this.spinning = on;
+    this.spinBtn.setAttribute('aria-pressed', String(on));
+    if (on) this.tick();
   }
 
   /**
@@ -407,7 +425,7 @@ export class Viewer3d {
       this.flash('From this angle atoms would land on top of each other, so the model was rotated to its cleanest view first.');
     } else if (near.deg) {
       this.rot = near.rot;
-      this.flash(`Turned the model ${near.deg}° first, so no atoms land on top of each other.`);
+      this.flash(`Rotated the model ${near.deg}° first, so no atoms land on top of each other.`);
     }
     this.draw();
     this.onPlace({ view: this.viewCoords() });
@@ -421,7 +439,7 @@ export class Viewer3d {
       c.setPointerCapture(e.pointerId);
       last = { x: e.clientX, y: e.clientY };
       moving = e.shiftKey || e.button === 2;
-      this.spinning = false;
+      this.setSpin(false);
     });
     c.addEventListener('pointermove', (e) => {
       if (!last) return;
@@ -441,7 +459,7 @@ export class Viewer3d {
       this.draw();
     }, { passive: false });
     c.addEventListener('dblclick', () => { this.reset(); this.draw(); });
-    c.title = 'Drag to turn, Shift+drag to move, wheel to zoom, double-click to go back to the drawing\'s view';
+    c.title = 'Drag to rotate, Shift+drag to move, wheel to zoom, double-click to go back to the drawing\'s view';
     c.addEventListener('keydown', (e) => {
       const step = 18;
       if (e.key === 'ArrowLeft') this.turn(-step, 0);
@@ -483,9 +501,10 @@ export class Viewer3d {
   }
 
   /** Draw the model, back to front. */
-  draw(ctx2?: CanvasRenderingContext2D, size?: { w: number; h: number }): void {
+  draw(ctx2?: CanvasRenderingContext2D, size?: { w: number; h: number; /** Pixels in each of the window's (a picture made larger than the window has its lines and letters larger too). */ k?: number }): void {
     const c = this.canvas;
     const w = size?.w ?? c.clientWidth, h = size?.h ?? c.clientHeight;
+    const k = size?.k ?? 1;
     if (!w || !h) return;
     const dpr = size ? 1 : window.devicePixelRatio || 1;
     if (!size && (c.width !== Math.round(w * dpr) || c.height !== Math.round(h * dpr))) { c.width = Math.round(w * dpr); c.height = Math.round(h * dpr); }
@@ -516,7 +535,7 @@ export class Viewer3d {
       if (this.style === 'sticks') return 0.14 * scale;
       return 0;
     };
-    const stickW = this.style === 'wire' ? 1.5 : this.style === 'sticks' ? 0.28 * scale : 0.12 * scale;
+    const stickW = this.style === 'wire' ? 1.5 * k : this.style === 'sticks' ? 0.28 * scale : 0.12 * scale;
     if (this.style !== 'spacefill') {
       // each half-bond starts where it leaves its atom's ball (not at the ball's centre, where it
       // would be drawn over the ball), and is put in depth order by its own middle
@@ -573,7 +592,7 @@ export class Viewer3d {
             ctx.beginPath();
             ctx.arc(x, y, r, 0, Math.PI * 2);
             ctx.fill();
-            if (a.z === 1 || a.z === 6) { ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.6; ctx.stroke(); }
+            if (a.z === 1 || a.z === 6) { ctx.strokeStyle = 'rgba(0,0,0,0.25)'; ctx.lineWidth = 0.6 * k; ctx.stroke(); }
           },
         });
       });
@@ -591,13 +610,13 @@ export class Viewer3d {
     }
     ctx.globalAlpha = 1;
     if (this.labels || this.style === 'wire') {
-      ctx.font = `600 ${Math.max(10, Math.min(16, 0.5 * scale))}px ${css.getPropertyValue('--ui-font') || 'sans-serif'}`;
+      ctx.font = `600 ${Math.max(10 * k, Math.min(16 * k, 0.5 * scale))}px ${css.getPropertyValue('--ui-font') || 'sans-serif'}`;
       ctx.textAlign = 'center';
       ctx.textBaseline = 'middle';
       m.atoms.forEach((a, i) => {
         if (!shown[i] || a.z === 6 || a.z === 1) return;
         const t = (SYMBOLS[a.z] ?? '?') + (a.charge ? (Math.abs(a.charge) > 1 ? Math.abs(a.charge) : '') + (a.charge > 0 ? '+' : '−') : '');
-        ctx.lineWidth = 3;
+        ctx.lineWidth = 3 * k;
         ctx.strokeStyle = ctx.fillStyle = BACKGROUND;
         ctx.strokeText(t, P[i].x, P[i].y);
         ctx.fillStyle = '#1d2330';
@@ -614,11 +633,9 @@ export class Viewer3d {
     const ctx = off.getContext('2d');
     if (!ctx) return;
     // three times the window's size, for slides and print
-    const z = this.zoom, p = { ...this.pan };
+    const p = { ...this.pan };
     this.pan = { x: p.x * 3, y: p.y * 3 };
-    this.draw(ctx, { w, h });
-    this.zoom = z;
-    this.pan = p;
+    try { this.draw(ctx, { w, h, k: 3 }); } finally { this.pan = p; }
     const blob = await new Promise<Blob | null>((res) => off.toBlob(res, 'image/png'));
     try {
       if (!blob) throw new Error('no picture');
@@ -652,7 +669,7 @@ export class Viewer3d {
 
   /** A method chosen on the switch: its result if it has one, otherwise it is run. */
   private async chooseTier(t: Tier): Promise<void> {
-    if (this.busy) return;
+    if (this.busy || !this.model) return;
     const got = this.results[t];
     if (got) {
       this.tier = t;
@@ -675,6 +692,8 @@ export class Viewer3d {
   /** Export ▾: Gaussian/ORCA input, or every conformer as an XYZ or SD file. */
   private exportMenu(): void {
     const t = this.tools, m = this.model;
+    // (an open menu is closed properly, which also takes its listeners off the page)
+    this.closeMenu?.();
     document.querySelector('.v3d-menu')?.remove();
     const menu = document.createElement('div');
     menu.className = 'menu popup-menu v3d-menu';
@@ -695,7 +714,8 @@ export class Viewer3d {
     const r = this.exportBtn.getBoundingClientRect(), mr = menu.getBoundingClientRect();
     menu.style.left = `${Math.max(4, Math.min(r.right - mr.width, innerWidth - mr.width - 4))}px`;
     menu.style.top = `${r.bottom + mr.height + 4 < innerHeight ? r.bottom + 2 : Math.max(4, r.top - mr.height - 2)}px`;
-    const close = () => { menu.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc, true); };
+    const close = () => { menu.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', esc, true); if (this.closeMenu === close) this.closeMenu = null; };
+    this.closeMenu = close;
     const away = (e: Event) => { if (!menu.contains(e.target as Node) && e.target !== this.exportBtn) close(); };
     const esc = (e: KeyboardEvent) => { if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); this.exportBtn.focus(); } };
     document.addEventListener('pointerdown', away, true);
@@ -753,15 +773,21 @@ export class Viewer3d {
       return;
     }
     const p = t.prefs.xtb;
+    // (a molecule with few conformers is offered fewer, but the saved number is the person's own)
+    const shown = Math.min(p.count, m.conformers.length);
     const got = await ask('xTB Refine', [
       { name: 'exe', label: 'xtb program', value: p.exe, type: 'text', placeholder: 'xtb', help: '"xtb" finds it on your PATH; otherwise the full path to xtb (xtb.exe on Windows). Install it from conda-forge (conda install -c conda-forge xtb) or github.com/grimme-lab/xtb/releases. xtb is free software (LGPL 3.0).' },
       { name: 'solvent', label: 'Solvent (ALPB)', value: p.solvent, options: [{ value: '', label: 'Gas phase' }, ...XTB_SOLVENTS.map((s) => ({ value: s, label: s }))] },
       { name: 'opt', label: 'Optimize each conformer (otherwise energies only)', value: String(p.opt), type: 'checkbox' },
-      { name: 'count', label: 'Lowest conformers to refine', value: String(Math.min(p.count, m.conformers.length)), type: 'number', help: `Of the ${m.conformers.length} shown. Each takes seconds to minutes, depending on its size.` },
+      { name: 'count', label: 'Lowest conformers to refine', value: String(shown), type: 'number', help: `Of the ${m.conformers.length} shown. Each takes seconds to minutes, depending on its size.` },
     ], { ok: 'Refine', note: 'Runs on this computer: nothing is sent anywhere.' });
     if (!got) return;
-    const opts: XtbOptions = { exe: got.exe.trim() || 'xtb', solvent: got.solvent, opt: got.opt === 'true', count: Math.max(1, Math.min(m.conformers.length, Math.round(parseFloat(got.count) || p.count))) };
-    Object.assign(t.prefs.xtb, opts);
+    const typed = parseFloat(got.count);
+    // a number typed (0 too: at least 1) is the one wanted; one left as offered keeps the saved number
+    const asked = Number.isFinite(typed) ? Math.max(1, Math.round(typed)) : p.count;
+    const wanted = asked === shown ? p.count : asked;
+    const opts: XtbOptions = { exe: got.exe.trim() || 'xtb', solvent: got.solvent, opt: got.opt === 'true', count: Math.max(1, Math.min(m.conformers.length, wanted)) };
+    Object.assign(t.prefs.xtb, { ...opts, count: wanted });
     t.prefs.save();
     this.setBusy(true, 'Starting xtb…');
     const run = this.run;
@@ -771,12 +797,14 @@ export class Viewer3d {
       if (run !== this.run) return;
       if (refined !== m) {
         this.replaceModel(refined, 'xtb');
-        this.flash(`Refined ${refined.conformers.length} conformer${refined.conformers.length === 1 ? '' : 's'} with ${refined.method}; ranked again by their xTB energies.`);
-      }
+        const n = refined.conformers.length;
+        this.flash(this.stopped ? `xTB stopped. Kept the ${n} conformer${n === 1 ? '' : 's'} refined so far.`
+          : `Refined ${n} conformer${n === 1 ? '' : 's'} with ${refined.method}; ranked again by their xTB energies.`);
+      } else if (this.stopped) this.flash('xTB stopped.');
     } catch (e) {
       if (run !== this.run) return;
       const msg = String((e as Error)?.message ?? e);
-      if (this.stopped) { this.flash('xTB stopped unexpectedly.'); return; }
+      if (this.stopped) { this.flash('xTB stopped.'); return; }
       this.flash(/could not be started|No such file|not found|cannot find/i.test(msg) ? `xtb could not be started from "${opts.exe}". Install it, or give the full path to xtb.` : msg);
     } finally {
       if (run === this.run) this.setBusy(false);
@@ -803,8 +831,10 @@ export class Viewer3d {
     ], { ok: 'Save', note: m.method ? `Geometries from ${m.method}.` : undefined });
     if (!got) return;
     const prog = got.program === 'gaussian' ? 'gaussian' : 'orca';
-    // a method typed for the other program is swapped for this one's usual one
-    const method = got.method.trim() && !(prog === 'orca' && got.method.includes('/')) ? got.method.trim() : QM_METHODS[prog][0];
+    // a method spelled for the other program is swapped for this one's usual one
+    const method = methodFor(prog, got.method);
+    // (said, as the Method box can't change under the person: it shows the swapped one next time, and any method can be typed)
+    if (got.method.trim() && method !== got.method.trim()) this.flash(`“${got.method.trim()}” is not spelled for ${prog === 'gaussian' ? 'Gaussian' : 'ORCA'}: wrote ${method} instead. Type another method in Method to change it.`);
     const o: QmOptions = {
       program: prog, method, job: (['opt freq', 'opt', 'sp', 'freq'] as const).find((j) => j === got.job) ?? 'opt freq',
       solvent: got.solvent.trim().replace(/[^\w,-]/g, ''), charge: Math.round(parseFloat(got.charge) || 0), multiplicity: Math.max(1, Math.round(parseFloat(got.mult) || 1)),

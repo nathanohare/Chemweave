@@ -113,7 +113,7 @@ export class SlideRulers {
       const s = at(base);
       if (s < -20 || s > len + 20) continue;
       const n = Math.abs(i * major) / unit;
-      const label = Number.isInteger(+n.toFixed(3)) ? String(Math.round(n)) : n.toFixed(n < 1 ? 2 : 1).replace(/0+$/, '');
+      const label = rulerLabel(n);
       if (across) ctx.fillText(label, s, R / 2);
       else { ctx.save(); ctx.translate(R / 2, s); ctx.rotate(-Math.PI / 2); ctx.fillText(label, 0, 0); ctx.restore(); }
     }
@@ -124,6 +124,19 @@ export class SlideRulers {
     ctx.globalAlpha = 0.4;
     ctx.stroke();
   }
+}
+
+/** A number on a ruler: as exact as its mark is (the steps are eighths of the unit at the most, so three decimals say it, without trailing zeros: 2.25, 1.375). */
+export function rulerLabel(n: number): string {
+  return String(+n.toFixed(3));
+}
+
+/** A guide typed into Grid and Guides, in points from the slide's top left: the number is in the units and from the origin the window's boxes said (`prefs`). */
+export function guidePoint(text: string, axis: 'x' | 'y', prefs: RulerPrefs, size: SlideSize): number | null {
+  const n = Number(text);
+  if (text.trim() === '' || !isFinite(n)) return null;
+  const zero = prefs.from === 'centre' ? (axis === 'x' ? size.w : size.h) / 2 : 0;
+  return zero + n * (prefs.units === 'in' ? 72 : 72 / 2.54);
 }
 
 /** A guide's place as it is dragged, shown beside the pointer. */
@@ -190,14 +203,8 @@ export async function gridAndGuides(view: SlideView, shown: { grid: boolean; sma
     snapToGrid: v.snap === 'true',
     grid: spacing > 0.5 && spacing < 1000 ? spacing : view.grid,
   };
-  // a guide typed in, in the units given, from where the rulers count
-  const pt = (t: string, axis: 'x' | 'y') => {
-    const n = Number(t);
-    if (t.trim() === '' || !isFinite(n)) return null;
-    const zero = nextPrefs.from === 'centre' ? (axis === 'x' ? size.w : size.h) / 2 : 0;
-    return zero + n * (nextPrefs.units === 'in' ? 72 : 72 / 2.54);
-  };
-  const ax = pt(v.addX, 'x'), ay = pt(v.addY, 'y');
+  // a guide typed in is in the units and from the origin its box showed (the rulers as they were when the window opened), not those picked in the same visit
+  const ax = guidePoint(v.addX, 'x', prefs, size), ay = guidePoint(v.addY, 'y', prefs, size);
   if (ax !== null) { next.guides.x.push(ax); next.showGuides = true; }
   if (ay !== null) { next.guides.y.push(ay); next.showGuides = true; }
   return { view: next, grid: v.grid === 'true', smart: v.smart === 'true', prefs: nextPrefs };

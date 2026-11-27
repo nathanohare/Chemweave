@@ -12,8 +12,9 @@
 
 import { withInfo } from './info-tip';
 import { addCloseX } from './window-x';
+import { parsePmids } from '../library/online';
 import type { DocText } from '../document/document';
-import { CITE_PRESETS, changedOptions, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
+import { CITE_PRESETS, changedOptions, knownStyle, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
 import {
   REF_TYPES, bibLabel, citeSuper, citeText, blankRef, citationNumbers, cleanRef, describe, fetchDoi, findDuplicate,
   formatReference, newRefId, newReferences, normaliseDoi, parseReferenceText, piecesText, shortLabel,
@@ -129,9 +130,11 @@ export function editReference(start: Reference, title: string, style: CiteStyle 
     const value = (): Reference => {
       const r: Record<string, unknown> = { ...start };
       for (const [k, i] of inputs) r[k] = k === 'authors' ? i.value.split('\n') : i.value;
-      r.typed = own.checked ? typed.value : undefined;
+      // (custom text cleared to nothing is the automatic text again, not an empty entry)
+      const custom = own.checked && typed.value.trim() !== '';
+      r.typed = custom ? typed.value : undefined;
       const out = cleanRef(r as Partial<Reference>);
-      if (!own.checked) delete out.typed;
+      if (!custom) delete out.typed;
       return out;
     };
     const sync = () => {
@@ -140,9 +143,13 @@ export function editReference(start: Reference, title: string, style: CiteStyle 
       preview.classList.toggle('replaced', own.checked);
       typed.hidden = !own.checked;
       reset.disabled = !own.checked;
-      if (own.checked && !typed.value.trim()) typed.value = piecesText(auto);
     };
-    own.addEventListener('change', () => { sync(); if (own.checked) typed.focus(); });
+    // the automatic text is offered as a start when custom text is first turned on (not again as it is cleared)
+    own.addEventListener('change', () => {
+      if (own.checked && !typed.value.trim()) typed.value = piecesText(formatReference(value(), style));
+      sync();
+      if (own.checked) typed.focus();
+    });
     form.addEventListener('input', () => sync());
     sync();
 
@@ -213,7 +220,13 @@ export function chooseReferences(t: DocText, chosen: string[], manage: () => Pro
       el('p', { className: 'ask-buttons' },
         button('Manage References…', 'Add, edit or import references', async () => {
           const next = await manage();
-          if (next) { doc = next; fillList(); }
+          if (next) {
+            doc = next;
+            // a reference deleted there is no longer checked
+            for (let i = ticked.length - 1; i >= 0; i--) if (!doc.references?.some((r) => r.id === ticked[i])) ticked.splice(i, 1);
+            ok.disabled = !ticked.length;
+            fillList();
+          }
         }),
         el('span', { className: 'spacer' }),
         button('Cancel', '', () => done(null)), ok));
@@ -285,7 +298,7 @@ export interface StyleChoice { style: string; options: Partial<CiteFormat>; forN
  */
 export function editCiteStyle(style: string, options: Partial<CiteFormat>): Promise<StyleChoice | null> {
   return modal<StyleChoice>('cite-style-dialog', (d, done) => {
-    let cur = style in CITE_PRESETS ? style : Object.keys(CITE_PRESETS)[0];
+    let cur = knownStyle(style) ? style : Object.keys(CITE_PRESETS)[0];
     let f: CiteFormat = citeFormat(cur, options);
     const pick = el('select');
     for (const [k, p] of Object.entries(CITE_PRESETS)) pick.add(new Option(`${p.name} (${p.journals})`, k));
@@ -340,7 +353,7 @@ export function editCiteStyle(style: string, options: Partial<CiteFormat>): Prom
     const reset = button('Reset', 'Put every detail back as the style has it', () => { f = citeFormat(cur, {}); show(); });
     const forNew = el('input', { type: 'checkbox' });
     d.append(
-      withInfo(el('h2', { textContent: 'Reference style' }), 'Change any detail below; the preview shows real references as they will print. Choosing another style starts from that style\'s own details.'),
+      withInfo(el('h2', { textContent: 'Reference Style' }), 'Change any detail below; the preview shows real references as they will print. Choosing another style starts from that style\'s own details.'),
       el('label', { className: 'ask-row refs-style' }, el('span', { textContent: 'Style' }), pick),
       source,
       el('div', { className: 'cite-groups' }, ...groups),
@@ -465,6 +478,7 @@ export class ReferencesDialog {
   private group: string | null = null;
   private folded = new Set<string>();
   private closed: (() => void) | null = null;
+  private searchTimer: ReturnType<typeof setTimeout> | null = null;
 
   constructor(private host: ReferencesHost) {}
 
@@ -498,6 +512,8 @@ export class ReferencesDialog {
       e.stopPropagation();
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
       const mod = e.ctrlKey || e.metaKey;
+      // Enter and Space on a button or link are that control's own (they press it); the arrows and Delete are not
+      if (!mod && (e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.closest('button, a, [role=button]')) return;
       if (e.key === 'Delete' && this.selected.size) { e.preventDefault(); void this.remove(); }
       else if (e.key === 'Enter' && this.selected.size) { e.preventDefault(); void this.edit(); }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); this.step(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey); }
@@ -522,7 +538,11 @@ export class ReferencesDialog {
     });
     this.search = el('input', { type: 'search', placeholder: 'Find a reference in any file' });
     this.search.setAttribute('aria-label', 'Find a reference');
-    this.search.addEventListener('input', () => this.fill());
+    // (typing waits a moment for the next key before the list is made again)
+    this.search.addEventListener('input', () => {
+      if (this.searchTimer) clearTimeout(this.searchTimer);
+      this.searchTimer = setTimeout(() => { this.searchTimer = null; this.fill(); }, 150);
+    });
     this.warning = el('p', { className: 'refs-warning', role: 'status' });
     this.hint = el('p', { className: 'muted refs-hint' });
     this.extra = el('div', { className: 'refs-extra' });
@@ -548,6 +568,7 @@ export class ReferencesDialog {
       const tr = (e.target as HTMLElement).closest('tr');
       if (!tr?.dataset.holder || !tr.dataset.id) return;
       const k = rowKey(tr.dataset.holder, tr.dataset.id);
+      // (picked where it is: making the list again here would take the row being dragged out from under the drag)
       if (!this.selected.has(k)) this.pick(k, false, false);
       e.dataTransfer?.setData('application/x-chemillustrator-refs', '1');
       if (e.dataTransfer) e.dataTransfer.effectAllowed = 'copy';
@@ -573,7 +594,7 @@ export class ReferencesDialog {
       el('div', { className: 'ask-row refs-style' }, el('label', { htmlFor: 'refs-style', textContent: 'Citation style' }), this.styleSel,
         button('Style Options…', 'Change any detail of the style: authors, "and", et al., title, year, volume, issue, article numbers, DOI…', () => void this.styleOptions())),
       el('p', { className: 'refs-style-note' }, el('span', { textContent: 'For ' }), this.groupLabel, el('span', { textContent: '. ' }), this.styleNote),
-      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are stored in the Word file: as Chem Illustrator fields, or as Zotero, Mendeley or EndNote fields so that program can keep managing them. Set automatically for files from those programs.' },
+      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are stored in the Word file: as Chemweave fields, or as Zotero, Mendeley or EndNote fields so that program can keep managing them. Set automatically for files from those programs.' },
         el('label', { htmlFor: 'refs-manager', textContent: 'Save citations for' }), this.managerSel)),
       this.extra,
       this.warning,
@@ -590,7 +611,10 @@ export class ReferencesDialog {
           button('Edit…', 'Change the reference selected (or double-click it)', () => void this.edit()),
           button('Delete…', 'Delete the selected references', () => void this.remove()))),
     );
-    d.addEventListener('close', () => { d.remove(); this.d = null; this.panels.clear(); this.closed?.(); this.closed = null; });
+    d.addEventListener('close', () => {
+      if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
+      d.remove(); this.d = null; this.panels.clear(); this.closed?.(); this.closed = null;
+    });
     addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
     document.body.append(d);
     this.fill();
@@ -599,28 +623,15 @@ export class ReferencesDialog {
     return new Promise((resolve) => { this.closed = resolve; });
   }
 
-  /** Fill the window again (after any change, here or in a file). */
+  /** Fill the window again (after any change, here or in a file; how much each reference is used is counted anew). */
   fill(): void {
     if (!this.d) return;
     const holders = this.host.holders();
     if (!holders.some((h) => h.key === this.group)) this.group = this.host.current() ?? holders[0]?.key ?? null;
     const known = new Set(holders.flatMap((h) => h.refs().map((r) => rowKey(h.key, r.id))));
     for (const k of [...this.selected]) if (!known.has(k)) this.selected.delete(k);
-    const h = this.holder();
-    const style = this.style();
-    this.styleSel.value = style;
-    this.styleSel.disabled = !h;
-    this.groupLabel.textContent = h ? h.name : 'no file';
-    const changed = h ? Object.keys(changedOptions(style, this.format())).length : 0;
-    this.styleNote.textContent = changed ? `${changed} detail${changed === 1 ? '' : 's'} changed from ${CITE_PRESETS[style].name} (Style Options… to see or reset them).` : '';
-    // (a grid row: hidden by its display, which the hidden attribute doesn't change)
-    this.managerRow.style.display = h?.manager ? '' : 'none';
-    this.managerSel.value = h?.manager?.get() ?? '';
+    this.chrome(holders);
     const cur = this.host.current();
-    this.hint.textContent = !holders.length
-      ? 'No open file keeps references yet. Open or make a document or a presentation to add references to it.'
-      : !cur ? `${this.host.currentKind?.() ?? 'This file'} keeps no reference list of its own: Insert ▸ Reference… puts any of these on it as formatted text.` : '';
-    this.hint.hidden = !this.hint.textContent;
     const q = this.search.value.trim().toLowerCase();
     const rows: HTMLTableRowElement[] = [];
     let saidHow = false;
@@ -656,6 +667,25 @@ export class ReferencesDialog {
     }
     this.body.replaceChildren(...rows);
     this.body.querySelector('tr.picked')?.scrollIntoView({ block: 'nearest' });
+  }
+
+  /** What shows round the list: the file picked and its style, a warning, the group's own controls, Copy To. */
+  private chrome(holders: RefHolder[]): void {
+    const h = this.holder();
+    const style = this.style();
+    this.styleSel.value = style;
+    this.styleSel.disabled = !h;
+    this.groupLabel.textContent = h ? h.name : 'no file';
+    const changed = h ? Object.keys(changedOptions(style, this.format())).length : 0;
+    this.styleNote.textContent = changed ? `${changed} detail${changed === 1 ? '' : 's'} changed from ${CITE_PRESETS[style].name} (Style Options… to see or reset them).` : '';
+    // (a grid row: hidden by its display, which the hidden attribute doesn't change)
+    this.managerRow.style.display = h?.manager ? '' : 'none';
+    this.managerSel.value = h?.manager?.get() ?? '';
+    const cur = this.host.current();
+    this.hint.textContent = !holders.length
+      ? 'No open file keeps references yet. Open or make a document or a presentation to add references to it.'
+      : !cur ? `${this.host.currentKind?.() ?? 'This file'} keeps no reference list of its own: Insert ▸ Reference… puts any of these on it as formatted text.` : '';
+    this.hint.hidden = !this.hint.textContent;
     this.warning.textContent = h?.warning?.() ?? '';
     // the group's own controls
     const panel = h?.panel ? this.panelOf(h) : null;
@@ -663,9 +693,25 @@ export class ReferencesDialog {
     if (this.extra.firstChild !== (panel?.el ?? null)) this.extra.replaceChildren(...(panel ? [panel.el] : []));
     this.extra.hidden = !panel;
     // Copy To: the other open files
-    const others = holders.filter((g) => !this.pickedHolders().has(g.key) || this.pickedHolders().size > 1);
+    const from = this.pickedHolders();
+    const others = holders.filter((g) => !from.has(g.key) || from.size > 1);
     this.copyTo.replaceChildren(new Option(this.selected.size ? `Copy ${this.selected.size === 1 ? 'it' : `${this.selected.size}`} to…` : 'Copy to…', ''), ...others.map((g) => new Option(g.name, g.key)));
     this.copyTo.disabled = !this.selected.size || !others.length;
+  }
+
+  /**
+   * The rows picked, or the file picked, changed and nothing else: mark the rows in place instead of making
+   * every row of every file again (and counting the uses again). This is also what keeps a row being dragged
+   * in the list when the drag starts on a row that was not picked.
+   */
+  private showPicked(): void {
+    if (!this.d) return;
+    for (const tr of this.body.querySelectorAll<HTMLTableRowElement>('tr')) {
+      if (tr.dataset.group !== undefined) tr.classList.toggle('current', tr.dataset.group === this.group);
+      else if (tr.dataset.holder && tr.dataset.id) tr.classList.toggle('picked', this.selected.has(rowKey(tr.dataset.holder, tr.dataset.id)));
+    }
+    this.chrome(this.host.holders());
+    this.body.querySelector('tr.picked')?.scrollIntoView({ block: 'nearest' });
   }
 
   /** A group's own controls, made the first time it is picked. */
@@ -705,13 +751,13 @@ export class ReferencesDialog {
       this.anchor = k;
     }
     this.group = splitKey(k).holder;
-    this.fill();
+    this.showPicked();
   }
 
   private pickAll(): void {
     const rows = [...this.body.querySelectorAll<HTMLTableRowElement>('tr[data-id]')].filter((r) => r.dataset.holder === this.group);
     this.selected = new Set(rows.map((r) => rowKey(r.dataset.holder!, r.dataset.id!)));
-    this.fill();
+    this.showPicked();
   }
 
   private step(dir: 1 | -1, extend: boolean): void {
@@ -719,7 +765,7 @@ export class ReferencesDialog {
     if (!rows.length) return;
     const last = this.anchor && rows.includes(this.anchor) ? rows.indexOf(this.anchor) : -1;
     const next = rows[Math.max(0, Math.min(rows.length - 1, last < 0 ? 0 : last + dir))];
-    if (extend) { this.selected.add(next); this.anchor = next; this.group = splitKey(next).holder; this.fill(); } else this.pick(next, false, false);
+    if (extend) { this.selected.add(next); this.anchor = next; this.group = splitKey(next).holder; this.showPicked(); } else this.pick(next, false, false);
   }
 
   /** The files the rows picked are in. */
@@ -774,12 +820,13 @@ export class ReferencesDialog {
       : `${h.name} has ${refs.length === 1 ? 'this reference' : 'these references'} already.`, 5000);
   }
 
-  /** Add a reference to the file whose group is picked, unless it is there already (then that one is picked). */
-  private add(r: Reference): void {
-    const h = this.holder();
+  /** Add a reference to a file (the one whose group is picked, unless one is named), unless it is there already (then that one is picked). */
+  private add(r: Reference, key = this.group): void {
+    const h = this.holder(key);
     if (!h) { this.host.flash('Open or make a document or a presentation to keep references in.'); return; }
     const list = h.refs();
     const dup = findDuplicate(list, r);
+    this.group = h.key;
     if (dup) {
       this.selected = new Set([rowKey(h.key, dup.id)]);
       this.fill();
@@ -796,11 +843,11 @@ export class ReferencesDialog {
   /** The style of the file picked (or, until it has one, the person's own). */
   private style(): CiteStyle {
     const s = this.holder()?.citeStyle();
-    return s && s in CITE_PRESETS ? s : preferredStyle().style;
+    return knownStyle(s) ? s : preferredStyle().style;
   }
 
-  private format(): CiteFormat {
-    const h = this.holder();
+  private format(key = this.group): CiteFormat {
+    const h = this.holder(key);
     return h?.citeStyle() ? citeFormat(h.citeStyle(), h.citeOptions()) : citeFormat(undefined);
   }
 
@@ -839,12 +886,13 @@ export class ReferencesDialog {
     } catch (e) {
       const why = e instanceof Error ? e.message : String(e);
       const by = await ask('Could Not Look Up the DOI', [], { ok: 'Enter Manually', note: `${why} Enter the reference by hand instead?` });
-      if (by) await this.addByHand({ ...blankRef(), doi: normaliseDoi(doi) });
+      if (by) await this.addByHand({ ...blankRef(), doi: normaliseDoi(doi) }, h.key);
       return;
     }
-    if (findDuplicate(h.refs(), found)) { this.add(found); return; }
-    const r = await editReference(found, 'Check the Reference', this.format(), this.lookup);
-    if (r) this.add(r);
+    // added to the file named in the window, even if another file's group was picked while Crossref answered
+    if (findDuplicate(h.refs(), found)) { this.add(found, h.key); return; }
+    const r = await editReference(found, 'Check the Reference', this.format(h.key), this.lookup);
+    if (r) this.add(r, h.key);
   }
 
   private async addByPubmed(): Promise<void> {
@@ -853,7 +901,7 @@ export class ReferencesDialog {
     const got = await ask('Add by PubMed ID', [{ name: 'ids', label: 'PubMed IDs', value: '' }], {
       ok: 'Look Up', note: `One or more PubMed ids (31234567), or pubmed.ncbi.nlm.nih.gov links, separated by spaces or commas. The details come from PubMed (NCBI), which needs the internet; they are added to ${h.name}.`,
     });
-    const ids = [...(got?.ids ?? '').matchAll(/(\d{1,9})/g)].map((m) => m[1]);
+    const ids = parsePmids(got?.ids ?? '');
     if (!ids.length) return;
     let found: Reference[];
     try {
@@ -864,9 +912,9 @@ export class ReferencesDialog {
       return;
     }
     if (found.length === 1) {
-      if (findDuplicate(h.refs(), found[0])) { this.add(found[0]); return; }
-      const r = await editReference(found[0], 'Check the Reference', this.format(), this.lookup);
-      if (r) this.add(r);
+      if (findDuplicate(h.refs(), found[0])) { this.add(found[0], h.key); return; }
+      const r = await editReference(found[0], 'Check the Reference', this.format(h.key), this.lookup);
+      if (r) this.add(r, h.key);
       return;
     }
     const list = h.refs();
@@ -880,10 +928,10 @@ export class ReferencesDialog {
     this.host.flash(`Added ${added.length} reference${added.length === 1 ? '' : 's'} from PubMed to ${h.name}.${skipped ? ` ${skipped} ${skipped === 1 ? 'was' : 'were'} already there.` : ''}`, 6000);
   }
 
-  private async addByHand(start: Reference = blankRef()): Promise<void> {
-    if (!this.holder()) { this.host.flash('Open or make a document or a presentation to keep references in.'); return; }
-    const r = await editReference(start, 'New Reference', this.format(), this.lookup);
-    if (r) this.add(r);
+  private async addByHand(start: Reference = blankRef(), key = this.group): Promise<void> {
+    if (!this.holder(key)) { this.host.flash('Open or make a document or a presentation to keep references in.'); return; }
+    const r = await editReference(start, 'New Reference', this.format(key), this.lookup);
+    if (r) this.add(r, key);
   }
 
   private async importFile(): Promise<void> {

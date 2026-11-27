@@ -42,7 +42,7 @@ export function pubchemHtml(state: PubChemState, i: number): string {
     : '<p class="muted small">No GHS hazard classification on PubChem.</p>';
   const measured = values('Melting point', c.meltingPoint) + values('Boiling point', c.boilingPoint) + values('Density', c.density);
   return `<div class="pubchem">
-    <details class="pc" open><summary>PubChem</summary>
+    <details class="pc" open><summary${measured ? ' data-info="Measured values as each source reports them."' : ''}>PubChem</summary>
     <table>
       <tr><th>Name</th><td class="pc-name">${esc(c.title) || '<span class="muted">—</span>'}</td></tr>
       ${iupac}
@@ -50,12 +50,11 @@ export function pubchemHtml(state: PubChemState, i: number): string {
       <tr><th>CID</th><td><a href="#" data-pubchem-page="${c.cid}" title="Open the compound's page on PubChem in the browser">${c.cid}</a></td></tr>
       ${measured}
     </table>
-    ${measured ? '<p class="muted small">Measured values as each source reports them.</p>' : ''}
     ${hazards}
     <div class="an-buttons">
-      ${c.title ? `<button type="button" data-insert="pcname:${i}" title="Put the name under the structure; it follows the structure and can be edited like any text">Name caption</button>` : ''}
-      ${c.cas.length ? `<button type="button" data-insert="pccas:${i}" title="Put the CAS number under the structure">CAS caption</button>` : ''}
-      ${h.statements.length || h.signal ? `<button type="button" data-insert="pchaz:${i}" title="Put the signal word and H statements under the structure">Hazards caption</button>` : ''}
+      ${c.title ? `<button type="button" data-insert="pcname:${i}" title="Put the name under the structure; it follows the structure and can be edited like any text">Name Caption</button>` : ''}
+      ${c.cas.length ? `<button type="button" data-insert="pccas:${i}" title="Put the CAS number under the structure">CAS Caption</button>` : ''}
+      ${h.statements.length || h.signal ? `<button type="button" data-insert="pchaz:${i}" title="Put the signal word and H statements under the structure">Hazards Caption</button>` : ''}
     </div>
     </details>
   </div>`;

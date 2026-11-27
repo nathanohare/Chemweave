@@ -8,6 +8,7 @@
 // records sit in comments, and "dual" files, which is what Windows programs write, repeat
 // everything as ordinary records; the EMF+ is played (emf-plus.ts) only when those draw nothing.
 
+import { cssFamily } from './css-string';
 import { zlibSync } from 'fflate';
 import { playEmfPlus } from './emf-plus';
 
@@ -115,7 +116,7 @@ export function rgbaToPng(rgba: Uint8Array, w: number, h: number): Uint8Array {
   return out;
 }
 
-type Bitmap = { kind: 'rgba'; w: number; h: number; rgba: Uint8Array } | { kind: 'file'; mime: string; bytes: Uint8Array };
+type Bitmap = { kind: 'rgba'; w: number; h: number; rgba: Uint8Array; /** Its rows were stored top first (a negative height). */ topDown?: boolean } | { kind: 'file'; mime: string; bytes: Uint8Array };
 
 /** How many pixels a device-independent bitmap's header says it holds. */
 function dibPixels(bmi: Uint8Array): number {
@@ -125,8 +126,12 @@ function dibPixels(bmi: Uint8Array): number {
   return bmi.length < 16 ? 0 : Math.abs(dv.getInt32(4, true) * dv.getInt32(8, true));
 }
 
-/** A device-independent bitmap (header, colours, pixels) as RGBA pixels, top row first. */
-export function decodeDib(bmi: Uint8Array, bits: Uint8Array): Bitmap | null {
+/**
+ * A device-independent bitmap (header, colours, pixels) as RGBA pixels, top row first. With
+ * `alpha`, a 32-bit bitmap's fourth byte is its alpha, its colours premultiplied by it (an
+ * EMR_ALPHABLEND with AC_SRC_ALPHA, [MS-EMF] 2.3.1.1); otherwise every pixel is opaque.
+ */
+export function decodeDib(bmi: Uint8Array, bits: Uint8Array, alpha = false): Bitmap | null {
   if (bmi.length < 12) return null;
   const dv = new DataView(bmi.buffer, bmi.byteOffset, bmi.byteLength);
   const size = dv.getUint32(0, true);
@@ -184,11 +189,19 @@ export function decodeDib(bmi: Uint8Array, bits: Uint8Array): Bitmap | null {
         r = Math.round(((v & masks[0]) >>> ms[0]) * mk[0]);
         g = Math.round(((v & masks[1]) >>> ms[1]) * mk[1]);
         b = Math.round(((v & masks[2]) >>> ms[2]) * mk[2]);
+        if (alpha && bpp === 32) {
+          const a = v >>> 24;
+          rgba[o + 3] = a;
+          // (back from premultiplied)
+          if (a > 0 && a < 255) { r = Math.min(255, Math.round((r * 255) / a)); g = Math.min(255, Math.round((g * 255) / a)); b = Math.min(255, Math.round((b * 255) / a)); }
+          rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b;
+          continue;
+        }
       } else return null;
       rgba[o] = r; rgba[o + 1] = g; rgba[o + 2] = b; rgba[o + 3] = 255;
     }
   }
-  return { kind: 'rgba', w, h, rgba };
+  return { kind: 'rgba', w, h, rgba, ...(topDown ? { topDown } : {}) };
 }
 
 // ---------------------------------------------------------------- drawing state
@@ -317,7 +330,8 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
   };
 
   const strokeAttrs = (pen: Pen): string | null => {
-    if (pen.style === 5) return null;
+    // (PS_NULL in the style's low bits: an ExtCreatePen keeps PS_GEOMETRIC and its cap and join bits beside it)
+    if ((pen.style & 0x0f) === 5) return null;
     // thin (cosmetic) pens draw as hairlines; others as wide as asked, but never vanishing
     const width = pen.cosmetic ? hairline : Math.max(0.25 * pxPerPt, pen.width * scaleOf());
     const cap = pen.style & 0x0f00, join = pen.style & 0xf000, kind = pen.style & 0x0f;
@@ -352,12 +366,49 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     defs.push(`<clipPath id="${id}"${from ? ` clip-path="url(#${from})"` : ''}><path d="${d}" clip-rule="${rule}"/></clipPath>`);
     return id;
   };
+  /**
+   * The clip with a region or path combined in by its RegionMode ([MS-EMF] 2.1.29): RGN_AND 1,
+   * RGN_OR 2, RGN_XOR 3, RGN_DIFF 4, RGN_COPY 5. A clipPath is the union of its children, each
+   * child cut by its own clip-path (SVG 1.1 §14.3.5), which gives OR; DIFF is the old clip with
+   * the region cut out of a rectangle far bigger than the picture (even-odd). XOR keeps the old
+   * clip less the region (the part of the region outside the old clip can't be said this way).
+   */
+  const combineClip = (d: string, rule: 'nonzero' | 'evenodd', mode: number): string | null => {
+    if (mode === 5) return addClip(d, rule, s.metaClip);
+    if (mode === 2) {
+      if (!s.clip) return null;
+      const id = `emfclip${++clipIds}`;
+      defs.push(`<clipPath id="${id}"${s.metaClip ? ` clip-path="url(#${s.metaClip})"` : ''}><path d="${everywhere()}" clip-path="url(#${s.clip})"/><path d="${d}" clip-rule="${rule}"/></clipPath>`);
+      return id;
+    }
+    if (mode === 3 || mode === 4) return addClip(everywhere() + d, 'evenodd', s.clip ?? s.metaClip);
+    if (mode === 1) return addClip(d, rule);
+    return s.clip; // (no such mode: the clip as it was)
+  };
+  /** A clip that shows nothing: a clipPath with no children (SVG 1.1 §14.3.5, the union of none). */
+  const emptyClip = (): string => {
+    const id = `emfclip${++clipIds}`;
+    defs.push(`<clipPath id="${id}"/>`);
+    return id;
+  };
   const rectPath = (l: number, t: number, r: number, b: number) => `M${P(l, t)}L${P(r, t)}L${P(r, b)}L${P(l, b)}Z`;
   const deviceRect = (l: number, t: number, r: number, b: number) => `M${num(l)} ${num(t)}L${num(r)} ${num(t)}L${num(r)} ${num(b)}L${num(l)} ${num(b)}Z`;
+  /** A rectangle far bigger than the picture, in device pixels. */
+  const everywhere = () => deviceRect(fx - 1e5, fy - 1e5, fx + fw + 1e5, fy + fh + 1e5);
 
   // ---- the path being built between BeginPath and EndPath, and the current position
   let inPath = false;
   let path: string[] = [];
+  // text drawn inside a path bracket: its letters' outlines belong to the path (GDI's BeginPath
+  // takes ExtTextOut), drawn by the FillPath or StrokePath that ends it, with that paint in PAINT's place
+  let pathTexts: { el: string; clip: string | null; color: string }[] = [];
+  const PAINT = '\u0000';
+  /** The held letters drawn with `paint` (null: not drawn), each cut by the clip it was written under. */
+  const pathText = (paint: string | null) => {
+    const held = pathTexts;
+    pathTexts = [];
+    if (paint) for (const t of held) put(t.el.replace(PAINT, paint), t.clip);
+  };
   let cp: [number, number] = [0, 0];
   const lineFrom = (pts: [number, number][], start: [number, number] | null): string => {
     if (!pts.length) return '';
@@ -426,7 +477,7 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
   // a bitmap is read only from its own record, and a picture decodes at most 50 million pixels in all
   let pixels = 0;
   const bitmap = (off: number, size: number, bmiOff: number, bmiSize: number, bitsOff: number, bitsSize: number, rop: number,
-    dest: [number, number, number, number], src: [number, number, number, number]) => {
+    dest: [number, number, number, number], src: [number, number, number, number], blend?: { constant: number; perPixel: boolean }) => {
     const [dx, dy, dw, dh] = dest;
     if (!bmiSize) {
       // no bitmap: fill the area with the brush, black or white
@@ -439,16 +490,19 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     if (bmiOff + bmiSize > size || bitsOff + bitsSize > size) return;
     const bmi = bytes.subarray(off + bmiOff, off + bmiOff + bmiSize), bits = bytes.subarray(off + bitsOff, off + bitsOff + bitsSize);
     if ((pixels += dibPixels(bmi)) > 50e6) return;
-    const dib = decodeDib(bmi, bits);
+    const dib = decodeDib(bmi, bits, !!blend?.perPixel);
     if (!dib) return;
     let href: string;
     if (dib.kind === 'file') href = `data:${dib.mime};base64,${base64(dib.bytes)}`;
     else {
-      // the part of the bitmap that is drawn (rows counted from the bottom, as Windows does)
+      // the part of the bitmap that is drawn (rows counted from the bottom, as Windows does, unless
+      // the bitmap is stored top row first); nothing when it lies wholly outside the bitmap
       const [sx, sy, sw, sh] = src;
       let { w, h, rgba } = dib;
-      const x0 = Math.max(0, Math.min(w, sx)), w2 = Math.max(1, Math.min(w - x0, sw || w));
-      const y0 = Math.max(0, Math.min(h, h - sy - (sh || h))), h2 = Math.max(1, Math.min(h - y0, sh || h));
+      const x0 = Math.max(0, Math.min(w, sx));
+      const y0 = Math.max(0, Math.min(h, dib.topDown ? sy : h - sy - (sh || h)));
+      if (w - x0 <= 0 || h - y0 <= 0) return;
+      const w2 = Math.max(1, Math.min(w - x0, sw || w)), h2 = Math.max(1, Math.min(h - y0, sh || h));
       if (x0 || y0 || w2 !== w || h2 !== h) {
         const part = new Uint8Array(w2 * h2 * 4);
         for (let y = 0; y < h2; y++) part.set(rgba.subarray(((y0 + y) * w + x0) * 4, ((y0 + y) * w + x0 + w2) * 4), y * w2 * 4);
@@ -466,7 +520,8 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     }
     // the unit square mapped onto the destination
     const m = mul([dw, 0, 0, dh, dx, dy], T);
-    put(`<image width="1" height="1" preserveAspectRatio="none" transform="matrix(${m.map(num).join(' ')})" href="${href}"/>`);
+    const opacity = blend && blend.constant < 255 ? ` opacity="${num(blend.constant / 255)}"` : '';
+    put(`<image width="1" height="1" preserveAspectRatio="none" transform="matrix(${m.map(num).join(' ')})"${opacity} href="${href}"/>`);
     images++;
   };
 
@@ -529,10 +584,13 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     }
     const anchor = hasDx || h === 0 ? '' : ` text-anchor="${h === 6 ? 'middle' : 'end'}"`;
     const deco = [f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].filter(Boolean).join(' ');
-    const family = [...new Set([symbol ? 'Arial' : f.face || 'Arial', 'Arial', 'Helvetica', 'sans-serif'])].join(', ');
-    put(`<text transform="${tf}" x="${hasDx ? xs : num(start)}" y="${num(base)}" font-family="${esc(family)}"` +
+    // (the face's name quoted: a name with an apostrophe or a comma stays one name)
+    const family = [...new Set([symbol ? 'Arial' : f.face || 'Arial', 'Arial', 'Helvetica'])].map(cssFamily).concat('sans-serif').join(', ');
+    // (no advances: the anchor places it, so the estimated offset isn't taken off as well)
+    const putText = (el: string, clip: string | null, held: boolean) => { if (held) pathTexts.push({ el, clip, color: s.textColor }); else put(el, clip); };
+    putText(`<text transform="${tf}" x="${hasDx ? xs : anchor ? '0' : num(start)}" y="${num(base)}" font-family="${esc(family)}"` +
       ` font-size="${num(size)}"${f.weight >= 600 ? ' font-weight="bold"' : ''}${f.italic ? ' font-style="italic"' : ''}` +
-      `${deco ? ` text-decoration="${deco}"` : ''}${anchor} fill="${s.textColor}" xml:space="preserve">${esc(chars.join(''))}</text>`);
+      `${deco ? ` text-decoration="${deco}"` : ''}${anchor} ${inPath ? PAINT : `fill="${s.textColor}"`} xml:space="preserve">${esc(chars.join(''))}</text>`, s.clip, inPath);
     if (s.textAlign & 1) cp = [cp[0] + (hasDx ? adv.reduce((a, b) => a + b, 0) : 0), cp[1]];
   };
 
@@ -665,17 +723,26 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
         break;
       }
       // ---- paths
-      case 59: inPath = true; path = []; break; // BeginPath
+      case 59: inPath = true; path = []; pathTexts = []; break; // BeginPath
       case 60: inPath = false; break; // EndPath
-      case 68: inPath = false; path = []; break; // AbortPath
+      case 68: inPath = false; path = []; pathTexts = []; break; // AbortPath
       case 61: if (path.length) path.push('Z'); break; // CloseFigure
-      case 62: fill(path.join('')); path = []; break; // FillPath
-      case 63: fillStroke(path.join('')); path = []; break; // StrokeAndFillPath
-      case 64: stroke(path.join('')); path = []; break; // StrokePath
+      case 62: fill(path.join('')); path = []; pathText(s.brush.color ? `fill="${s.brush.color}"` : null); break; // FillPath
+      case 63: { // StrokeAndFillPath
+        fillStroke(path.join('')); path = [];
+        const line = strokeAttrs(s.pen);
+        pathText(s.brush.color || line ? `${s.brush.color ? `fill="${s.brush.color}"` : 'fill="none"'}${line ? line.replace('fill="none"', '') : ''}` : null);
+        break;
+      }
+      case 64: stroke(path.join('')); path = []; pathText(strokeAttrs(s.pen)); break; // StrokePath
       case 67: { // SelectClipPath
         const d = path.join('');
-        const mode = u32(o + 8);
-        if (d) s.clip = addClip(d, s.fillRule, mode === 5 ? s.metaClip : s.clip);
+        if (d) s.clip = combineClip(d, s.fillRule, u32(o + 8));
+        // letters as the clip (picture- or gradient-filled text): their outlines can't be a clip
+        // here, so the letters are drawn in their text colour rather than lost
+        const held = pathTexts;
+        pathTexts = [];
+        for (const t of held) put(t.el.replace(PAINT, `fill="${t.color}"`), t.clip);
         path = [];
         break;
       }
@@ -689,13 +756,16 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
       }
       // ---- clipping
       case 30: s.clip = addClip(rectPath(i32(o + 8), i32(o + 12), i32(o + 16), i32(o + 20))); break; // IntersectClipRect
-      case 29: s.clip = addClip(deviceRect(fx - 1e5, fy - 1e5, fx + fw + 1e5, fy + fh + 1e5) + rectPath(i32(o + 8), i32(o + 12), i32(o + 16), i32(o + 20)), 'evenodd'); break;
+      case 29: s.clip = addClip(everywhere() + rectPath(i32(o + 8), i32(o + 12), i32(o + 16), i32(o + 20)), 'evenodd'); break;
       case 28: s.metaClip = s.clip; break; // SetMetaRgn
       case 75: { // ExtSelectClipRgn
         const len = u32(o + 8), mode = u32(o + 12);
         const d = regionRects(o + 16, len);
-        if (mode === 5) s.clip = d ? addClip(d, 'nonzero', s.metaClip) : s.metaClip;
-        else if (mode === 1 && d) s.clip = addClip(d);
+        // (RGN_COPY with no region data: the default clip, [MS-EMF] 2.3.2.2 and ExtSelectClipRgn;
+        // a region that is there but holds no rectangles is empty: ANDed or copied, nothing shows)
+        if (mode === 5 && len === 0) s.clip = s.metaClip;
+        else if (d) s.clip = combineClip(d, 'nonzero', mode);
+        else if (len >= 32 && (mode === 1 || mode === 5)) s.clip = emptyClip();
         break;
       }
       // ---- the coordinate mapping
@@ -795,7 +865,9 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
         const rop = type === 114 ? ROP.SRCCOPY : u32(o + 40);
         const stretch = type !== 76;
         const src: [number, number, number, number] = [i32(o + 44), i32(o + 48), stretch ? i32(o + 100) : dest[2], stretch ? i32(o + 104) : dest[3]];
-        bitmap(o, size, u32(o + 84), u32(o + 88), u32(o + 92), u32(o + 96), rop, dest, src);
+        // AlphaBlend's BLENDFUNCTION ([MS-EMF] 2.3.1.1): SrcConstantAlpha at byte 42, AlphaFormat (1: AC_SRC_ALPHA) at 43
+        const blend = type === 114 ? { constant: bytes[o + 42], perPixel: bytes[o + 43] === 1 } : undefined;
+        bitmap(o, size, u32(o + 84), u32(o + 88), u32(o + 92), u32(o + 96), rop, dest, src, blend);
         break;
       }
       case 80: { // SetDIBitsToDevice

@@ -5,17 +5,33 @@
 
 import { emfToSvg, emfSize } from './emf-read';
 
-interface Entry { img: HTMLImageElement; ready: boolean; failed: boolean }
+interface Entry { img: HTMLImageElement; ready: boolean; failed: boolean; /** The turn it was last asked for in (see `paintTurn`). */ used?: number }
+
+let turn = 0, turnEnding = false;
+/**
+ * A count that goes up once the code running now has finished. A paint runs all at once, so
+ * what was asked for in this turn is on the screen now and must not be forgotten for room: that
+ * would load it again, redraw, and forget another, round and round.
+ */
+export function paintTurn(): number {
+  if (!turnEnding) {
+    turnEnding = true;
+    void Promise.resolve().then(() => { turn++; turnEnding = false; });
+  }
+  return turn;
+}
 
 const cache = new Map<string, Entry>();
-/** Pictures are forgotten, least recently drawn first, once their data passes this many characters (decoded again if needed). */
-const KEEP_CHARS = 150_000_000;
+/** Pictures are forgotten, least recently drawn first, once their data passes `keepChars` characters (decoded again if needed; tests set it lower). */
+export const imageCache = { keepChars: 150_000_000 };
 
-function forgetOld(): void {
+function forgetOld(now: number): void {
   let total = 0;
   for (const k of cache.keys()) total += k.length;
-  for (const k of cache.keys()) {
-    if (total <= KEEP_CHARS || cache.size <= 1) break;
+  for (const [k, e] of cache) {
+    if (total <= imageCache.keepChars || cache.size <= 1) break;
+    // (one drawn in this paint stays, even past the limit)
+    if (e.used === now) continue;
     total -= k.length;
     cache.delete(k);
     shown.delete(k);
@@ -56,16 +72,18 @@ export function imageLoading(src: string): boolean {
 
 /** The decoded image, or null while it loads (or when it can't be shown). */
 export function imageFor(src: string): HTMLImageElement | null {
+  const now = paintTurn();
   let e = cache.get(src);
   if (e) {
     // used now: last to be forgotten
     cache.delete(src);
     cache.set(src, e);
+    e.used = now;
   } else {
-    forgetOld();
+    forgetOld(now);
     if (typeof Image === 'undefined') return null;
     const img = new Image();
-    e = { img, ready: false, failed: false };
+    e = { img, ready: false, failed: false, used: now };
     cache.set(src, e);
     const entry = e;
     img.onload = () => { entry.ready = true; for (const f of listeners) f(); };
@@ -160,8 +178,13 @@ const BY_EXTENSION: Record<string, string> = {
  * Null when it can't be read.
  */
 export async function webpToPng(bytes: Uint8Array): Promise<Uint8Array | null> {
+  return bitmapToPng(bytes, 'image/webp');
+}
+
+/** A picture the browser can draw (WebP, GIF, BMP...) as PNG. Null when it can't be read. */
+export async function bitmapToPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
   try {
-    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: 'image/webp' }));
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
     // (a canvas element where there is no OffscreenCanvas)
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
     (c.getContext('2d') as CanvasRenderingContext2D).drawImage(bmp, 0, 0);
@@ -211,15 +234,64 @@ export function imageSize(b: Uint8Array, mime: string): { w: number; h: number }
       const w = dv.getInt32(16, true) - dv.getInt32(8, true), h = dv.getInt32(20, true) - dv.getInt32(12, true);
       if (w > 0 && h > 0) return { w, h };
     }
-    if (mime === 'image/svg+xml') {
-      const t = new TextDecoder().decode(b.subarray(0, 2000));
-      const vb = /viewBox\s*=\s*["']\s*[-\d.]+[\s,]+[-\d.]+[\s,]+([\d.]+)[\s,]+([\d.]+)/.exec(t);
-      if (vb) return { w: Number(vb[1]), h: Number(vb[2]) };
-      const w = /\swidth\s*=\s*["']([\d.]+)/.exec(t), h = /\sheight\s*=\s*["']([\d.]+)/.exec(t);
-      if (w && h) return { w: Number(w[1]), h: Number(h[1]) };
-    }
+    if (mime === 'image/svg+xml') return svgSize(new TextDecoder().decode(b.subarray(0, 2000)));
   } catch {
     return null;
   }
   return null;
+}
+
+/** CSS pixels in one of each unit an SVG's width and height may be given in (CSS Values and Units, 96 px to the inch). */
+const PX_PER: Record<string, number> = { '': 1, px: 1, pt: 96 / 72, pc: 16, in: 96, cm: 96 / 2.54, mm: 96 / 25.4, q: 96 / 101.6 };
+
+/**
+ * An SVG's size in pixels, from its root's start tag: its width and height, in their units, as
+ * browsers size it (SVG 2, the outermost svg element's width and height), with the viewBox giving
+ * the shape where only one of them is given, and the size where neither is (or they are
+ * percentages, which need a page to mean anything).
+ */
+function svgSize(t: string): { w: number; h: number } | null {
+  const tag = /<svg\b[^>]*>/i.exec(t)?.[0] ?? t;
+  const length = (m: RegExpExecArray | null): number | null => {
+    if (!m) return null;
+    const k = PX_PER[m[2].toLowerCase()];
+    const v = Number(m[1]) * (k ?? NaN);
+    return Number.isFinite(v) && v > 0 ? v : null;
+  };
+  const vb = /viewBox\s*=\s*["']\s*[-\d.e]+[\s,]+[-\d.e]+[\s,]+([\d.e]+)[\s,]+([\d.e]+)/i.exec(tag);
+  const vw = vb ? Number(vb[1]) : NaN, vh = vb ? Number(vb[2]) : NaN;
+  const shape = vw > 0 && vh > 0 ? vh / vw : NaN;
+  const w = length(/\swidth\s*=\s*["']\s*([\d.]+(?:e[-+]?\d+)?)\s*([a-z%]*)\s*["']/i.exec(tag));
+  const h = length(/\sheight\s*=\s*["']\s*([\d.]+(?:e[-+]?\d+)?)\s*([a-z%]*)\s*["']/i.exec(tag));
+  if (w && h) return { w, h };
+  if (w && shape) return { w, h: w * shape };
+  if (h && shape) return { w: h / shape, h };
+  if (shape) return { w: vw, h: vh };
+  return null;
+}
+
+/** A picture's pixels read through the browser, at most 16 million of them (for a PDF, an EPS or an EMF); null when it can't be read. */
+export async function imagePixels(src: string): Promise<{ w: number; h: number; rgba: Uint8ClampedArray } | null> {
+  const { mime } = fromDataUrl(src);
+  if (mime === 'image/x-wmf' || mime === 'image/tiff') return null;
+  let img: HTMLImageElement;
+  try {
+    img = await loadImage(src);
+  } catch {
+    return null;
+  }
+  let w = img.naturalWidth || 300, h = img.naturalHeight || 150;
+  // a drawing in SVG (or a Windows metafile, shown as SVG) has no pixels of its own: make plenty so it prints sharply
+  if (mime === 'image/svg+xml' || mime === 'image/x-emf') { const k = 3000 / Math.max(w, h); w *= k; h *= k; }
+  const k = Math.min(1, Math.sqrt(16e6 / (w * h)));
+  w = Math.max(1, Math.round(w * k));
+  h = Math.max(1, Math.round(h * k));
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0, w, h);
+  const rgba = g.getImageData(0, 0, w, h).data;
+  c.width = c.height = 0;   // (its memory freed now)
+  return { w, h, rgba };
 }

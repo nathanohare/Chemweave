@@ -49,7 +49,8 @@ export function readXyz(text: string, m: Model3d): number[] | null {
 /**
  * The model with its lowest `opts.count` conformers refined by xtb (one after another, `progress`
  * told after each), ranked again by their xTB energies; the rest are left out, as their MMFF
- * energies can't be compared with xTB's. Throws xtb's own message when a run fails.
+ * energies can't be compared with xTB's. Throws xtb's own message when a run fails; when stopped,
+ * gives the conformers refined so far (the model itself if none were).
  */
 export async function refineWithXtb(m: Model3d, opts: XtbOptions, run: XtbRunner, progress?: (done: number, total: number) => void, stopped?: () => boolean): Promise<Model3d> {
   const { charge, multiplicity } = chargeAndMultiplicity(m);
@@ -57,10 +58,19 @@ export async function refineWithXtb(m: Model3d, opts: XtbOptions, run: XtbRunner
   const out: Conformer[] = [];
   for (let k = 0; k < n; k++) {
     if (stopped?.()) break;
-    const r = await run({ exe: opts.exe, xyz: xyzFile(m, k, `conformer ${k + 1}`), charge, uhf: multiplicity - 1, solvent: opts.solvent || null, opt: opts.opt });
+    let r: Awaited<ReturnType<XtbRunner>>;
+    try {
+      r = await run({ exe: opts.exe, xyz: xyzFile(m, k, `conformer ${k + 1}`), charge, uhf: multiplicity - 1, solvent: opts.solvent || null, opt: opts.opt });
+    } catch (e) {
+      // Stop ends the xtb running ("stopped"): when the caller asked for the stop, the conformers refined so far are kept
+      // (another caller's run that is ended by something else still fails, so its half-done model isn't taken for a result)
+      if (stopped?.()) break;
+      throw e;
+    }
     const xyz = opts.opt ? readXyz(r.xyz, m) : m.conformers[k].xyz;
     if (!xyz) throw new Error('xtb gave back a geometry with different atoms.');
-    out.push({ xyz, energy: r.energy * KCAL_PER_HARTREE });
+    // the conformer keeps how many equivalent forms it was found in (its degeneracy) for its share
+    out.push({ ...m.conformers[k], xyz, energy: r.energy * KCAL_PER_HARTREE, population: undefined });
     progress?.(k + 1, n);
   }
   if (!out.length) return m;

@@ -248,6 +248,12 @@ function uploadBox(types: FileType[]): Promise<File | null> {
   });
 }
 
+/** A path from a Save dialog, with the first type's extension added unless it ends in one of the types offered. */
+export function savedPath(path: string, types: { extension: string }[]): string {
+  const name = baseName(path).toLowerCase();
+  return types.some((t) => name.endsWith('.' + t.extension.toLowerCase())) ? path : path + '.' + types[0].extension;
+}
+
 /**
  * Ask where to save, offering one or more file types (the first is the default). The type
  * chosen is the extension of the name returned. Null when the user cancels. In browsers
@@ -259,8 +265,9 @@ export async function saveFileDialog(suggestedName: string, type: FileType | Fil
     const { save } = await import('@tauri-apps/plugin-dialog');
     const path = await save({ defaultPath: suggestedName, filters: types.map((t) => ({ name: t.description, extensions: [t.extension] })) });
     if (!path) return null;
-    // some systems leave off the extension when the user types a bare name
-    const full = /\.[^.\\/]+$/.test(baseName(path)) ? path : path + '.' + types[0].extension;
+    // some systems leave off the extension when the user types a bare name (a dot inside the
+    // name, "Compound 1.5", is not an extension: only the offered types' are; review F575)
+    const full = savedPath(path, types);
     return { name: baseName(full), ref: { kind: 'path', path: full } };
   }
   if (pw.showSaveFilePicker) {

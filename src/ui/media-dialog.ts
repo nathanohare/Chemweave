@@ -70,8 +70,8 @@ export function editMedia(m: Media): Promise<Media | null> {
     trimStart.addEventListener('input', say);
     trimEnd.addEventListener('input', say);
     player.addEventListener('loadedmetadata', say);
-    const setStart = here('Start here', () => { trimStart.value = player.currentTime.toFixed(2); say(); });
-    const setEnd = here('End here', () => { if (length()) trimEnd.value = Math.max(0, length() - player.currentTime).toFixed(2); say(); });
+    const setStart = here('Start Here', () => { trimStart.value = player.currentTime.toFixed(2); say(); });
+    const setEnd = here('End Here', () => { if (length()) trimEnd.value = Math.max(0, length() - player.currentTime).toFixed(2); say(); });
     setStart.title = 'Play or move the player to where it should start, then click';
     setEnd.title = 'Play or move the player to where it should stop, then click';
 
@@ -83,11 +83,11 @@ export function editMedia(m: Media): Promise<Media | null> {
     start.add(new Option('Automatically, as the slide comes in', 'auto'));
     start.add(new Option('When Clicked On', 'click'));
     start.value = m.start ?? 'auto';
-    const loop = check('Loop until stopped', !m.once, 'Play around and around until the slide changes (or it is clicked)');
-    const rewind = check('Rewind after playing', !!m.rewind, 'Go back to the start when it has played');
-    const full = check('Play full screen', !!m.full, 'Fill the screen while it plays');
-    const hide = check('Hide during show', !!m.hide, 'The loudspeaker isn\'t shown in the slide show (the sound still plays)');
-    const across = check('Play across slides', !!m.across, 'Keep playing when the show goes on to the next slides, as background music');
+    const loop = check('Loop until Stopped', !m.once, 'Play around and around until the slide changes (or it is clicked)');
+    const rewind = check('Rewind after Playing', !!m.rewind, 'Go back to the start when it has played');
+    const full = check('Play Full Screen', !!m.full, 'Fill the screen while it plays');
+    const hide = check('Hide During Show', !!m.hide, 'The loudspeaker isn\'t shown in the slide show (the sound still plays)');
+    const across = check('Play Across Slides', !!m.across, 'Keep playing when the show goes on to the next slides, as background music');
 
     const buttons = document.createElement('p');
     buttons.className = 'ask-buttons';
@@ -96,7 +96,11 @@ export function editMedia(m: Media): Promise<Media | null> {
     const ok = here('OK', () => {
       const v = VOLUMES.find((x) => x.name === vol.value)!;
       const n = (i: HTMLInputElement) => Math.max(0, Number(i.value) || 0);
-      const next: Media = { src: m.src, ...(m.audio ? { audio: true } : {}), ...(length() ? { length: +length().toFixed(3) } : m.length ? { length: m.length } : {}) };
+      // start from the media as it is (so what this window doesn't edit, such as narration, stays), then set what it does
+      const next: Media = { ...m };
+      const mine: (keyof Media)[] = ['trimStart', 'trimEnd', 'fadeIn', 'fadeOut', 'start', 'vol', 'mute', 'once', 'rewind', ...(m.audio ? ['hide', 'across'] as const : ['full'] as const)];
+      for (const k of mine) delete next[k];
+      if (length()) next.length = +length().toFixed(3);
       if (n(trimStart)) next.trimStart = n(trimStart);
       if (n(trimEnd)) next.trimEnd = n(trimEnd);
       if (n(fadeIn)) next.fadeIn = n(fadeIn);
