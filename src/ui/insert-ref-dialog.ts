@@ -29,6 +29,8 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
     d.append(form);
     const picked: Reference[] = [];
     const extra: Reference[] = [];
+    /** The group each reference picked came from (looked up again by its id after Manage References). */
+    const from = new Map<Reference, string>();
     const list = el('div', 'slide-refs-list');
     const styleSel = el('select');
     for (const [k, p] of Object.entries(CITE_PRESETS)) styleSel.add(new Option(`${p.name} (${p.journals})`, k));
@@ -65,7 +67,7 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
           box.checked = picked.includes(r);
           box.addEventListener('change', () => {
             const i = picked.indexOf(r);
-            if (box.checked && i < 0) picked.push(r); else if (!box.checked && i >= 0) picked.splice(i, 1);
+            if (box.checked && i < 0) { picked.push(r); from.set(r, g.name); } else if (!box.checked && i >= 0) picked.splice(i, 1);
             if (box.checked && knownStyle(g.style) && picked.length === 1) styleSel.value = g.style;
             show();
           });
@@ -84,7 +86,8 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
     doi.title = 'Look a reference up on Crossref by its DOI (needs the internet) and insert it';
     doi.addEventListener('click', () => {
       d.close();
-      void byDoi().then((r) => {
+      // (if the lookup fails the window comes back as it was)
+      void byDoi().catch(() => null).then((r) => {
         if (r) { extra.push(r); picked.push(r); }
         fill(groups);
         showDialog(d);
@@ -94,7 +97,21 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
     manageBtn.type = 'button';
     manageBtn.addEventListener('click', () => {
       d.close();
-      void manage().then((gs) => { groups = gs; fill(gs); showDialog(d); });
+      void manage().catch(() => groups).then((gs) => {
+        groups = gs;
+        // the references checked before are the ones Manage References left: one deleted is no longer picked,
+        // and one it changed is picked as it is now
+        const kept: Reference[] = [];
+        for (const r of picked) {
+          if (extra.includes(r)) { kept.push(r); continue; }
+          const g = gs.find((x) => x.name === from.get(r));
+          const now = g?.refs.find((x) => x.id === r.id);
+          if (now && g) { from.set(now, g.name); kept.push(now); }
+        }
+        picked.splice(0, picked.length, ...kept);
+        fill(gs);
+        showDialog(d);
+      });
     });
     const row = (label: string, ...kids: HTMLElement[]) => { const l = el('label', 'ask-row'); l.append(el('span', '', label), ...kids); return l; };
     const numRow = el('label', 'hf-check');

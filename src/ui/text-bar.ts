@@ -76,6 +76,8 @@ export interface TextBar {
   closePanels(): void;
 }
 
+const r2 = (v: number) => String(Math.round(v * 100) / 100);
+
 const svg = (body: string) => `<svg width="16" height="16" viewBox="0 0 16 16" fill="currentColor" aria-hidden="true">${body}</svg>`;
 
 const lineIcon = (j: string) => {
@@ -117,6 +119,13 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
     if (chargeNote.text) ops.say?.(chargeNote.text); else if (!ok) ops.nothing?.();
   };
   const after = () => { refresh(); ops.back(); };
+  // Enter or Escape in a box hands the keyboard back to the text. The box then loses focus and the browser
+  // fires its own 'change' for what was typed, which must not apply it again (Enter) or at all (Escape).
+  let leaving = false;
+  const leave = (box: HTMLInputElement) => {
+    leaving = true;
+    try { box.blur(); after(); } finally { leaving = false; }
+  };
   // (ribbon: two rows in each group; which row each part goes in is said as it is made)
   const rib = opts.ribbon;
   const twoRows = (into: HTMLElement) => [0, 1].map(() => { const r = d.createElement('div'); r.className = 'cb-row'; into.appendChild(r); return r; });
@@ -158,13 +167,21 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
     }
     const go = () => {
       const v = input.value.trim() === '' ? null : Number(input.value);
-      if (v === null || (Number.isFinite(v) && v >= opts.min)) apply(v === null ? null : Math.min(opts.max, v));
+      if (v === null || (Number.isFinite(v) && v >= opts.min)) {
+        apply(v === null ? null : Math.min(opts.max, v));
+        // a number above the top is applied as the top: the box says so
+        if (v !== null && v > opts.max) input.value = String(opts.max);
+      } else {
+        // a number the box can't take changes nothing: the box shows what the text has
+        const shown = stateValues()[id as 'line' | 'before' | 'after' | 'wrap'];
+        if (shown !== undefined) input.value = shown;
+      }
     };
-    input.addEventListener('change', go);
+    input.addEventListener('change', () => { if (!leaving) go(); });
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Enter') { e.preventDefault(); go(); after(); }
-      if (e.key === 'Escape') { e.preventDefault(); after(); }
+      if (e.key === 'Enter') { e.preventDefault(); go(); leave(input); }
+      if (e.key === 'Escape') { e.preventDefault(); leave(input); }
     });
     g.appendChild(input);
     inputs[id] = input;
@@ -197,11 +214,11 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   font.setAttribute('list', 'ci-fonts');
   font.spellcheck = false;
   const setFont = () => { const v = font.value.trim(); run({ kind: 'style', patch: { font: v && v !== ops.state()?.defaultFont ? v : undefined } }); };
-  font.addEventListener('change', setFont);
+  font.addEventListener('change', () => { if (!leaving) setFont(); });
   font.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); setFont(); after(); }
-    if (e.key === 'Escape') { e.preventDefault(); after(); }
+    if (e.key === 'Enter') { e.preventDefault(); setFont(); leave(font); }
+    if (e.key === 'Escape') { e.preventDefault(); leave(font); }
   });
   g.appendChild(font);
   inputs.font = font;
@@ -214,11 +231,11 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   size.setAttribute('list', FONT_SIZE_LIST);
   size.spellcheck = false;
   const setSize = () => { const v = Number(size.value); if (v >= 1 && v <= 400) run({ kind: 'style', patch: { size: v } }); else refresh(); };
-  size.addEventListener('change', setSize);
+  size.addEventListener('change', () => { if (!leaving) setSize(); });
   size.addEventListener('keydown', (e) => {
     e.stopPropagation();
-    if (e.key === 'Enter') { e.preventDefault(); setSize(); after(); }
-    if (e.key === 'Escape') { e.preventDefault(); after(); }
+    if (e.key === 'Enter') { e.preventDefault(); setSize(); leave(size); }
+    if (e.key === 'Escape') { e.preventDefault(); leave(size); }
   });
   g.appendChild(size);
   inputs.size = size;
@@ -341,16 +358,21 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
     press('spacing', !spacing.hidden);
     const active = d.activeElement;
     const show = (k: keyof typeof inputs, v: string) => { if (inputs[k] && active !== inputs[k]) inputs[k].value = v; };
-    const r2 = (v: number) => String(Math.round(v * 100) / 100);
+    const num = stateValues();
     show('font', st.font ?? '');
     inputs.font.placeholder = st.font === undefined ? s?.defaultFont ?? 'Font' : '';
     show('size', st.size !== undefined ? r2(st.size) : '');
     inputs.size.placeholder = st.size === undefined ? '—' : '';
     show('color', st.color ?? '#000000');
-    show('line', s ? r2(s.line) : '');
-    show('before', s ? r2(s.before) : '');
-    show('after', s ? r2(s.after) : '');
-    show('wrap', s?.wrap !== undefined ? r2(s.wrap) : '');
+    show('line', num.line);
+    show('before', num.before);
+    show('after', num.after);
+    show('wrap', num.wrap);
+  }
+  /** What the spacing boxes show for the text as it is now. */
+  function stateValues(): Record<'line' | 'before' | 'after' | 'wrap', string> {
+    const s = ops.state();
+    return { line: s ? r2(s.line) : '', before: s ? r2(s.before) : '', after: s ? r2(s.after) : '', wrap: s?.wrap !== undefined ? r2(s.wrap) : '' };
   }
   function finish(): TextBar {
     refresh();

@@ -3,7 +3,7 @@
 // picked (Apply) or every slide (Apply to All), and the header, footer, date and page numbers of
 // notes pages and handouts. Saved as PowerPoint's own date, number and footer placeholders.
 
-import { DATE_FORMATS, dateText, defaultNotesHF, showsDate, showsFooter, showsNumber, type DateFormat, type LayoutId, type Master, type SlideHF } from '../deck/deck';
+import { DATE_FORMATS, dateText, defaultNotesHF, showsDate, showsFooter, showsNumber, type DateFormat, type LayoutId, type Master, type Deck, type NotesHF, type SlideHF } from '../deck/deck';
 import { showDialog } from './dialog-host';
 import { addInfo } from './info-tip';
 
@@ -11,8 +11,12 @@ export interface HeaderFooterResult {
   master: Master;
   /** What the slides show (for the slides picked, or every slide). */
   show: { number: boolean; footer: boolean; date: boolean };
-  /** Apply (the slides picked) or Apply to All. */
-  scope: 'picked' | 'all';
+  /**
+   * Apply (the slides picked), Apply to All (every slide), or, from the Notes and Handouts tab, 'notes':
+   * only the notes pages and handouts change; the master's slide number, date and footer and each
+   * slide's own settings stay as they were.
+   */
+  scope: 'picked' | 'all' | 'notes';
 }
 
 /** Show the window for a deck with this master; `slide` is the slide being edited (its layout and own say). */
@@ -40,7 +44,9 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
       return b;
     };
     const tabBtns = { slide: tabBtn('slide', 'Slide'), notes: tabBtn('notes', 'Notes and Handouts') };
+    let showing: 'slide' | 'notes' = tab;
     const show = (id: 'slide' | 'notes') => {
+      showing = id;
       for (const k of ['slide', 'notes'] as const) {
         pages[k].hidden = k !== id;
         tabBtns[k].setAttribute('aria-selected', String(k === id));
@@ -162,18 +168,23 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
       resolve(v);
     };
     const result = (scope: 'picked' | 'all'): HeaderFooterResult => {
+      const notes: NotesHF = {
+        header: hdr.i.checked ? hdrText.value : '', footer: nfoot.i.checked ? nfootText.value : '',
+        date: nd.on.checked, dateFormat: nd.format(), ...(nd.fixed().trim() ? { dateFixed: nd.fixed().trim() } : {}), pageNumbers: page.i.checked,
+      };
+      // confirming on the Notes and Handouts tab changes only the notes pages and handouts: the slide
+      // boxes on the other tab were filled from the current slide and were never looked at
+      if (showing === 'notes') {
+        return { master: { ...m, notesHF: notes }, show: { number: showsNumber(m, slide.layout, slide.hf), footer: showsFooter(m, slide.layout, slide.hf), date: showsDate(m, slide.layout, slide.hf) }, scope: 'notes' };
+      }
       const off = offTitle.i.checked;
       const fixed = sd.fixed().trim();
-      const nfixed = nd.fixed().trim();
       const master: Master = {
         ...m,
         footer: footText.value,
         dateFormat: sd.format(),
         numberTitleSlides: !off,
-        notesHF: {
-          header: hdr.i.checked ? hdrText.value : '', footer: nfoot.i.checked ? nfootText.value : '',
-          date: nd.on.checked, dateFormat: nd.format(), ...(nfixed ? { dateFixed: nfixed } : {}), pageNumbers: page.i.checked,
-        },
+        notesHF: notes,
       };
       if (fixed) master.dateFixed = fixed; else delete master.dateFixed;
       if (off) master.footerOffTitle = true; else delete master.footerOffTitle;
@@ -186,6 +197,16 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     d.addEventListener('close', () => done(null));
     showDialog(d);
   });
+}
+
+/**
+ * Put what the window returned into the deck, as one step of Undo. Apply to All changes every slide;
+ * Apply changes the slides picked (`picked`); from the Notes and Handouts tab only the notes pages
+ * and handouts change, so no slide's own setting and none of the master's slide number, date or
+ * footer is touched.
+ */
+export function applyHeaderFooter(d: Pick<Deck, 'setHeaderFooter'>, got: HeaderFooterResult, picked: number[]): void {
+  d.setHeaderFooter(got.master, got.show, got.scope === 'all' ? undefined : got.scope === 'picked' ? picked : []);
 }
 
 type Spot = 'tl' | 'tr' | 'bl' | 'bc' | 'br';

@@ -42,7 +42,8 @@ export function chemPositions(text: string): Pos[] {
   // markup characters are taken as plain text here (the bar sets sub- and superscripts)
   const safe = text.replace(/[_^]/g, ' ');
   const out: Pos[] = [];
-  for (const r of chemRuns(safe)) for (const _ of r.text) out.push(r.sub ? 'sub' : r.sup ? 'sup' : '');
+  // one place for each UTF-16 unit, as the field's characters and the page's selection offsets count
+  for (const r of chemRuns(safe)) for (let i = 0; i < r.text.length; i++) out.push(r.sub ? 'sub' : r.sup ? 'sup' : '');
   while (out.length < text.length) out.push('');
   return out.slice(0, text.length);
 }
@@ -57,6 +58,7 @@ export class RichField {
   private pendingLook: number | null = null;
   private caretAt = -1;
   private undo: Ch[][] = [];
+  private composing = false;
 
   constructor(parts: TextPart[], private o: RichFieldOptions) {
     const el = document.createElement('div');
@@ -73,7 +75,10 @@ export class RichField {
     this.wasParts = this.parts();
     this.render(null);
     el.addEventListener('beforeinput', (e) => this.onInput(e));
-    el.addEventListener('compositionend', () => this.resync());
+    // an input method (Chinese, Japanese, a dead-key accent) is mid-word until compositionend: redrawing
+    // the text then would end the composition and leave raw letters
+    el.addEventListener('compositionstart', () => { this.composing = true; });
+    el.addEventListener('compositionend', () => { this.composing = false; this.resync(); });
     el.addEventListener('keydown', (e) => this.onKey(e));
     el.addEventListener('focus', () => { document.addEventListener('selectionchange', this.onSel); this.onSel(); });
     el.addEventListener('blur', () => { document.removeEventListener('selectionchange', this.onSel); this.pending = null; this.commit(); });
@@ -86,7 +91,7 @@ export class RichField {
   // ---------------------------------------------------------------- the text
 
   private load(parts: TextPart[]): void {
-    this.chars = parts.flatMap((p) => [...p.text].map((c) => ({ c, pos: (p.sub ? 'sub' : p.sup ? 'sup' : '') as Pos, set: false, ...(this.o.looks && lookOf(p) ? { look: lookOf(p) } : {}) })));
+    this.chars = parts.flatMap((p) => p.text.split('').map((c) => ({ c, pos: (p.sub ? 'sub' : p.sup ? 'sup' : '') as Pos, set: false, ...(this.o.looks && lookOf(p) ? { look: lookOf(p) } : {}) })));
     this.settle(true);
   }
 
@@ -242,9 +247,10 @@ export class RichField {
     const t = text.replace(/\s*[\r\n]+\s*/g, ' ');
     this.remember();
     const how = this.nextPos(a);
-    this.chars.splice(a, b - a, ...[...t].map((c) => ({ c, ...how })));
+    // the field's characters are UTF-16 units, like the page's selection offsets
+    this.chars.splice(a, b - a, ...t.split('').map((c) => ({ c, ...how })));
     this.settle();
-    const at = a + [...t].length;
+    const at = a + t.length;
     this.render([at, at]);
   }
 
@@ -283,6 +289,9 @@ export class RichField {
       if (dir < 0) { while (j > 0 && /\s/.test(t[j - 1])) j--; while (j > 0 && !/\s/.test(t[j - 1])) j--; } else { while (j < t.length && /\s/.test(t[j])) j++; while (j < t.length && !/\s/.test(t[j])) j++; }
       return j;
     };
+    // one character left or right of `i`: both halves of a pair that is one character (an emoji) go together
+    const before = (i: number) => (i >= 2 && /[\uDC00-\uDFFF]/.test(this.chars[i - 1].c) && /[\uD800-\uDBFF]/.test(this.chars[i - 2].c) ? i - 2 : Math.max(0, i - 1));
+    const after = (i: number) => (i + 2 <= len && /[\uD800-\uDBFF]/.test(this.chars[i].c) && /[\uDC00-\uDFFF]/.test(this.chars[i + 1].c) ? i + 2 : Math.min(len, i + 1));
     switch (e.inputType) {
       case 'insertText': case 'insertReplacementText': case 'insertFromPaste': case 'insertFromDrop': case 'insertFromYank': {
         const t = e.data ?? e.dataTransfer?.getData('text/plain') ?? '';
@@ -290,8 +299,8 @@ export class RichField {
         if (t) this.insert(t);
         return;
       }
-      case 'deleteContentBackward': e.preventDefault(); this.remove(a === b ? Math.max(0, a - 1) : a, b); return;
-      case 'deleteContentForward': e.preventDefault(); this.remove(a, a === b ? Math.min(len, b + 1) : b); return;
+      case 'deleteContentBackward': e.preventDefault(); this.remove(a === b ? before(a) : a, b); return;
+      case 'deleteContentForward': e.preventDefault(); this.remove(a, a === b ? after(b) : b); return;
       case 'deleteWordBackward': e.preventDefault(); this.remove(a === b ? word(a, -1) : a, b); return;
       case 'deleteWordForward': e.preventDefault(); this.remove(a, a === b ? word(b, 1) : b); return;
       case 'deleteSoftLineBackward': case 'deleteHardLineBackward': e.preventDefault(); this.remove(a === b ? 0 : a, b); return;
@@ -305,7 +314,8 @@ export class RichField {
       case 'formatItalic': e.preventDefault(); this.toggleLook('italic'); return;
       case 'formatUnderline': e.preventDefault(); this.toggleLook('underline'); return;
       case 'historyRedo': e.preventDefault(); this.undoKey(true); return;
-      default: setTimeout(() => this.resync());
+      // (an input method's steps are read when it finishes, at compositionend)
+      default: if (!this.composing && !e.isComposing) setTimeout(() => this.resync());
     }
   }
 
@@ -328,7 +338,7 @@ export class RichField {
     const sel = this.selection();
     const out: Ch[] = [];
     const walk = (n: Node, pos: Pos, look: number) => {
-      if (n.nodeType === Node.TEXT_NODE) { for (const c of n.textContent ?? '') out.push({ c, pos, set: false, ...(look ? { look } : {}) }); return; }
+      if (n.nodeType === Node.TEXT_NODE) { for (const c of (n.textContent ?? '').split('')) out.push({ c, pos, set: false, ...(look ? { look } : {}) }); return; }
       const el = n as HTMLElement;
       const tag = el.tagName;
       const p: Pos = tag === 'SUB' ? 'sub' : tag === 'SUP' ? 'sup' : pos;

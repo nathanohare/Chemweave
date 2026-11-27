@@ -96,6 +96,11 @@ export class StylesPane {
     if (!d) return;
     const paraId = styleOf(d.t, d.para).id;
     const charId = d.look.cstyle;
+    // the style clicked is only the one Modify and Delete act on while it is still the one shown on: once the
+    // caret has moved to text in another style, they act on that one (the one highlighted)
+    // (a character style stays picked while the caret is in text with none: applying one to a word at the
+    // caret's edge can leave the caret just outside it)
+    if (this.picked && (this.picked.kind === 'para' ? this.picked.id !== paraId : !!charId && this.picked.id !== charId)) this.picked = null;
     const head = (text: string) => {
       const h = document.createElement('div');
       h.className = 'sp-head';
