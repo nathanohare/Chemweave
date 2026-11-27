@@ -34,13 +34,21 @@ export function parseWorkspace(text: string): WorkspaceList {
   const r = raw as Record<string, unknown>;
   if (!r || typeof r !== 'object' || r.kind !== 'workspace' || !Array.isArray(r.tabs)) throw new Error('this is not a workspace file');
   const tabs: WorkspaceEntry[] = [];
-  for (const t of r.tabs as unknown[]) {
+  // each kept entry's place in the list as written, so active and beside (places in that list)
+  // still name the same tabs once an entry is left out (review F604)
+  const placeOf = new Map<number, number>();
+  (r.tabs as unknown[]).forEach((t, i) => {
     const e = t as Record<string, unknown>;
-    if (!e || typeof e.file !== 'string' || !e.file.trim()) continue;
+    if (!e || typeof e.file !== 'string' || !e.file.trim()) return;
+    placeOf.set(i, tabs.length);
     tabs.push({ file: e.file, ...(Number.isInteger(e.beside) ? { beside: e.beside as number } : {}) });
+  });
+  for (const t of tabs) {
+    if (t.beside === undefined) continue;
+    const to = placeOf.get(t.beside);
+    if (to === undefined) delete t.beside; else t.beside = to;
   }
-  for (const t of tabs) if (t.beside !== undefined && !(t.beside >= 0 && t.beside < tabs.length)) delete t.beside;
-  const active = Number.isInteger(r.active) && (r.active as number) >= 0 && (r.active as number) < tabs.length ? (r.active as number) : 0;
+  const active = Number.isInteger(r.active) ? placeOf.get(r.active as number) ?? 0 : 0;
   return { tabs, active };
 }
 
