@@ -162,10 +162,12 @@ export function stepAnims(doc: Doc, pieces: StepPiece[], o: AutoStepsOptions, wa
       // the view for step s: what it starts from (the step before's species) and what it brings
       const now = pieces.filter((p) => p.step === s);
       const before = pieces.filter((p) => p.step === s - 1 && p.kind !== 'arrow');
-      // the first step takes the canvas's first keyframe as it is (its title, tint and spotlight) and moves it to the step
-      const first = s === 1 ? canvas.data.keys[0] : undefined;
-      const key = stepKey([...before, ...now].map((p) => p.box), canvas.size, first ? first.id : ++id, L);
-      keys.push(first ? { ...first, x: key.x, y: key.y, zoom: key.zoom } : key);
+      // a step takes the canvas's keyframe at its place in the route as it is (its title, tint and spotlight) and moves it to the step
+      const was = canvas.data.keys[s - 1];
+      const key = stepKey([...before, ...now].map((p) => p.box), canvas.size, was ? was.id : ++id, L);
+      // (the steps are the route now: a detour off the old one is not a detour of it)
+      const { detour: _detour, ...kept } = was ?? {};
+      keys.push(was ? { ...(kept as Keyframe), x: key.x, y: key.y, zoom: key.zoom } : key);
     }
   }
   for (const p of pieces) {

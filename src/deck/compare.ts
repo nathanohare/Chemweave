@@ -99,24 +99,44 @@ function structureKeys(c: Contents): { key: string; x: number; y: number }[] {
     const ids = new Set(frag.map((x) => x.id));
     const bonds = c.bonds.filter((b) => ids.has(b.a1) && ids.has(b.a2) && byId.has(b.a1) && byId.has(b.a2));
     // each atom starts as what it is; each step adds what it is joined to, and how
+    const around = new Map<number, Bond[]>();
+    for (const b of bonds) for (const id of [b.a1, b.a2]) around.set(id, [...(around.get(id) ?? []), b]);
     let sig = new Map<number, string>(frag.map((x) => [x.id, `${x.label ?? `${x.z}${x.charge ? `(${x.charge})` : ''}`}${x.isotope ? `^${x.isotope}` : ''}${x.radical ? `.${x.radical}` : ''}`]));
     const edge = (b: Bond, from: number): string => {
       const other = from === b.a1 ? b.a2 : b.a1;
       const dir = DIRECTED.has(b.display) ? (from === b.a1 ? '>' : '<') : '';
       return `${b.order}${b.display}${dir}${sig.get(other)}`;
     };
-    for (let round = 0; round < Math.min(frag.length, 6); round++) {
+    // until the atoms stop being told further apart (at most as many steps as there are atoms: a chain's two ends can be that far from what sets them apart)
+    let kinds = new Set(sig.values()).size;
+    for (let round = 0; round < frag.length; round++) {
       const next = new Map<number, string>();
-      for (const x of frag) {
-        const around = bonds.filter((b) => b.a1 === x.id || b.a2 === x.id).map((b) => edge(b, x.id)).sort().join(',');
-        next.set(x.id, hashOf(`${sig.get(x.id)}(${around})`));
-      }
+      for (const x of frag) next.set(x.id, hashOf(`${sig.get(x.id)}(${(around.get(x.id) ?? []).map((b) => edge(b, x.id)).sort().join(',')})`));
       sig = next;
+      const now = new Set(sig.values()).size;
+      if (now === kinds) break;
+      kinds = now;
     }
+    // a double bond's two sides: the substituents on the same side of it (cis) or opposite sides (trans), when each end has substituents that differ
+    const geometry = (b: Bond): string => {
+      if (b.order !== 2) return '';
+      const u = byId.get(b.a1)!, v = byId.get(b.a2)!;
+      const side = (from: Atom, to: Atom): number | null => {
+        const subs = (around.get(from.id) ?? []).filter((x) => x !== b).map((x) => byId.get(x.a1 === from.id ? x.a2 : x.a1)!);
+        if (!subs.length || subs.length > 2) return null;
+        // (substituents that are alike are no stereo: either could be told as the one)
+        if (subs.length === 2 && sig.get(subs[0].id) === sig.get(subs[1].id)) return null;
+        const n = subs.length === 1 ? subs[0] : sig.get(subs[0].id)! < sig.get(subs[1].id)! ? subs[0] : subs[1];
+        return Math.sign((to.x - from.x) * (n.y - from.y) - (to.y - from.y) * (n.x - from.x));
+      };
+      const p = side(u, v), q = side(v, u);
+      // (seen from each end the axis runs the other way, so the same side is the opposite sign)
+      return p && q ? (p === -q ? 'c' : 't') : '';
+    };
     const atoms = frag.map((x) => sig.get(x.id)).sort().join(',');
     const joins = bonds.map((b) => {
       const p = sig.get(b.a1)!, q = sig.get(b.a2)!;
-      return DIRECTED.has(b.display) ? `${p}${b.order}${b.display}>${q}` : `${[p, q].sort().join(`${b.order}${b.display}`)}`;
+      return DIRECTED.has(b.display) ? `${p}${b.order}${b.display}>${q}` : `${[p, q].sort().join(`${b.order}${b.display}${geometry(b)}`)}`;
     }).sort().join(',');
     out.push({ key: `${atoms}|${joins}`, x: frag.reduce((s, x) => s + x.x, 0) / frag.length, y: frag.reduce((s, x) => s + x.y, 0) / frag.length });
   }

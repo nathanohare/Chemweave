@@ -226,8 +226,8 @@ function drawArt(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   }
 }
 
-/** The drawing of each set of items, and the master and layout whose styles it is set to. */
-const itemDocs = new WeakMap<Contents, { doc: Doc; master: unknown; layout: string }>();
+/** The drawing of each set of items for each layout it is drawn under (the master's items are every layout's), and the master whose styles it is set to. */
+const itemDocs = new WeakMap<Contents, Map<string, { doc: Doc; master: unknown }>>();
 
 /** What is drawn on the master and on the slide's layout (Slide Master view), behind the slide's own things. */
 function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
@@ -235,20 +235,21 @@ function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   const layer = layoutDef(p.master, p.layout).items;
   for (const c of [p.master.items, layer]) {
     if (!c) continue;
-    let held = itemDocs.get(c);
+    let byLayout = itemDocs.get(c);
+    if (!byLayout) itemDocs.set(c, (byLayout = new Map()));
+    let held = byLayout.get(p.layout);
     if (!held) {
-      held = { doc: new Doc(), master: null, layout: '' };
+      held = { doc: new Doc(), master: null };
       held.doc.restoreContents(c);
-      itemDocs.set(c, held);
+      byLayout.set(p.layout, held);
     }
-    // in the master's style and its layout's text styles as they are now (a change of the master keeps the items themselves, as the master's items are every layout's)
-    if (held.master !== p.master || held.layout !== p.layout) {
+    // in the master's style and its layout's text styles as they are now (a change of the master keeps the items themselves; one drawing for each layout, so slides of different layouts do not set each other's text out again)
+    if (held.master !== p.master) {
       held.doc.style = { ...p.master.drawing };
       held.doc.textStyles = textStyles(p.master, p.layout);
       held.doc.allDirty = true;
       held.doc.version++;
       held.master = p.master;
-      held.layout = p.layout;
     }
     const doc = held.doc;
     const r = new Renderer(noCanvas, noCanvas);

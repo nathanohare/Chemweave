@@ -6,6 +6,7 @@
 // title slide.
 
 import { describe, it, expect, vi } from 'vitest';
+import { unzipSync, strFromU8 } from 'fflate';
 import { Doc, type TableData } from '../src/model';
 import { Deck } from '../src/deck/deck';
 import { writePptx, type PptxOptions } from '../src/io/pptx-write';
@@ -21,10 +22,14 @@ import { blankRef } from '../src/document/references';
 import { parseThemes } from '../src/deck/templates';
 
 // A call counter on the one lookup hiddenAt does for each animation (see F849 below).
-const lookups = vi.hoisted(() => ({ partOf: 0 }));
+const lookups = vi.hoisted(() => ({ partOf: 0, states: 0 }));
 vi.mock('../src/deck/animation', async (importOriginal) => {
   const real = await importOriginal<typeof import('../src/deck/animation')>();
-  return { ...real, partOf: ((...a: Parameters<typeof real.partOf>) => { lookups.partOf++; return real.partOf(...a); }) as typeof real.partOf };
+  return {
+    ...real,
+    partOf: ((...a: Parameters<typeof real.partOf>) => { lookups.partOf++; return real.partOf(...a); }) as typeof real.partOf,
+    partStates: ((...a: Parameters<typeof real.partStates>) => { lookups.states++; return real.partStates(...a); }) as typeof real.partStates,
+  };
 });
 
 const PNG = new Uint8Array([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0, 0, 0, 13, 0x49, 0x48, 0x44, 0x52, 0, 0, 0, 40, 0, 0, 0, 30]);
@@ -128,6 +133,14 @@ describe('F849: finding the part each animation moves', () => {
     expect(hidden[n - 1]).toBe(0);
     // (finding a part scans them all: once for each animation, not for each animation at each keyframe)
     expect(lookups.partOf).toBeLessThanOrEqual(2 * n);
+    // and how the parts stand before each keyframe is worked out once, however often it is asked for
+    lookups.states = 0;
+    segs.forEach((_, j) => { hiddenAt(parts, segs, j); hiddenAt(parts, segs, j); });
+    expect(lookups.states).toBe(0);
+    const other: Anim[][] = segs.map((x) => [...x]);
+    lookups.states = 0;
+    other.forEach((_, j) => { hiddenAt(parts, other, j); hiddenAt(parts, other, j); });
+    expect(lookups.states).toBe(n);
   });
 });
 
@@ -146,6 +159,18 @@ describe('F845 and F846: the keyframes of a scheme built step by step', () => {
     const first = { id: 4, x: 0, y: 0, zoom: 1, title: 'Route', tint: '#ffeecc', spot: { x1: 1, y1: 2, x2: 30, y2: 40 } };
     const { canvas } = stepAnims(new Doc(), [piece('first', 0, 100), piece('arrow', 1, 200)], { effect: 'wipe', product: 'after', first: false, camera: true }, [], camera([first]));
     expect(canvas!.keys[0]).toMatchObject({ id: 4, title: 'Route', tint: '#ffeecc', spot: { x1: 1, y1: 2, x2: 30, y2: 40 } });
+  });
+});
+
+describe('F846: the later keyframes', () => {
+  it('keep their title, tint and spotlight too, each at its place in the route', () => {
+    const piece = (kind: StepPiece['kind'], step: number, x2: number): StepPiece => ({ kind, step, sel: { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() }, from: 'left', box: { x1: x2 - 100, y1: 0, x2, y2: 50 } });
+    const keys = [{ id: 1, x: 0, y: 0, zoom: 1, title: 'One' }, { id: 2, x: 900, y: 0, zoom: 1, title: 'Two', tint: '#ddeeff', spot: { x1: 1, y1: 2, x2: 30, y2: 40 } }];
+    const pieces = [piece('first', 0, 100), piece('arrow', 1, 300), piece('product', 1, 500), piece('arrow', 2, 700), piece('product', 2, 900)];
+    const { canvas } = stepAnims(new Doc(), pieces, { effect: 'wipe', product: 'after', first: false, camera: true }, [], { data: { keys }, size });
+    expect(canvas!.keys.map((k) => k.id)).toEqual([1, 2]);
+    expect(canvas!.keys[1]).toMatchObject({ title: 'Two', tint: '#ddeeff', spot: { x1: 1, y1: 2, x2: 30, y2: 40 } });
+    expect(canvas!.keys[1].x).toBeGreaterThan(canvas!.keys[0].x);
   });
 });
 
@@ -198,5 +223,20 @@ describe('F870: your own theme\'s title slide footer color', () => {
   it('is kept when themes are read from the settings file', () => {
     const [t] = parseThemes([{ id: 'mine-1', name: 'Mine', titleSlide: { background: '#112233', titleColor: '#ffffff', textColor: '#cccccc', footerColor: '#abcdef' } }]);
     expect(t.titleSlide?.footerColor).toBe('#abcdef');
+  });
+});
+
+describe('F856: the master\'s bold body text in a PowerPoint file', () => {
+  it('is written to the master\'s body style, so PowerPoint shows it bold too', async () => {
+    const d = Deck.blank(new Doc());
+    d.attach();
+    const master = { ...d.master, phFmt: { body: { bold: true } } };
+    const bytes = await writePptx({ size: d.size, master, slides: d.slides.map((s, i) => ({ layout: s.layout, doc: d.docOf(i), notes: s.notes })) }, opts);
+    const xml = strFromU8(unzipSync(bytes)['ppt/slideMasters/slideMaster1.xml']);
+    const body = xml.slice(xml.indexOf('<p:bodyStyle>'), xml.indexOf('</p:bodyStyle>'));
+    expect(body).toMatch(/<a:defRPr sz="\d+" b="1"/);
+    const plain = await writePptx({ size: d.size, master: d.master, slides: d.slides.map((s, i) => ({ layout: s.layout, doc: d.docOf(i), notes: s.notes })) }, opts);
+    const x2 = strFromU8(unzipSync(plain)['ppt/slideMasters/slideMaster1.xml']);
+    expect(x2.slice(x2.indexOf('<p:bodyStyle>'), x2.indexOf('</p:bodyStyle>'))).not.toContain(' b="1"');
   });
 });

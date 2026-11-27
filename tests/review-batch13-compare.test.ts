@@ -73,6 +73,25 @@ describe('F184: one change decided', () => {
   });
 });
 
+describe('F184: a slide of this deck edited while the pane is open', () => {
+  it('has its "This deck" picture drawn again, and no other', () => {
+    const a = deckOf(['A', 'B', 'C'], true);
+    const b = deckOf(['A', 'B2', 'C2']);
+    const pane = new SlideComparePane({ deck: () => a, flash: () => {}, changed: () => {} });
+    pane.start(a, b, 'b.pptx');
+    vi.advanceTimersByTime(2000);
+    painted.n = 0;
+    pane.deckChanged(a);
+    vi.advanceTimersByTime(2000);
+    expect(painted.n).toBe(0);
+    a.editSlides('Edit', [1], (doc) => { doc.addAtom(100, 100); });
+    pane.deckChanged(a);
+    vi.advanceTimersByTime(2000);
+    expect(painted.n).toBe(1);
+    pane.close();
+  });
+});
+
 describe('F833 and F834', () => {
   it('closing with the x lets go of the image watcher and the other deck', () => {
     const a = deckOf(['A', 'B'], true);
@@ -150,6 +169,40 @@ describe('F190: structures that differ only in how the atoms are joined', () => 
   });
   it('an isotope is a difference', () => {
     expect(slideDifferences(ring([0]), ring([0], { isotope: 13 }))).toContain('Structure changed');
+  });
+});
+
+describe('F190: isomers far from their ends, and cis and trans', () => {
+  const view = (draw: (d: Doc) => void): SlideView => {
+    const d = new Doc();
+    d.edit('draw', () => draw(d));
+    return { layout: 'blank', contents: d.contents(), notes: '' };
+  };
+  /** An icosane chain (20 carbons, zigzag) with a methyl on carbon `at` (counting from 0): 8-methyl is 7, 9-methyl is 8. */
+  const methylIcosane = (at: number) => view((d) => {
+    const ids: number[] = [];
+    for (let k = 0; k < 20; k++) ids.push(d.addAtom(50 + 20 * k, 300 + (k % 2 ? 10 : 0)).id);
+    for (let k = 0; k < 19; k++) d.addBond(ids[k], ids[k + 1]);
+    const m = d.addAtom(50 + 20 * at, at % 2 ? 330 : 280);
+    d.addBond(ids[at], m.id);
+  });
+  /** 2-butene: the last carbon on the same side of the double bond as the first (cis) or the other (trans). */
+  const butene = (cis: boolean, flip = false) => view((d) => {
+    const y = (v: number) => (flip ? 240 - v : v);
+    const c = [d.addAtom(100, y(100)), d.addAtom(130, y(120)), d.addAtom(160, y(120)), d.addAtom(190, y(cis ? 100 : 140))];
+    d.addBond(c[0].id, c[1].id);
+    d.addBond(c[1].id, c[2].id, 2);
+    d.addBond(c[2].id, c[3].id);
+  });
+  it('8-methylicosane and 9-methylicosane differ, though no atom sees an end of the chain within six bonds', () => {
+    expect(slideDifferences(methylIcosane(7), methylIcosane(7))).toEqual([]);
+    expect(slideDifferences(methylIcosane(7), methylIcosane(8))).toContain('Structure changed');
+  });
+  it('cis- and trans-2-butene differ, and each is the same as itself drawn the other way up', () => {
+    expect(slideDifferences(butene(true), butene(false))).toContain('Structure changed');
+    expect(slideDifferences(butene(true), butene(true))).toEqual([]);
+    expect(slideDifferences(butene(true), butene(true, true))).not.toContain('Structure changed');
+    expect(slideDifferences(butene(false), butene(false, true))).not.toContain('Structure changed');
   });
 });
 

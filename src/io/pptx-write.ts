@@ -2322,7 +2322,7 @@ function bodyLevels(m: Master): string {
     // (the master's bullets and spacing, from Slide Master view; bullets on every level as they come)
     out.push(`<a:lvl${l + 1}pPr marL="${emu(textLeft)}" indent="${emu(markLeft - textLeft)}" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">` +
       `<a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, false)}${levelBulletXml(f.bullet ?? 'bullet', l)}` +
-      `<a:defRPr sz="${Math.round(em * 100)}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
+      `<a:defRPr sz="${Math.round(em * 100)}"${f.bold ? ' b="1"' : ''}${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
   }
   return out.join('');
 }

@@ -17,7 +17,7 @@ import { frameFields, layoutFrames, slideBackground, slideColours, textStyles, h
 import { backgroundColour, type Background } from './background';
 import {
   buildSteps, keepsShowing, mainAnims, partOf, partStates, slideParts,
-  type Anim, type Part, type Transition,
+  type Anim, type Part, type PartState, type Transition,
 } from './animation';
 import { compoundId, isCamera, keyRect, timedCamera, viewBetween, type CanvasData } from './canvas';
 
@@ -194,6 +194,8 @@ export function compoundHomes(doc: Doc, views: Rect[]): Map<string, number> {
 
 /** Each animation's part, by the list of parts it was looked up in (see hiddenAt). */
 const ownerMemo = new WeakMap<Part[], Map<Anim, Part | undefined>>();
+/** How the parts stand after the animations of the stops before stop j (kept for each list of stops: stop j is asked for again, by the fly-over's slide). */
+const statesMemo = new WeakMap<Anim[][], { parts: Part[]; by: Map<number, Map<Part, PartState>> }>();
 
 /**
  * The parts not to put on keyframe j's slide: those not showing when the show gets there that
@@ -210,7 +212,10 @@ export function hiddenAt(parts: Part[], segs: Anim[][], j: number): Part[] {
   const before = segs.slice(0, j).flat();
   const played = new Set(before.map(ownerOf).filter((p): p is Part => !!p));
   const mine = new Set(segs[j].map(ownerOf).filter((p): p is Part => !!p));
-  const states = partStates(parts, before, buildSteps(mainAnims(before)).length, -1);
+  let kept = statesMemo.get(segs);
+  if (kept?.parts !== parts) statesMemo.set(segs, (kept = { parts, by: new Map() }));
+  let states = kept.by.get(j);
+  if (!states) kept.by.set(j, (states = partStates(parts, before, buildSteps(mainAnims(before)).length, -1)));
   // when each part first comes in or does anything, from here on
   const firstLater = new Map<Part, Anim>();
   for (const a of segs.slice(j).flat()) {

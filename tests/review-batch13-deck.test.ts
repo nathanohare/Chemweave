@@ -144,4 +144,18 @@ describe('F855: Accept (replaceSlide) keeps the slide\'s number', () => {
     a.undo();
     expect(a.slides[1].id).toBe(id);
   });
+
+  it('tells the slide list its picture is of another drawing, on Accept, Undo and Redo (the list is rebuilt when `looks` changes)', () => {
+    const a = deck();
+    const b = deck();
+    let seen = a.looks;
+    a.replaceSlide(1, b.copySlides([1]));
+    expect(a.looks).not.toBe(seen);
+    seen = a.looks;
+    a.undo();
+    expect(a.looks).not.toBe(seen);
+    seen = a.looks;
+    a.redo();
+    expect(a.looks).not.toBe(seen);
+  });
 });

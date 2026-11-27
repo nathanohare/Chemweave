@@ -7,7 +7,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 const painted = vi.hoisted(() => ({ screens: 0, parts: [] as { shapes: number[]; x1?: number }[] }));
-const layouts = vi.hoisted(() => ({ n: 0 }));
+const layouts = vi.hoisted(() => ({ n: 0, lines: [] as { para: number; y: number; ascent: number; descent: number; x1: number; x2: number }[] }));
 vi.mock('../src/deck/slide-view', async (orig) => ({
   ...(await orig<typeof import('../src/deck/slide-view')>()),
   paintSlide: (c: HTMLCanvasElement, w: number, h: number, dpr: number, p: { size: { w: number; h: number } }) => {
@@ -24,8 +24,21 @@ vi.mock('../src/deck/slide-view', async (orig) => ({
 }));
 vi.mock('../src/text/layout', async (orig) => ({
   ...(await orig<typeof import('../src/text/layout')>()),
-  layoutText: () => { layouts.n++; return { box: { x1: 0, y1: 0, x2: 200, y2: 30 } } as never; },
+  layoutText: () => { layouts.n++; return { box: { x1: 0, y1: 0, x2: 200, y2: layouts.lines.length ? 20 * layouts.lines.length : 30 }, lines: layouts.lines } as never; },
 }));
+// partStates never reports an Appear as running (it takes no time), so what the player does with one is asked of it through this
+const forced = vi.hoisted(() => ({ running: false }));
+vi.mock('../src/deck/animation', async (orig) => {
+  const real = await orig<typeof import('../src/deck/animation')>();
+  return {
+    ...real,
+    partStates: ((...a: Parameters<typeof real.partStates>) => {
+      const states = real.partStates(...a);
+      if (forced.running) for (const k of states.keys()) states.set(k, { visible: true, running: { anim: a[1][0], p: 0.5 } });
+      return states;
+    }) as typeof real.partStates,
+  };
+});
 vi.mock('../src/links', async (orig) => ({
   ...(await orig<typeof import('../src/links')>()),
   linkAtPoint: () => ({ link: 'https://example.org/' }),
@@ -94,7 +107,7 @@ describe('F195: a custom show that plays a slide more than once', () => {
 });
 
 describe('F194: a sound set to play across slides', () => {
-  it('goes on playing when the slide changes, and stops with the show', () => {
+  function setup() {
     // jsdom has no sound: a stand-in that plays and pauses
     const playing = new WeakSet<object>();
     Object.defineProperty(HTMLMediaElement.prototype, 'paused', { configurable: true, get() { return !playing.has(this); } });
@@ -109,6 +122,10 @@ describe('F194: a sound set to play across slides', () => {
     doc.edit('sound', () => doc.addShape({ kind: 'picture', x1: 10, y1: 10, x2: 40, y2: 40, src: DOT, px: { w: 1, h: 1 }, video: { src: 'data:audio/mpeg;base64,AAAA', audio: true, across: true } } as never));
     const p = new Player(canvas, d);
     p.resize(960, 540, 1);
+    return { host, p };
+  }
+  it('goes on playing when the slide changes, and stops with the show', () => {
+    const { host, p } = setup();
     p.show(0);
     expect(host.querySelectorAll('audio').length).toBe(1);
     p.next();
@@ -119,6 +136,35 @@ describe('F194: a sound set to play across slides', () => {
     p.stop();
     expect(host.querySelectorAll('audio').length).toBe(0);
     host.remove();
+  });
+  it('is still the one sound when the show comes back to its slide', () => {
+    const { host, p } = setup();
+    p.show(0);
+    const first = host.querySelector('audio')!;
+    p.next();
+    vi.advanceTimersByTime(100);
+    p.prev();
+    vi.advanceTimersByTime(100);
+    const all = [...host.querySelectorAll('audio')];
+    expect(all).toHaveLength(1);
+    expect(all[0]).toBe(first);
+    expect(first.paused).toBe(false);
+    p.stop();
+    host.remove();
+  });
+});
+
+describe('F863: a part leaving by Disappear, drawn', () => {
+  it('leaves no save without its restore', () => {
+    const d = deckOf(1);
+    const doc = d.docOf(0);
+    const sh = doc.edit('s', () => doc.addShape({ kind: 'rect', x1: 100, y1: 100, x2: 200, y2: 160 } as never)) as { id: number };
+    const f = new SlideFrames(d.page(0), doc, [newAnim({ kind: 'shape', id: sh.id }, 'appear', true)], 960, 540, 1, '#fff');
+    const { ctx, state } = recordingContext();
+    forced.running = true;
+    try { f.draw(ctx, 0, 0.5); } finally { forced.running = false; }
+    expect(state.saves).toBeGreaterThan(0);
+    expect(state.saves).toBe(state.restores);
   });
 });
 
@@ -219,6 +265,34 @@ describe('F861 and F862: the pointer in the show', () => {
     const { f } = textFrames();
     expect(f.shapeActionAt(150, 150, 0)).toBeNull();
     expect(f.shapeActionAt(150, 150, 1)?.link).toBe('https://example.org/');
+  });
+  it('a link on a shape that a trigger brings in is clickable once the trigger has played', () => {
+    const d = deckOf(1);
+    const doc = d.docOf(0);
+    let link = 0, trig = 0;
+    doc.edit('s', () => {
+      link = doc.addShape({ kind: 'rect', x1: 100, y1: 100, x2: 300, y2: 200, link: 'https://example.org/' } as never).id;
+      trig = doc.addShape({ kind: 'rect', x1: 500, y1: 100, x2: 600, y2: 200 } as never).id;
+    });
+    const anims = [{ ...newAnim({ kind: 'shape', id: link }, 'appear'), trigger: { kind: 'shape' as const, id: trig } }];
+    const f = new SlideFrames(d.page(0), doc, anims, 960, 540, 1, '#fff');
+    const key = [...f.triggers.keys()][0];
+    expect(f.shapeActionAt(150, 150, 0)).toBeNull();
+    expect(f.shapeActionAt(150, 150, 0, new Map([[key, { done: 1, t: -1 }]]))?.link).toBe('https://example.org/');
+  });
+  it('text that comes in a paragraph at a time is clickable only where its paragraphs are in', () => {
+    layouts.lines = [0, 1, 2].map((k) => ({ para: k, y: 20 * k + 15, ascent: 15, descent: 5, x1: 0, x2: 100 }));
+    try {
+      const d = deckOf(1);
+      const doc = d.docOf(0);
+      const cap = doc.edit('t', () => doc.addCaption({ x: 400, y: 300, runs: [{ text: 'one\ntwo\nthree', link: 'https://example.org/' }] })) as { id: number };
+      const anims = [{ ...newAnim({ kind: 'caption', id: cap.id }, 'appear'), byPara: true }];
+      const f = new SlideFrames(d.page(0), doc, anims, 960, 540, 1, '#fff');
+      // one click played: the first paragraph is in, the third is not
+      expect(f.linkAt(410, 310, 1)).toBe('https://example.org/');
+      expect(f.linkAt(410, 350, 1)).toBeNull();
+      expect(f.linkAt(410, 350, 3)).toBe('https://example.org/');
+    } finally { layouts.lines = []; }
   });
   it('lays each text out once, however often the pointer moves', () => {
     const { f } = textFrames();

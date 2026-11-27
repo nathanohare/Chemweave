@@ -65,6 +65,18 @@ export interface SlideListOptions {
 /** A number for each object, to tell whether it is the same one (a drawing, a master) as when a picture was drawn. */
 const ids = new WeakMap<object, number>();
 let lastId = 0;
+/**
+ * JSON.stringify's replacer for a stamp: a long text (a picture background's data URL) stands for
+ * itself by its length, its ends and a sample of the characters between, not whole (a stamp is
+ * made for every slide on every rebuild).
+ */
+function shortLong(_k: string, v: unknown): unknown {
+  if (typeof v !== 'string' || v.length <= 200) return v;
+  let mid = 0;
+  for (let k = 64; k < v.length - 64; k += 997) mid = (mid * 31 + v.charCodeAt(k)) | 0;
+  return `${v.length}:${v.slice(0, 64)}:${mid}:${v.slice(-64)}`;
+}
+
 function identity(o: object): number {
   let n = ids.get(o);
   if (n === undefined) { n = ++lastId; ids.set(o, n); }
@@ -103,7 +115,7 @@ export class SlideList {
   /** What each slide's picture shows (by slide id), so a rebuild paints only the slides that changed (F185). */
   private painted = new Map<number, { stamp: string; thumb: HTMLCanvasElement; keys: Map<number, HTMLCanvasElement> }>();
   /** The slide whose section was last opened for it (a folded section opens when its slide is gone to). */
-  private openedFor: { deck: Deck | null; index: number } = { deck: null, index: -1 };
+  private openedFor: { deck: Deck | null; slide: object | null } = { deck: null, slide: null };
   private grid: boolean;
   thumbW: number;
   /** Canvas slides (by id) whose keyframes are folded away in the list. */
@@ -172,8 +184,9 @@ export class SlideList {
     if (!this.picked.has(deck.index)) this.picked = new Set([deck.index]);
     // going to a slide that sits in a folded section opens the section, but only then: the
     // section holding the slide being edited can be folded like any other (F838)
-    if (this.openedFor.deck !== deck || this.openedFor.index !== deck.index) {
-      this.openedFor = { deck, index: deck.index };
+    // (the slide itself is remembered, not its number: deleting a slide before it moves its number)
+    if (this.openedFor.deck !== deck || this.openedFor.slide !== deck.slides[deck.index]) {
+      this.openedFor = { deck, slide: deck.slides[deck.index] ?? null };
       const curSec = deck.slides[deck.index]?.section;
       if (curSec !== undefined) deck.folded.delete(curSec);
     }
@@ -253,7 +266,8 @@ export class SlideList {
       if (!deck || !count) return;
       this.picked = new Set(Array.from({ length: count }, (_, k) => start + k));
       this.anchor = start;
-      if (!this.picked.has(deck.index)) this.hooks.go(start);
+      // (going to the section's first slide is picking the section, not opening it: a folded one stays folded)
+      if (!this.picked.has(deck.index)) { this.openedFor = { deck, slide: deck.slides[start] ?? null }; this.hooks.go(start); }
       this.mark();
       this.list.focus();
     });
@@ -424,6 +438,8 @@ export class SlideList {
     const deck = this.deck;
     if (!deck) return;
     if (!this.items[deck.index]) { this.rebuild(); return; }
+    // the slide gone to has its picture in the list: its section is as open or folded as it is
+    this.openedFor = { deck, slide: deck.slides[deck.index] ?? null };
     if (!this.picked.has(deck.index)) this.picked = new Set([deck.index]);
     this.mark();
     this.items[deck.index]?.scrollIntoView({ block: 'nearest' });
@@ -524,7 +540,7 @@ export class SlideList {
     const page = deck.page(i);
     const doc = deck.docOf(i);
     const { size: _size, master, ...rest } = page;
-    return [identity(doc), doc.version, identity(master), deck.size.w, deck.size.h, this.wOf(i), this.keyW(), window.devicePixelRatio || 1, JSON.stringify(rest), deck.slides[i].layout].join('|');
+    return [identity(doc), doc.version, identity(master), deck.size.w, deck.size.h, this.wOf(i), this.keyW(), window.devicePixelRatio || 1, JSON.stringify(rest, shortLong), deck.slides[i].layout].join('|');
   }
 
   private paint(i: number, force = false): void {

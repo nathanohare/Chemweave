@@ -2174,6 +2174,8 @@ export class Deck {
       this.detachKeep(() => { const k = this.slides.indexOf(s === made ? old : made); if (k >= 0) this.slides[k] = s; });
       useMaster(m);
       this.refreshCites();
+      // (the slide keeps its number, so nothing else tells the slide list that its picture is of another drawing now)
+      this.looks++;
       this.goFresh(go);
     };
     const doIt = () => put(made, master ?? beforeMaster, i);

@@ -36,7 +36,7 @@ interface Item {
 const W = 132;
 
 /** A picture in the list: the deck and place it shows (this deck's slide is followed by the slide itself, as slides go in and out around it). */
-interface Thumb { cv: HTMLCanvasElement; d: Deck; i: number; slide?: Slide }
+interface Thumb { cv: HTMLCanvasElement; d: Deck; i: number; slide?: Slide; /** The slide's drawing as it was when this was drawn (an edit of the slide since draws it again). */ v?: number }
 
 export class SlideComparePane {
   private box: FloatBox;
@@ -126,6 +126,12 @@ export class SlideComparePane {
     if (!this.open || d !== this.mine) return;
     const key = `${d.slides.map((s) => s.id).join(',')}|${this.items.map((it) => this.stateOf(it)).join('')}`;
     if (key !== this.seen) this.render();
+    // a slide of this deck edited while the pane is open: its picture is drawn again (F184)
+    const stale = this.thumbs.filter((t) => {
+      const k = t.slide ? d.slides.indexOf(t.slide) : -1;
+      return k >= 0 && t.d === d && d.docOf(k).version !== t.v;
+    });
+    if (stale.length) this.enqueue(stale);
   }
 
   /** Where a change stands now: an accepted one whose slide Undo took back (or put back) is open again. */
@@ -307,7 +313,9 @@ export class SlideComparePane {
     const t0 = performance.now();
     while (this.queue.length) {
       const t = this.queue.shift()!;
-      this.paint(t.cv, t.d, t.slide ? t.d.slides.indexOf(t.slide) : t.i);
+      const at = t.slide ? t.d.slides.indexOf(t.slide) : t.i;
+      this.paint(t.cv, t.d, at);
+      if (at >= 0 && at < t.d.slides.length) t.v = t.d.docOf(at).version;
       if (performance.now() - t0 > 8) break;
     }
     if (this.queue.length) this.frame = requestAnimationFrame(() => { this.frame = 0; this.drain(); });

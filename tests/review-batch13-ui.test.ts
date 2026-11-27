@@ -13,6 +13,13 @@ vi.mock('../src/render/images', async (importOriginal) => {
   return { ...real, imageFor: (src: string) => (src === 'tile.png' ? (loaded.img as unknown as HTMLImageElement) : real.imageFor(src)) };
 });
 
+// A count of the times a layout's text styles are worked out for the master's items (see F868).
+const styled = vi.hoisted(() => ({ n: 0 }));
+vi.mock('../src/deck/deck', async (importOriginal) => {
+  const real = await importOriginal<typeof import('../src/deck/deck')>();
+  return { ...real, textStyles: ((...a: Parameters<typeof real.textStyles>) => { styled.n++; return real.textStyles(...a); }) as typeof real.textStyles };
+});
+
 import { Doc, type Caption } from '../src/model';
 import { Deck, textStyles } from '../src/deck/deck';
 import { rulerLabel, guidePoint } from '../src/ui/slide-guides';
@@ -235,6 +242,22 @@ describe('F868: what is drawn on the master follows the master\'s drawing style'
     // the same items under a master with a heavier line
     drawSlidePage(ctx, { ...was, master: { ...was.master, drawing: { ...was.master.drawing, lineWidth: 6 } } });
     expect(Math.max(...widths)).toBeGreaterThan(first);
+  });
+
+  it('is set up once for each layout, not again each time slides of different layouts follow one another', () => {
+    const items = new Doc();
+    items.edit('Arrow', () => { items.addArrow({ headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 6, headWidth: 1.5, tail: { x: 100, y: 100 }, head: { x: 300, y: 100 } } as never); });
+    const d = Deck.blank(new Doc());
+    d.attach();
+    d.addSlide('title-content');
+    const ctx = new Proxy({}, { get: (_, k) => (k === 'measureText' ? () => ({ width: 10 }) : () => undefined), set: () => true }) as unknown as CanvasRenderingContext2D;
+    const page = d.page(0);
+    const master = { ...page.master, items: items.contents() };
+    const draw = (layout: 'blank' | 'title-content') => drawSlidePage(ctx, { ...page, master, layout });
+    draw('blank'); draw('title-content');
+    styled.n = 0;
+    for (let k = 0; k < 4; k++) { draw('blank'); draw('title-content'); }
+    expect(styled.n).toBe(0);
   });
 });
 

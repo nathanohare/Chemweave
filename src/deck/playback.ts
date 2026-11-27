@@ -213,18 +213,33 @@ export class SlideFrames {
   }
 
   /** How the parts stand with `done` steps played and nothing running (for the pointer, which asks on every move). */
-  private idleMemo: { done: number; states: Map<Part, PartState> } | null = null;
-  private statesAt(done: number): Map<Part, PartState> | null {
+  private idleMemo: { key: string; states: Map<Part, PartState> } | null = null;
+  /** (`fired`: the clicks of the triggers' sequences played so far, which bring in what they are set to) */
+  private statesAt(done: number, fired?: Map<string, { done: number; t: number }>): Map<Part, PartState> | null {
     if (!this.layers.length) return null;
-    if (this.idleMemo?.done !== done) this.idleMemo = { done, states: partStates(this.parts, this.anims, done, -1) };
+    const key = `${done}|${fired ? [...fired].map(([k, f]) => `${k}:${f.done}`).join(',') : ''}`;
+    if (this.idleMemo?.key !== key) this.idleMemo = { key, states: partStates(this.parts, this.anims, done, -1, fired) };
     return this.idleMemo.states;
   }
 
-  /** Is the shape or text on the slide showing with `done` steps played? (One not yet come in, or gone out, can't be clicked.) */
-  private showing(done: number, kind: 'shapes' | 'captions', id: number): boolean {
-    const states = this.statesAt(done);
-    const L = states && this.layers.find((l) => l.part.sel[kind].has(id));
-    return !L || (states!.get(L.part)?.visible ?? true);
+  /**
+   * Is the shape or text on the slide showing with `done` steps played? (One not yet come in, or gone out, can't be clicked.)
+   * Text that comes in a paragraph at a time is showing where `para` is in (`para`: the paragraph at the point, when it is known).
+   */
+  private showing(done: number, kind: 'shapes' | 'captions', id: number, fired?: Map<string, { done: number; t: number }>, para?: number): boolean {
+    const states = this.statesAt(done, fired);
+    if (!states) return true;
+    const mine = this.layers.filter((l) => l.part.sel[kind].has(id));
+    if (!mine.length) return true;
+    const by = para !== undefined ? mine.find((l) => l.part.para === para) : undefined;
+    if (by) return states.get(by.part)?.visible ?? true;
+    // (no paragraph known, or the text is not played by paragraphs: showing when any of its parts is)
+    return mine.some((l) => states.get(l.part)?.visible ?? true);
+  }
+
+  /** The paragraph of a text box that its point `y` (from the box's own origin) is in. */
+  private paraAt(lay: ReturnType<typeof layoutText>, y: number): number | undefined {
+    return lay.lines?.find((l) => y >= l.y - l.ascent && y <= l.y + l.descent)?.para;
   }
 
   /** A text box laid out as it is drawn, kept (the slide's text does not change while it is shown). */
@@ -258,8 +273,8 @@ export class SlideFrames {
    * Videos and sounds on the slide, showing with `done` steps played: where they go, in CSS
    * pixels on the canvas (a hidden sound's icon still has its place, to be clicked).
    */
-  videoSpots(done: number): MediaSpot[] {
-    const states = this.statesAt(done);
+  videoSpots(done: number, fired?: Map<string, { done: number; t: number }>): MediaSpot[] {
+    const states = this.statesAt(done, fired);
     const { x, y, k } = this.at;
     const out: MediaSpot[] = [];
     for (const sh of this.doc.shapes.values()) {
@@ -293,10 +308,10 @@ export class SlideFrames {
    * What a click at a point on the canvas (CSS pixels) does: a shape's or zoom's action (the top
    * one there), and the box of what was clicked, in CSS pixels.
    */
-  shapeActionAt(px: number, py: number, done = 0): { link: string; zoom?: Shape['zoom']; rect: Rect } | null {
+  shapeActionAt(px: number, py: number, done = 0, fired?: Map<string, { done: number; t: number }>): { link: string; zoom?: Shape['zoom']; rect: Rect } | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
-    const hits = [...this.doc.shapes.values()].filter((s) => s.link && !s.hidden && this.showing(done, 'shapes', s.id) && p.x >= Math.min(s.x1, s.x2) && p.x <= Math.max(s.x1, s.x2) && p.y >= Math.min(s.y1, s.y2) && p.y <= Math.max(s.y1, s.y2));
+    const hits = [...this.doc.shapes.values()].filter((s) => s.link && !s.hidden && this.showing(done, 'shapes', s.id, fired) && p.x >= Math.min(s.x1, s.x2) && p.x <= Math.max(s.x1, s.x2) && p.y >= Math.min(s.y1, s.y2) && p.y <= Math.max(s.y1, s.y2));
     const top = hits.sort((a, b) => (a.z ?? 0) - (b.z ?? 0)).pop();
     if (!top) return null;
     const r = { x1: x + Math.min(top.x1, top.x2) * k, y1: y + Math.min(top.y1, top.y2) * k, x2: x + Math.max(top.x1, top.x2) * k, y2: y + Math.max(top.y1, top.y2) * k };
@@ -304,14 +319,15 @@ export class SlideFrames {
   }
 
   /** The link in the slide's text at a point on the canvas (CSS pixels), if any. */
-  linkAt(px: number, py: number, done = 0): string | null {
+  linkAt(px: number, py: number, done = 0, fired?: Map<string, { done: number; t: number }>): string | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
     const doc = this.doc;
     for (const c of doc.captions.values()) {
-      if (!c.runs.some((r) => r.link) || !this.showing(done, 'captions', c.id)) continue;
+      if (!c.runs.some((r) => r.link) || !this.showing(done, 'captions', c.id, fired)) continue;
       const lay = this.layoutOf(c);
       const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      if (!this.showing(done, 'captions', c.id, fired, this.paraAt(lay, q.y - c.y))) continue;
       const span = linkAtPoint(lay, c.runs, q.x - c.x, q.y - c.y);
       if (span) return span.link;
     }
@@ -319,15 +335,16 @@ export class SlideFrames {
   }
 
   /** The text at a point on the canvas (CSS pixels from its corner) that `want`s, the last one if several. */
-  textAt(px: number, py: number, want: (c: Caption) => boolean, done = 0): Caption | null {
+  textAt(px: number, py: number, want: (c: Caption) => boolean, done = 0, fired?: Map<string, { done: number; t: number }>): Caption | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
     const doc = this.doc;
     let top: Caption | null = null;
     for (const c of doc.captions.values()) {
-      if (c.hidden || !want(c) || !this.showing(done, 'captions', c.id)) continue;
+      if (c.hidden || !want(c) || !this.showing(done, 'captions', c.id, fired)) continue;
       const lay = this.layoutOf(c);
       const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      if (!this.showing(done, 'captions', c.id, fired, this.paraAt(lay, q.y - c.y))) continue;
       const b = lay.box, m = 2;
       if (q.x - c.x >= b.x1 - m && q.x - c.x <= b.x2 + m && q.y - c.y >= b.y1 - m && q.y - c.y <= b.y2 + m) top = c;
     }
@@ -752,15 +769,15 @@ export class Player {
 
   /** The link at a point on the canvas (CSS pixels from its corner), if any. */
   linkAt(px: number, py: number): string | null {
-    return this.moving ? null : this.current.linkAt(px, py, this.done);
+    return this.moving ? null : this.current.linkAt(px, py, this.done, this.idleFired());
   }
 
   /** What a click at a point does: a shape's action or zoom (with its box), else a link in the text. */
   actionAt(px: number, py: number): { link: string; zoom?: Shape['zoom']; rect?: Rect } | null {
     if (this.moving) return null;
-    const sh = this.current.shapeActionAt(px, py, this.done);
+    const sh = this.current.shapeActionAt(px, py, this.done, this.idleFired());
     if (sh) return sh;
-    const link = this.current.linkAt(px, py, this.done);
+    const link = this.current.linkAt(px, py, this.done, this.idleFired());
     return link ? { link } : null;
   }
 
@@ -856,7 +873,7 @@ export class Player {
    */
   private videos(on: boolean, carry = false): void {
     const host = this.canvas.parentElement;
-    const spots = on && host ? [...this.current.videoSpots(this.done), ...this.current.hiddenSpots].filter((x) => !(this.noNarration && x.media.narration)) : [];
+    const spots = on && host ? [...this.current.videoSpots(this.done, this.idleFired()), ...this.current.hiddenSpots].filter((x) => !(this.noNarration && x.media.narration)) : [];
     const keep = new Set(spots.map((s) => s.id));
     for (const [id, v] of this.vids) {
       if (keep.has(id)) continue;
@@ -871,6 +888,11 @@ export class Player {
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     for (const s of spots) {
       let v = this.vids.get(s.id);
+      // a sound carried over from this very slide (back to it, or a custom show that returns to it) goes on as the one sound it is
+      if (!v) {
+        const k = this.carried.findIndex((c) => c.media === s.media || (c.media.audio && s.media.audio && c.media.src === s.media.src));
+        if (k >= 0) { v = this.carried.splice(k, 1)[0]; this.vids.set(s.id, v); }
+      }
       if (!v) {
         const m = s.media;
         const el = document.createElement(m.audio ? 'audio' : 'video');
@@ -931,7 +953,7 @@ export class Player {
   private fullScreen(v: { el: HTMLMediaElement; media: Media }, on: boolean): void {
     if (v.media.audio || !v.media.full) return;
     v.el.dataset.full = on ? '1' : '';
-    const s = this.current.videoSpots(this.done).find((x) => this.vids.get(x.id) === v);
+    const s = this.current.videoSpots(this.done, this.idleFired()).find((x) => this.vids.get(x.id) === v);
     if (s) this.place(v.el, s);
   }
 
@@ -944,7 +966,7 @@ export class Player {
   /** A click in the show on a video or a sound's icon starts or pauses it; false when there is none there. */
   clickMedia(px: number, py: number): boolean {
     if (this.moving) return false;
-    for (const s of this.current.videoSpots(this.done)) {
+    for (const s of this.current.videoSpots(this.done, this.idleFired())) {
       if (px < s.x || px > s.x + s.w || py < s.y || py > s.y + s.h) continue;
       const v = this.vids.get(s.id);
       if (!v) continue;
@@ -960,7 +982,7 @@ export class Player {
 
   /** Whether there is a video or sound to click at a point (for the pointer). */
   mediaAt(px: number, py: number): boolean {
-    return !this.moving && this.current.videoSpots(this.done).some((s) => px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h);
+    return !this.moving && this.current.videoSpots(this.done, this.idleFired()).some((s) => px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h);
   }
 
   /** A morph from slide `was` (as it was left) to the slide now showing. */
@@ -1165,7 +1187,7 @@ export class Player {
     if (this.moving) return -1;
     const c = this.deck.slides[this.i]?.canvas;
     if (!c?.keys.length || c.show?.noLinks) return -1;
-    const hit = this.current.textAt(px, py, (t) => !!compoundId(plainText(t.runs)), this.done);
+    const hit = this.current.textAt(px, py, (t) => !!compoundId(plainText(t.runs)), this.done, this.idleFired());
     if (!hit) return -1;
     const id = compoundId(plainText(hit.runs)), size = this.deck.size;
     const same = [...this.deck.docOf(this.i).captions.values()].filter((t) => !t.hidden && compoundId(plainText(t.runs)) === id);
@@ -1496,6 +1518,11 @@ export class Player {
   }
 
   /** How far each trigger's sequence has played at a time (for drawing). */
+  /** The triggers' clicks played so far, for asking what is showing with nothing moving. */
+  private idleFired(): Map<string, { done: number; t: number }> | undefined {
+    return this.fired.size ? new Map([...this.fired].map(([k, f]) => [k, { done: f.done, t: -1 }])) : undefined;
+  }
+
   private firedAt(now: number): Map<string, { done: number; t: number }> {
     const out = new Map<string, { done: number; t: number }>();
     for (const [k, f] of this.fired) out.set(k, { done: f.done, t: -1 });
