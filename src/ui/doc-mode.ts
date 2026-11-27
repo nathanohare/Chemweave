@@ -26,7 +26,7 @@ import { offsetAt, caretPos, selectionRects, wordAt } from '../text/layout';
 import type { Rect } from '../geom';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
 import { pastedTable, tableHtml, tableTsv } from '../io/table-clip';
-import { afterTyping, leftAsWritten, typingPrefs, setTypingPrefs } from '../text/typing';
+import { afterTyping, finishWord, leftAsWritten, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, type CharLook, type Issue } from '../text/chemtext';
 import { loadSpeller, SPELLER_RETRY_MS, type Speller } from '../text/spelling';
 import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
@@ -213,7 +213,7 @@ const FORMATTING = '#2f6fdf';
 /** A figure's edges while its structures are drawn in place. */
 const FIGURE_EDGE = '#7f8fae';
 /** Words ignored with "Ignore" while the program is open (lower case). */
-const ignored = new Set<string>();
+const ignored = leftAsWritten;
 const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 
 /** Commands that, in a text box, work on its text (others leave the box first). */
@@ -552,7 +552,7 @@ export class DocumentMode {
       speller: () => this.speller,
       checks: () => this.checksAll(),
       addWord: (w) => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, w] }),
-      ignoreWord: (w) => { ignored.add(w.toLowerCase()); leftAsWritten.add(w.toLowerCase()); this.speller?.ignore(w); this.checkCache.clear(); this.checked = null; this.redraw(); },
+      ignoreWord: (w) => { ignored.add(w.toLowerCase()); this.speller?.ignore(w); this.checkCache.clear(); this.checked = null; this.redraw(); },
       show: (a, b) => {
         const f = this.file;
         if (!f) return;
@@ -672,7 +672,7 @@ export class DocumentMode {
   private startCell(id: number, r: number, c: number, at: { x: number; y: number } | 'start' | 'end' = 'end'): boolean {
     const f = this.file;
     if (!f) return false;
-    if (f.box && (f.box.id !== id || f.box.cell?.r !== r || f.box.cell?.c !== c)) f.endBox();
+    if (f.box && (f.box.id !== id || f.box.cell?.r !== r || f.box.cell?.c !== c)) { finishWord(f.box.ed); f.endBox(); }
     const ed = f.editCell(id, r, c);
     if (!ed) return false;
     ed.onTyped = (typed) => afterTyping(ed, typed);
@@ -1132,6 +1132,8 @@ export class DocumentMode {
   private stopBoxNow(f: DocFile, pick: boolean): void {
     if (!f.box) return;
     const id = f.box.id;
+    // (the word being typed is finished as if a space had been typed)
+    finishWord(f.box.ed);
     f.endBox();
     if (pick) {
       const at = objectOffsets(f.t.runs).get(id);
@@ -1760,7 +1762,7 @@ export class DocumentMode {
     const cmd = (label: string, name: string, title?: string) => { items.push(command(label, name, title)); };
     if (issue) {
       item(`${issue.message}: Change to ${issue.fixed}`, () => ed.fix(issue.edits, 'fix'));
-      item('Leave as Written', () => { ignored.add(ed.text.slice(issue.start, issue.end).toLowerCase()); leftAsWritten.add(ed.text.slice(issue.start, issue.end).toLowerCase()); this.checkCache.clear(); this.checked = null; this.redraw(); });
+      item('Leave as Written', () => { ignored.add(ed.text.slice(issue.start, issue.end).toLowerCase()); this.checkCache.clear(); this.checked = null; this.redraw(); });
     }
     if (word) {
       if (issue) line();
@@ -1771,7 +1773,7 @@ export class DocumentMode {
       if (!sugg.length) item('No Suggestions', null);
       line();
       item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); leftAsWritten.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until Chemweave is closed');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     // a link here
     const linkHere = rt.sliceRuns(ed.t.runs, offset, offset + 1)[0]?.link ?? (offset > 0 ? rt.sliceRuns(ed.t.runs, offset - 1, offset)[0]?.link : undefined);
@@ -4060,10 +4062,11 @@ export class DocumentMode {
       case 'line-1-5': line(1.5); break;
       case 'line-double': line(2); break;
       case 'font-bigger': case 'font-smaller': {
-        const cur = ed.currentStyle().size ?? styleOf(f.t, ed.currentPara()).size;
+        const paraSize = styleOf(f.t, ed.currentPara()).size;
         const sizes = [8, 9, 10, 10.5, 11, 12, 14, 16, 18, 20, 24, 28, 36, 48, 72];
-        const next = cmd === 'font-bigger' ? sizes.find((s) => s > cur + 1e-6) ?? cur + 2 : [...sizes].reverse().find((s) => s < cur - 1e-6) ?? Math.max(1, cur - 1);
-        ed.setStyle({ size: next });
+        const step = (cur: number) => cmd === 'font-bigger' ? sizes.find((s) => s > cur + 1e-6) ?? cur + 2 : [...sizes].reverse().find((s) => s < cur - 1e-6) ?? Math.max(1, cur - 1);
+        // (each run of a selection steps from its own size)
+        ed.setStyleEach((s) => ({ size: step(s.size ?? paraSize) }));
         break;
       }
       case 'doc-bold': ed.toggle('bold'); break;

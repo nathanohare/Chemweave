@@ -49,8 +49,6 @@ export class TextEditing {
   pending: Partial<rt.RunStyle> | null = null;
   /** Text being put together by an input method (Chinese, Japanese, accents): shown, not yet typed. */
   composing: string | null = null;
-  /** The selection the input method's text will replace (it stays in place, not deleted, until the text is confirmed). */
-  private composeSel: { anchor: number; focus: number } | null = null;
   /** Called after every change. */
   onChange: (kind: ChangeKind) => void = () => {};
   /** Called after text is typed (chemistry formatting hooks in here). */
@@ -701,6 +699,8 @@ export class TextEditing {
       if (e.bold !== undefined) patch.bold = e.bold || undefined;
       if (Object.keys(patch).length) runs = rt.applyStyle(runs, e.start, e.end, patch);
     }
+    // (nothing changed, the look was already there: no step of Undo that does nothing)
+    if (!edits.some((e) => e.text !== undefined) && sameRunsByValue(this.t.runs, runs)) return;
     let anchor = this.anchor, focus = this.focus;
     const moved = (at: number, e: FixEdit, len: number) => (at >= e.end ? at + len - (e.end - e.start) : at > e.start ? e.start + len : at);
     const who = this.track?.();
@@ -773,7 +773,6 @@ export class TextEditing {
 
   compositionStart(): void {
     // a selection is not deleted here: the confirmed text replaces it in one step (Undo puts both back at once)
-    this.composeSel = this.collapsed ? null : { anchor: this.anchor, focus: this.focus };
     this.composing = '';
   }
 
@@ -786,9 +785,6 @@ export class TextEditing {
   compositionEnd(text: string): void {
     this.composing = null;
     this.lay = null;
-    const sel = this.composeSel;
-    this.composeSel = null;
-    if (sel) { this.anchor = sel.anchor; this.focus = sel.focus; }
     if (text) this.type(text);
     else this.onChange('selection');
   }
@@ -829,6 +825,18 @@ export function wordEnd(text: string, at: number): number {
 /** Start of the next word (Ctrl+Right), as on Windows. */
 export function nextWord(text: string, at: number): number {
   return wordEnd(text, at);
+}
+
+/** Whether two lists of runs are the same, run for run and look for look. */
+function sameRunsByValue(a: readonly TextRun[], b: readonly TextRun[]): boolean {
+  if (a === b) return true;
+  if (a.length !== b.length) return false;
+  for (let i = 0; i < a.length; i++) {
+    const x = a[i] as unknown as Record<string, unknown>, y = b[i] as unknown as Record<string, unknown>;
+    const kx = Object.keys(x);
+    if (kx.length !== Object.keys(y).length || kx.some((k) => x[k] !== y[k])) return false;
+  }
+  return true;
 }
 
 /**

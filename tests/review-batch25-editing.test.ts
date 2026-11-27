@@ -66,6 +66,15 @@ describe('typing over a selection with an input method (F1138)', () => {
     expect([ed.start, ed.end]).toEqual([0, 5]);
     expect(ed.canUndo).toBe(false);
   });
+  it('goes where the caret was moved to meanwhile', () => {
+    const ed = editor([{ text: 'hello world' }]);
+    ed.select(0, 5);
+    ed.compositionStart();
+    ed.compositionUpdate('ni');
+    ed.setCaret(11);
+    ed.compositionEnd('你');
+    expect(ed.text).toBe('hello world你');
+  });
   it('still types at a caret as before', () => {
     const ed = editor([{ text: 'ab' }]);
     ed.setCaret(1);
@@ -101,6 +110,16 @@ describe('typing-time chemistry formatting', () => {
     for (const [a, b] of spy.mock.calls) expect(b - a).toBeLessThanOrEqual(310);
   });
 
+  it('looks back only a stretch for the alkyl and R-number passes too (F1155)', () => {
+    alkylPrefs.look = 'dash';
+    rNumberPrefs.plainText = true;
+    const ed = editor([{ text: 'x'.repeat(5000) }]);
+    const spy = vi.spyOn(ed, 'looksBetween');
+    typeAll(ed, ' ');
+    expect(spy.mock.calls.length).toBeGreaterThanOrEqual(3);
+    for (const [a, b] of spy.mock.calls) expect(b - a).toBeLessThanOrEqual(310);
+  });
+
   it('leaves words in the dictionary or left as written alone (F1156)', () => {
     const own = editor([]);
     typeAll(own, 'CH2Cl2 ', { ...DEFAULT_TYPING, dictionary: ['CH2Cl2'] });
@@ -125,5 +144,15 @@ describe('typing-time chemistry formatting', () => {
     const bracket = editor([{ text: 'the ketone (4)' }]);
     finishWord(bracket, prefs);
     expect(bracket.t.runs.filter((r) => r.bold).map((r) => r.text)).toEqual(['4']);
+    // (a word already formatted as it was typed makes no second step of Undo when it is finished)
+    const typedBracket = editor([]);
+    typeAll(typedBracket, 'x (4)', prefs);
+    typedBracket.undo();
+    expect(typedBracket.t.runs.some((r) => r.bold)).toBe(false);
+    const again = editor([]);
+    typeAll(again, 'x (4)', prefs);
+    finishWord(again, prefs);
+    again.undo();
+    expect(again.t.runs.some((r) => r.bold)).toBe(false);
   });
 });

@@ -1787,7 +1787,15 @@ export class SiMode {
       case 'clear': look = 'clear'; break;
       case 'font': look = value?.trim() ? { font: value.trim() } : null; break;
       case 'size': { const n = Number(value); look = n > 0 && n <= 400 ? { size: n } : null; break; }
-      case 'grow': case 'shrink': look = { size: stepSize(pv.selectionValue('size') ?? defaultStyles().Normal.size ?? 11, cmd === 'grow' ? 1 : -1) }; break;
+      case 'grow': case 'shrink': {
+        const by = cmd === 'grow' ? 1 : -1, base = defaultStyles().Normal.size ?? 11;
+        const parts = pv.selectionSizes();
+        if (parts.length > 1) {
+          // text of several sizes: each stretch steps from its own size (one Undo step for each)
+          await pv.formatEach(parts.map((p) => ({ start: p.start, end: p.end, look: { size: stepSize(p.size ?? base, by) } })));
+        } else look = { size: stepSize(pv.selectionValue('size') ?? base, by) };
+        break;
+      }
       case 'color': look = value ? { color: value } : null; break;
       case 'small-caps': look = { smallCaps: !pv.selectionHas('smallCaps') }; break;
       case 'highlight': look = { highlight: pv.selectionHas('highlight') ? '' : '#ffff00' }; break;

@@ -69,7 +69,7 @@ const SELECTION = 'rgba(40, 120, 255, 0.25)';
 const MISSPELLED = '#e0302f';
 const FORMATTING = '#2f6fdf';
 /** Words ignored with "Ignore" or "Leave as written" while the program is open (lower case). */
-const ignored = new Set<string>();
+const ignored = leftAsWritten;
 /** The dashed box round the text being typed: the usual blue, or Canvas mode's teal (setCaptionTint). */
 let FRAME = 'rgba(47, 111, 223, 0.6)';
 
@@ -445,7 +445,7 @@ export class CaptionEditor {
     };
     if (issue) {
       item(`${issue.message}: change to ${issue.fixed}`, () => this.ed.fix(issue.edits, 'fix'));
-      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); leftAsWritten.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
+      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
     }
     if (word) {
       if (issue) menu.appendChild(d.createElement('hr'));
@@ -456,7 +456,7 @@ export class CaptionEditor {
       if (!sugg.length) item('No suggestions', null);
       menu.appendChild(d.createElement('hr'));
       item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); leftAsWritten.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until Chemweave is closed');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     if (link) {
       if (word || issue) menu.appendChild(d.createElement('hr'));

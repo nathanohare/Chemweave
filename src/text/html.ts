@@ -368,7 +368,12 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
           // preformatted text: its spaces and tabs stay as written, each line is a paragraph
           // (the line break just before the end of the block shows nothing)
           let raw = (ch as Text).data.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
-          if (!ch.nextSibling) raw = raw.replace(/\n$/, '');
+          // (and the line breaks between blocks inside it, "\n<p>one</p>\n<p>two</p>\n", are only the source's layout)
+          const block = (n: Node | null) => !!n && n.nodeType === 1 && BLOCKS.has((n as Element).tagName.toUpperCase());
+          const beside = block(ch.previousSibling) || block(ch.nextSibling);
+          if (beside && !raw.trim() && raw.includes('\n')) continue;
+          if (!ch.nextSibling || block(ch.nextSibling)) raw = raw.replace(/\n$/, '');
+          if (block(ch.previousSibling)) raw = raw.replace(/^\n/, '');
           if (c.font && rt.isSymbolFont(c.font)) raw = rt.fromSymbolFont(raw);
           raw.split('\n').forEach((line, i) => { if (i > 0) lineBreak(); addText(line, c); });
           continue;
@@ -392,7 +397,8 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
         continue;
       }
       // a tab as Word writes it (the spaces inside it are only for programs that don't know it)
-      if (/mso-tab-count/i.test(el.getAttribute('style') ?? '')) { addText('\t', c); continue; }
+      const tabs = /mso-tab-count\s*:\s*(\d+)/i.exec(el.getAttribute('style') ?? '');
+      if (tabs) { addText('\t'.repeat(Math.max(1, Math.min(Number(tabs[1]), 50))), c); continue; }
       const cc = styleOf(el, c);
       if ((tag === 'TD' || tag === 'TH') && el.previousElementSibling) {
         // an empty cell before this one still takes its tab

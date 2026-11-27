@@ -1460,6 +1460,36 @@ export class SiPreview {
     return undefined;
   }
 
+  /** The selection as stretches of one size each, in order (undefined: the text's own size). */
+  selectionSizes(): { start: number; end: number; size: number | undefined }[] {
+    const ed = this.file?.ed;
+    const out: { start: number; end: number; size: number | undefined }[] = [];
+    if (!ed || ed.collapsed) return out;
+    let at = 0;
+    for (const run of this.file!.t.runs) {
+      const a = Math.max(at, ed.start), b = Math.min(at + run.text.length, ed.end);
+      at += run.text.length;
+      if (b <= a) { if (at >= ed.end) break; continue; }
+      const last = out[out.length - 1];
+      if (last && last.size === run.size && last.end === a) last.end = b;
+      else out.push({ start: a, end: b, size: run.size });
+      if (at >= ed.end) break;
+    }
+    return out;
+  }
+
+  /** Format stretches of the selection each its own way, then select what was selected again. */
+  async formatEach(stretches: { start: number; end: number; look: FormatLook }[]): Promise<void> {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    const [a, b] = [ed.start, ed.end];
+    for (const s of stretches) {
+      ed.select(s.start, s.end);
+      if (!(await this.format(s.look))) break;
+    }
+    ed.select(a, b);
+  }
+
   /** Whether every character selected has `key` (Bold pressed again takes it off). */
   selectionHas(key: keyof RunFormatLook): boolean {
     const ed = this.file?.ed;

@@ -680,12 +680,12 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       // "(methylenedioxy)phenylboronic" breaks in "methylenedioxy")
       const m = (f.boxes ? /^([(\[{"'\u201c\u2018]*)(\p{L}+)(\S*)\s*$/u : /^()(\p{L}+)([^\p{L}\d\s]*)\s*$/u).exec(pText.slice(w.start, w.end));
       if (!m || m[2].length < 5 || (!hy.caps && m[2] === m[2].toUpperCase())) return null;
-      // (a name with digits, such as triethylamine-d15, is never broken, though it is several words
-      // here, split after its hyphen: the whole stretch up to the next space is looked at)
-      let ta = w.start, tb = w.end;
-      while (ta > 0 && !/\s/.test(pText[ta - 1])) ta--;
+      // (a name with digits after its letters, such as triethylamine-d15, is never broken, though it
+      // is several words here, split after its hyphen: from the word on to the next space is looked
+      // at; a locant in front, as in 4-methoxybenzaldehyde, doesn't stop it)
+      let tb = w.end;
       while (tb < pText.length && !/\s/.test(pText[tb])) tb++;
-      if (/\d/.test(pText.slice(ta, tb))) return null;
+      if (/\d/.test(pText.slice(w.start, tb))) return null;
       const at0 = w.start + m[1].length;
       // the word in one plain piece of text (not a formula, figure or field)
       const s = segAt(at0);
@@ -706,8 +706,9 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       return { start: at, end: w.end, body: widthOf(at, be), spaces: w.spaces };
     };
     for (let w of words) {
-      // (a loop: the rest of a broken word starts a line and may still be too wide for it)
-      let rest = false;
+      // (a loop: the rest of a broken word starts a line and may still be too wide for it; pushed:
+      // the word was moved whole to a new line)
+      let pushed = false;
       for (;;) {
         const lineRoom = (pLines.length ? room : room - firstLine) - cut.left - cut.right;
         // a word fits when it and the space after it do (ChemDraw counts that space too; Word doesn't)
@@ -722,12 +723,12 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
             cur.width = cur.full + hb.width;
             emit(hb.hyphen);
             w = restOf(w, hb.at);
-            rest = true;
-          } else emit();
+          } else { emit(); pushed = true; }
           continue;
         }
-        if (rest && !cur && w.body + trailing(w) > lineRoom + 1e-6) {
-          // the rest of a broken word, wider than the line it starts: broken again at the last point that fits
+        if (!pushed && !cur && w.body + trailing(w) > lineRoom + 1e-6) {
+          // the rest of a broken word, or the first word of the paragraph, wider than its line: broken
+          // at the last point that fits (a word moved whole to a new line stays whole, as it always has)
           const hb = hyphenBreak(w, lineRoom);
           if (hb) {
             cur = { start: w.start, end: hb.at, width: hb.width, full: hb.width, spc: 0 };

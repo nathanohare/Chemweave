@@ -40,6 +40,11 @@ describe('the rest of a broken word (F1147)', () => {
     expect(lay.lines.length).toBeGreaterThanOrEqual(4);
     for (const l of lay.lines) expect(l.width).toBeLessThanOrEqual(50 + 1e-6);
   });
+  it('is broken when the word is the first of its paragraph, alone in a narrow box', () => {
+    const lay = layoutText({ runs: [{ text: word }], justify: 'left', wrap: 50 }, 10, measure);
+    expect(lay.lines.length).toBeGreaterThanOrEqual(4);
+    for (const l of lay.lines) expect(l.width).toBeLessThanOrEqual(50 + 1e-6);
+  });
 });
 
 describe('Word\'s character effects in right-to-left text (F1148)', () => {
@@ -80,6 +85,13 @@ describe('a word with digits in a document is not hyphenated (F1146)', () => {
   });
   it('still hyphenates a word without digits', () => {
     expect(shown('aaaa triethylamine-d')[0]).toBe('aaaa triethyl');
+  });
+  it('still hyphenates a name with a locant in front, 4-dimethylaminopyridine', () => {
+    // (the piece being broken, dimethylaminopyridine, has no digit; points at 8 as in the case above)
+    const got = shown('aaaa 4-dimethylaminopyridine');
+    expect(got[0]).toBe('aaaa 4-dimethyl');
+    expect(got[1]).toBe('aminopyridine');
+    for (const l of layoutText({ runs: [{ text: 'aaaa 4-dimethylaminopyridine', font: 'Times New Roman', size: 12 }], justify: 'left', boxes: true, wrap: 100, hyphenate }, 12, measure).lines) expect(l.width).toBeLessThanOrEqual(100 + 1e-6);
   });
 });
 

@@ -16,6 +16,12 @@ function tokenBefore(text: string, end: number): { from: number; word: string } 
   return { from, word: text.slice(from, end) };
 }
 
+/** The same, but no more than LOOK_BACK characters of it (a long token with no spaces is not read whole on every word end). */
+function shortTokenBefore(text: string, end: number): { from: number; word: string } {
+  const from = Math.max(tokenBefore(text, end).from, end - LOOK_BACK);
+  return { from, word: text.slice(from, end) };
+}
+
 /** Something being typed that will be a web address, a DOI or an e-mail address: left alone until it is finished. */
 const LINKISH = /^(https?:|ftp:|www\.|doi:|mailto:)|@/i;
 
@@ -95,7 +101,7 @@ function nameFormatWord(ed: TextEditing, prefs: TypingPrefs, end: number): void 
  */
 function alkylWord(ed: TextEditing, end: number): number {
   if (!alkylWants()) return 0;
-  const { from, word } = tokenBefore(ed.text, end);
+  const { from, word } = shortTokenBefore(ed.text, end);
   const looks = ed.looksBetween(from, end);
   const edits = alkylEdits(word, (i) => !!looks[i]?.italic, undefined, (i) => looks[i]?.pos === 'sup').map((e) => ({ ...e, start: e.start + from, end: e.end + from }));
   const before = ed.text.length;
@@ -110,7 +116,7 @@ function alkylWord(ed: TextEditing, end: number): number {
  */
 function rNumberWord(ed: TextEditing, end: number): void {
   if (!rNumberPrefs.superscriptR || !rNumberPrefs.plainText) return;
-  const { from, word } = tokenBefore(ed.text, end);
+  const { from, word } = shortTokenBefore(ed.text, end);
   const looks = ed.looksBetween(from, end);
   const edits = rNumberDigits(word).filter((i) => (looks[i]?.pos ?? 'base') === 'base').map((i) => ({ start: from + i, end: from + i + 1, pos: 'sup' as const }));
   if (edits.length) ed.fix(edits, 'format');
@@ -136,7 +142,7 @@ export function alkylEdits(text: string, italicAt: (i: number) => boolean, look?
   return out;
 }
 
-/** Words left as written (Leave as Written, Ignore) while the program is open, in lower case: typing doesn't format them (the checks leave them alone too). */
+/** Words left as written (Leave as Written, Ignore) while the program is open, in lower case: one set for Document, captions and SI Project text, so typing and every check agree. */
 export const leftAsWritten = new Set<string>();
 
 /** How far back the chemistry rules look for the word just finished: they need it and the word before. */

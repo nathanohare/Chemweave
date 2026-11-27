@@ -4,7 +4,9 @@
 // symbol search's case (F1153).
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { readFileSync } from 'node:fs';
-import { nameFormats } from '../src/text/chemtext';
+import { TextEditing } from '../src/text/editing';
+import { afterTyping, DEFAULT_TYPING } from '../src/text/typing';
+import { arialWidth } from '../src/text-metrics';
 import { grammarIssues } from '../src/text/grammar';
 import { Speller, loadSpeller } from '../src/text/spelling';
 import { searchSymbols } from '../src/text/symbols';
@@ -12,21 +14,25 @@ import { searchSymbols } from '../src/text/symbols';
 const on = { stereo: true, numbers: true };
 
 describe('compound numbers while typing a name (F1136)', () => {
-  const run = (before: string, typed: string, after = '') => {
-    const text = before + typed + after;
-    return nameFormats(text, before.length, on).map((e) => text.slice(e.start, e.end));
+  // typed a key at a time, as the editor does
+  const typed = (text: string) => {
+    const ed = new TextEditing({ runs: [], justify: 'left' }, { size: 10 }, (t, s) => arialWidth(t, s, false), 10);
+    const prefs = { ...DEFAULT_TYPING, boldNumbers: true };
+    ed.onTyped = (t) => afterTyping(ed, t, prefs);
+    for (const ch of text) ed.type(ch);
+    return ed.t.runs.filter((r) => r.bold).map((r) => r.text);
   };
   it('does not bold the locant of a name that goes on after "compound"', () => {
-    expect(run('the compound 4', '-')).toEqual([]);
-    expect(run('the compound 4', '–')).toEqual([]);
-    expect(run('compounds 2', '/')).toEqual([]);
-    expect(run('compound 2', '.', '5')).toEqual([]);
+    expect(typed('the compound 4-nitrophenol ')).toEqual([]);
+    expect(typed('the compound 4–nitrophenol ')).toEqual([]);
+    expect(typed('compounds 2/3 ')).toEqual([]);
+    expect(typed('compound 2.5 mg ')).toEqual([]);
   });
   it('still bolds a number a sentence or phrase ends on', () => {
-    expect(run('the compound 4', ' ')).toEqual(['4']);
-    expect(run('the compound 4', ',')).toEqual(['4']);
-    expect(run('compound 4', '.')).toEqual(['4']);
-    expect(run('compound 4', '.', ' Next')).toEqual(['4']);
+    expect(typed('the compound 4 ')).toEqual(['4']);
+    expect(typed('the compound 4, ')).toEqual(['4']);
+    expect(typed('compound 4. Next')).toEqual(['4']);
+    expect(typed('compound 4a. ')).toEqual(['4a']);
   });
 });
 

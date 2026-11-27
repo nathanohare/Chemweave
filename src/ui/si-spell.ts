@@ -33,7 +33,7 @@ export interface SiDictionary {
 }
 
 /** Words ignored in SI text while Chemweave is open (lower case). */
-const ignored = new Set<string>();
+const ignored = leftAsWritten;
 let speller: Speller | null = null;
 let asked = false;
 /** The speller could not be loaded: the browser's own check stays on for the boxes. */
@@ -146,7 +146,8 @@ export function checkSpelling(box: HTMLElement): void {
       asked = true;
       void loadSpeller().then((got) => {
         speller = got;
-        if (!got) { spellerFailed = true; setTimeout(() => { asked = false; spellerFailed = false; }, SPELLER_RETRY_MS); for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = typingPrefs.spelling; return; }
+        if (!got) { spellerFailed = true; setTimeout(() => { asked = false; }, SPELLER_RETRY_MS); for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = typingPrefs.spelling; return; }
+        spellerFailed = false;
         recheckAll();
       });
     }
@@ -343,7 +344,7 @@ export function spellingMenu(box: HTMLElement, e: MouseEvent, at?: { x: number; 
     if (all > 1) items.push([`Fix All ${all} Formatting Problems in This Text`, () => void fixAll(box)]);
     items.push(null);
     if (f.issue.kind === 'formula' || f.issue.kind === 'solvent') items.push([`Leave “${word}” as Written in This Project`, () => void addToProject(word), !!project && !project.readOnly]);
-    items.push([`Ignore “${word}” Until Chemweave Closes`, () => { ignored.add(word.toLowerCase()); leftAsWritten.add(word.toLowerCase()); recheckAll(); }]);
+    items.push([`Ignore “${word}” Until Chemweave Closes`, () => { ignored.add(word.toLowerCase()); recheckAll(); }]);
   } else {
     if (!speller) return false;
     const r = (misspelled.get(box) ?? []).find((m) => hit(m, x, y));
@@ -355,7 +356,7 @@ export function spellingMenu(box: HTMLElement, e: MouseEvent, at?: { x: number; 
     items.push(null);
     items.push([`Add “${word}” to This Project’s Dictionary`, () => void addToProject(word), !!project && !project.readOnly]);
     items.push([`Add “${word}” to My Dictionary (All Projects)`, () => { setTypingPrefs({ dictionary: [...typingPrefs.dictionary, word] }); personalSeen = ''; recheckAll(); }]);
-    items.push([`Ignore “${word}” Until Chemweave Closes`, () => { ignored.add(word.toLowerCase()); leftAsWritten.add(word.toLowerCase()); speller?.ignore(word); recheckAll(); }]);
+    items.push([`Ignore “${word}” Until Chemweave Closes`, () => { ignored.add(word.toLowerCase()); speller?.ignore(word); recheckAll(); }]);
   }
   e.preventDefault();
   popupMenu(at?.x ?? x, at?.y ?? y, items);

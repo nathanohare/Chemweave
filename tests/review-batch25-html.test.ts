@@ -47,6 +47,8 @@ describe('tabs in copied text (F1142)', () => {
   });
   it('reads Word\'s tab back as a tab', () => {
     expect(text("<p>a<span style='mso-tab-count:1'>&nbsp;&nbsp;&nbsp;&nbsp; </span>b</p>")).toBe('a\tb');
+    // (two tabs in a row: Word writes the count)
+    expect(text("<p>a<span style='mso-tab-count:2'>&nbsp;&nbsp;&nbsp;&nbsp; </span>b</p>")).toBe('a\t\tb');
   });
 });
 
@@ -84,5 +86,10 @@ describe('pasting preformatted text (F1144)', () => {
   it('keeps them for text styled white-space:pre, and collapses ordinary text still', () => {
     expect(text('<div style="white-space:pre">a  b\nc</div>')).toBe('a  b\nc');
     expect(text('<div>a  b\nc</div>')).toBe('a b c');
+  });
+  it('does not turn the source\'s own line breaks between blocks in such a container into empty paragraphs', () => {
+    const got = htmlToRich('<div style="white-space: pre-wrap;">\n<p>one</p>\n<p>two</p>\n</div>')!;
+    expect(got.runs.map((r) => r.text).join('')).toBe('one\ntwo');
+    expect(got.paras).toHaveLength(2);
   });
 });
