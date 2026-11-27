@@ -41,6 +41,8 @@ export function pickReuseSlides(name: string, from: Deck, keep: boolean, wording
       insert.textContent = wording ? wording.verb(picked.size) : picked.size > 1 ? `Insert ${picked.size} Slides` : 'Insert Slide';
     };
     const hgt = Math.round((W * from.size.h) / from.size.w);
+    // the pictures are painted a few at a time once the window is up (a long file's slides at once would hold it back)
+    const todo: [HTMLCanvasElement, number][] = [];
     for (let i = 0; i < n; i++) {
       const b = document.createElement('button');
       b.type = 'button';
@@ -50,7 +52,7 @@ export function pickReuseSlides(name: string, from: Deck, keep: boolean, wording
       c.className = 'tg-thumb';
       c.style.width = `${W}px`;
       c.style.height = `${hgt}px`;
-      paintSlide(c, W, hgt, window.devicePixelRatio || 1, from.page(i), from.docOf(i));
+      todo.push([c, i]);
       const label = document.createElement('span');
       label.className = 'muted tg-size';
       const title = [...from.docOf(i).captions.values()].find((x) => x.ph === 'title')?.runs.map((r) => r.text).join('').trim();
@@ -94,10 +96,21 @@ export function pickReuseSlides(name: string, from: Deck, keep: boolean, wording
     insert.addEventListener('click', finish);
     foldIntoInfo(note, h);
     d.append(h, note, grid, ...(wording ? [] : [opt]), buttons);
-    d.addEventListener('close', () => { d.remove(); resolve(result); });
+    let closed = false;
+    d.addEventListener('close', () => { closed = true; d.remove(); resolve(result); });
     document.body.append(d);
     mark();
     d.showModal();
     cards[0]?.focus();
+    const paintSome = () => {
+      if (closed) return;
+      const t0 = performance.now();
+      while (todo.length && performance.now() - t0 < 30) {
+        const [c, i] = todo.shift()!;
+        try { paintSlide(c, W, hgt, window.devicePixelRatio || 1, from.page(i), from.docOf(i)); } catch { /* left blank */ }
+      }
+      if (todo.length) setTimeout(paintSome, 0);
+    };
+    setTimeout(paintSome, 0);
   });
 }

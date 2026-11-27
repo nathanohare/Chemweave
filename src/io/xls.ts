@@ -19,7 +19,7 @@ interface Rec { id: number; data: Uint8Array; /** where CONTINUE records were jo
 
 const R = {
   BOF: 0x0809, EOF: 0x000a, CONTINUE: 0x003c, FILEPASS: 0x002f, CODEPAGE: 0x0042, DATEMODE: 0x0022,
-  BOUNDSHEET: 0x0085, SST: 0x00fc, FORMAT: 0x041e, FORMAT_OLD: 0x001e, FONT: 0x0031, XF: 0x00e0, NAME: 0x0018, EXTERNSHEET: 0x0017,
+  BOUNDSHEET: 0x0085, SUPBOOK: 0x01ae, SST: 0x00fc, FORMAT: 0x041e, FORMAT_OLD: 0x001e, FONT: 0x0031, XF: 0x00e0, NAME: 0x0018, EXTERNSHEET: 0x0017,
   LABELSST: 0x00fd, LABEL: 0x0204, RSTRING: 0x00d6, NUMBER: 0x0203, RK: 0x027e, MULRK: 0x00bd, BOOLERR: 0x0205,
   FORMULA: 0x0006, STRING: 0x0207, SHRFMLA: 0x04bc, ARRAY: 0x0221, MERGECELLS: 0x00e5, COLINFO: 0x007d, ROW: 0x0208,
 } as const;
@@ -33,6 +33,19 @@ function records(b: Uint8Array, at: number): Rec[] {
   const out: Rec[] = [];
   // how deep in nested substreams (0: the one asked for), and whether the last record was skipped
   let depth = 0, skipped = false, started = false;
+  // the CONTINUE parts of the last record, joined once when the next record starts (not once per part)
+  let parts: Uint8Array[] = [];
+  const join = () => {
+    const last = out[out.length - 1];
+    if (!last || parts.length < 2) { parts = []; return; }
+    let n = 0;
+    for (const p of parts) n += p.length;
+    const joined = new Uint8Array(n);
+    let k = 0;
+    for (const p of parts) { joined.set(p, k); k += p.length; }
+    last.data = joined;
+    parts = [];
+  };
   while (at + 4 <= b.length) {
     const id = b[at] | (b[at + 1] << 8), len = b[at + 2] | (b[at + 3] << 8);
     const data = b.subarray(at + 4, Math.min(b.length, at + 4 + len));
@@ -46,16 +59,18 @@ function records(b: Uint8Array, at: number): Rec[] {
     skipped = false;
     const last = out[out.length - 1];
     if (id === R.CONTINUE && last) {
-      const joined = new Uint8Array(last.data.length + data.length);
-      joined.set(last.data);
-      joined.set(data, last.data.length);
-      last.breaks.push(last.data.length);
-      last.data = joined;
+      let n = 0;
+      for (const p of parts) n += p.length;
+      last.breaks.push(n);
+      parts.push(data);
       continue;
     }
+    join();
     out.push({ id, data, breaks: [] });
+    parts = [data];
     if (id === R.EOF) break;
   }
+  join();
   return out;
 }
 
@@ -76,13 +91,17 @@ function rk(v: number): number {
 
 /** Reads strings out of a record, carrying on across the places CONTINUE records were joined. */
 class StringReader {
+  /** The first break past `at` (reading only goes forward, so it is found from the last one). */
+  private bi = 0;
   constructor(private d: Uint8Array, public at: number, private breaks: number[] = [], private ansi = new TextDecoder('windows-1252')) {}
 
   /** `cch` characters, 16-bit when `wide`; a CONTINUE part starts again with its own flags byte. */
   chars(cch: number, wide: boolean): string {
     let s = '';
     while (cch > 0) {
-      const next = this.breaks.find((b) => b > this.at) ?? this.d.length;
+      if (this.bi > 0 && this.breaks[this.bi - 1] > this.at) this.bi = 0;
+      while (this.bi < this.breaks.length && this.breaks[this.bi] <= this.at) this.bi++;
+      const next = this.breaks[this.bi] ?? this.d.length;
       const fit = Math.min(cch, Math.floor((next - this.at) / (wide ? 2 : 1)));
       if (fit > 0) {
         const part = this.d.subarray(this.at, this.at + fit * (wide ? 2 : 1));
@@ -172,7 +191,7 @@ export function formulaText(d: Uint8Array, at: number, end: number, row: number,
   };
   const sheetPrefix = (ixti: number) => {
     const x = world.xti[ixti];
-    if (!x || x.first < 0 || x.first >= world.sheetNames.length) throw new Unreadable('external sheet');
+    if (!x || x.first < 0 || x.last < 0 || x.first >= world.sheetNames.length) throw new Unreadable('external sheet');
     const a = world.sheetNames[x.first], b = world.sheetNames[Math.min(x.last, world.sheetNames.length - 1)];
     return x.last !== x.first ? `${quoteSheet(a)}:${quoteSheet(b)}!` : `${quoteSheet(a)}!`;
   };
@@ -274,7 +293,12 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
   const fonts: { bold: boolean; italic: boolean; underline: boolean }[] = [];
   const xfs: (CellStyle | undefined)[] = [];
   const sheets: { name: string; at: number; hidden: boolean }[] = [];
-  const xti: { first: number; last: number }[] = [];
+  // each BOUNDSHEET's worksheet (by its place among the worksheets), undefined for a chart or macro
+  // sheet: EXTERNSHEET's sheet numbers and a NAME's itab count every BOUNDSHEET ([MS-XLS] 2.4.105, 2.4.150)
+  const tabs: (number | undefined)[] = [];
+  // each SUPBOOK: true for this workbook's own (cch 0x0401, [MS-XLS] 2.4.271)
+  const supbooks: boolean[] = [];
+  const xtiRaw: { book: number; first: number; last: number }[] = [];
   const nameRecs: { name: string; builtin: boolean; itab: number; rgce: Uint8Array }[] = [];
   let otherSheets = 0;
   for (const rec of globals) {
@@ -314,15 +338,19 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
       }
       case R.BOUNDSHEET: {
         const type = d[5];
-        if (type !== 0) { otherSheets++; break; }
+        if (type !== 0) { otherSheets++; tabs.push(undefined); break; }
+        tabs.push(sheets.length);
         sheets.push({ at: u32(d, 0), hidden: (d[4] & 3) !== 0, name: biff8 ? shortString(d, 6, true) : shortString(d, 6, false) });
         break;
       }
+      case R.SUPBOOK:
+        supbooks.push(d.length >= 4 && u16(d, 2) === 0x0401);
+        break;
       case R.EXTERNSHEET:
         if (!biff8) break;
         for (let k = 0, n = u16(d, 0); k < n; k++) {
-          const first = i16(d, 4 + 6 * k), last = i16(d, 6 + 6 * k);
-          xti.push({ first, last });
+          const book = u16(d, 2 + 6 * k), first = i16(d, 4 + 6 * k), last = i16(d, 6 + 6 * k);
+          xtiRaw.push({ book, first, last });
         }
         break;
       case R.NAME: {
@@ -341,6 +369,12 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
   // sheet names as this program takes them (and unique)
   const names: string[] = [];
   for (const s of sheets) names.push(safeSheetName(s.name, names));
+  // a reference into another workbook, or to a chart or macro sheet, is one this program can't read (-1)
+  const xti = xtiRaw.map(({ book, first, last }) => {
+    const own = supbooks.length ? supbooks[book] === true : true;
+    const a = own && first >= 0 ? tabs[first] : undefined, b = own && last >= 0 ? tabs[last] : undefined;
+    return a === undefined || b === undefined ? { first: -1, last: -1 } : { first: a, last: b };
+  });
   const world: FormulaWorld = { sheetNames: names, xti, names: nameRecs.map((n) => n.name) };
   const book = new Workbook(names);
   // another program's text is shown as it wrote it (Q1 stays Q1, not Q₁)
@@ -356,6 +390,8 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
       const shared: { r1: number; r2: number; c1: number; c2: number; rgce: Uint8Array }[] = [];
       // formulas made from a shared or array formula are read once the sheet's records are all in
       const pending: { r: number; c: number; xf: number; anchor: [number, number]; cached: string | undefined }[] = [];
+      // the same, by cell, for the STRING record that follows a formula
+      const pendingAt = new Map<string, (typeof pending)[number]>();
       const put = (r: number, c: number, xf: number, input: string | undefined) => {
         const style = xfs[xf];
         if (input === undefined && !style) return;
@@ -391,7 +427,9 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
             if (!isNum && d[6] === 0) stringFor = { r, c, xf };
             if (!biff8) { put(r, c, xf, cached); unreadFormulas++; break; }
             if (d[at] === 0x01 && cce === 5) {
-              pending.push({ r, c, xf, anchor: [u16(d, at + 1), u16(d, at + 3)], cached });
+              const p = { r, c, xf, anchor: [u16(d, at + 1), u16(d, at + 3)] as [number, number], cached };
+              pending.push(p);
+              pendingAt.set(`${r},${c}`, p);
               put(r, c, xf, cached);
               break;
             }
@@ -406,7 +444,7 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
           case R.STRING:
             if (stringFor) {
               const text = xlString(d, 0, biff8);
-              const p = pending.find((x) => x.r === stringFor!.r && x.c === stringFor!.c);
+              const p = pendingAt.get(`${stringFor.r},${stringFor.c}`);
               if (p) p.cached = textInput(text);
               const cur = s.cell(stringFor.r, stringFor.c);
               // a formula keeps its formula; one kept as its value takes the text
@@ -440,8 +478,15 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
           }
         }
       }
+      // shared formulas by their first cell, which each formula made from one names
+      const sharedAt = new Map<string, typeof shared>();
+      for (const x of shared) {
+        const key = `${x.r1},${x.c1}`;
+        const list = sharedAt.get(key);
+        if (list) list.push(x); else sharedAt.set(key, [x]);
+      }
       for (const p of pending) {
-        const def = shared.find((x) => x.r1 === p.anchor[0] && x.c1 === p.anchor[1] && p.r <= x.r2 && p.c >= x.c1 && p.c <= x.c2);
+        const def = sharedAt.get(`${p.anchor[0]},${p.anchor[1]}`)?.find((x) => p.r <= x.r2 && p.c >= x.c1 && p.c <= x.c2);
         let input: string | undefined;
         if (def) {
           try { input = normalizeFormula('=' + formulaText(def.rgce, 0, def.rgce.length, p.r, p.c, world)); } catch { input = undefined; }
@@ -455,7 +500,10 @@ export function readXls(bytes: Uint8Array): { book: Workbook; warnings: string[]
     for (const n of nameRecs) {
       if (n.builtin || !n.rgce.length) continue;
       try {
-        defined.push({ name: n.name, formula: normalizeFormula('=' + formulaText(n.rgce, 0, n.rgce.length, 0, 0, world)), ...(n.itab ? { sheet: book.sheets[n.itab - 1] } : {}) });
+        // (itab counts every BOUNDSHEET from 1; a name on a chart or macro sheet is left out)
+        const local = n.itab ? tabs[n.itab - 1] : undefined;
+        if (n.itab && local === undefined) throw new Unreadable('name on a chart sheet');
+        defined.push({ name: n.name, formula: normalizeFormula('=' + formulaText(n.rgce, 0, n.rgce.length, 0, 0, world)), ...(local !== undefined ? { sheet: book.sheets[local] } : {}) });
       } catch {
         // a name this program can't read is left out
       }

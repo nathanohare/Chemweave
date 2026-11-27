@@ -115,7 +115,11 @@ export function prefsOf(doc: Doc): SchemePrefs {
 export function withSchemePrefs<T>(p: Partial<SchemePrefs>, fn: () => T): T {
   const was = { ...schemePrefs };
   Object.assign(schemePrefs, p);
-  try { return fn(); } finally { Object.assign(schemePrefs, was); }
+  try { return fn(); } finally {
+    // exactly as they were: a setting the saved ones don't have (a Smart Scheme's own shortest arrow) goes again
+    for (const k of Object.keys(schemePrefs)) if (!(k in was)) delete (schemePrefs as unknown as Record<string, unknown>)[k];
+    Object.assign(schemePrefs, was);
+  }
 }
 
 /** Read saved scheme settings, keeping only what makes sense. */
@@ -379,7 +383,18 @@ function planIn(doc: Doc, m: Measure, arrowIds?: Iterable<number>): SchemePlan |
     if (anchor) {
       const q = span(anchor);
       wrapped = anchor.some((it) => placed.has(it)) && q.t1 > -0.25 * bond && Math.abs((q.s1 + q.s2) / 2) > bond;
-      if (!wrapped) f = { ...f, tail: at(f, q.t2 + g, focalS(anchor, f) ?? (q.s1 + q.s2) / 2) };
+      // (one placed by an earlier step that isn't the nearest stays put, and the nearer ones go
+      // between it and the arrow, with their + signs: room is left for them)
+      let ahead = 0;
+      const ai = groupsR.indexOf(anchor);
+      if (!wrapped && ai > 0 && anchor.some((it) => placed.has(it))) {
+        for (let i = 0; i < ai; i++) {
+          const r = span(groupsR[i]), plus = plusPool[i];
+          const pw = plus ? span([plus]).t2 - span([plus]).t1 : plusSize.w;
+          ahead += r.t2 - r.t1 + 2 * pg + pw;
+        }
+      }
+      if (!wrapped) f = { ...f, tail: at(f, q.t2 + ahead + g, focalS(anchor, f) ?? (q.s1 + q.s2) / 2) };
       else if (rowStart !== null && f.u.x === 1 && f.u.y === 0) f = { ...f, tail: { x: rowStart, y: f.tail.y } };
     }
     // the arrow fits its conditions, and matches the scheme's other arrows

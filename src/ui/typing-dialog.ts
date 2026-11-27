@@ -2,6 +2,7 @@
 // change the replacements made as you type, and edit the words added to the spelling check.
 // Everything takes effect at once and is saved in the settings file.
 
+import { askChoice } from './ask';
 import { showDialog } from './dialog-host';
 import { DEFAULT_REPLACEMENTS } from '../text/chemtext';
 import type { TypingPrefs } from '../text/typing';
@@ -60,7 +61,7 @@ export class TypingDialog {
     this.spell.addEventListener('change', () => opts.set({ spelling: this.spell.checked }));
     this.words.addEventListener('input', () => opts.set({ dictionary: this.words.value.split(/\r?\n/).map((w) => w.trim()).filter(Boolean) }));
     d.querySelector('[data-act=add]')!.addEventListener('click', () => { this.addRow('', ''); (this.rows.lastElementChild?.querySelector('input') as HTMLInputElement | null)?.focus(); });
-    d.querySelector('[data-act=reset]')!.addEventListener('click', () => { this.fill(DEFAULT_REPLACEMENTS); this.saveRows(); });
+    d.querySelector('[data-act=reset]')!.addEventListener('click', () => void this.useStandard());
     d.querySelector('[data-act=close]')!.addEventListener('click', () => d.close());
     // keys typed here are for the window, not the drawing
     d.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
@@ -79,6 +80,19 @@ export class TypingDialog {
     this.words.value = v.dictionary.join('\n');
     void this.opts.location().then((w) => { this.d.querySelector('.ty-where')!.textContent = w; });
     showDialog(this.d);
+  }
+
+  /** Use the Standard List: asks first when that would replace custom replacements (nothing here undoes it). */
+  private async useStandard(): Promise<void> {
+    const mine = this.opts.get().replacements;
+    const same = mine.length === DEFAULT_REPLACEMENTS.length && mine.every(([a, b], i) => a === DEFAULT_REPLACEMENTS[i][0] && b === DEFAULT_REPLACEMENTS[i][1]);
+    if (!same) {
+      const pick = await askChoice('Use the Standard List?', 'The standard list replaces the custom replacements here, and they can\'t be brought back.',
+        [{ value: 'keep', label: 'Cancel' }, { value: 'use', label: 'Use the Standard List', primary: true }], 'keep');
+      if (pick !== 'use') return;
+    }
+    this.fill(DEFAULT_REPLACEMENTS);
+    this.saveRows();
   }
 
   private fill(list: readonly [string, string][]): void {

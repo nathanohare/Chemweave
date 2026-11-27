@@ -105,10 +105,13 @@ export function calcName(c: LabCalc): string {
 export function sigFig(x: number, sig: number): string {
   if (!isFinite(x)) return '—';
   if (x === 0) return '0';
-  const digits = Math.min(8, Math.max(0, sig - 1 - Math.floor(Math.log10(Math.abs(x)))));
+  const places = (v: number) => Math.min(8, Math.max(0, sig - 1 - Math.floor(Math.log10(Math.abs(v)))));
+  const digits = places(x);
   // halves round up (39.55 → 39.6), as on paper, not down as the float 39.549999… would
   const f = 10 ** digits;
-  return (Math.round(x * f * (1 + 1e-12)) / f).toFixed(digits);
+  const r = Math.round(x * f * (1 + 1e-12)) / f;
+  // rounding up to the next power of ten (9.996 → 10.00) takes a digit more before the point, so one fewer after it
+  return r.toFixed(r !== 0 ? Math.min(digits, places(r)) : digits);
 }
 
 /** A mass in mg, written in mg, g or µg as suits its size. */

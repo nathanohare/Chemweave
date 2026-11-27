@@ -525,7 +525,11 @@ function readAxis(ax: Element | null): ChartAxis {
 const FIT_FROM: Record<string, FitKind> = { linear: 'linear', exp: 'exp', log: 'log', power: 'power' };
 const MARKER_FROM: Record<string, MarkerShape> = { circle: 'circle', square: 'square', diamond: 'diamond', triangle: 'triangle', x: 'cross', star: 'cross', plus: 'cross', dash: 'square', dot: 'circle', none: 'none' };
 
-function readSeries(ser: Element, kind: ChartKind): Series {
+/**
+ * One series of a chart. `lost` gathers what of it can't be shown here (standard error bars,
+ * one-sided error bars); `scatterStyle` is its scatter chart's (c:scatterStyle).
+ */
+function readSeries(ser: Element, kind: ChartKind, lost: Set<string>, scatterStyle?: string | null): Series {
   const s: Series = { y: '' };
   const tx = kid(ser, 'tx');
   const nameRef = kid(tx, 'strRef', 'f')?.textContent;
@@ -543,7 +547,9 @@ function readSeries(ser: Element, kind: ChartKind): Series {
   const fillColour = colourIn(sp && kids(sp).find((e) => e.localName === 'solidFill') ? sp : null);
   if (kind === 'scatter' || kind === 'line' || (kind === 'radar' && !fillColour)) {
     const noLine = !!kid(ln, 'noFill');
-    if (kind === 'scatter') { if (ln && !noLine) s.line = true; }
+    // a scatter series with no line of its own has the chart's: lines between the markers but in
+    // a markers-only chart (scatterStyle, ECMA-376 Part 1, 21.2.3.40)
+    if (kind === 'scatter') { if (ln ? !noLine : scatterStyle !== 'marker') s.line = true; }
     else if (noLine) s.line = false;
     if (lineColour) s.color = lineColour;
     const w = Number(ln?.getAttribute('w') ?? 0);
@@ -595,16 +601,18 @@ function readSeries(ser: Element, kind: ChartKind): Series {
     } else if (t === 'cust') {
       const plus = kid(eb, 'plus', 'numRef', 'f')?.textContent, minus = kid(eb, 'minus', 'numRef', 'f')?.textContent;
       if (plus) s.errors = { kind: 'cells', plus: `=${plus}`, ...(minus && minus !== plus ? { minus: `=${minus}` } : {}) };
-    } else if (t) {
+    } else if (t === 'percentage' || t === 'stdDev' || t === 'fixedVal') {
       s.errors = { kind: t === 'percentage' ? 'percent' : t === 'stdDev' ? 'stdev' : 'fixed', value: numVal(eb, 'val') ?? 1 };
-    }
+    } else if (t) lost.add('standard error bars on charts');
+    // (bars this program draws go both ways: a plus- or minus-only bar is drawn both ways here)
+    if (s.errors && (dir === 'plus' || dir === 'minus')) lost.add('one-sided error bars on charts (drawn both ways here)');
   }
   for (const k of Object.keys(s) as (keyof Series)[]) if (s[k] === undefined) delete s[k];
   return s;
 }
 
 /** A chart made in Excel (or saved here), as this program's chart; null when it has nothing it can show. */
-export function readChartXml(doc: Document, at: Chart['at'], w: number, h: number, id: number): { chart: Chart; partial: boolean } | null {
+export function readChartXml(doc: Document, at: Chart['at'], w: number, h: number, id: number): { chart: Chart; partial: boolean; lost?: string[] } | null {
   const root = doc.documentElement;
   const ch = kid(root, 'chart');
   const plot = kid(ch, 'plotArea');
@@ -624,10 +632,11 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   const isRight = (g: Element) => { const a = groupAxis(g); return !!a && (axPos(a) === 'r' || val(a, 'crosses') === 'max'); };
   const comboable = (g: Element) => g.localName === 'lineChart' || (g.localName === 'barChart' && val(g, 'barDir') !== 'bar');
   if (found.length > 1 && found.every(comboable) && (new Set(found.map((g) => g.localName)).size > 1 || found.some(isRight))) kind = 'combo';
+  const lost = new Set<string>();
   const series = kind === 'combo'
     ? found.flatMap((g) => kids(g, 'ser').map((e) => {
       const as = g.localName === 'barChart' ? 'column' : 'line';
-      const s = readSeries(e, as === 'column' ? 'column' : 'line');
+      const s = readSeries(e, as === 'column' ? 'column' : 'line', lost);
       return { s, order: numVal(e, 'order') ?? 0, as, right: isRight(g) } as const;
     })).sort((a, b) => a.order - b.order).map(({ s, as, right }, i): Series => {
       const out: Series = { ...s };
@@ -635,7 +644,7 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
       if (right !== i > 0) out.secondary = right;
       return out;
     }).filter((s) => s.y)
-    : found.flatMap((g) => kids(g, 'ser').map((s) => readSeries(s, kind))).filter((s) => s.y);
+    : found.flatMap((g) => kids(g, 'ser').map((s) => readSeries(s, kind, lost, val(g, 'scatterStyle')))).filter((s) => s.y);
   if (!series.length) return null;
   const grouping = val(main, 'grouping');
   let xAx: Element | null, yAx: Element | null, y2Ax: Element | null = null;
@@ -652,7 +661,8 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   const chartSp = kid(root, 'spPr');
   const bgNone = !!kid(chartSp, 'noFill');
   const bg = colourIn(chartSp && kids(chartSp).find((e) => e.localName === 'solidFill') ? chartSp : null);
-  const sz = Number(root.getElementsByTagNameNS(A_NS, 'defRPr')[root.getElementsByTagNameNS(A_NS, 'defRPr').length - 1]?.getAttribute('sz') ?? 0);
+  // the chart's own text size (chartSpace/txPr), not an axis title's or the legend's
+  const sz = Number(kid(root, 'txPr', 'p', 'pPr', 'defRPr')?.getAttribute('sz') ?? 0);
   const chart: Chart = {
     id,
     kind,
@@ -684,7 +694,7 @@ export function readChartXml(doc: Document, at: Chart['at'], w: number, h: numbe
   }
   if (!bool(ch, 'plotVisOnly', true)) chart.showHidden = true;
   seenChartId(id);
-  return { chart, partial: (found.length > 1 && kind !== 'combo') || known.length > found.length };
+  return { chart, partial: (found.length > 1 && kind !== 'combo') || known.length > found.length, ...(lost.size ? { lost: [...lost] } : {}) };
 }
 
 // ---------------------------------------------------------------- Excel's own chart parts, kept

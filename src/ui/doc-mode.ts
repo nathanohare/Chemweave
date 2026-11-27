@@ -446,7 +446,7 @@ export class DocumentMode {
       focus: () => this.focus(),
     });
     this.stylesPane = new StylesPane({
-      doc: () => { const f = this.file; return f && !f.box ? { t: f.t, para: this.ed.currentPara(), look: this.ed.currentStyle() } : null; },
+      doc: () => { const f = this.file; return f && !f.box ? { t: f.t, para: this.ed.currentPara(), look: this.ed.currentStyle(), at: `${this.ed.anchor}:${this.ed.focus}` } : null; },
       applyPara: (id) => { if (this.file) { this.run(`style-id:${id}`); } },
       applyChar: (id) => this.applyCharStyle(id),
       newStyle: () => void this.newStyle(),

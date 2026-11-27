@@ -18,6 +18,7 @@ import { groupNumber } from './electrons';
 import { headEnd, isAtomSymbol, pairOwner, pushEndAt, symbolPin, symbolSpot, tailEnd, type PushEnd } from './mechanism';
 import { sproutDir } from './chemgeom';
 import { plainMeasure } from './reaction';
+import { makePin, shapeAxis } from './pins';
 import { atomWarnings, isTooMany } from './warnings';
 
 /** Something wrong (or worth a second look) with the arrows: what, and the arrows, atoms and bonds it is about. */
@@ -375,8 +376,13 @@ export function productDrawing(doc: Doc, reading: PushReading): Drawing | null {
           const c = centre(s), off = turn(sub(c, was), ang);
           const h1 = turn(sub({ x: s.x1, y: s.y1 }, c), ang), h2 = turn(sub({ x: s.x2, y: s.y2 }, c), ang);
           const at = add(now, off);
-          const { id: _id, pin: _pin, ...rest } = structuredClone(s);
-          out.addShape({ ...rest, x1: at.x + h1.x, y1: at.y + h1.y, x2: at.x + h2.x, y2: at.y + h2.y });
+          const { id: _id, pin: was0, ...rest } = structuredClone(s);
+          const sh = out.addShape({ ...rest, x1: at.x + h1.x, y1: at.y + h1.y, x2: at.x + h2.x, y2: at.y + h2.y });
+          // still stuck to its atom (the atom keeps its id), made again where it now is
+          if (was0?.on === 'atom') {
+            const pin = makePin(out, 'atom', [was0.ref[0]], centre(sh), shapeAxis(sh));
+            if (pin) out.updateShape(sh.id, { pin });
+          }
         }
         continue;
       }

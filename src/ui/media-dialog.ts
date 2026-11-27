@@ -96,7 +96,11 @@ export function editMedia(m: Media): Promise<Media | null> {
     const ok = here('OK', () => {
       const v = VOLUMES.find((x) => x.name === vol.value)!;
       const n = (i: HTMLInputElement) => Math.max(0, Number(i.value) || 0);
-      const next: Media = { src: m.src, ...(m.audio ? { audio: true } : {}), ...(length() ? { length: +length().toFixed(3) } : m.length ? { length: m.length } : {}) };
+      // start from the media as it is (so what this window doesn't edit, such as narration, stays), then set what it does
+      const next: Media = { ...m };
+      const mine: (keyof Media)[] = ['trimStart', 'trimEnd', 'fadeIn', 'fadeOut', 'start', 'vol', 'mute', 'once', 'rewind', ...(m.audio ? ['hide', 'across'] as const : ['full'] as const)];
+      for (const k of mine) delete next[k];
+      if (length()) next.length = +length().toFixed(3);
       if (n(trimStart)) next.trimStart = n(trimStart);
       if (n(trimEnd)) next.trimEnd = n(trimEnd);
       if (n(fadeIn)) next.fadeIn = n(fadeIn);
