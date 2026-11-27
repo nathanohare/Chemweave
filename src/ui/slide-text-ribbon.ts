@@ -18,6 +18,8 @@ export interface TextLook {
   line: number;
   defaultSize: number;
   defaultFont?: string;
+  /** The color text has where it gives none of its own (a placeholder's from the template). */
+  defaultColor?: string;
 }
 
 export interface SlideTextHooks {
@@ -71,6 +73,8 @@ export class SlideTextRibbon {
   private fontBox: FontBox | null = null;
   /** The controls marked unavailable here while no text is selected (and only those are unmarked again). */
   private idleOff = new WeakSet<HTMLElement>();
+  /** The Font or Size box that Esc was pressed in, until it is typed in or entered again. */
+  private cancelled: HTMLInputElement | null = null;
 
   constructor(private root: HTMLElement, private hooks: SlideTextHooks) {
     const q = <T extends HTMLElement>(s: string) => root.querySelector<T>(s)!;
@@ -95,11 +99,14 @@ export class SlideTextRibbon {
       b.addEventListener('click', () => run(FORMATS[b.dataset.slFmt!]));
     }
     const field = (el: HTMLInputElement, apply: () => void) => {
-      el.addEventListener('change', apply);
+      // Esc puts the box back and gives the keyboard to the text: the box losing it then must not apply what was typed
+      el.addEventListener('focus', () => { if (this.cancelled === el) this.cancelled = null; });
+      el.addEventListener('input', () => { if (this.cancelled === el) this.cancelled = null; });
+      el.addEventListener('change', () => { if (this.cancelled === el) { this.cancelled = null; return; } apply(); });
       el.addEventListener('keydown', (e) => {
         e.stopPropagation();
-        if (e.key === 'Enter') { e.preventDefault(); apply(); }
-        if (e.key === 'Escape') { e.preventDefault(); this.refresh(); hooks.refocus(); }
+        if (e.key === 'Enter') { e.preventDefault(); this.cancelled = null; apply(); }
+        if (e.key === 'Escape') { e.preventDefault(); this.cancelled = el; this.showFontSize(); hooks.refocus(); }
       });
     };
     field(this.font, () => {
@@ -112,7 +119,12 @@ export class SlideTextRibbon {
       if (Number.isFinite(v) && v > 0) run({ kind: 'style', patch: { size: Math.min(400, v) } });
       else this.refresh();
     });
-    this.colour.addEventListener('change', () => run({ kind: 'style', patch: { color: this.colour.value.toLowerCase() === '#000000' ? undefined : this.colour.value } }));
+    // black is "no color of its own" only where the text is black anyway: on a template whose text is white, it has to be said
+    this.colour.addEventListener('change', () => {
+      const base = this.hooks.look()?.defaultColor;
+      const black = this.colour.value.toLowerCase() === '#000000';
+      run({ kind: 'style', patch: { color: black && (!base || base.toLowerCase() === '#000000') ? undefined : this.colour.value } });
+    });
     this.line.addEventListener('change', () => { const v = parseFloat(this.line.value); if (v > 0) run({ kind: 'line', v }); });
     // the Font group's corner button: Change Case, spacing and kerning, and text effects
     const launch = root.querySelector<HTMLButtonElement>('[data-tx="font-box"]');
@@ -153,6 +165,20 @@ export class SlideTextRibbon {
     this.fit.addEventListener('change', () => boxRun({ kind: 'fit', fit: this.fit.value as 'grow' | 'shrink' | 'fixed' }));
   }
 
+  /** The Font and Size boxes as the text in hand has them (each only when asked: the one being typed in is left alone). */
+  private showFontSize(font = true, size = true): void {
+    const look = this.hooks.look();
+    const s = look?.style ?? {};
+    if (font) {
+      this.font.value = s.font ?? '';
+      this.font.placeholder = look ? (s.font === undefined ? look.defaultFont ?? '' : '') : 'Font';
+    }
+    if (size) {
+      const sz = s.size ?? look?.defaultSize;
+      this.size.value = sz !== undefined ? r2(sz) : '';
+    }
+  }
+
   /** Show how the text looks now (call after the selection or the text changes). */
   refresh(): void {
     // (closed once its ribbon is no longer showing: another kind of tab)
@@ -170,15 +196,8 @@ export class SlideTextRibbon {
     press('bullets', look?.list === 'bullet');
     press('numbering', look?.list === 'number');
     const active = this.root.ownerDocument.activeElement;
-    if (active !== this.font) {
-      this.font.value = s.font ?? '';
-      this.font.placeholder = look ? (s.font === undefined ? look.defaultFont ?? '' : '') : 'Font';
-    }
-    if (active !== this.size) {
-      const size = s.size ?? look?.defaultSize;
-      this.size.value = size !== undefined ? r2(size) : '';
-    }
-    this.colour.value = s.color ?? '#000000';
+    this.showFontSize(active !== this.font, active !== this.size);
+    this.colour.value = s.color ?? look?.defaultColor ?? '#000000';
     const line = look ? r2(look.line) : '1';
     this.line.value = [...this.line.options].some((o) => o.value === line) ? line : '';
     const sp = String(s.spacing ?? 0);

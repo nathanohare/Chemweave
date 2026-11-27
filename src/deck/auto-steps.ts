@@ -13,7 +13,7 @@ import type { Measure, Selection } from '../editor/arrange';
 import { readSlots } from '../chem/smart-scheme';
 import type { Scope } from '../chem/scheme-arrange';
 import { newAnim, partHolds, slideParts, targetOf, type Anim, type Part, type Side } from './animation';
-import { cameraAnim, slideShaped, type CanvasData, type Keyframe } from './canvas';
+import { cameraAnim, clampZoom, slideShaped, type CanvasData, type Keyframe } from './canvas';
 import { arrowPoints } from '../objects';
 
 export interface AutoStepsOptions {
@@ -126,7 +126,8 @@ function stepKey(boxes: Rect[], size: { w: number; h: number }, id: number, L: n
   const b = { x1: Math.min(...boxes.map((r) => r.x1)) - 2 * L, y1: Math.min(...boxes.map((r) => r.y1)) - 2 * L, x2: Math.max(...boxes.map((r) => r.x2)) + 2 * L, y2: Math.max(...boxes.map((r) => r.y2)) + 2 * L };
   const r = slideShaped(b, size);
   // no closer than the slide itself, so text stays the size it was written
-  const zoom = Math.max(1, (r.x2 - r.x1) / size.w);
+  // (and no further than the canvas goes: a very wide scheme is framed as wide as the canvas allows, as it is when the file is opened again)
+  const zoom = clampZoom(Math.max(1, (r.x2 - r.x1) / size.w));
   const cx = (r.x1 + r.x2) / 2, cy = (r.y1 + r.y2) / 2;
   return { id, x: cx - (size.w * zoom) / 2, y: cy - (size.h * zoom) / 2, zoom };
 }
@@ -161,7 +162,12 @@ export function stepAnims(doc: Doc, pieces: StepPiece[], o: AutoStepsOptions, wa
       // the view for step s: what it starts from (the step before's species) and what it brings
       const now = pieces.filter((p) => p.step === s);
       const before = pieces.filter((p) => p.step === s - 1 && p.kind !== 'arrow');
-      keys.push(stepKey([...before, ...now].map((p) => p.box), canvas.size, ++id, L));
+      // a step takes the canvas's keyframe at its place in the route as it is (its title, tint and spotlight) and moves it to the step
+      const was = canvas.data.keys[s - 1];
+      const key = stepKey([...before, ...now].map((p) => p.box), canvas.size, was ? was.id : ++id, L);
+      // (the steps are the route now: a detour off the old one is not a detour of it)
+      const { detour: _detour, ...kept } = was ?? {};
+      keys.push(was ? { ...(kept as Keyframe), x: key.x, y: key.y, zoom: key.zoom } : key);
     }
   }
   for (const p of pieces) {

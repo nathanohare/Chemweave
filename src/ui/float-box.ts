@@ -13,7 +13,7 @@ export class FloatBox {
   docked = false;
 
   /** `onClose` is told whenever it is closed (by ×, Esc or close()), for a window that must stop what it is doing. */
-  constructor(title: string, private onPin: () => void, private onClose?: () => void) {
+  constructor(title: string, private onPin: () => void, public onClose?: () => void) {
     this.el = document.createElement('div');
     this.el.className = 'float-box';
     this.el.hidden = true;
@@ -72,8 +72,9 @@ export class FloatBox {
   }
 
   close(): void {
+    const was = !this.el.hidden;
     this.el.hidden = true;
-    this.onClose?.();
+    if (was) this.onClose?.();
   }
 
   /**

@@ -97,11 +97,10 @@ export function pickSlideSize(now: SlideSize): Promise<SlideSizeChoice | null> {
       show();
     });
     const typed = () => {
-      const k = PT[unit.value as 'in' | 'cm'];
-      const a = parseFloat(w.value), b = parseFloat(hh.value);
-      if (Number.isFinite(a) && a > 0) pts.w = a * k;
-      if (Number.isFinite(b) && b > 0) pts.h = b * k;
-      preset.value = 'custom';
+      // only the number that was changed counts: the other box shows its size rounded, which is not what the slide is (13.33 in is not 960 pt)
+      const w0 = pts.w, h0 = pts.h;
+      typedIfChanged();
+      if (pts.w !== w0 || pts.h !== h0) preset.value = 'custom';
       show();
     };
     w.addEventListener('change', typed);
