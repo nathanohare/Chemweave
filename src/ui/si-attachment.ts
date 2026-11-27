@@ -7,7 +7,7 @@
 
 import { markFilesTaken } from './window-drop';
 import type { SiProject, SiSection } from '../si/project';
-import type { PdfPageReader } from '../render/pdf-page';
+import { fingerprint, type PdfPageReader } from '../render/pdf-page';
 import { addInfo } from './info-tip';
 
 /**
@@ -27,6 +27,29 @@ function drawnPages(key: string, count: number): (string | undefined)[] {
     drawnPdfs.delete(old);
   }
   return got;
+}
+
+/**
+ * What tells a PDF from another of the same name and length without reading all of it each time the
+ * page is drawn: its ends (where a PDF keeps its dates, IDs and cross-reference table) and 4096 bytes
+ * spread over the rest.
+ */
+function sampleKey(b: Uint8Array): string {
+  const EDGE = 8192;
+  if (b.length <= 3 * EDGE) return fingerprint(b);
+  const mid = new Uint8Array(4096);
+  const step = (b.length - 2 * EDGE) / mid.length;
+  for (let i = 0; i < mid.length; i++) mid[i] = b[EDGE + Math.floor(i * step)];
+  return [fingerprint(b.subarray(0, EDGE)), fingerprint(mid), fingerprint(b.subarray(b.length - EDGE))].join('.');
+}
+
+/** The pages drawn of a file of a section are forgotten (it was replaced or removed). */
+function forgetDrawn(prefix: string): void {
+  for (const [k, urls] of [...drawnPdfs]) {
+    if (!k.startsWith(prefix)) continue;
+    for (const u of urls) if (u) URL.revokeObjectURL(u);
+    drawnPdfs.delete(k);
+  }
 }
 
 export interface SiAttachmentHost {
@@ -75,6 +98,7 @@ export class SiAttachmentPage {
     const ext = (/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase();
     if (!ATTACHMENT_EXTS.includes(ext)) { this.host.flash(`${name} is not a PDF or a picture, so it can't be printed as a section.`, 6000); return; }
     try {
+      forgetDrawn(`${this.s.folder}/`);
       const kept = await this.host.project.attachSectionFile(this.s, name, bytes);
       this.host.flash(`${kept} is this section's file now (a copy is kept in the project folder).`);
     } catch (e) {
@@ -88,12 +112,24 @@ export class SiAttachmentPage {
     const p = this.host.project;
     const file = str(this.s.data.file);
     if (!file) return;
+    // (the section is saved without the file first: a failed save leaves the file where it is, and a
+    // failed move to the Trash puts the file's name back)
+    this.s.data.file = null;
+    forgetDrawn(`${this.s.folder}/`);
+    try {
+      await p.saveSection(this.s);
+    } catch (e) {
+      this.s.data.file = file;
+      this.host.flash(`The file could not be removed: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      this.host.redraw();
+      return;
+    }
     try {
       await p.trashFiles([`${this.s.folder}/${file}`], 'file', file, { section_id: this.s.id, section_name: this.s.name });
-      this.s.data.file = null;
-      await p.saveSection(this.s);
       this.host.flash(`${file} went to the Trash.`);
     } catch (e) {
+      this.s.data.file = file;
+      await p.saveSection(this.s).catch(() => {});
       this.host.flash(`The file could not be removed: ${e instanceof Error ? e.message : String(e)}`, 8000);
     }
     this.host.redraw();
@@ -128,7 +164,8 @@ export class SiAttachmentPage {
     this.reader = reader;
     const first = await reader.size(1).catch(() => ({ w: 595, h: 842 }));
     if (this.disposed) return 0;
-    const drawn = drawnPages(`${this.s.folder}/${file}\0${bytes.length}`, reader.count);
+    const key = `${this.s.folder}/${file}\0${bytes.length}\0${sampleKey(bytes)}`;
+    const drawn = drawnPages(key, reader.count);
     const imgs: HTMLImageElement[] = [];
     for (let i = 0; i < reader.count; i++) {
       const paper = el('div', 'si-attach-paper');
@@ -152,7 +189,7 @@ export class SiAttachmentPage {
         const i = queue.shift()!;
         if (drawn[i]) { imgs[i].src = drawn[i]!; imgs[i].style.aspectRatio = ''; continue; }
         const blob = await reader.picture(i + 1);
-        if (!blob || this.disposed || drawnPdfs.get(`${this.s.folder}/${file}\0${bytes.length}`) !== drawn) continue;
+        if (!blob || this.disposed || drawnPdfs.get(key) !== drawn) continue;
         drawn[i] = URL.createObjectURL(blob);
         imgs[i].src = drawn[i]!;
         imgs[i].style.aspectRatio = '';
@@ -194,9 +231,11 @@ export class SiAttachmentPage {
     stage.addEventListener('drop', (e) => {
       stage.classList.remove('drop');
       const f = e.dataTransfer?.files[0];
-      if (!f || p.readOnly) return;
+      if (!f) return;
+      // (the window's own drop handler opens files or places pictures: not for a file dropped here, even when refused)
       e.preventDefault();
       markFilesTaken(e);
+      if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
       void f.arrayBuffer().then((b) => this.use(f.name, new Uint8Array(b)));
     });
     this.el.replaceChildren(h, rows, fileRow, stage);
