@@ -17,7 +17,7 @@ import { drawLayout, drawMarks } from '../text/draw';
 import { drawMath } from '../document/math';
 import { selectionRects } from '../text/layout';
 import { imageFor, onImageReady } from '../render/images';
-import { fxCanvas, hasFx, traceShape } from '../render/picture-fx';
+import { fxCanvas, fxSideFor, hasFx, traceShape } from '../render/picture-fx';
 import { paintChartBox } from '../render/chart-box-paint';
 import { drawParaBorders, drawParaShading } from '../document/para-borders';
 
@@ -1098,7 +1098,8 @@ export class DocView {
       paintChartBox(ctx, obj.chart, o.x, o.y, o.w, o.h);
     } else if (obj.kind === 'picture') {
       // pictures (EMF spectra from MestReNova too) are decoded once, shared with the drawings
-      const img = fxCanvas(obj) ?? imageFor(obj.src);
+      const tm = ctx.getTransform();
+      const img = fxCanvas(obj, fxSideFor(o.w, o.h, Math.hypot(tm.a, tm.b), obj.crop)) ?? imageFor(obj.src);
       const look = obj.look;
       if (img) {
         ctx.save();

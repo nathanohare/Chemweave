@@ -105,7 +105,9 @@ describe('the picture of an embedded workbook (F891, F892)', () => {
 });
 
 describe('Glow Variations (F913)', () => {
-  it('are 40% opaque, as PowerPoint saves them (<a:alpha val="40000"/>, ECMA-376 Part 1, 20.1.2.3.1)', () => {
+  // PowerPoint writes its Glow Variations with <a:alpha val="40000"/> on the glow's colour (40% opaque,
+  // shown as 60% Transparency in its Format Shape pane); a:alpha is ECMA-376 Part 1, 20.1.2.3.1
+  it('are 60% see-through, as PowerPoint writes them', () => {
     expect(GLOW_TRANSPARENCY).toBe(0.6);
   });
 });

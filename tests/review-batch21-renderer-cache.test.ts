@@ -2,7 +2,7 @@
 //
 // Code review of 2026-11-26, batch 21 (drawing, kept work): a blurred shape shadow is worked out
 // once, not for every tile it crosses (F207); a highlight's effects are found without working its
-// pieces out again (F909); and a rounded box's dots are worked out once, not for every tile (F910).
+// pieces or its glow's steps out again (F909); and a rounded box's dots are worked out once, not for every tile (F910).
 
 import { describe, it, expect, vi } from 'vitest';
 
@@ -66,5 +66,15 @@ describe('work kept between tiles', () => {
     const n = pieces;
     expect(p.highlightFx(doc, g)).toBe(first);
     expect(pieces).toBe(n);
+    // and the glow's steps, painted in one tile and then the next, are worked out once
+    const layer = (first as { fx: { body: unknown } }).fx.body;
+    expect(layer).toBeDefined();
+    p.fxScratch = () => quiet();
+    const tile = () => Object.assign(quiet(), { canvas: { width: 256, height: 256 }, getTransform: () => ({ a: 1, b: 0, c: 0, d: 1, e: 0, f: 0 }) });
+    p.paintFxLayer(tile(), doc, g, first, layer, true);
+    const once = pieces;
+    expect(once).toBeGreaterThan(n);
+    p.paintFxLayer(tile(), doc, g, first, layer, true);
+    expect(pieces).toBe(once);
   });
 });

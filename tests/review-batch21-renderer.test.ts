@@ -61,6 +61,29 @@ describe('what a tile draws', () => {
     expect(priv(r).pad(doc) as number).toBeGreaterThan(24 * 10 * 0.6);
   });
 
+  it('repaints the far tiles a long label reached when it is shortened (F903)', () => {
+    const { ctx } = recorder();
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx);
+    try {
+      const doc = new Doc();
+      let id = 0;
+      doc.edit('Atom', () => { id = doc.addAtom(100, 100, 6, { label: 'CH2CH2CH2CH2CH2CH2CH2CH3' }).id; });
+      const r = new Renderer(document.createElement('canvas'), document.createElement('canvas'));
+      r.makePath = () => new VecPath() as unknown as Path2D;
+      r.resize(800, 600, 1);
+      r.view.scale = 1;
+      r.view.ox = 0; r.view.oy = 0;
+      r.renderScene(doc);
+      const tiles = (r as unknown as { tiles: Map<string, { patch: unknown }> }).tiles;
+      // the label runs on into the next tile across (it starts 256 to the right)
+      expect(tiles.has('1,0')).toBe(true);
+      doc.edit('Label', () => { doc.updateAtom(id, { label: 'CH3' }); });
+      priv(r).invalidate(doc);
+      const far = tiles.get('1,0');
+      expect(!far || !!far.patch).toBe(true);
+    } finally { getContext.mockRestore(); }
+  });
+
   it('keeps two drawings at the same version apart (F904)', () => {
     const make = (x: number) => {
       const d = new Doc();

@@ -13,7 +13,7 @@ import { Workbook } from '../src/sheet/workbook';
 import { chartFromRange, chartData, type SeriesData, type Chart } from '../src/sheet/chart';
 import { drawChart, numAxis, type ClickPart, type ChartHits } from '../src/render/chart-draw';
 import { VectorContext, type Item } from '../src/render/vector';
-import { chartBoxPng } from '../src/render/chart-box-paint';
+import { chartBoxPng, CHART_PICTURE_FAILED } from '../src/render/chart-box-paint';
 import { newChartBox } from '../src/sheet/chart-box';
 
 const r = (r1: number, c1: number, r2 = r1, c2 = c1) => ({ r1, c1, r2, c2 });
@@ -137,6 +137,20 @@ describe('a very long bubble series (F875)', () => {
 });
 
 describe('the picture of a Document or Slides chart (F871)', () => {
+  it('says the chart could not be drawn, where neither size can be made', () => {
+    let warned = false;
+    const ctx: Record<string | symbol, unknown> = new Proxy({}, {
+      get: (t: Record<string | symbol, unknown>, k) => (k in t ? t[k] : k === 'fillText' ? (s: string) => { if (s === CHART_PICTURE_FAILED) warned = true; } : (t[k] = () => ({ width: 0 }))),
+      set: (t, k, v) => { t[k] = v; return true; },
+    });
+    const getContext = vi.spyOn(HTMLCanvasElement.prototype, 'getContext').mockImplementation(() => ctx as unknown as CanvasRenderingContext2D);
+    const toDataURL = vi.spyOn(HTMLCanvasElement.prototype, 'toDataURL').mockImplementation(() => (warned ? 'data:image/png;base64,WARN' : 'data:,'));
+    const quiet = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    try {
+      expect(chartBoxPng(newChartBox('column'), 360, 216, 3)).toBe('data:image/png;base64,WARN');
+    } finally { getContext.mockRestore(); toDataURL.mockRestore(); quiet.mockRestore(); }
+  });
+
   it('is drawn at one pixel per pixel when the canvas refuses the bigger one', () => {
     // a canvas that draws nothing, and gives an empty picture past 1,000 pixels across (as a browser does past its limit)
     const ctx: Record<string | symbol, unknown> = new Proxy({}, { get: (t: Record<string | symbol, unknown>, k) => (k in t ? t[k] : (t[k] = () => ({ width: 0 }))) });

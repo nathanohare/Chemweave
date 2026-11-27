@@ -136,7 +136,9 @@ export function shapeFx(s: Shape, polys: Vec[][], colour: string): ShapeFxPaints
 
 /** Ready-made glows (PowerPoint's Glow Variations): sizes in points and how see-through. */
 export const GLOW_SIZES = [5, 8, 11, 18];
-// (PowerPoint saves its Glow Variations with <a:alpha val="40000"/>, 40% opaque: ECMA-376 Part 1, 20.1.2.3.1, 20.1.8.32)
+// (PowerPoint writes its Glow Variations into its files as an a:glow whose colour carries
+// <a:alpha val="40000"/>, 40% opaque, which its Format Shape pane shows as 60% Transparency; a:glow
+// and a:alpha are ECMA-376 Part 1, 20.1.8.32 and 20.1.2.3.1)
 export const GLOW_TRANSPARENCY = 0.6;
 export const SOFT_EDGES = [1, 2.5, 5, 10, 25, 50];
 

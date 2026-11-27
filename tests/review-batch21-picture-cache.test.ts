@@ -2,7 +2,7 @@
 //
 // Code review of 2026-11-26, batch 21 (Picture Format): how the pictures worked out for the screen
 // are kept. Remove Background and sharpening are worked out once, the quick settings on a copy of
-// that (F205); the screen's copy is worked at most 2048 pixels a side (F203); many pictures shown
+// that (F205); a picture is worked at about the pixels it is drawn at (F203); many pictures shown
 // together are not let go in the middle of a paint (F899); what is kept is counted in pixels, the
 // picture used last kept longest (F900); and a version used again is the last forgotten (F901).
 // The browser's canvas is stood in for by one that only counts what is drawn.
@@ -16,7 +16,7 @@ vi.mock('../src/render/images', async (orig) => ({
   imageFor: (src: string) => pictures.get(src) ?? null,
 }));
 
-import { fxCanvas } from '../src/render/picture-fx';
+import { fxCanvas, fxSideFor } from '../src/render/picture-fx';
 
 /** How many times each stand-in picture was drawn onto a canvas (worked from its own data). */
 const drawnFrom = new Map<object, number>();
@@ -61,10 +61,28 @@ describe('pictures worked out for the screen', () => {
     expect(drawnFrom.get(img)).toBe(1);
   });
 
-  it('works a big picture at most 2048 pixels a side for the screen (F203)', () => {
+  it('works a big picture at about the pixels it is drawn at, at full size for exports (F203)', () => {
     picture('data:image/png;base64,F203', 4000, 3000);
-    const c = fxCanvas({ src: 'data:image/png;base64,F203', fx: { bright: 0.2 } })!;
-    expect([c.width, c.height]).toEqual([2048, 1536]);
+    const p = { src: 'data:image/png;base64,F203', fx: { bright: 0.2 } };
+    // drawn 1,000 pixels across: worked 1,024 across
+    expect([fxCanvas(p, 1000)!.width, fxCanvas(p, 1000)!.height]).toEqual([1024, 768]);
+    // not said (or drawn bigger than the picture): its own size
+    expect(fxCanvas(p)!.width).toBe(4000);
+    expect(fxCanvas(p, 9000)!.width).toBe(4000);
+    // a crop to a fifth of the width, drawn 500 across, needs 2,500 across of the whole picture
+    expect(fxSideFor(500, 100, 1, { l: 0.4, t: 0, r: 0.4, b: 0 })).toBeCloseTo(2500, 6);
+    // at twice the pixels (a high-resolution screen, a zoom)
+    expect(fxSideFor(300, 200, 2)).toBe(600);
+  });
+
+  it('keeps one copy of a small picture whatever size it is asked for, and one of a picture with only Remove Background (F900, F205)', () => {
+    picture('data:image/png;base64,F900-small', 300, 200);
+    const p = { src: 'data:image/png;base64,F900-small', fx: { bright: 0.2 } };
+    expect(fxCanvas(p, 500)).toBe(fxCanvas(p));
+    picture('data:image/png;base64,F205-only', 30, 20);
+    const before = canvases;
+    fxCanvas({ src: 'data:image/png;base64,F205-only', fx: { bg: {} } });
+    expect(canvases).toBe(before + 1);
   });
 
   it('keeps thirty pictures shown together from one paint to the next (F899)', async () => {
@@ -81,14 +99,14 @@ describe('pictures worked out for the screen', () => {
     // twenty photos, each 2048 × 2048 on the screen: 84 million pixels in all, more than is kept
     const srcs = Array.from({ length: 20 }, (_, i) => `data:image/png;base64,F900-${i}`);
     srcs.forEach((s) => picture(s, 4096, 4096));
-    for (const src of srcs) { fxCanvas({ src, fx: { bright: 0.1 } }); await nextPaint(); }
+    for (const src of srcs) { fxCanvas({ src, fx: { bright: 0.1 } }, 2000); await nextPaint(); }
     // the last one is kept; the first had to go
     let before = canvases;
-    fxCanvas({ src: srcs[19], fx: { bright: 0.1 } });
+    fxCanvas({ src: srcs[19], fx: { bright: 0.1 } }, 2000);
     expect(canvases).toBe(before);
     await nextPaint();
     before = canvases;
-    fxCanvas({ src: srcs[0], fx: { bright: 0.1 } });
+    fxCanvas({ src: srcs[0], fx: { bright: 0.1 } }, 2000);
     expect(canvases).toBe(before + 1);
   });
 

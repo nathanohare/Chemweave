@@ -31,7 +31,7 @@ import { cutCorners, fillInk, patternClear, patternInk, ringShadowGroups, ringSh
 import { placeholderRect, isEmptyText } from '../deck/deck';
 import { imageFor } from './images';
 import { hasShapeFx, shapeFx, type ShapeFxPaints } from './shape-fx';
-import { fxCanvas, fxSrc, shapeDef, traceShape } from './picture-fx';
+import { fxCanvas, fxSideFor, fxSrc, shapeDef, traceShape } from './picture-fx';
 import { layoutTable, drawTable, type TableLayout, type TablePart } from '../table';
 import type { TableData, TextRun } from '../model';
 import { repeatLabelPlace } from '../chem/polymer';
@@ -630,6 +630,7 @@ export class Renderer {
         if (!this.stale || this.tiles.size >= this.stale.tiles.size / 2) this.stale = { tiles: new Map([...this.tiles].filter(([, t]) => !t.patch)), scale: this.tileScale };
       } else this.stale = null;
       this.tiles = new Map();
+      this.paintedPad = 0;
       this.scaledAt = t0;
       this.tileScale = scale;
       this.tileDpr = dpr;
@@ -687,6 +688,7 @@ export class Renderer {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, -tx * T * dpr, -ty * T * dpr);
     const x1 = (tx * T) / scale, y1 = (ty * T) / scale;
     const pad = this.pad(doc);
+    this.paintedPad = Math.max(this.paintedPad, pad);
     this.page?.draw(ctx);
     this.drawContent(ctx, doc, { x1: x1 - pad, y1: y1 - pad, x2: x1 + T / scale + pad, y2: y1 + T / scale + pad });
     return { canvas, tx, ty, patch: null };
@@ -727,12 +729,16 @@ export class Renderer {
     ctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
     ctx.setTransform(k, 0, 0, k, -t.tx * T * dpr, -t.ty * T * dpr);
     const pad = this.pad(doc);
+    this.paintedPad = Math.max(this.paintedPad, pad);
     const x1 = (t.tx * T + ix0 / dpr) / scale, y1 = (t.ty * T + iy0 / dpr) / scale;
     const x2 = (t.tx * T + ix1 / dpr) / scale, y2 = (t.ty * T + iy1 / dpr) / scale;
     this.page?.draw(ctx);
     this.drawContent(ctx, doc, { x1: x1 - pad, y1: y1 - pad, x2: x2 + pad, y2: y2 + pad });
     ctx.restore();
   }
+
+  /** The largest pad the tiles kept were painted with (see dropTiles). */
+  private paintedPad = 0;
 
   /** How far outside a tile an object can sit and still reach into it. */
   private pad(doc: Doc): number {
@@ -766,7 +772,9 @@ export class Renderer {
     this.stale = null;
     if (!this.tiles.size) return;
     const T = tileSide(this.tileDpr), s = this.tileScale;
-    const pad = this.pad(doc);
+    // as far out as anything drawn in the tiles reached when they were painted: a long label
+    // shortened or deleted leaves its far end in tiles further off than the drawing reaches now
+    const pad = Math.max(this.pad(doc), this.paintedPad);
     // what each tile needs painted again, in drawing units
     const hit = new Map<Tile, Rect>();
     for (const r of rects) {
@@ -794,6 +802,7 @@ export class Renderer {
   private dropAllTiles(): void {
     for (const t of this.tiles.values()) this.freeCanvases.push(t.canvas);
     this.tiles.clear();
+    this.paintedPad = 0;
     this.stale = null;
     if (this.freeCanvases.length > 64) this.freeCanvases.length = 64;
   }
@@ -801,7 +810,7 @@ export class Renderer {
   /** Keep the tile cache to a sensible size by forgetting tiles far off screen. */
   private pruneTiles(tx0: number, tx1: number, ty0: number, ty1: number): void {
     // a tile holds (256 × screen scale)² pixels: on a high-resolution screen, fewer of them fit the budget
-    const px = TILE * this.dpr;
+    const px = Math.round(tileSide(this.dpr) * this.dpr);
     if (this.tiles.size <= Math.min(MAX_TILES, Math.floor(TILE_BYTES / (px * px * 4)))) return;
     const m = 4;
     for (const [key, t] of this.tiles) {
@@ -1992,7 +2001,9 @@ export class Renderer {
       edge();
       return;
     }
-    const img = s.src && !s.chart && !s.math ? fxCanvas(s) ?? imageFor(s.src) : null;
+    // (a picture with effects worked out at about the pixels it is drawn at here: screen, zoom, export)
+    const tm = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+    const img = s.src && !s.chart && !s.math ? fxCanvas(s, tm ? fxSideFor(w, h, Math.hypot(tm.a, tm.b), s.crop) : undefined) ?? imageFor(s.src) : null;
     ctx.save();
     if (look?.shadow) {
       // canvas shadows ignore the zoom, so they are scaled by it here
@@ -2450,7 +2461,15 @@ export class Renderer {
       return;
     }
     const mv = layer.move ?? { x: 0, y: 0 };
-    const at = (st: FxStep) => { const ps = st.t === 1 && !st.grow ? fx.base : this.highlightPieces(doc, g, st.t, st.grow); return mv.x || mv.y ? movePieces(ps, mv.x, mv.y) : ps; };
+    const steps = (fx.steps ??= new Map());
+    const piecesAt = (t: number, grow: number) => {
+      if (t === 1 && !grow) return fx.base;
+      const k = `${t}|${grow}`;
+      let ps = steps.get(k);
+      if (!ps) steps.set(k, (ps = this.highlightPieces(doc, g, t, grow)));
+      return ps;
+    };
+    const at = (st: FxStep) => { const ps = piecesAt(st.t, st.grow); return mv.x || mv.y ? movePieces(ps, mv.x, mv.y) : ps; };
     // only the part of the page the layer covers is cleared and copied
     const m = ctx.getTransform();
     const W = ctx.canvas.width, H = ctx.canvas.height;
@@ -3083,7 +3102,7 @@ interface Tile {
 
 /** One colour and look of highlight: its atoms and bonds (with where each atom's highlight runs, when centred on double bonds). */
 /** A highlight's effects as worked out: its pieces as drawn, what it draws, and (made when first needed) its joined areas and plain-area paints. */
-type FxEntry = { base: Piece[]; fx: HighlightFx; levels: Map<string, ReturnType<typeof unionOf>>; shadow?: FxPaint[]; body?: FxPaint[] };
+type FxEntry = { base: Piece[]; fx: HighlightFx; levels: Map<string, ReturnType<typeof unionOf>>; shadow?: FxPaint[]; body?: FxPaint[]; /** The pieces of each step of a glow or shadow, by size and widening (worked out once). */ steps?: Map<string, Piece[]> };
 
 /** The box round some pieces. */
 function piecesBox(ps: Piece[]): Rect {

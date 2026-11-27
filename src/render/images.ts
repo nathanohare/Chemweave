@@ -22,14 +22,14 @@ export function paintTurn(): number {
 }
 
 const cache = new Map<string, Entry>();
-/** Pictures are forgotten, least recently drawn first, once their data passes this many characters (decoded again if needed). */
-const KEEP_CHARS = 150_000_000;
+/** Pictures are forgotten, least recently drawn first, once their data passes `keepChars` characters (decoded again if needed; tests set it lower). */
+export const imageCache = { keepChars: 150_000_000 };
 
 function forgetOld(now: number): void {
   let total = 0;
   for (const k of cache.keys()) total += k.length;
   for (const [k, e] of cache) {
-    if (total <= KEEP_CHARS || cache.size <= 1) break;
+    if (total <= imageCache.keepChars || cache.size <= 1) break;
     // (one drawn in this paint stays, even past the limit)
     if (e.used === now) continue;
     total -= k.length;

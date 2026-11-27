@@ -329,15 +329,26 @@ const VERSIONS = 5;
 
 const pixelsOf = (m: Made) => m.canvas.width * m.canvas.height;
 
-function keyOf(p: FxPicture, fx: PictureFx, side: number): string {
+/** A version's key: the size it is worked at (not the size asked for: a small picture is the same for any), its settings and crop. */
+function keyOf(p: FxPicture, fx: PictureFx, size: { w: number; h: number }): string {
   const c = p.crop;
-  return `${side}|${JSON.stringify(fx)}|${c ? [c.l, c.t, c.r, c.b].join() : ''}`;
+  return `${size.w}x${size.h}|${JSON.stringify(fx)}|${c ? [c.l, c.t, c.r, c.b].join() : ''}`;
 }
 
-/** Biggest side a picture is worked on at for files (larger ones are shrunk first). */
+/** Biggest side a picture is worked on at (larger ones are shrunk first). */
 const MAX_SIDE = 4096;
-/** Biggest side a picture is worked on at to be shown on the screen (more than a screen shows of it). */
-const SHOW_SIDE = 2048;
+/** The sides a picture is worked at for what it is drawn at, so a zoom works it out again only now and then. */
+const SIDES = [512, 1024, 2048, MAX_SIDE];
+
+/**
+ * How many pixels a side of a picture's whole image must have where it is drawn `w` × `h` (the
+ * part its crop leaves) at `scale` pixels to the unit: the larger of its width and height there.
+ */
+export function fxSideFor(w: number, h: number, scale: number, crop?: { l: number; t: number; r: number; b: number }): number {
+  const c = crop ?? { l: 0, t: 0, r: 0, b: 0 };
+  const fw = Math.max(1e-3, 1 - c.l - c.r), fh = Math.max(1e-3, 1 - c.t - c.b);
+  return Math.max((Math.abs(w) * scale) / fw, (Math.abs(h) * scale) / fh);
+}
 
 /** The size a picture is worked on at, in pixels. */
 function workSize(img: HTMLImageElement | HTMLCanvasElement | ImageBitmap, p: FxPicture, side: number): { w: number; h: number } {
@@ -430,22 +441,25 @@ function version(mine: Map<string, Made>, key: string, now: number, make: () => 
 function find(p: FxPicture, fx: PictureFx, side: number): Made | null {
   if (typeof document === 'undefined' || !p.src) return null;
   const now = paintTurn();
+  const img = imageFor(p.src);
+  if (!img) return null;
   let mine = made.get(p.src);
   // used now, hit or miss: this picture is the last to be forgotten
   if (mine) made.delete(p.src);
   made.set(p.src, (mine ??= new Map()));
-  const key = keyOf(p, fx, side);
+  const size = workSize(img, p, side);
+  const key = keyOf(p, fx, size);
   if (mine.has(key)) return version(mine, key, now, () => mine.get(key)!.canvas);
-  const img = imageFor(p.src);
-  if (!img) { if (!mine.size) made.delete(p.src); return null; }
   let m: Made;
   try {
     const baked = bakedPart(fx);
     if (baked) {
       // Remove Background and sharpening, worked out once and kept, with the quick settings
       // (brightness, contrast, colours, see-through, the shape) worked on a copy of it each time
-      const b = version(mine, `baked|${keyOf(p, baked, side)}`, now, () => makeFxCanvas(img, p, baked, 'baked', side));
-      m = version(mine, key, now, () => workOn(b.canvas, b.canvas.width, b.canvas.height, p, fx, 'live'));
+      const b = version(mine, `baked|${keyOf(p, baked, size)}`, now, () => makeFxCanvas(img, p, baked, 'baked', side));
+      // (with nothing else set, the kept one is the picture as shown)
+      const more = Object.keys(fx).some((k) => k !== 'sharpen' && k !== 'bg');
+      m = more ? version(mine, key, now, () => workOn(b.canvas, b.canvas.width, b.canvas.height, p, fx, 'live')) : b;
     } else m = version(mine, key, now, () => makeFxCanvas(img, p, fx, undefined, side));
   } catch {
     if (!mine.size) made.delete(p.src);
@@ -455,10 +469,18 @@ function find(p: FxPicture, fx: PictureFx, side: number): Made | null {
   return m;
 }
 
-/** The picture as shown (a canvas the same size as its image), or null when it is shown as it is or hasn't loaded. */
-export function fxCanvas(p: FxPicture): HTMLCanvasElement | null {
+/**
+ * The picture as shown (a canvas the size it is worked at), or null when it is shown as it is or
+ * hasn't loaded. `need` is how many pixels a side of the whole image is drawn at (see fxSideFor):
+ * it is worked at the next of 512, 1024, 2048 or 4096 pixels a side, no larger than its own
+ * image, so a picture shown small is quick and one shown large, exported or presented is sharp.
+ * Left out, the largest.
+ */
+export function fxCanvas(p: FxPicture, need?: number): HTMLCanvasElement | null {
   const fx = tidyFx(p.fx);
-  return fx ? find(p, fx, SHOW_SIDE)?.canvas ?? null : null;
+  if (!fx) return null;
+  const side = need && Number.isFinite(need) ? SIDES.find((s) => s >= need) ?? MAX_SIDE : MAX_SIDE;
+  return find(p, fx, side)?.canvas ?? null;
 }
 
 /** The picture as shown, as a PNG data URL (its own data when unchanged or not loaded yet). */

@@ -43,8 +43,8 @@ function canvasAvailable(): boolean {
 /**
  * The chart as a PNG data URL `w` × `h` points, at `scale` pixels per pixel (for the picture other
  * programs see). A canvas too big for the browser (it gives an empty picture, "data:,") or a drawing
- * that fails is tried again at 1 pixel per pixel; only where there is no canvas at all, or both fail,
- * is the picture a blank pixel (the chart itself is still saved with its data).
+ * that fails is tried again at 1 pixel per pixel. If both fail, the picture is a grey box saying so (the
+ * chart itself is still saved with its data); only where there is no canvas at all is it a blank pixel.
  */
 export function chartBoxPng(b: ChartBox, w: number, h: number, scale = 3): string {
   if (!canvasAvailable()) return BLANK_PNG;
@@ -60,5 +60,32 @@ export function chartBoxPng(b: ChartBox, w: number, h: number, scale = 3): strin
     }
   }
   console.error('Chart picture not drawn:', failure);
-  return BLANK_PNG;
+  return warningPng(cw, ch) ?? BLANK_PNG;
 }
+
+/** A plain grey box saying the chart's picture couldn't be made, shaped as the chart, for other programs to show in its place. */
+function warningPng(cw: number, ch: number): string | null {
+  try {
+    const k = Math.min(1, 800 / Math.max(cw, ch));
+    const c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(cw * k));
+    c.height = Math.max(1, Math.round(ch * k));
+    const g = c.getContext('2d');
+    if (!g) return null;
+    g.fillStyle = '#f2f2f2';
+    g.fillRect(0, 0, c.width, c.height);
+    g.strokeStyle = '#bfbfbf';
+    g.strokeRect(0.5, 0.5, c.width - 1, c.height - 1);
+    g.fillStyle = '#595959';
+    g.font = `${Math.max(8, Math.min(14, c.height / 6))}px Arial, sans-serif`;
+    g.textAlign = 'center';
+    g.fillText(CHART_PICTURE_FAILED, c.width / 2, c.height / 2);
+    const url = c.toDataURL('image/png');
+    return url.startsWith('data:image/png') ? url : null;
+  } catch {
+    return null;
+  }
+}
+
+/** What the picture other programs show says when the chart couldn't be drawn into it. */
+export const CHART_PICTURE_FAILED = 'The chart could not be drawn here. Open it in Chemweave to see it.';
