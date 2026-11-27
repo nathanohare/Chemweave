@@ -78,7 +78,7 @@ export interface DiagramLayout {
 const STEPS = 'Starting material\nReaction\nWork-up\nPurification\nAnalysis';
 
 export const DIAGRAM_LAYOUTS: DiagramLayout[] = [
-  { id: 'blocks', name: 'Block list', category: 'List', blurb: 'Boxes in rows, one for each item; lines below an item are listed in its box.', sample: 'Synthesis\nCharacterisation\nKinetics\nComputation\nApplications', size: [480, 260] },
+  { id: 'blocks', name: 'Block list', category: 'List', blurb: 'Boxes in rows, one for each item; lines below an item are listed in its box.', sample: 'Synthesis\nCharacterization\nKinetics\nComputation\nApplications', size: [480, 260] },
   { id: 'vertical-list', name: 'Vertical bullet list', category: 'List', blurb: 'A bar for each item with the lines below it as bullets underneath.', sample: 'Aims\n\tMake the ligand in three steps\n\tScreen the catalysts\nResults\n\tFive new complexes\n\tUp to 96% ee', size: [480, 300] },
   { id: 'horizontal-list', name: 'Horizontal bullet list', category: 'List', blurb: 'A heading for each item with its lines as bullets in a column below.', sample: 'NMR\n\t¹H and ¹³C\n\tNOESY\nMass spec\n\tHRMS (ESI)\nX-ray\n\tSingle crystal', size: [480, 280] },
   { id: 'honeycomb', name: 'Honeycomb', category: 'List', blurb: 'Six-sided cells packed edge to edge, one for each item; any lines under an item go inside its cell.', sample: 'Air-stable\nScalable\nCheap ligand\nRoom temperature\nGreen solvent\nFew steps', size: [480, 340] },

@@ -1581,8 +1581,8 @@ export class Editor {
         this.doc.begin(d.spot!.mo !== undefined ? 'Move Level' : 'Move Spot');
         this.selectOnly({ kind: 'shape', id: d.spot!.frame });
       }
-      if (d.mode === 'reshape') this.doc.begin('Bend arrow');
-      if (d.mode === 'handle') this.doc.begin(d.handle!.which === 'mid' || d.handle!.which[0] === 'b' ? 'Bend arrow' : d.handle!.which === 'ea' || d.handle!.which === 'eb' ? 'Reshape arc' : this.cropping === d.handle!.id ? 'Crop picture' : 'Resize');
+      if (d.mode === 'reshape') this.doc.begin('Bend Arrow');
+      if (d.mode === 'handle') this.doc.begin(d.handle!.which === 'mid' || d.handle!.which[0] === 'b' ? 'Bend Arrow' : d.handle!.which === 'ea' || d.handle!.which === 'eb' ? 'Reshape Arc' : this.cropping === d.handle!.id ? 'Crop Picture' : 'Resize');
       if (d.mode === 'rotate') this.doc.begin('Rotate');
       if (d.mode === 'move') {
         this.r.overlay.style.cursor = d.ctrl ? 'copy' : 'grabbing';
@@ -2619,7 +2619,7 @@ export class Editor {
     const b = this.doc.bonds.get(bondId);
     const f = t && b && fusions3d(this.doc, t, bondId)?.[index];
     if (!t || !b || !f) return false;
-    this.doc.edit('Fuse ring', () => {
+    this.doc.edit('Fuse Ring', () => {
       const ids = placeTemplate(this.doc, t, { origin: { x: 0, y: 0 }, scale: f.len, angle: 0, mirror: false, pts: f.pts }, { existing: f.existing, move: f.move, depth: f.depth, atomDepth: f.atomDepth, scale: b.s, noMerge: true });
       this.lastEdited = ids[t.attach];
     });
@@ -2891,7 +2891,7 @@ export class Editor {
       if (!pt?.variable) continue;
       const has = pt.multi!.includes(h.id);
       if (has && pt.multi!.length <= 2) return;
-      doc.edit(has ? 'Remove attachment atom' : 'Add attachment atom', () => doc.updateAtom(c, { multi: has ? pt.multi!.filter((m) => m !== h.id) : [...pt.multi!, h.id] }));
+      doc.edit(has ? 'Remove Attachment Atom' : 'Add Attachment Atom', () => doc.updateAtom(c, { multi: has ? pt.multi!.filter((m) => m !== h.id) : [...pt.multi!, h.id] }));
       this.changed();
       return;
     }
@@ -2908,7 +2908,7 @@ export class Editor {
     if (h?.kind === 'bond') {
       const b = doc.bonds.get(h.id)!;
       if (centreEnd(doc, b)) {
-        doc.edit(b.spokes ? 'Hapto bond to the middle' : 'Hapto bond to each atom', () => doc.updateBond(b.id, { spokes: b.spokes ? undefined : true }));
+        doc.edit(b.spokes ? 'Hapto Bond to the Middle' : 'Hapto Bond to Each Atom', () => doc.updateBond(b.id, { spokes: b.spokes ? undefined : true }));
         this.changed();
         return;
       }
@@ -2916,7 +2916,7 @@ export class Editor {
     if (h?.kind === 'atom') {
       const picked = [...this.sel.atoms].filter((id) => id !== h.id && !doc.atoms.get(id)?.multi);
       if (picked.length >= 2) {
-        doc.edit('Hapto bond', () => { bondHapto(doc, h.id, picked); });
+        doc.edit('Add Hapto Bond', () => { bondHapto(doc, h.id, picked); });
         this.sel = emptySel();
         this.changed();
       }
@@ -2939,7 +2939,7 @@ export class Editor {
     }
     if (Math.hypot(dir.x, dir.y) < L * 0.2 || target.atoms.length > 2 && dist({ x: cx / n, y: cy / n }, target.at) < L * 0.2) dir = { x: 0, y: 1 };
     const at = add(target.at, mul(norm(dir), L));
-    doc.edit('Hapto bond', () => {
+    doc.edit('Add Hapto Bond', () => {
       const m = this.newMetal(at);
       bondHapto(doc, m.id, target.atoms);
       this.lastEdited = m.id;
@@ -3022,9 +3022,9 @@ export class Editor {
       return;
     }
     if (t.kind === 'bond' && t.hapto) {
-      doc.edit('Hapto bond', () => this.dragHapto(d, p));
+      doc.edit('Add Hapto Bond', () => this.dragHapto(d, p));
     } else if (t.kind === 'bond' && t.variable) {
-      doc.edit('Variable attachment', () => this.dragVariable(d, p));
+      doc.edit('Add Variable Attachment', () => this.dragVariable(d, p));
     } else if (t.kind === 'bond') {
       doc.edit('Bond', () => {
         const a = startAtom ?? doc.addAtom(start.x, start.y);
@@ -3232,7 +3232,7 @@ export class Editor {
     const sameBez = (a?: Vec[], b?: Vec[]) => (a?.length ?? 0) === (b?.length ?? 0) && (a ?? []).every((p, i) => dist(p, b![i]) < 1e-4);
     const changed = plans.filter(({ r, push }) => dist(r.tail, push.tail) > 0.01 || dist(r.head, push.head) > 0.01 || Math.abs(r.sweep - push.sweep) > 1e-4 || !sameBez(r.bez, push.bez));
     if (!changed.length) return 0;
-    doc.edit('Clean up arrow', () => {
+    doc.edit('Clean Up Arrow', () => {
       for (const { r, push } of changed) doc.updateArrow(r.id, { ...this.pushPatch(r, push), pin: pushPins(doc, push), bent: undefined });
     });
     this.changed();
@@ -3248,7 +3248,7 @@ export class Editor {
     const m = this.measure();
     const arrows = [...this.sel.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r && isCurved(r) && !r.equilibrium && !r.elbow && (s ? !isSBez(r.bez) : !!r.bez?.length));
     if (!arrows.length) return 0;
-    doc.edit(s ? 'S-shaped arrow' : 'Single-curve arrow', () => {
+    doc.edit(s ? 'S-Shaped Arrow' : 'Single-Curve Arrow', () => {
       for (const r of arrows) {
         const from = tailEnd(doc, pushEndAt(doc, m, r.tail), r.tail);
         const to = headEnd(doc, pushEndAt(doc, m, r.head), r.head);
@@ -3453,7 +3453,7 @@ export class Editor {
     if (shape === 's' || shape === 'single') return this.setArrowS(shape === 's');
     const arrows = this.pickedPaths().filter((r) => shapeOf(r) !== shape);
     if (!arrows.length) return 0;
-    this.doc.edit(shape === 'u' ? 'U-turn arrow' : 'Loop arrow', () => {
+    this.doc.edit(shape === 'u' ? 'U-Turn Arrow' : 'Loop Arrow', () => {
       for (const r of arrows) {
         const patch: Partial<Arrow> = { sweep: 0, bez: shapeBez(shape, firstBend(r)) };
         if (headBend(r) !== headBend({ ...r, ...patch })) Object.assign(patch, { headStyle: swapHalf(r.headStyle), tailStyle: swapHalf(r.tailStyle) });
@@ -3608,7 +3608,7 @@ export class Editor {
     const doc = this.doc;
     const arrows = [...this.sel.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r && isCurved(r) && !r.elbow);
     if (!arrows.length) return 0;
-    doc.edit('Flip arrow bend', () => { for (const r of arrows) doc.updateArrow(r.id, mirrorBend(r)); });
+    doc.edit('Flip Arrow Bend', () => { for (const r of arrows) doc.updateArrow(r.id, mirrorBend(r)); });
     this.changed();
     return arrows.length;
   }
@@ -3632,7 +3632,7 @@ export class Editor {
     const doc = this.doc;
     const m = this.measure();
     let n = 0;
-    doc.edit('Attach to structure', () => {
+    doc.edit('Attach to Structure', () => {
       for (const id of this.sel.arrows) {
         const r = doc.arrows.get(id);
         if (!r || !isCurved(r) || r.elbow) continue;
@@ -3659,7 +3659,7 @@ export class Editor {
     const bonds = [...this.sel.bonds].filter((id) => doc.bonds.has(id));
     if (!bonds.length) return 0;
     const made: number[] = [];
-    doc.edit('Homolysis arrows', () => {
+    doc.edit('Homolysis Arrows', () => {
       for (const id of bonds) {
         const b = doc.bonds.get(id)!;
         const p1 = doc.atoms.get(b.a1)!, p2 = doc.atoms.get(b.a2)!;
@@ -3797,7 +3797,7 @@ export class Editor {
       out.addArrow({ tail, head, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: lw * 10, headWidth: lw * 2.5 });
     });
     const b = out.bounds()!;
-    const sel = insertDrawing(doc, out, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, 'Draw next intermediate');
+    const sel = insertDrawing(doc, out, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, 'Draw Next Intermediate');
     this.selectThese({ ...sel, arrows: new Set() });
     this.changed();
     return { drawn: true, issues: reading.issues };
@@ -5142,7 +5142,7 @@ export class Editor {
     const prep = await this.prepareSelectionTurn(doc, true, [atom]);
     if (!prep) return doc.atoms.has(atom) ? 'The structure changed while its 3-D shape was being built. Try again.' : 'There is no structure there.';
     if (prep.notes.length) return prep.notes[0];
-    doc.edit('Real 3-D shape', () => {
+    doc.edit('Real 3-D Shape', () => {
       prep.turn.apply(doc, IDENT_TURN, true);
       prep.turn.remember(doc);
     });
@@ -5260,7 +5260,7 @@ export class Editor {
     const doc = this.doc;
     const f = frameAround(doc, this.sel, this.measure());
     if (!f) return false;
-    doc.edit('Add frame', () => this.selectOnly({ kind: 'shape', id: doc.addShape({ ...f, lineWidth: doc.style.lineWidth }).id }));
+    doc.edit('Add Frame', () => this.selectOnly({ kind: 'shape', id: doc.addShape({ ...f, lineWidth: doc.style.lineWidth }).id }));
     this.changed();
     return true;
   }
@@ -5271,7 +5271,7 @@ export class Editor {
     const s = doc.shapes.get(id);
     if (!s) return;
     const m = this.measure();
-    doc.edit('Fit frame', () => {
+    doc.edit('Fit Frame', () => {
       const pad = defaultPad(doc);
       const frame = s.frame ? { ...s.frame, fit: true } : { ...thingsInside(doc, shapeBox(s), m, id), padX: pad, padY: pad, fit: true };
       doc.updateShape(id, { frame });
@@ -5294,7 +5294,7 @@ export class Editor {
     }
     if (!bonds.size) return WHY.fillRings;
     let ids: number[] = [];
-    doc.edit('Fill rings', () => { ids = fillRings(doc, bonds); });
+    doc.edit('Fill Rings', () => { ids = fillRings(doc, bonds); });
     if (!ids.length) return 'No rings in the selection.';
     this.sel = emptySel();
     for (const id of ids) this.sel.shapes.add(id);
@@ -5310,7 +5310,7 @@ export class Editor {
     const doc = this.doc, s = this.sel;
     if (!this.hasSelection()) return false;
     const black = colour?.toLowerCase() === '#000000' ? undefined : colour;
-    doc.edit(what === 'highlight' ? 'Highlight' : what === 'fill' ? 'Fill color' : 'Color', () => {
+    doc.edit(what === 'highlight' ? 'Highlight' : what === 'fill' ? 'Fill Color' : 'Color', () => {
       if (what === 'highlight') {
         for (const id of s.atoms) doc.updateAtom(id, { highlight: colour });
         for (const id of s.bonds) doc.updateBond(id, { highlight: colour });
@@ -5337,7 +5337,7 @@ export class Editor {
   highlight(colour: string | undefined, hl?: HighlightStyle): boolean {
     const doc = this.doc;
     if (!this.sel.atoms.size && !this.sel.bonds.size) return false;
-    doc.edit(colour ? 'Highlight' : 'Remove highlight', () => {
+    doc.edit(colour ? 'Highlight' : 'Remove Highlight', () => {
       for (const id of this.sel.atoms) doc.updateAtom(id, { highlight: colour, hl: colour ? hl : undefined });
       for (const id of this.sel.bonds) doc.updateBond(id, { highlight: colour, hl: colour ? hl : undefined });
     });
@@ -5353,7 +5353,7 @@ export class Editor {
     const rings = [...ids].map((id) => doc.shapes.get(id)!).filter(Boolean);
     if (!rings.length) return null;
     const on = !rings.every((s) => s.shadow);
-    doc.edit(on ? 'Ring fill shadow' : 'No ring fill shadow', () => { for (const s of rings) doc.updateShape(s.id, { shadow: on || undefined }); });
+    doc.edit(on ? 'Ring Fill Shadow' : 'No Ring Fill Shadow', () => { for (const s of rings) doc.updateShape(s.id, { shadow: on || undefined }); });
     this.changed();
     return on ? 'on' : 'off';
   }
@@ -5373,9 +5373,9 @@ export class Editor {
     const on = ![...atoms, ...bonds].every((x) => has(x.hl));
     const patch: HighlightStyle = key === 'outline' ? (on ? { fill: 'none', line: 'solid' } : { fill: 'solid', line: 'none' }) : { [key]: on };
     const labels: Record<HighlightToggle, [string, string]> = {
-      smooth: ['Smooth highlight', 'Highlight with discs'], centre: ['Center highlight on double bonds', 'Highlight on the bonds'],
-      soft: ['Soft highlight', 'Sharp highlight'], shadow: ['Highlight shadow', 'No highlight shadow'], glow: ['Highlight glow', 'No highlight glow'],
-      outline: ['Outline-only highlight', 'Filled highlight'],
+      smooth: ['Smooth Highlight', 'Highlight with Discs'], centre: ['Center Highlight on Double Bonds', 'Highlight on the Bonds'],
+      soft: ['Soft Highlight', 'Sharp Highlight'], shadow: ['Highlight Shadow', 'No Highlight Shadow'], glow: ['Highlight Glow', 'No Highlight Glow'],
+      outline: ['Outline-Only Highlight', 'Filled Highlight'],
     };
     doc.edit(labels[key][on ? 0 : 1], () => {
       for (const a of atoms) doc.updateAtom(a.id, { hl: tidyStyle({ ...a.hl, ...patch }) });
@@ -5933,7 +5933,7 @@ export class Editor {
     const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hollowWedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     // the bonds flipped: those selected, and those between selected atoms
     const wedged = [...doc.bonds.values()].filter((x) => swap[x.display] && (this.sel.bonds.has(x.id) || (this.sel.atoms.has(x.a1) && this.sel.atoms.has(x.a2))));
-    const name = `Flip ${axis === 'h' ? 'horizontal' : 'vertical'}${keep ? ', keeping configuration' : ''}`;
+    const name = `Flip ${axis === 'h' ? 'Horizontal' : 'Vertical'}${keep ? ', Keeping Configuration' : ''}`;
     doc.edit(name, () => {
       transform(doc, snap, f, true);
       if (keep) for (const x of wedged) doc.updateBond(x.id, { display: swap[x.display]! });
@@ -6747,7 +6747,7 @@ export class Editor {
     next.plusses = next.plusses!.filter(others);
     const into: Role | null = role === 'none' ? null : role === 'results' ? 'below' : role;
     if (into) for (const it of picked) (it.plus && (into === 'reactants' || into === 'products') ? next.plusses! : next[into]).push(it.ref);
-    this.doc.edit('Reaction roles', () => {
+    this.doc.edit('Reaction Roles', () => {
       this.doc.updateArrow(arrowId, { step: next });
       // text set as the Results line is marked so; set as anything else, it is plain text again
       for (const it of picked) {
@@ -6966,7 +6966,7 @@ export class Editor {
   /** Forget roles chosen by hand (or read from a file): they are worked out from where things sit again. */
   resetReactionRoles(arrowId: number): void {
     if (!this.doc.arrows.get(arrowId)?.step) return;
-    this.doc.edit('Reaction roles', () => this.doc.updateArrow(arrowId, { step: undefined }));
+    this.doc.edit('Reaction Roles', () => this.doc.updateArrow(arrowId, { step: undefined }));
     this.changed();
   }
 
@@ -7105,7 +7105,7 @@ export class Editor {
     const shift = sub(add(head, mul(v, GAP + reach)), c);
     const part = extractDrawing(this.doc, this.sel);
     const pb = part.bounds();
-    this.doc.edit('Reaction step', () => {
+    this.doc.edit('Reaction Step', () => {
       this.addArrow(tail, head);
       if (pb) this.sel = insertDrawing(this.doc, part, add({ x: (pb.x1 + pb.x2) / 2, y: (pb.y1 + pb.y2) / 2 }, shift));
     });
@@ -7456,7 +7456,7 @@ export class Editor {
       // atom the mouse is on (after a first 1 there), as ChemDraw counts it
       const fromMouse = this.keyHot === null || sameHit(this.keyHot, this.hover);
       let next: number | null = null;
-      doc.edit('Hotkey', () => { next = sproutGroup(doc, id, kind); });
+      doc.edit(kind === 'bond' || kind === 'ring-bond' || kind === 'wedge' || kind === 'hash-wedge' ? 'Add Bond' : 'Add Group', () => { next = sproutGroup(doc, id, kind); });
       this.lastEdited = next ?? id;
       // 1 and 0 on the atom under the mouse leave the highlight there (pressing 1 again adds
       // another branch); other keys, or keys after a keyboard move, follow the new atom
@@ -7473,12 +7473,12 @@ export class Editor {
         doc.edit('Charge', () => this.setCharge(id, a.charge + (act === 'plus' ? 1 : -1)));
         break;
       case 'number':
-        doc.edit('Atom number', () => doc.updateAtom(id, a.showNumber
+        doc.edit('Atom Number', () => doc.updateAtom(id, a.showNumber
           ? { showNumber: false }
           : { showNumber: true, atomNumber: a.atomNumber || String(nextNumber(doc, id, (x) => x.atomNumber)) }));
         break;
       case 'attach':
-        doc.edit('Attachment point', () => doc.updateAtom(id, a.attach
+        doc.edit('Attachment Point', () => doc.updateAtom(id, a.attach
           ? { attach: undefined, attachNum: undefined, z: 6 }
           : { attach: 'Unspecified', attachNum: nextNumber(doc, id, (x) => (x.attach ? x.attachNum : undefined)), z: 0, label: null, charge: 0, fileLabel: false }));
         break;
@@ -7520,7 +7520,7 @@ export class Editor {
     };
     if (act === 'select') { this.selectOnly({ kind: 'bond', id }); return true; }
     if (act === 'properties') { this.selectOnly({ kind: 'bond', id }); this.onProperties(); return true; }
-    doc.edit('Bond Hotkey', () => {
+    doc.edit('Change Bond', () => {
       if (act === 'delete') { this.removeBondAndOrphans(id); return; }
       if (act === 'wedge' || act === 'hash-wedge') {
         const disp: BondDisplay = act === 'wedge' ? 'wedge' : 'hashWedge';
@@ -7548,7 +7548,7 @@ export class Editor {
     const n = act === 'benzene' ? 6 : act === 'cyclopentadiene' ? 5 : Number(act);
     if (act !== 'chair' && act !== 'chair-2' && !(n >= 3 && n <= 8)) return false;
     let far: number | undefined;
-    doc.edit('Fuse ring', () => {
+    doc.edit('Fuse Ring', () => {
       if (act === 'chair' || act === 'chair-2') { fuseChair(doc, id, act === 'chair-2'); return; }
       const side = fuseSide(doc, b, n, this.pointer);
       const pts = fusedRing(doc.atoms.get(b.a1)!, doc.atoms.get(b.a2)!, n, side);
@@ -7939,7 +7939,7 @@ export class Editor {
     if (f.kind === 'align' && f.j !== 'justify') {
       const labelled = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi);
       if (labelled.length && !caps.length && !shapes.length) {
-        doc.edit('Label alignment', () => { for (const a of labelled) doc.updateAtom(a.id, labelAlignPatch(doc, a, f.j as LabelAlign)); });
+        doc.edit('Label Alignment', () => { for (const a of labelled) doc.updateAtom(a.id, labelAlignPatch(doc, a, f.j as LabelAlign)); });
         this.requestScene(); this.changed(); return true;
       }
     }
@@ -7947,7 +7947,7 @@ export class Editor {
     if (!caps.length && !shapes.length) return this.formatLabels(f);
     // (with text picked too, the labels line up in the same step, so one Undo takes back the click)
     const labels = f.kind === 'align' && f.j !== 'justify' ? [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi) : [];
-    doc.edit('Format text', () => {
+    doc.edit('Format Text', () => {
       for (const a of labels) doc.updateAtom(a.id, labelAlignPatch(doc, a, (f as { j: LabelAlign }).j));
       for (const c of caps) {
         const base = c.ph ? doc.textStyles?.[c.ph] : undefined;
@@ -7978,10 +7978,10 @@ export class Editor {
     if (!atoms.length) return false;
     let label: string | null = null;
     let change: (() => void) | null = null;
-    if (f.kind === 'style' && 'font' in f.patch) { label = 'Label font'; change = () => setLabelFont(doc, atoms, f.patch.font); }
-    else if (f.kind === 'style' && f.patch.size !== undefined) { const pt = f.patch.size; label = 'Label size'; change = () => setLabelSize(doc, atoms, pt); }
-    else if (f.kind === 'grow') { const now = labelLookOf(doc, atoms).size ?? doc.style.labelSize; label = 'Label size'; change = () => setLabelSize(doc, atoms, Math.max(1, now + f.by)); }
-    else if (f.kind === 'toggle' && f.key === 'bold') { label = 'Bold labels'; change = () => toggleLabelBold(doc, atoms); }
+    if (f.kind === 'style' && 'font' in f.patch) { label = 'Label Font'; change = () => setLabelFont(doc, atoms, f.patch.font); }
+    else if (f.kind === 'style' && f.patch.size !== undefined) { const pt = f.patch.size; label = 'Label Size'; change = () => setLabelSize(doc, atoms, pt); }
+    else if (f.kind === 'grow') { const now = labelLookOf(doc, atoms).size ?? doc.style.labelSize; label = 'Label Size'; change = () => setLabelSize(doc, atoms, Math.max(1, now + f.by)); }
+    else if (f.kind === 'toggle' && f.key === 'bold') { label = 'Bold Labels'; change = () => toggleLabelBold(doc, atoms); }
     if (!change || !label) return false;
     doc.edit(label, change);
     this.requestScene();
@@ -8000,7 +8000,7 @@ export class Editor {
     const ids = typing !== null ? [typing] : [...this.sel.captions];
     const caps = ids.map((id) => doc.captions.get(id)).filter((c): c is Caption => !!c);
     if (!caps.length) return false;
-    doc.edit(change.kind === 'dir' ? 'Text direction' : change.kind === 'cols' ? 'Columns' : 'AutoFit', () => {
+    doc.edit(change.kind === 'dir' ? 'Text Direction' : change.kind === 'cols' ? 'Columns' : 'AutoFit', () => {
       for (const c of caps) {
         const frame = this.r.captionFrame(c);
         doc.dirtyRects.push(this.r.captionBox(c));
@@ -8223,7 +8223,7 @@ export class Editor {
 
   /** Show or hide the dashed text guides on the selected arrows (null: as usual, only on plain reaction arrows). */
   setArrowGuides(ids: number[], on: boolean | null, byDefault?: (r: Arrow) => boolean): void {
-    this.doc.edit(on === false ? 'Hide Text Guides' : 'Show Text Guides', () => {
+    this.doc.edit(on === false ? 'Hide Text Guides' : on === true ? 'Show Text Guides' : 'Reset Text Guides', () => {
       for (const id of ids) {
         const r = this.doc.arrows.get(id);
         if (!r) continue;
@@ -8442,7 +8442,7 @@ export class Editor {
       if (cur?.ph && empty) {
         // an emptied placeholder stays, showing its prompt again
         const paras = cur.ph === 'body' ? [{ list: 'bullet' as const }] : undefined;
-        if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit caption', () => doc.updateCaption(cur.id, { runs: [], paras }));
+        if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit Text', () => doc.updateCaption(cur.id, { runs: [], paras }));
       } else if (cur) {
         const fresh = this.freshCaption?.id === cur.id ? this.freshCaption : null;
         if (fresh) this.freshCaption = null;
@@ -8450,11 +8450,11 @@ export class Editor {
           // a text box Add Caption just made, left empty: it goes with the step that made it (or,
           // stopped for Undo, is left for the Undo to take back with that step, so Redo has it)
           const unused = !!fresh && !plainText(cur.runs).trim() && doc.topStep === fresh.step;
-          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
+          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete Text', () => doc.removeCaption(cur.id));
         }
         // (nothing typed: no step, though the editor hands the runs back with their fields in another order)
         else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => !sameData(cur[k], fields[k]))) {
-          doc.edit('Edit caption', () => doc.updateCaption(cur.id, fields));
+          doc.edit('Edit Text', () => doc.updateCaption(cur.id, fields));
         }
       } else if (!empty) {
         doc.edit('Caption', () => { const nc = doc.addCaption({ ...fields, x: res.x, y: res.y, runs: fields.runs!, justify: res.justify }); made = nc.id; opts?.done?.(nc.id); });
@@ -8745,7 +8745,7 @@ export class Editor {
         const empty = !plainText(res.runs).trim();
         const text = empty ? undefined : { runs: res.runs, ...(res.paras?.length ? { paras: res.paras } : {}) };
         const align = res.justify === 'center' ? undefined : res.justify;
-        if (JSON.stringify(text) !== JSON.stringify(cur.text) || align !== cur.textAlign) doc.edit('Type in shape', () => doc.updateShape(id, { text, textAlign: align }));
+        if (JSON.stringify(text) !== JSON.stringify(cur.text) || align !== cur.textAlign) doc.edit('Type in Shape', () => doc.updateShape(id, { text, textAlign: align }));
       }
       this.requestScene();
       this.changed();
@@ -8852,7 +8852,7 @@ export class Editor {
         if (!next && !e.shiftKey) {
           // Tab in the last cell adds a row, as in Word
           const cur = doc.shapes.get(id)!;
-          doc.edit('Add table row', () => this.updateTable(cur.id, insertRow(cur.table!, cur.table!.rows.length)));
+          doc.edit('Add Table Row', () => this.updateTable(cur.id, insertRow(cur.table!, cur.table!.rows.length)));
           this.changed();
           next = { r: part.r + 1, c: 0 };
         }
@@ -8875,7 +8875,7 @@ export class Editor {
         const last = part.c + spanOf(t, part.r, part.c) - 1;
         t = setColumnWidth(t, last, t.cols[last] + res.wrap - wrap);
       }
-      if (JSON.stringify(t) !== JSON.stringify(cur.table)) doc.edit('Edit table', () => this.updateTable(id, t));
+      if (JSON.stringify(t) !== JSON.stringify(cur.table)) doc.edit('Edit Table', () => this.updateTable(id, t));
       repaint(t);
       this.changed();
     });

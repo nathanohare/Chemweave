@@ -237,7 +237,7 @@ export function keyBoard(o: KeyBoardOptions): HTMLElement {
     if (!keymap.isDefault(state.ctx, chord)) {
       const reset = document.createElement('button');
       reset.type = 'button';
-      reset.textContent = 'Standard key';
+      reset.textContent = 'Standard Key';
       reset.title = 'Give this key back the action it has as standard';
       reset.addEventListener('click', () => {
         keymap.bind(state.ctx, chord, defaultFor(state.ctx, chord));

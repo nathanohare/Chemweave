@@ -2564,7 +2564,7 @@ export class SiMode {
           // each compound with spectra: its spectra page
           for (const c of p.compounds) {
             if (!spectrumItems(c).some(([, i]) => i.file)) continue;
-            row(depth + 1, svg('spectrum', 13), compoundName(c) || 'unnamed compound', { kind: 'spectra', id: c.id, section: s.id }, { cid: this.idOf(c), title: 'This compound’s spectra as they print: drag the structure box, and set this spectrum’s own look' });
+            row(depth + 1, svg('spectrum', 13), compoundName(c) || 'unnamed compound', { kind: 'spectra', id: c.id, section: s.id }, { cid: this.idOf(c), title: 'This compound’s spectra as they print: drag the structure box, and set this spectrum’s own settings' });
           }
         }
         walk(s.children, depth + 1);
@@ -3435,7 +3435,7 @@ export class SiMode {
     const links = row('Links');
     tick(links, 'Peak reports to spectra', 'nmr_links', 'In the PDF, Word file and compiled document, “¹H NMR” at the start of a peak report links to the page with the compound’s ¹H NMR spectrum (Ctrl+click in Chemweave and Word).');
     tick(links, 'Spectra back to compounds', 'link_back', 'Each spectrum’s header line links back to the compound’s data.');
-    choice(links, 'Look', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links look (the table of contents’ links keep its own look; Table of contents ▸ Link to sections, on the project’s page, turns them off).');
+    choice(links, 'Link Style', 'link_style', [['plain', 'Like normal text'], ['blue', 'Color'], ['blue_underline', 'Color and underline']], 'How these links are formatted (the table of contents’ links keep their own style; Table of contents ▸ Link to sections, on the project’s page, turns them off).');
     if (now.link_style !== 'plain') color(links, 'Color', 'link_color', 'The links’ color.');
     const hrms = row('HRMS');
     tick(hrms, 'Print HRMS reports', 'hrms_reports', 'Each compound’s HRMS report files (PDFs, pictures and text files), after the spectra in a sub-section “HRMS reports”. A compound can say otherwise in its HRMS field.');
