@@ -897,7 +897,7 @@ export class SheetData {
     } else if (how === 'row') rows = 1;
     else if (how === 'col') cols = 1;
     // frozen rows are counted from row 1, so freezing far down a long sheet would leave no room to scroll
-    if (!v.roomToFreeze(rows, cols)) { this.host.flash('Freezing here would fill the window with frozen rows and columns. Scroll to the top, or select a cell nearer the top left, then Freeze Panes.', 8000); return; }
+    if (!v.roomToFreeze(rows, cols)) { this.host.flash('Freezing here would fill the window with frozen rows and columns. Select a cell nearer the top left, then Freeze Panes, or use Split.', 8000); return; }
     v.keepPlaceForFreeze();
     this.host.edit(how === 'off' ? 'Unfreeze Panes' : 'Freeze Panes', (sh) => { sh.setSplit(null); sh.setFrozen(rows, cols); });
     if (how === 'off') { this.host.flash('Panes unfrozen.'); return; }
