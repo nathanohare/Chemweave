@@ -189,7 +189,18 @@ export function distributeOffsets(us: Unit[], axis: 'h' | 'v', by: 'gaps' | 'foc
     order.forEach((i, k) => put(i, first + k * step - at(i)));
     return out;
   }
-  const order = us.map((_u, i) => i).sort((i, j) => lo(us[i].box) + hi(us[i].box) - lo(us[j].box) - hi(us[j].box));
+  let order = us.map((_u, i) => i).sort((i, j) => lo(us[i].box) + hi(us[i].box) - lo(us[j].box) - hi(us[j].box));
+  // the ones reaching furthest out each way stay where they are (as in Office), the rest in order of their centers between
+  let iLo = order[0], iHi = order[order.length - 1];
+  for (const i of order) { if (lo(us[i].box) < lo(us[iLo].box)) iLo = i; if (hi(us[i].box) > hi(us[iHi].box)) iHi = i; }
+  if (iLo === iHi) {
+    // one object reaching furthest out both ways (a box round the rest): it stays, and the rest are spaced among themselves
+    const rest = order.filter((i) => i !== iLo);
+    const inner = distributeOffsets(rest.map((i) => us[i]), axis, by);
+    rest.forEach((i, k) => { out[i] = inner[k]; });
+    return out;
+  }
+  order = [iLo, ...order.filter((i) => i !== iLo && i !== iHi), iHi];
   const first = us[order[0]].box, last = us[order[order.length - 1]].box;
   let sizes = 0;
   for (const i of order) sizes += hi(us[i].box) - lo(us[i].box);

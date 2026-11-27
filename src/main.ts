@@ -230,7 +230,7 @@ import { LiveStereo } from './chem/live-stereo';
 import { setStereoShown, shownDescriptor, axialStyle } from './chem/stereo';
 import { keymap, COMMAND_NAMES, registerToolNames, displayChord, actionName, chordOf, parseAction, KeyContext, KeyOverrides } from './editor/keymap';
 import { fieldKeyHandler, isTypingField } from './editor/field-keys';
-import { loadSettings, saveSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
+import { loadSettings, saveSettings, flushSettings, settingsLocation, exportText, importSettings, Settings, SLIDE_PANE_MIN, SLIDE_PANE_MAX, NOTES_MIN, NOTES_MAX, structuresAsOptions, toolboxScaleOf, TOOLBOX_SCALE_MIN, TOOLBOX_SCALE_MAX, WEB_LOOK } from './settings';
 import { arrowGaps } from './chem/mechanism';
 import { HotkeysDialog } from './ui/hotkeys-dialog';
 import { TypingDialog } from './ui/typing-dialog';
@@ -14417,8 +14417,8 @@ function revealStylePanel(focus = false): void {
 // Unsaved work: ask before the window closes.
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
-    // closing for an update: every tab was kept, and comes back at the next start
-    if (closingForUpdate) return;
+    // closing for an update: every tab was kept, and comes back at the next start (and settings changed just now are written)
+    if (closingForUpdate) { await flushSettings().catch(() => {}); return; }
     // (a slide show running, as on a Mac's ⌘Q: it ends first, so the question about unsaved work can be seen)
     if (shows) await Promise.all([shows.presenter.finish(), shows.presenterView.finish()]);
     finishTab();
@@ -14431,6 +14431,8 @@ if (isTauri()) {
     }
     // closing normally: the recovery copies and lock files aren't needed
     else {
+      // (a setting changed just now, such as the file just saved going on File ▸ Recent, is written before the window goes)
+      await flushSettings().catch(() => {});
       await keeper.end();
       await diagnostics.end();
       // (each SI project's Word snapshot, if it changed: waited for a while, then the window goes anyway)
@@ -14439,8 +14441,11 @@ if (isTauri()) {
     }
   }).catch(() => {});
 } else {
+  // a setting changed just before the page goes is written at once, not lost with the timer
+  window.addEventListener('pagehide', () => { void flushSettings(); });
   window.addEventListener('beforeunload', (e) => {
     finishTyping();
+    void flushSettings();
     // reloading for a new version: the unsaved tabs were just copied, and are offered when the page is back
     // (anything changed after the copy, and the question asks again)
     if (webReloading && keeper.workKept()) { void diagnostics.write(); return; }

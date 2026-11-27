@@ -115,9 +115,13 @@ export function installPenAndTouch(h: TouchHost): void {
     take(e);
     fingers.delete(e.pointerId);
     gesture = null;
-    // the finger left behind after a pinch carries on panning from where it is
-    const [rest] = [...fingers.entries()];
-    pan = rest ? { v0: { ...h.view }, p0: rest[1], id: rest[0] } : null;
+    // two or more fingers still down (a third touched and lifted): they go on pinching from where they are
+    if (fingers.size >= 2) startGesture();
+    else {
+      // the finger left behind after a pinch carries on panning from where it is
+      const [rest] = [...fingers.entries()];
+      pan = rest ? { v0: { ...h.view }, p0: rest[1], id: rest[0] } : null;
+    }
     h.requestScene(e.timeStamp);
   };
   el.addEventListener('pointerup', up, true);
