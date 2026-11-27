@@ -5,7 +5,7 @@
 import type { TabStop } from '../model';
 import { showDialog } from './dialog-host';
 import { addInfo } from './info-tip';
-import { parseLength, showLength } from './doc-panel';
+import { parseLength, showLength } from './para-rows';
 
 type Kind = TabStop['kind'];
 type Leader = NonNullable<TabStop['leader']> | '';

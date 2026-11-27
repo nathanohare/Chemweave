@@ -1,6 +1,8 @@
 // The Font group's corner box (Presentation, Design and Document): Change Case, character spacing
 // and kerning, and the text effects PowerPoint and Word have in their Font and Format Text Effects
 // boxes: the letters' fill (solid, see-through or none), an outline round them, and a shadow.
+// The SI's Live Preview has it without the text effects (FontBoxOptions.effects), which an SI
+// doesn't print.
 
 import type * as rt from '../richtext';
 import { FloatBox } from './float-box';
@@ -16,6 +18,11 @@ export interface FontBoxHooks {
   allCaps?(): void;
 }
 
+export interface FontBoxOptions {
+  /** Text Fill, Text Outline and Shadow (true when left out). */
+  effects?: boolean;
+}
+
 /** Change Case's choices, as Word words them. */
 const CASES: [rt.CaseMode, string, string][] = [
   ['sentence', 'Sentence case.', 'A capital at the start of each sentence'],
@@ -29,16 +36,16 @@ export class FontBox {
   private box: FloatBox;
   private spacing!: HTMLInputElement;
   private kern!: HTMLInputElement;
-  private fill!: HTMLSelectElement;
-  private fillColour!: HTMLInputElement;
-  private see!: HTMLInputElement;
-  private line!: HTMLSelectElement;
-  private lineColour!: HTMLInputElement;
-  private lineW!: HTMLInputElement;
-  private shadow!: HTMLInputElement;
+  private fill?: HTMLSelectElement;
+  private fillColour?: HTMLInputElement;
+  private see?: HTMLInputElement;
+  private line?: HTMLSelectElement;
+  private lineColour?: HTMLInputElement;
+  private lineW?: HTMLInputElement;
+  private shadow?: HTMLInputElement;
   private caps?: HTMLInputElement;
 
-  constructor(private hooks: FontBoxHooks) {
+  constructor(private hooks: FontBoxHooks, private opts: FontBoxOptions = {}) {
     this.box = new FloatBox('Font', () => {});
     this.box.el.classList.add('fb-font');
     this.box.el.querySelector<HTMLElement>('.fb-pin')!.hidden = true;
@@ -67,6 +74,8 @@ export class FontBox {
     const set = (el: HTMLInputElement | HTMLSelectElement, v: string) => { if (el !== active) el.value = v; };
     set(this.spacing, String(s.spacing ?? 0));
     this.kern.checked = !s.noKern;
+    if (this.caps) this.caps.checked = !!s.allCaps;
+    if (!this.fill || !this.fillColour || !this.see || !this.line || !this.lineColour || !this.lineW || !this.shadow) return;
     set(this.fill, s.noFill ? 'none' : 'solid');
     set(this.fillColour, s.color ?? '#000000');
     set(this.see, String(Math.round((s.transparency ?? 0) * 100)));
@@ -74,7 +83,6 @@ export class FontBox {
     set(this.lineColour, s.outline ?? '#000000');
     set(this.lineW, String(s.outlineW ?? OUTLINE_W));
     this.shadow.checked = !!s.shadow;
-    if (this.caps) this.caps.checked = !!s.allCaps;
     const noFill = this.fill.value === 'none', noLine = this.line.value === 'none';
     this.fillColour.disabled = this.see.disabled = noFill;
     this.lineColour.disabled = this.lineW.disabled = noLine;
@@ -155,6 +163,7 @@ export class FontBox {
     row('Spacing (pt)', this.spacing, 'More than 0 spreads the letters out; less than 0 draws them closer');
     this.kern = check('Kerning', 'Pairs such as AV and To drawn closer, as the font asks', (v) => apply({ noKern: v ? undefined : true }));
 
+    if (this.opts.effects === false) return;
     section('Text Fill');
     this.fill = select([['solid', 'Solid fill'], ['none', 'No fill']], (v) => apply({ noFill: v === 'none' || undefined }));
     row('Fill', this.fill);
@@ -164,7 +173,7 @@ export class FontBox {
     row('Transparency (%)', this.see, 'How much shows through the letters: 0 is solid');
 
     section('Text Outline');
-    this.line = select([['none', 'No line'], ['solid', 'Solid line']], (v) => apply(v === 'none' ? { outline: undefined, outlineW: undefined } : { outline: this.lineColour.value || '#000000' }));
+    this.line = select([['none', 'No line'], ['solid', 'Solid line']], (v) => apply(v === 'none' ? { outline: undefined, outlineW: undefined } : { outline: this.lineColour?.value || '#000000' }));
     row('Line', this.line);
     this.lineColour = colour((v) => apply({ outline: v }));
     row('Color', this.lineColour);

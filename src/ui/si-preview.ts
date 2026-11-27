@@ -10,7 +10,7 @@
 //     where no field is is the person's own (custom-text.ts), kept in its place and flagged.
 
 import { BRUSH, IBEAM } from '../editor/cursors';
-import { paraAt, paraRange } from '../text/paragraphs';
+import { fitParas, paraAt, paraCount, paraRange } from '../text/paragraphs';
 import { DocView, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type TextMarks } from './doc-view';
 import { DocFind } from './doc-find';
 import { DocComments } from './doc-comments';
@@ -23,13 +23,16 @@ import { askLink, followLink, linkMenuLines, linkTip, type LinkPlace } from './l
 import { LINK_COLOUR, linkAt, linkAtPoint } from '../links';
 import { showContextMenu, type MenuItem } from './context-menu';
 import * as rt from '../richtext';
-import type { TextRun } from '../model';
+import type { ParaStyle, TextRun } from '../model';
 import type { CompiledSi, SiStructureRef } from '../si/compile-doc';
 import { blockAt, editableSrc, fieldOfSrc, pageToFollow, parseSrc, readingLine, spanAt, type SourceBlock, type SourceSpan } from '../si/source-map';
 import { applyPrintedChange, applyToRaw, customIdOf, customSrc, editKind, locateEdit, isCustomSrc, markupSrc, printedOf, shiftSpans } from '../si/preview-edit';
 import { customAnchor, customPiece, customShown, newCustomId, type CustomText, type PlacedCustom } from '../si/custom-text';
 import { siPreviewPrefs } from './mode-prefs';
-import { addFormat, blockSrc, clearFormats, linkPieceOn, removeLinks, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
+import { pastedLooks } from './si-paste-html';
+import { wordAt } from '../text/layout';
+import { rulerGeometryOf, type RulerGeometry } from './ruler';
+import { addFormat, blockSrc, clearFormats, linkPieceOn, removeLinks, reanchorFormats, LOOK_KEYS, markupFormat, markupOnly, printedFor, type FormatLook, type ParaLook, type PreviewFormat, type RunFormatLook } from '../si/preview-format';
 
 /** The SI accent (the bar beside the page chosen, a field's text). */
 const CRIMSON = '#b4234f';
@@ -64,8 +67,10 @@ export interface SiPreviewHost {
   /** Save the person's own text (all of it). */
   writeCustom(change: (items: CustomText[]) => CustomText[], owner: unknown, label?: string): Promise<void>;
   /** Formatting done here: fields' new formatted text, and the change to the formatting file (preview-format.ts); one step of Undo. */
-  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: 'Format' | 'Replace' | 'Link' | 'Remove Link'): Promise<void>;
+  writeFormat(fields: { src: string; text: string; /** The stored text it was made from: if the field has changed since, nothing is written. */ from: string }[], change: ((items: PreviewFormat[]) => PreviewFormat[]) | null, owner: unknown, what?: string): Promise<void>;
   undo(redo: boolean): void;
+  /** `f`'s changes to the project as one step of Undo (a paste whose text and formatting are written one after the other). */
+  oneStep?(label: string, owner: unknown, f: () => Promise<void>): Promise<void>;
   /** Compile again (after a write that failed: the stored text is shown again). */
   refresh(): void;
   /** A compound's structure or a figure picked in the preview, by its placement key (si/placement.ts; null: none now): its Picture Format tab shows. */
@@ -193,7 +198,7 @@ export class SiPreview {
       // (the pane beside the SI page is too narrow for a column of cards beside readable pages)
       narrow: () => host.clientWidth < 900,
     });
-    this.view.onMove = () => this.comments.place();
+    this.view.onMove = () => { this.comments.place(); this.onView(); };
     // Page Width fills the pane, with no grey beside the pages, and is kept as the pane is resized
     this.view.padX = 0;
     this.view.fitSlack = 0;
@@ -347,6 +352,8 @@ export class SiPreview {
     this.findAgain();
     v.redraw();
     this.comments.update();
+    this.caretWhere = '';
+    this.onCaret();
     this.releaseShown();
   }
 
@@ -674,6 +681,10 @@ export class SiPreview {
     }
     this.caretOn = true;
     this.placeInput();
+    // (the ribbon and boxes follow the selection: told only when it, or the text, changed, not as the view scrolls)
+    const ed = this.file?.ed;
+    const where = ed ? `${ed.start}:${ed.end}` : '';
+    if (kind === 'text' || where !== this.caretWhere) { this.caretWhere = where; this.onCaret(); }
     if (this.finder?.open) { if (kind === 'text') this.findAgain(); else this.finder.showCount(); }
     this.view.redraw();
   }
@@ -835,11 +846,16 @@ export class SiPreview {
     ta.addEventListener('cut', (e) => { if (this.pickedStructure) { e.preventDefault(); this.api.flash(PICKED_TYPING); return; } this.copy(e, true); });
     ta.addEventListener('paste', (e) => {
       e.preventDefault();
+      // (Ctrl+V keeps the copied bold, italics, underline, sub- and superscripts, as Word's Keep Source Formatting; Ctrl+Shift+V just before, the text only)
+      const plain = performance.now() - this.plainPasteAt < 1000;
+      this.plainPasteAt = -Infinity;
       if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
       this.offAnchor();
       // (an object character pasted as a letter would be an equation's place with no equation: left out)
       const t = (e.clipboardData?.getData('text/plain') ?? '').replace(/\uFFFC/g, '');
-      if (t) this.file?.ed.pastePlain(t);
+      const html = e.clipboardData?.getData('text/html') ?? '';
+      if (html && !plain) void this.pasteFormatted(html, t);
+      else if (t) this.file?.ed.pastePlain(t);
     });
     ta.addEventListener('focus', () => { this.startBlink(); v.redraw(); });
     ta.addEventListener('blur', () => { clearInterval(this.blink); v.redraw(); void this.flush(); });
@@ -1132,10 +1148,11 @@ export class SiPreview {
       if (k === 'delete') return run(() => ed.deleteForward(true));
       if (k === 'b' || k === 'i' || k === 'u') {
         const key = k === 'b' ? 'bold' : k === 'i' ? 'italic' : 'underline';
-        return run(() => void this.format({ [key]: !this.selectionHas(key) }));
+        return run(() => void this.format({ [key]: !this.selectionHas(key) }, k === 'b' ? 'Bold' : k === 'i' ? 'Italic' : 'Underline'));
       }
-      if (k === ' ' && !shift) return run(() => void this.format('clear'));
-      if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) })); }
+      if (k === ' ' && !shift) return run(() => void this.format('clear', 'Clear All Formatting'));
+      if ((k === '=' || k === '+') && !e.altKey) { const key = shift || k === '+' ? 'sup' : 'sub'; return run(() => void this.format({ [key]: !this.selectionHas(key) }, key === 'sup' ? 'Superscript' : 'Subscript')); }
+      if (k === 'v') this.plainPasteAt = shift ? performance.now() : -Infinity;
       if (k === 'c' || k === 'x' || k === 'v') { e.stopPropagation(); return; }
     }
   }
@@ -1237,7 +1254,43 @@ export class SiPreview {
     return document.execCommand(cut ? 'cut' : 'copy');
   }
 
-  /** Paste plain text at the caret (the ribbon's Paste), as Ctrl+V does. */
+  /** When Ctrl+Shift+V was pressed: the paste that follows straight after is of the text only. */
+  private plainPasteAt = -Infinity;
+
+  /**
+   * Paste ▸ Keep Source Formatting (and Ctrl+V): the copied text at the caret, with its bold,
+   * italics, underline, sub- and superscripts (si-paste-html.ts) put on it as Home ▸ Font does,
+   * so they are kept across compiles; the text and its formatting are one step of Undo. With
+   * nothing to keep, the copied text/plain goes in as it is (tabs and line breaks kept).
+   */
+  async pasteFormatted(html: string, text: string): Promise<void> {
+    const ed = this.file?.ed;
+    if (!ed) return;
+    if (this.pickedStructure) { this.api.flash(PICKED_TYPING); return; }
+    const got = pastedLooks(html);
+    if (!got.looks.length || !got.text) { this.pasteText(text || got.text); return; }
+    this.ta.focus();
+    const n = got.text.length;
+    const go = async (): Promise<void> => {
+      const before = ed.text, at = ed.start;
+      ed.pastePlain(got.text);
+      // (refused: into words Chemweave writes, said why; or the text came out otherwise than pasted)
+      if (this.file?.ed !== ed || ed.text === before || ed.text.slice(at, at + n) !== got.text) return;
+      const after = ed.start;
+      // (the text written first: its formatting is worked out from the stored text, all at once)
+      if (this.dirty.size || this.fresh.size) await this.writeNow();
+      const f = this.file;
+      if (!f || f.ed.text.slice(at, at + n) !== got.text) {
+        this.api.flash('The text was pasted, but its formatting couldn’t be put on it: the Live Preview changed meanwhile. Format it with Home ▸ Font.', 8000);
+        return;
+      }
+      await this.formatRanges(got.looks.map((l) => ({ s: at + l.a, e: at + l.b, look: l.look })), 'Paste');
+      if (this.file === f) f.ed.setCaret(Math.min(after, f.ed.text.length));
+    };
+    await (this.api.oneStep ? this.api.oneStep('Paste', this.owner, go) : go());
+  }
+
+  /** Paste plain text at the caret (Paste ▸ Keep Text Only, Ctrl+Shift+V). */
   pasteText(text: string): void {
     const ed = this.file?.ed;
     if (!ed) return;
@@ -1309,6 +1362,8 @@ export class SiPreview {
       // (on or off for each look, so the words painted match; a font, size or color only when it has one)
       // ('' for none: painted words lose a font, size, color or highlight the copied ones don't have)
       if (k === 'font' || k === 'size' || k === 'color' || k === 'highlight') (look as Record<string, unknown>)[k] = v === undefined ? '' : v;
+      // (character spacing in points: 0 for none)
+      else if (k === 'spacing') look.spacing = typeof v === 'number' ? v : 0;
       else (look as Record<string, unknown>)[k] = !!v;
     }
     this.brush = { look, keep };
@@ -1332,11 +1387,11 @@ export class SiPreview {
     // only what differs is changed: words already so get no piece of their own
     const patch: FormatLook = {};
     for (const [k, v] of Object.entries(b.look) as [keyof RunFormatLook, RunFormatLook[keyof RunFormatLook]][]) {
-      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : v === '' ? this.selectionAny(k) : this.selectionAny(k, v);
+      const differs = typeof v === 'boolean' ? (v ? !this.selectionHas(k) : this.selectionAny(k)) : v === '' || (k === 'spacing' && v === 0) ? this.selectionAny(k) : this.selectionAny(k, v);
       if (differs) (patch as Record<string, unknown>)[k] = v;
     }
     // (one paint after another: a drag while the last is being written waits for it)
-    if (Object.keys(patch).length) this.paints = this.paints.then(() => this.format(patch)).then(() => {}, () => {});
+    if (Object.keys(patch).length) this.paints = this.paints.then(() => this.format(patch, 'Format Painter')).then(() => {}, () => {});
   }
   private paints: Promise<void> = Promise.resolve();
 
@@ -1345,8 +1400,47 @@ export class SiPreview {
    * fields they print from, all in one step of Undo; places in words the program writes (an ID, a
    * heading, a label) are left, and said so.
    */
-  async replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
-    if (!this.file || !ranges.length) return 0;
+  replaceAt(ranges: readonly [number, number][], with_: string): Promise<number> {
+    return this.replaceEach(ranges.map(([a, b]) => ({ a, b, with: with_ })), 'Replace');
+  }
+
+  /**
+   * Change Case (Home ▸ Font ▸ Font box): the selection (or the word at the caret) in another
+   * case, written into the fields the words print from as Replace writes them, in one step of
+   * Undo. Words Chemweave writes (an ID, a heading, a label) keep their case, and it says so.
+   */
+  async changeCase(mode: rt.CaseMode): Promise<void> {
+    // (typing not yet shown is shown first: the words changed are the stored ones)
+    if (!(await this.ready())) return;
+    const f = this.file;
+    if (!f) return;
+    if (!this.editable) { this.api.flash(this.why); return; }
+    const ed = f.ed;
+    let a = ed.start, b = ed.end;
+    if (a === b) [a, b] = wordAt(ed.text, a);
+    if (a === b) { this.api.flash('Select the words to change first.'); return; }
+    const was = f.ed.text, now = rt.plainText(rt.changeCase(f.t.runs, a, b, mode));
+    // each stretch of changed letters, cut where the stretch it prints from ends (the stretches walked once, in order)
+    const spans = this.spans.filter((x) => x.end > a && x.start < b).sort((x, y) => x.start - y.start);
+    const edges = [...new Set(spans.flatMap((x) => [x.start, x.end]))].sort((x, y) => x - y);
+    const places: { a: number; b: number; with: string }[] = [];
+    let k = 0;
+    for (let i = a; i < b;) {
+      if (now[i] === was[i]) { i++; continue; }
+      while (k < edges.length && edges[k] <= i) k++;
+      const stop = Math.min(b, k < edges.length ? edges[k] : b);
+      let j = i + 1;
+      while (j < stop && now[j] !== was[j]) j++;
+      places.push({ a: i, b: j, with: now.slice(i, j) });
+      i = j;
+    }
+    if (!places.length) { this.api.flash('Nothing to change: the words are in that case already.'); return; }
+    await this.replaceEach(places, 'Change Case');
+  }
+
+  /** Replace or Change Case: each place [a, b) of the preview's text becomes its own `with` in the field it prints from (one step of Undo). */
+  private async replaceEach(items: readonly { a: number; b: number; with: string }[], what: 'Replace' | 'Change Case'): Promise<number> {
+    if (!this.file || !items.length) return 0;
     if (!this.editable) { this.api.flash(this.why); return 0; }
     // (the places were found in the text shown: it must still be the stored text)
     if (this.dirty.size || this.fresh.size || this.shownGen < this.editGen) { this.api.flash('The Live Preview is still updating. Try again in a moment.'); return 0; }
@@ -1362,75 +1456,146 @@ export class SiPreview {
     };
     // each place by the field it is in; a place across two fields, in a general procedure (every
     // compound using it would change), in text typed in the preview, or in words Chemweave writes, is left
-    const bySrc = new Map<string, [number, number][]>();
+    const bySrc = new Map<string, [number, number, string][]>();
     let left = 0;
-    for (const [a, b] of ranges) {
+    for (const { a, b, with: w } of items) {
       const sp = spansNow.find((x) => x.start <= a && x.end >= b);
       if (!sp || !editableSrc(sp.src) || isCustomSrc(sp.src) || parseSrc(sp.src)?.owner === 'g') { left++; continue; }
       const at = printedOfSrc(sp.src).at(a);
       const l = bySrc.get(sp.src);
-      if (l) l.push([at, at + b - a]); else bySrc.set(sp.src, [[at, at + b - a]]);
+      if (l) l.push([at, at + b - a, w]); else bySrc.set(sp.src, [[at, at + b - a, w]]);
     }
     const fields: { src: string; text: string; from: string }[] = [];
+    // (each field's printed text before and after: Change Case keeps the formatting file's pieces on the same letters)
+    const changedPrinted: [string, string, string][] = [];
     let done = 0;
     for (const [src, places] of bySrc) {
       const raw = await this.api.read(src, owner);
       if (raw === null) { left += places.length; continue; }
       let printed = printedOfSrc(src).printed, out = raw;
       // (from the last place back, each against the printed text as it is by then)
-      for (const [pa, pb] of [...places].sort((x, y) => y[0] - x[0])) {
-        const next = applyToRaw(out, printed, pa, pb, with_, markupSrc(src));
+      for (const [pa, pb, w] of [...places].sort((x, y) => y[0] - x[0])) {
+        const next = applyToRaw(out, printed, pa, pb, w, markupSrc(src));
         if (next === null) { left++; continue; }
         out = next;
-        printed = printed.slice(0, pa) + with_ + printed.slice(pb);
+        printed = printed.slice(0, pa) + w + printed.slice(pb);
         done++;
       }
-      if (out !== raw) fields.push({ src, text: out, from: raw });
+      if (out !== raw) { fields.push({ src, text: out, from: raw }); changedPrinted.push([src, printedOfSrc(src).printed, printed]); }
     }
     if (fields.length) {
       try {
-        await this.api.writeFormat(fields, null, owner, 'Replace');
+        const keep = what === 'Change Case' && changedPrinted.length ? (items: PreviewFormat[]): PreviewFormat[] => changedPrinted.reduce((acc, [src, b4, af]) => reanchorFormats(acc, src, b4, af), items) : null;
+        await this.api.writeFormat(fields, keep, owner, what);
       } catch (err) {
-        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not replace: ${err instanceof Error ? err.message : String(err)}`, 8000);
+        if (!(err instanceof Error && err.name === 'SaidAlready')) this.api.flash(`Could not ${what === 'Replace' ? 'replace' : 'change the case'}: ${err instanceof Error ? err.message : String(err)}`, 8000);
         return 0;
       }
       // (the text shown was the stored text when this began, so the next write starts from the compile shown)
       for (const x of fields) this.written.delete(x.src);
       this.bumpWritten(gen0);
     }
-    const what = (n: number) => (n === 1 ? 'one place' : `${n} places`);
+    if (what === 'Change Case') {
+      const why = 'words Chemweave writes (an ID, a heading, a label), a general procedure’s words and text typed in the Live Preview keep their case here';
+      if (!done && left) this.api.flash(`Nothing changed: ${why}. Change them where they come from.`, 9000);
+      else if (left) this.api.flash(`Changed the case where the words come from a field; ${why}.`, 9000);
+      return done;
+    }
+    const placesSaid = (n: number) => (n === 1 ? 'one place' : `${n} places`);
     const why = 'in a general procedure, typed in the Live Preview, or written by Chemweave (an ID, a heading)';
     if (!done && left) this.api.flash(`Nothing replaced: ${left === 1 ? 'the place is' : 'the places are'} ${why}. Change ${left === 1 ? 'it' : 'them'} where ${left === 1 ? 'it comes' : 'they come'} from.`, 9000);
-    else if (left) this.api.flash(`Replaced ${what(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
-    else if (done > 1) this.api.flash(`Replaced ${what(done)}. Ctrl+Z restores them.`, 4000);
+    else if (left) this.api.flash(`Replaced ${placesSaid(done)}. ${left === 1 ? 'One place was' : `${left} places were`} left: ${why}.`, 9000);
+    else if (done > 1) this.api.flash(`Replaced ${placesSaid(done)}. Ctrl+Z restores them.`, 4000);
     return done;
   }
 
   /** The first selected paragraph's own `key` (its alignment, indent…), or undefined. */
-  paraValue<K extends keyof ParaLook>(key: K): ParaLook[K] | undefined {
-    const f = this.file;
-    if (!f) return undefined;
-    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)]?.[key] as ParaLook[K] | undefined;
+  paraValue<K extends keyof ParaLook>(key: K): ParaStyle[K] | undefined {
+    return this.currentPara()?.[key];
   }
 
-  /** Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is): kept across compiles as Font's looks are. */
-  async paraFormat(look: ParaLook, one = false): Promise<boolean> {
-    const ed = this.file?.ed;
-    if (!ed) return false;
-    // (one paragraph only: the first selected, as for Page Break)
-    if (one && !ed.collapsed) ed.setCaret(ed.start);
-    if (ed.collapsed) {
-      const t = ed.text, at = ed.start;
-      const a = at === 0 ? 0 : t.lastIndexOf('\n', at - 1) + 1, nl = t.indexOf('\n', at), b = nl < 0 ? t.length : nl;
-      if (b <= a) { this.api.flash('Click in a paragraph with words in it first.'); return false; }
-      // (kept by the paragraph's first words only: typing later in it doesn't lose the look)
-      ed.select(a, Math.min(b, a + PARA_ANCHOR));
-      const done = await this.format(look);
-      this.file?.ed.setCaret(Math.min(at, this.file.ed.text.length));
-      if (!done) this.api.flash('This paragraph can’t take formatting of its own: it has no words of a field or of the SI’s own text (a picture alone, or an empty line).');
-      return done;
+  /** The caret went to another paragraph, or the text shown changed (Bullets, Numbering, the Ruler and the Paragraph and Font boxes follow it). */
+  onCaret: () => void = () => {};
+  /** The view scrolled or zoomed (View ▸ Ruler follows it). */
+  onView: () => void = () => {};
+  private caretWhere = '';
+
+  /** Where the paragraph the caret is in sits on screen, for View ▸ Ruler (as Document mode's). */
+  rulerGeometry(): RulerGeometry | null {
+    return this.file ? rulerGeometryOf(this.file, this.view) : null;
+  }
+
+  /** The settings of each paragraph selected (the caret's, when nothing is): Bullets and Numbering go by them all. */
+  selectedParas(): ParaStyle[] {
+    const f = this.file;
+    if (!f) return [];
+    const a = paraAt(f.ed.text, f.ed.start), b = paraAt(f.ed.text, Math.max(f.ed.start, f.ed.end - (f.ed.collapsed ? 0 : 1)));
+    return Array.from({ length: b - a + 1 }, (_, i) => f.t.paras?.[a + i] ?? {});
+  }
+
+  /** How the words selected look (the Font box shows their All Caps and character spacing), or null with no text shown. */
+  fontLook(): rt.RunStyle | null {
+    if (!this.file) return null;
+    return { allCaps: this.selectionValue('allCaps'), spacing: this.selectionValue('spacing'), noKern: this.selectionValue('noKern') };
+  }
+
+  /** The first selected paragraph's settings (the Paragraph box, Tabs and the Ruler show them), or null with no text shown. */
+  currentPara(): ParaStyle | null {
+    const f = this.file;
+    if (!f) return null;
+    return f.t.paras?.[paraAt(f.ed.text, f.ed.start)] ?? {};
+  }
+
+  /** The first selected paragraph's settings as it shows: its alignment the style's when it has none of its own (the Paragraph box). */
+  effectivePara(): ParaStyle | null {
+    const f = this.file, p = this.currentPara();
+    return f && p ? { ...p, align: p.align ?? styleOf(f.t, p).align } : null;
+  }
+
+  /** The paragraphs selected (the caret's, when nothing is), from 0: [first, last]. */
+  selectedParaRange(): [number, number] | null {
+    const f = this.file;
+    if (!f) return null;
+    const ed = f.ed;
+    return [paraAt(ed.text, ed.start), paraAt(ed.text, Math.max(ed.start, ed.end - (ed.collapsed ? 0 : 1)))];
+  }
+
+  /** Every paragraph's settings as shown (for a list's whole extent). */
+  allParas(): ParaStyle[] {
+    const f = this.file;
+    return f ? fitParas(f.t.paras, paraCount(f.ed.text)) : [];
+  }
+
+  /**
+   * Home ▸ Paragraph on the paragraphs selected (the caret's, when nothing is), or on
+   * [first, last]: kept across compiles as Font's looks are, one piece for each paragraph,
+   * kept by its first words (typing later in it, or in another paragraph, doesn't lose it).
+   * `look` may be worked out from each paragraph's own settings (Increase Indent steps each
+   * from its own). One step of Undo, named `what`.
+   */
+  async paraFormat(look: ParaLook | ((p: ParaStyle) => ParaLook), what = 'Paragraph', opts: { one?: boolean; range?: [number, number] } = {}): Promise<boolean> {
+    const f = this.file;
+    if (!f) return false;
+    const t = f.ed.text;
+    const sel = this.selectedParaRange()!;
+    const [first, last] = opts.range ?? (opts.one ? [sel[0], sel[0]] : sel);
+    const paras = this.allParas();
+    const starts = [0];
+    for (let i = t.indexOf('\n'); i >= 0; i = t.indexOf('\n', i + 1)) starts.push(i + 1);
+    const list: { s: number; e: number; look: FormatLook }[] = [];
+    for (let i = first; i <= last && i < starts.length; i++) {
+      const a = starts[i], b = i + 1 < starts.length ? starts[i + 1] - 1 : t.length;
+      // (an empty line, or a picture alone, has no words to keep it by)
+      if (!t.slice(a, b).replace(/\uFFFC/g, '').trim()) continue;
+      const l = typeof look === 'function' ? look(paras[i] ?? {}) : look;
+      if (Object.keys(l).length) list.push({ s: a, e: Math.min(b, a + PARA_ANCHOR), look: l });
     }
-    return this.format(look);
+    if (!list.length) {
+      if (this.editable) this.api.flash(first === last ? 'This paragraph can’t take formatting of its own: it has no words of a field or of the SI’s own text (a picture alone, or an empty line).' : 'Click in a paragraph with words in it first.');
+      else this.api.flash(this.why);
+      return false;
+    }
+    return this.formatRanges(list, what);
   }
 
   /** Whether any character selected has `key` (with a value other than `but`, when given). */
@@ -1482,89 +1647,107 @@ export class SiPreview {
    * 'unlink' (Remove Link) takes the formatting file's links off, with their blue and underline;
    * a link Chemweave makes (a mention) is the field's, and stays (said).
    */
-  async format(look: FormatLook | 'clear' | 'unlink', what: 'Format' | 'Link' | 'Remove Link' = 'Format'): Promise<boolean> {
+  async format(look: FormatLook | 'clear' | 'unlink', what = 'Format'): Promise<boolean> {
     if (!this.file) return false;
     if (!this.editable) { this.api.flash(this.why); return false; }
     if (this.file.ed.collapsed) { this.api.flash('Select the words to format first.'); return false; }
+    return this.formatRanges([{ s: this.file.ed.start, e: this.file.ed.end, look }], what);
+  }
+
+  /**
+   * Format stretches [s, e) of the preview's text, each with its own look, all worked out from
+   * the text as it is now and written at once: one step of Undo, named `what`.
+   */
+  private async formatRanges(list: readonly { s: number; e: number; look: FormatLook | 'clear' | 'unlink' }[], what = 'Format'): Promise<boolean> {
+    if (!this.file) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
     // (typing not yet written goes first: what is formatted is what is stored)
     if (this.dirty.size || this.fresh.size) await this.writeNow();
     const f = this.file;
     if (!f) return false;
     const owner = this.owner;
     const text = f.ed.text;
-    const s = f.ed.start, e = f.ed.end;
     const gen0 = this.editGen;
-    // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
+    // (the text's sources as they are now: a compile shown while the fields are read below doesn't move them)
     const spansNow = this.spans.map((x) => ({ ...x }));
     const blocksNow = this.blocks.map((x) => ({ ...x }));
-    // the selection as stretches of the printed text of each source
-    const parts = new Map<string, [number, number]>();
-    const put = (src: string, a: number, b: number): void => {
-      const was = parts.get(src);
-      parts.set(src, was ? [Math.min(was[0], a), Math.max(was[1], b)] : [a, b]);
-    };
     const printedCache = new Map<string, ReturnType<typeof printedOf>>();
     const printedOfSrc = (src: string): ReturnType<typeof printedOf> => {
       let x = printedCache.get(src);
       if (!x) { x = printedOf(text, spansNow, src); printedCache.set(src, x); }
       return x;
     };
-    let pos = s;
-    const spans = spansNow.filter((x) => x.end > s && x.start < e).sort((a, b) => a.start - b.start);
-    const gap = (a: number, b: number): void => {
-      for (let i = a; i < b;) {
-        const k = blockAt(blocksNow, i);
-        if (!k) { i++; continue; }
-        const hi = Math.min(b, k.end);
-        // (paragraph marks and the places of pictures alone aren't formatted)
-        if (text.slice(i, hi).replace(/[\n\uFFFC]/g, '').trim()) put(blockSrc(k.node), i - k.start, Math.max(i + 1, hi) - k.start);
-        i = Math.max(i + 1, hi);
+    /** Each stretch as stretches of the printed text of each source. */
+    const partsOf = (s: number, e: number): Map<string, [number, number]> => {
+      const parts = new Map<string, [number, number]>();
+      const put = (src: string, a: number, b: number): void => {
+        const was = parts.get(src);
+        parts.set(src, was ? [Math.min(was[0], a), Math.max(was[1], b)] : [a, b]);
+      };
+      let pos = s;
+      const spans = spansNow.filter((x) => x.end > s && x.start < e).sort((a, b) => a.start - b.start);
+      const gap = (a: number, b: number): void => {
+        for (let i = a; i < b;) {
+          const k = blockAt(blocksNow, i);
+          if (!k) { i++; continue; }
+          const hi = Math.min(b, k.end);
+          // (paragraph marks and the places of pictures alone aren't formatted)
+          if (text.slice(i, hi).replace(/[\n￼]/g, '').trim()) put(blockSrc(k.node), i - k.start, Math.max(i + 1, hi) - k.start);
+          i = Math.max(i + 1, hi);
+        }
+      };
+      for (const sp of spans) {
+        const lo = Math.max(s, sp.start), hi = Math.min(e, sp.end);
+        if (lo > pos) gap(pos, lo);
+        if (hi > lo) { const a = printedOfSrc(sp.src).at(lo); put(sp.src, a, a + hi - lo); }
+        pos = Math.max(pos, hi);
       }
+      if (pos < e) gap(pos, e);
+      return parts;
     };
-    for (const sp of spans) {
-      const lo = Math.max(s, sp.start), hi = Math.min(e, sp.end);
-      if (lo > pos) gap(pos, lo);
-      if (hi > lo) { const a = printedOfSrc(sp.src).at(lo); put(sp.src, a, a + hi - lo); }
-      pos = Math.max(pos, hi);
-    }
-    if (pos < e) gap(pos, e);
-    if (!parts.size) return false;
-    const fields: { src: string; text: string; from: string }[] = [];
-    const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
-    const sideFile = (src: string, printed: string, a: number, b: number): void => {
-      later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : look === 'unlink' ? removeLinks(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
-    };
+    const stretches = list.map((x) => ({ ...x, parts: partsOf(x.s, x.e) }));
+    if (!stretches.some((x) => x.parts.size)) return false;
     // (every printed text worked out before the fields are read: nothing below depends on what shows by then)
     const printedNow = new Map<string, string>();
-    for (const src of parts.keys()) printedNow.set(src, src.startsWith('b:') ? printedFor(text, spansNow, blocksNow, src) : printedOfSrc(src).printed);
-    if (look === 'unlink') {
+    for (const { parts } of stretches) for (const src of parts.keys()) if (!printedNow.has(src)) printedNow.set(src, src.startsWith('b:') ? printedFor(text, spansNow, blocksNow, src) : printedOfSrc(src).printed);
+    if (stretches.some((x) => x.look === 'unlink')) {
       // (only links put on here can be taken off: nothing is written when none is on the words)
       const items = await this.api.readFormats(owner).catch(() => []);
-      if (![...parts].some(([src, [a, b]]) => linkPieceOn(items, src, printedNow.get(src)!, a, b))) {
+      if (!stretches.some((x) => x.look === 'unlink' && [...x.parts].some(([src, [a, b]]) => linkPieceOn(items, src, printedNow.get(src)!, a, b)))) {
         this.api.flash('This link is made by Chemweave (a mention of a compound, figure or table, or a citation): change the mention on the SI page.', 7000);
         return false;
       }
     }
-    const offKeys = look === 'clear' || look === 'unlink' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
-    const onKeys = look === 'clear' || look === 'unlink' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
-    for (const [src, [a, b]] of parts) {
-      const printed = printedNow.get(src)!;
-      const inField = look !== 'unlink' && markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
-      if (!inField) { sideFile(src, printed, a, b); continue; }
-      const raw = await this.api.read(src, owner);
-      if (raw === null) { sideFile(src, printed, a, b); continue; }
-      const got = markupFormat(raw, printed, a, b, look === 'clear' ? 'clear' : look);
-      if (got.raw !== null && got.raw !== raw) fields.push({ src, text: got.raw, from: raw });
-      if (got.raw === null || look === 'clear' || offKeys.length) {
-        // (taking a look off, and Clear All Formatting, also cover what the program put on: a title's bold, the 1 of ¹H)
-        sideFile(src, printed, a, b);
-        continue;
+    // the fields' stored text: read once, then each stretch's formatting on what the last left
+    const stored = new Map<string, { from: string; now: string } | null>();
+    const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
+    for (const { look, parts } of stretches) {
+      const sideFile = (src: string, printed: string, a: number, b: number): void => {
+        later.push((items) => (look === 'clear' ? clearFormats(items, src, printed, a, b) : look === 'unlink' ? removeLinks(items, src, printed, a, b) : addFormat(items, src, printed, a, b, look)));
+      };
+      const offKeys = look === 'clear' || look === 'unlink' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
+      const onKeys = look === 'clear' || look === 'unlink' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] !== false);
+      for (const [src, [a, b]] of parts) {
+        const printed = printedNow.get(src)!;
+        const inField = look !== 'unlink' && markupSrc(src) && editableSrc(src) && (look === 'clear' || markupOnly(look));
+        if (!inField) { sideFile(src, printed, a, b); continue; }
+        if (!stored.has(src)) { const raw = await this.api.read(src, owner); stored.set(src, raw === null ? null : { from: raw, now: raw }); }
+        const st = stored.get(src);
+        if (!st) { sideFile(src, printed, a, b); continue; }
+        const got = markupFormat(st.now, printed, a, b, look === 'clear' ? 'clear' : look);
+        if (got.raw !== null) st.now = got.raw;
+        if (got.raw === null || look === 'clear' || offKeys.length) {
+          // (taking a look off, and Clear All Formatting, also cover what the program put on: a title's bold, the 1 of ¹H)
+          sideFile(src, printed, a, b);
+          continue;
+        }
+        // (a look put back in the field: an earlier piece taking it off there goes; first, so the
+        // pieces for the words the program writes, put in next, stay)
+        if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
+        for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
       }
-      // (a look put back in the field: an earlier piece taking it off there goes; first, so the
-      // pieces for the words the program writes, put in next, stay)
-      if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
-      for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
     }
+    const fields = [...stored].flatMap(([src, st]) => (st && st.now !== st.from ? [{ src, text: st.now, from: st.from }] : []));
     if (!fields.length && !later.length) return false;
     const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
     try {

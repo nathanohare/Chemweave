@@ -13810,7 +13810,7 @@ function currentSettings(): Settings {
     docRuler: docRulerPrefs.shown,
     docCropMarks: docPagePrefs.cropMarks,
     docWhiteSpace: docPagePrefs.whiteSpace,
-    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom, whiteSpace: siPreviewPrefs.whiteSpace },
+    siPreview: { dim: siPreviewPrefs.dim, link: siPreviewPrefs.link, custom: siPreviewPrefs.custom, whiteSpace: siPreviewPrefs.whiteSpace, ruler: siPreviewPrefs.ruler },
     sheetFormulaBar: formulaBarPrefs.shown,
     slideRuler: slideLook.ruler,
     slidePanes: { ...chemPanes },

@@ -905,6 +905,12 @@ export class DocLayouter {
         const need = before() + sum(hs) + (ps.spaceAfter ?? 0) + nextNeed;
         if (cursor + need > room() + 0.01 && need <= textH) nextColumn();
       }
+      // Keep lines together (Word's): a paragraph that won't fit in what is left of the page goes
+      // to the next one whole, unless it is taller than a page
+      if (ps.keepLines && hasContent) {
+        const need = before() + sum(hs);
+        if (cursor + need > room() + 0.01 && need <= textH) nextColumn();
+      }
       // a paragraph's first line isn't left alone at the bottom of a page; and a paragraph whose
       // figures (floating from it, text above and below or round them) would run off the page goes
       // to the next one with them, as Word moves it

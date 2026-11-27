@@ -122,4 +122,5 @@ export const SI_ICON_SAME: Record<string, string> = {
   'si-ms:ms-open': 'si:open-compound', 'si-scheme:open-compound': 'si:open-compound',
   'si-dash:refresh': 'refresh-all', 'si-spectrum:up': 'si:move-up', 'si-spectrum:down': 'si:move-down',
   'si:go-to': 'doc:doc-go-to', 'si:select-all': 'doc:doc-select', 'si:view-multiple': 'doc:view-multiple',
+  'si-para:tabs': 'doc:para-tabs', 'si:view-ruler': 'doc:view-ruler',
 };

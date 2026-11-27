@@ -28,7 +28,7 @@ import { pastedTable, tableHtml, tableTsv } from '../io/table-clip';
 import { afterTyping, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, type CharLook, type Issue } from '../text/chemtext';
 import { loadSpeller, type Speller } from '../text/spelling';
-import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
+import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, numberedListRange, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
 import { DocView, ACTUAL, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type Overlay } from './doc-view';
 import {
   PRINT_VIEW, VIEW_NAMES as VIEW_LABEL, changeLevel, withHeadings, continuous, foldHeadings, moveParas, newOutline, outlineLevel, shiftFolds, subtreeEnd, toggleFold,
@@ -44,7 +44,7 @@ import { DocSiPanel, DocSiUI, type SiAccess } from './doc-si';
 import { bookmarkName, linkAtPoint, shownLinkAt } from '../links';
 import { addBookmark, bookmarkPara, bookmarksOf, docPlaces, placeLink, placeName, removeBookmark } from '../document/bookmarks';
 import { DocComments } from './doc-comments';
-import { Ruler, docRulerPrefs, type RulerGeometry } from './ruler';
+import { Ruler, docRulerPrefs, rulerGeometryOf, type RulerGeometry } from './ruler';
 import { StylesPane } from './styles-pane';
 import { TOF_NAMES, tocEntries, tofEntries } from '../document/toc';
 import { changeName, changesIn, countChanges, decide, decideEverywhere, reviewAuthor, reviewers, setTrackFormatting, trackingFormatting, type MarkupView, type ReviewView } from '../document/revisions';
@@ -101,6 +101,8 @@ import { HF_KEYS, HF_PRESETS, hfKeyFor, hfPresetPicture, insertInZone, kindOf, p
 import type { FieldCode } from '../document/fields';
 import { docPagePrefs } from './mode-prefs';
 import { popupMenu } from './sheet-view';
+import { wordPasteChoices } from './paste-options';
+import { fillListPickers } from './list-pickers';
 import type { BorderChoice } from '../document/para-borders';
 import { coverParas, type QuickPart } from '../document/quick-parts';
 import { registerGalleryPics } from './select-gallery';
@@ -376,6 +378,8 @@ export class DocumentMode {
     this.view = new DocView(docHost);
     this.setupView(this.view);
     this.ribbon = $('#doc-ribbon');
+    // (the Bullet Library's and Multilevel List's choices, shared with the SI Project's ribbon)
+    fillListPickers(this.ribbon);
     this.ta = document.createElement('textarea');
     this.ta.className = 'text-input doc-input';
     this.ta.setAttribute('aria-label', 'Document text');
@@ -1442,13 +1446,13 @@ export class DocumentMode {
 
   /** Home ▸ Paste ▾: Word's paste options that a document here has. */
   private pasteMenu(x: number, y: number): void {
-    popupMenu(x, y, [
-      ['Keep Source Formatting', () => void this.paste(null)],
-      ['Keep Text Only (Ctrl+Shift+V)', () => { this.plainPaste = true; void this.paste(null); }],
-      null,
-      ['Paste as Object', () => { this.run('paste-object'); }, !!this.host.clipboardObject],
-      ['Paste SMILES', () => { this.host.command('paste-smiles'); }],
-    ]);
+    const run: Record<string, () => void> = {
+      'paste-keep': () => void this.paste(null),
+      'paste-text-only': () => { this.plainPaste = true; void this.paste(null); },
+      'paste-object': () => { this.run('paste-object'); },
+      'paste-smiles': () => { this.host.command('paste-smiles'); },
+    };
+    popupMenu(x, y, wordPasteChoices('document', { object: !!this.host.clipboardObject }).map((c) => (c ? [c.label, run[c.cmd], c.enabled] : null)));
   }
 
   /** The picture selected that Picture Format works on (not a chart or an embedded object), or null with the reason said. */
@@ -5810,9 +5814,7 @@ export class DocumentMode {
       // a scheme is for the whole list: every item of the numbered lists picked takes it
       const [a, b] = ed.selectedParas();
       const paras = fitParas(f.t.paras, paraCount(ed.text));
-      let first = a, last = b;
-      while (first > 0 && paras[first - 1]?.list === 'number' && paras[a]?.list === 'number') first--;
-      while (last + 1 < paras.length && paras[last + 1]?.list === 'number' && paras[b]?.list === 'number') last++;
+      const [first, last] = numberedListRange(paras, a, b);
       const box = !!f.box;
       if (box) ed.setSelectedParas({ list: 'number', scheme: scheme || undefined, cont: undefined }, 'list');
       else ed.setParas(first, last, { list: 'number', scheme: scheme || undefined }, 'list');
@@ -5926,18 +5928,7 @@ export class DocumentMode {
   /** Where the paragraph the caret is in sits on screen, for the ruler (none while typing in a text box or cell). */
   private rulerGeometry(): RulerGeometry | null {
     const f = this.file;
-    if (!f || f.box) return null;
-    const lay = f.layout();
-    const c = f.ed.caret();
-    const l = lay.text.lines[c.line];
-    const p = lay.pages.find((pg) => c.line >= pg.first && c.line < pg.end) ?? lay.pages[0];
-    if (!p) return null;
-    const pg = p.setup;
-    const y = l?.y ?? p.top;
-    const sx = (x: number) => this.view.toScreen(x, y).x;
-    const colL = l?.band?.[0] ?? p.x + pg.left;
-    const colR = l?.band?.[1] ?? p.x + p.w - pg.right;
-    return { colLeft: sx(colL), colRight: sx(colR), pageLeft: sx(p.x), pageRight: sx(p.x + p.w), zoom: this.view.zoom, para: f.ed.currentPara() };
+    return !f || f.box ? null : rulerGeometryOf(f, this.view);
   }
 
   /** The Styles pane's character styles: the selection (or the word at the caret) in one, or out of them all (null). */

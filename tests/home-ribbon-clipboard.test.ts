@@ -59,10 +59,14 @@ describe('Paste ▾ choices', () => {
     for (const m of ['drawing', 'design'] as const) expect(pasteChoices(m).map((c) => c?.label ?? null)).toEqual(['Paste', 'Keep Text Only', null, 'Paste SMILES']);
   });
 
-  it('Document: Paste SMILES after a separator, below Word\'s own options', () => {
+  it('Document: Paste SMILES after a separator, below Word\'s own options', async () => {
+    // (Document mode's menu is made from these, as the SI Project's is)
     const src = readFileSync(join(__dirname, '../src/ui/doc-mode.ts'), 'utf8');
     const menu = src.slice(src.indexOf('private pasteMenu('), src.indexOf('private formatTarget('));
-    expect(menu.indexOf("'Keep Text Only")).toBeLessThan(menu.indexOf('null,'));
-    expect(menu.indexOf('null,')).toBeLessThan(menu.indexOf("'Paste SMILES'"));
+    expect(menu).toContain("wordPasteChoices('document'");
+    const { wordPasteChoices } = await import('../src/ui/paste-options');
+    const labels = wordPasteChoices('document').map((c) => c?.label ?? null);
+    expect(labels.indexOf('Keep Text Only (Ctrl+Shift+V)')).toBeLessThan(labels.indexOf(null));
+    expect(labels.indexOf(null)).toBeLessThan(labels.indexOf('Paste SMILES'));
   });
 });

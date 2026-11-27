@@ -30,7 +30,17 @@ import { parseLength } from './doc-panel';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customShown, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
-import { PREVIEW_FORMAT_FILE, previewFormatsJson, readPreviewFormats, readPreviewFormatsToChange, type FormatLook } from '../si/preview-format';
+import { PREVIEW_FORMAT_FILE, paraLookOf, previewFormatsJson, readPreviewFormats, readPreviewFormatFileToChange, type FormatLook, type RunFormatLook } from '../si/preview-format';
+import { BULLET_LIBRARY, LIST_SCHEMES, indentPatch, listPatch, numberedListRange } from '../text/paragraphs';
+import type { ParaStyle } from '../model';
+import type * as rt from '../richtext';
+import { FontBox } from './font-box';
+import { FloatBox } from './float-box';
+import { Ruler } from './ruler';
+import { PanelFields, buildParaRows } from './para-rows';
+import { editTabStops } from './tabs-dialog';
+import { wordPasteChoices } from './paste-options';
+import { fillListPickers } from './list-pickers';
 import { stepSize } from '../text/format';
 import type { DocView } from './doc-view';
 import { FIT_WIDTH_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -229,6 +239,8 @@ const SYNC_TIP = 'Synchronous Scrolling: scrolling the Live Preview to another c
 
 /** The ribbon: what each button does is its data-si command. */
 /** Why Home ▸ Paragraph is greyed while typing on the SI page. */
+/** What Undo calls the alignment buttons. */
+const ALIGN_NAMES: Record<string, string> = { left: 'Align Left', center: 'Center', right: 'Align Right', justify: 'Justify' };
 const SI_PARA_REASON = 'The SI page’s paragraphs take their alignment, indents and spacing from the journal style (Project Settings ▸ Styles). To change some paragraphs, click in them in the Live Preview.';
 /** Why Insert ▸ Link and Equation are greyed: they work in the Live Preview's text. */
 const SI_PV_REASON = 'Links and equations go in the Live Preview’s text: click where they go there first (the SI page’s fields hold neither).';
@@ -571,6 +583,7 @@ const RIBBON = `
       </div>
       <div class="rb-col">
         <button data-si="page-collapse" aria-pressed="false" title="Hide SI Page: the Live Preview fills the width, for working in it (click again, or the arrow on the divider, to show the page)">Hide SI Page</button>
+        <label class="rb-check" title="Ruler: the indents and tab stops of the paragraph the cursor is in, above the Live Preview, to drag and click"><input type="checkbox" data-si="view-ruler" /> <span>Ruler</span></label>
       </div>
     </div><div class="rb-label">Show</div></div>
   </div>
@@ -684,7 +697,10 @@ const RIBBON = `
   </div>
   <div class="rb-panel" data-si-panel="home">
     <div class="rb-group"><div class="rb-row">
-      <button class="rb-big" data-si="paste" data-ic="paste" title="Paste (Ctrl+V): the copied text where you are typing, on the SI page or in the Live Preview"><span class="rb-icon">📋</span>Paste</button>
+      <div class="rb-col rb-paste">
+        <button class="rb-big" data-si="paste" data-ic="paste" title="Paste (Ctrl+V): the copied text where you are typing, on the SI page or in the Live Preview, with its bold, italics, underline, sub- and superscripts"><span class="rb-icon">📋</span>Paste</button>
+        <button class="rb-paste-more" data-si-paste-menu aria-haspopup="menu" aria-label="Paste options" title="Paste options: Keep Source Formatting, Keep Text Only (Ctrl+Shift+V), or Paste as Picture (a new figure in the Custom section)"><svg viewBox="0 0 10 10" width="8" height="8" aria-hidden="true"><path d="M1.5 3h7L5 7.5z" fill="currentColor"/></svg></button>
+      </div>
       <div class="rb-col">
         <button data-si="cut" data-ic="cut" title="Cut (Ctrl+X): the selected text">Cut</button>
         <button data-si="copy" data-ic="copy" title="Copy (Ctrl+C): the selected text">Copy</button>
@@ -712,14 +728,23 @@ const RIBBON = `
           <button class="rb-sq rb-iconbtn" data-si-para="justify" title="Justify: both edges straight (the paragraphs selected in the Live Preview)" aria-label="Justify">${RIBBON_ICONS['doc-justify']}</button>
         </div>
         <div class="rb-pair">
-          <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
-          <button class="rb-sq rb-iconbtn" data-si-para="indent" title="Increase Indent" aria-label="Increase Indent">${RIBBON_ICONS['doc-indent']}</button>
+          <span class="rb-split">
+            <button class="rb-sq rb-iconbtn" data-si-para="bullets" aria-pressed="false" title="Bullets (the paragraphs selected in the Live Preview; click again to take them off)" aria-label="Bullets">${RIBBON_ICONS['doc-bullets']}</button>
+            <select class="rb-mini rb-drop" data-si-para="bulletlib" data-list-picker="bullets" title="Bullet Library: the bullet for the selected list items" aria-label="Bullet Library"></select>
+          </span>
+          <span class="rb-split">
+            <button class="rb-sq rb-iconbtn" data-si-para="numbering" aria-pressed="false" title="Numbering (the paragraphs selected in the Live Preview; click again to take it off)" aria-label="Numbering">${RIBBON_ICONS['doc-numbering']}</button>
+            <select class="rb-mini rb-drop" data-si-para="multilevel" data-list-picker="multilevel" title="Multilevel List: how each level of the selected numbered list is numbered (Increase and Decrease Indent change the level)" aria-label="Multilevel List"></select>
+          </span>
+          <button class="rb-sq rb-iconbtn" data-si-para="outdent" title="Decrease Indent (a list item: one level out)" aria-label="Decrease Indent">${RIBBON_ICONS['doc-outdent']}</button>
+          <button class="rb-sq rb-iconbtn" data-si-para="indent" title="Increase Indent (a list item: one level in)" aria-label="Increase Indent">${RIBBON_ICONS['doc-indent']}</button>
           <select data-si-para="line" title="Line Spacing (the paragraphs selected in the Live Preview)" aria-label="Line Spacing">
             <option value="" hidden>Line Spacing</option><option value="1">Single</option><option value="1.15">1.15</option><option value="1.5">1.5</option><option value="2">Double</option>
           </select>
+          <button class="rb-sq" data-si-para="tabs" title="Tabs: the tab stops of the paragraphs selected in the Live Preview (left, center, right or decimal, with leaders), or click the ruler (View ▸ Ruler)">Tabs…</button>
         </div>
       </div>
-    </div><div class="rb-label">Paragraph</div></div>
+    </div><div class="rb-label">Paragraph</div><button class="rb-launch" data-si-para="box" title="Paragraph settings: alignment, indents, spacing before and after, line spacing, page breaks, Keep with next and Keep lines together (the paragraphs selected in the Live Preview)" aria-label="Paragraph settings"><svg viewBox="0 0 10 10" width="9" height="9" aria-hidden="true"><path d="M2.5 2.5l5 5M7.5 3.5v4h-4" fill="none" stroke="currentColor" stroke-width="1.3"/></svg></button></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si="find" data-ic="find" title="Find (Ctrl+F): words anywhere in the SI, lit up in the Live Preview; Enter goes to the next, and its page is chosen in the list">Find</button>
@@ -878,6 +903,8 @@ export class SiMode {
     this.ribbon.setAttribute('aria-label', 'SI Project');
     this.ribbon.hidden = true;
     this.ribbon.innerHTML = RIBBON;
+    // (Bullets ▾ and Numbering ▾ offer Document mode's bullet library and number formats)
+    fillListPickers(this.ribbon);
     this.viewState();
     // (Wrap Text's gallery, as Document mode's: made here, the SI ribbon coming after the others were)
     buildSelectGalleries(this.ribbon);
@@ -898,7 +925,7 @@ export class SiMode {
     const docRibbon = document.querySelector('#doc-ribbon');
     if (docRibbon) docRibbon.after(this.ribbon); else document.body.prepend(this.ribbon);
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
-    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para], [data-si-pv]')) e.preventDefault(); });
+    this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], [data-si-paste-menu], [data-si-font], button[data-si-para], [data-si-pv]')) e.preventDefault(); });
     this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
     // Table Design ▸ Borders: the pen, as Document mode's
     wirePen(this.penControls(), this.tableUI, () => this.activeTable?.refocus());
@@ -915,13 +942,16 @@ export class SiMode {
       const tab = t.closest<HTMLElement>('[data-si-tab]');
       if (tab) { this.showRibbonTab(tab.dataset.siTab!); return; }
       if (t.closest('[data-si-paint]')) { this.formatPainter(false); return; }
+      const pm = t.closest<HTMLElement>('[data-si-paste-menu]');
+      if (pm) { this.pasteMenu(pm); return; }
       const para = t.closest<HTMLButtonElement>('button[data-si-para]');
       if (para) { void this.paragraph(para.dataset.siPara!); return; }
       const pvc = t.closest<HTMLButtonElement>('button[data-si-pv]');
       if (pvc) { void this.previewInsert(pvc.dataset.siPv!); return; }
       const fmt = t.closest<HTMLElement>('[data-si-fmt]');
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
-      if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
+      const fl = t.closest<HTMLElement>('[data-si-font]');
+      if (fl) { this.fontLauncher(fl); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
       if (tbl) { this.tableCommand(tbl.dataset.siTbl!, tbl); return; }
       const sp = t.closest<HTMLElement>('[data-si-spectrum]');
@@ -1794,7 +1824,9 @@ export class SiMode {
         this.host.flash('In the Live Preview: Bold, Italic, Underline, Strikethrough, Subscript, Superscript, Small Caps, Highlight, Font, Size, Color and Clear All Formatting. Other changes are made on the SI page.', 7000);
         return;
     }
-    if (look) await pv.format(look);
+    // (Undo names the command)
+    const names: Record<string, string> = { bold: 'Bold', italic: 'Italic', underline: 'Underline', strike: 'Strikethrough', subscript: 'Subscript', superscript: 'Superscript', clear: 'Clear All Formatting', font: 'Font', size: 'Font Size', grow: 'Grow Font', shrink: 'Shrink Font', color: 'Font Color', 'small-caps': 'Small Caps', highlight: 'Highlight' };
+    if (look) await pv.format(look, names[cmd] ?? 'Format');
     pv.input.focus();
   }
 
@@ -1824,16 +1856,139 @@ export class SiMode {
   private async paragraph(cmd: string, value?: string): Promise<void> {
     const pv = this.previewTyped;
     if (!pv) { this.host.flash(SI_PARA_REASON, 6000); return; }
+    if (cmd === 'box') { this.paragraphBox(); return; }
     // (what it toggles or steps from is read from the text shown: the last change shown first)
     if (!(await pv.ready())) return;
     const INDENT = 36;
+    /** A list taken off: its bullet and number format too, so they don't come back with the next list. */
+    const listOff = (patch: Partial<ParaStyle>): Partial<ParaStyle> => ('list' in patch && !patch.list ? { ...patch, bullet: undefined, scheme: undefined } : patch);
     switch (cmd) {
-      case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }); break;
-      case 'indent': case 'outdent': await pv.paraFormat({ indent: Math.max(0, (pv.paraValue('indent') ?? 0) + (cmd === 'indent' ? INDENT : -INDENT)) }); break;
-      case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n }); break; }
-      case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, true); break;
+      case 'left': case 'center': case 'right': case 'justify': await pv.paraFormat({ align: cmd }, ALIGN_NAMES[cmd]); break;
+      // (each paragraph a step from its own indent, a list item a level in or out, as Document mode's Increase and Decrease Indent)
+      case 'indent': case 'outdent': await pv.paraFormat((p) => paraLookOf(indentPatch(p, cmd === 'indent' ? 1 : -1, INDENT)), cmd === 'indent' ? 'Increase Indent' : 'Decrease Indent'); break;
+      // (a height in points taken off too, as Document mode's Line Spacing does; Single kept as 1, over the journal style's)
+      case 'line': { const n = Number(value); if (n > 0) await pv.paraFormat({ line: n, linePt: '', lineRule: '' }, 'Line Spacing'); break; }
+      case 'page-break': await pv.paraFormat({ pageBreak: !pv.paraValue('pageBreak') }, 'Page Break', { one: true }); break;
+      case 'bullets': case 'numbering': await pv.paraFormat(paraLookOf(listOff(listPatch(pv.selectedParas(), cmd === 'bullets' ? 'bullet' : 'number'))), cmd === 'bullets' ? 'Bullets' : 'Numbering'); break;
+      case 'bulletlib': if (value) await pv.paraFormat({ list: 'bullet', bullet: value === 'default' ? '' : BULLET_LIBRARY[Number(value)] ?? '' }, 'Bullets'); break;
+      case 'multilevel': {
+        if (!value) break;
+        // (a number format is for the whole list, as in Document mode: the numbered items next to those selected take it too)
+        const sel = pv.selectedParaRange();
+        if (!sel) break;
+        await pv.paraFormat({ list: 'number', scheme: LIST_SCHEMES.find((x) => x.id === value)?.id ?? '' }, 'Multilevel List', { range: numberedListRange(pv.allParas(), sel[0], sel[1]) });
+        break;
+      }
+      case 'tabs': {
+        // Document mode's Tabs window, on the paragraphs selected
+        const tabs = await editTabStops(pv.currentPara()?.tabs ?? []);
+        pv.input.focus();
+        if (tabs) await pv.paraFormat({ tabs }, 'Tabs');
+        return;
+      }
     }
     pv.input.focus();
+  }
+
+  /** A paragraph change as Document mode makes it (undefined takes a setting off) on the Live Preview's paragraphs, once the last change shows. */
+  private async previewParas(pv: SiPreview, patch: Partial<ParaStyle>, what: string): Promise<boolean> {
+    return (await pv.ready()) && pv.paraFormat(paraLookOf(patch), what);
+  }
+
+  /** Home ▸ Paragraph's corner box: Word's Paragraph settings (Document mode's, para-rows.ts) for the Live Preview's paragraphs. */
+  private paraBox: { box: FloatBox; update: () => void } | null = null;
+
+  private paragraphBox(): void {
+    if (!this.paraBox) {
+      const box = new FloatBox('Paragraph', () => {});
+      box.el.querySelector<HTMLElement>('.fb-pin')?.toggleAttribute('hidden', true);
+      const sec = el('div', 'dp-section si-para-box');
+      box.body.append(sec);
+      const kit = new PanelFields(() => this.preview?.input.focus());
+      const update = buildParaRows(sec, kit, {
+        // (its alignment as it shows: the style's when it has none of its own)
+        para: () => this.previewTyped?.effectivePara() ?? null,
+        apply: (patch) => {
+          const pv = this.previewTyped;
+          // (Left is set as left: the SI's own paragraphs are justified)
+          if (pv) void this.previewParas(pv, 'align' in patch && !patch.align ? { ...patch, align: 'left' } : patch, 'Paragraph');
+        },
+      }, { linesId: 'si-para-lines' });
+      this.paraBox = { box, update };
+    }
+    const { box, update } = this.paraBox;
+    if (box.open) { box.close(); return; }
+    update();
+    box.show(this.ribbon.querySelector<HTMLElement>('[data-si-para="box"]'));
+  }
+
+  /** The Font group's corner button: in the Live Preview, Document mode's Font box without the text effects (an SI doesn't print them); on the SI page, Project Settings ▸ Output. */
+  private fontBox: FontBox | null = null;
+
+  private fontLauncher(at: HTMLElement): void {
+    if (!this.previewTyped) { this.fontBox?.close(); this.projectSettings('output'); return; }
+    this.fontBox ??= new FontBox({
+      look: () => this.previewTyped?.fontLook() ?? null,
+      apply: (patch) => {
+        const pv = this.previewTyped;
+        if (!pv) return;
+        // (undefined takes a look off: as 0 spacing and kerning back on, kept across compiles)
+        const look: RunFormatLook = {};
+        if ('spacing' in patch) look.spacing = patch.spacing ?? 0;
+        if ('noKern' in patch) look.noKern = patch.noKern ?? false;
+        if (Object.keys(look).length) void pv.format(look, 'spacing' in look ? 'Character Spacing' : 'Kerning');
+      },
+      changeCase: (mode: rt.CaseMode) => { void this.previewTyped?.changeCase(mode); },
+      allCaps: () => { const pv = this.previewTyped; if (pv) void pv.format({ allCaps: !pv.selectionHas('allCaps') }, 'All Caps'); },
+    }, { effects: false });
+    this.fontBox.toggle(at);
+  }
+
+  /** The caret moved in the Live Preview: Bullets and Numbering pressed or not, and the Ruler, Paragraph and Font boxes showing its paragraph and words. */
+  private previewParaState(): void {
+    const pv = this.previewTyped;
+    const list = pv?.paraValue('list');
+    this.ribbon.querySelector('[data-si-para="bullets"]')?.setAttribute('aria-pressed', String(list === 'bullet'));
+    this.ribbon.querySelector('[data-si-para="numbering"]')?.setAttribute('aria-pressed', String(list === 'number'));
+    this.ruler?.update();
+    if (this.paraBox?.box.open) this.paraBox.update();
+    if (this.fontBox?.open) this.fontBox.refresh();
+  }
+
+  /** View ▸ Ruler over the Live Preview (Document mode's ruler); dragging its indents and tab stops formats the paragraphs as Home ▸ Paragraph does. */
+  private ruler: Ruler | null = null;
+  /** A change made on the Ruler that the preview doesn't show yet (to the paragraph `para`): the next click builds on it. */
+  private rulerPending: { para: number; patch: Partial<ParaStyle> } | null = null;
+  private rulerFrame = 0;
+
+  private setRuler(on: boolean): void {
+    siPreviewPrefs.ruler = on;
+    siPreviewPrefs.save?.();
+    if (this.ruler) this.ruler.shown = on;
+    this.viewState();
+    requestAnimationFrame(() => this.live.view?.resize());
+  }
+
+  /** Home ▸ Paste ▾: Word's paste options (as Document mode's), where the person was typing. */
+  private pasteMenu(at: HTMLElement): void {
+    const r = at.getBoundingClientRect();
+    const run: Record<string, () => void> = {
+      'paste-keep': () => void this.clipboardCommand('paste'),
+      'paste-text-only': () => void this.pasteTextOnly(),
+      'paste-picture': () => void this.run('new-figure-paste'),
+    };
+    // (Paste as Picture always offered: it says so when the clipboard has no picture or drawing)
+    popupMenu(r.left, r.bottom + 2, wordPasteChoices('si').map((c) => (c ? [c.label, run[c.cmd], c.enabled] : null)));
+  }
+
+  /** Paste ▸ Keep Text Only (Ctrl+Shift+V): the copied words without their formatting. */
+  private async pasteTextOnly(): Promise<void> {
+    const pv = this.previewTyped;
+    const t = await this.clipboardText();
+    if (t === null) return;
+    if (pv) { pv.pasteText(t); return; }
+    if (!this.restoreTyping()) { this.host.flash('Click in a text box on the SI page, or in the Live Preview, first.'); return; }
+    document.execCommand('insertText', false, t);
   }
 
   /** Insert ▸ Link and Insert ▸ Equation, in the Live Preview's text (greyed on the SI page, whose fields hold neither). */
@@ -1980,6 +2135,8 @@ export class SiMode {
   show(tab: Tab | null): void {
     // (what was being typed in the tab left is saved to its own project, in the background)
     if (this.tab && this.tab !== tab) void this.commitAll();
+    // (the Live Preview's Paragraph and Font boxes are for the tab left: closed, as Document mode's are)
+    if (this.tab !== tab) { this.paraBox?.box.close(); this.fontBox?.close(); }
     this.tab = tab && tab.si ? tab : null;
     this.pane.hidden = this.ribbon.hidden = !this.tab;
     this.mentionTip.hide();
@@ -3850,7 +4007,7 @@ export class SiMode {
 
   // ---------------------------------------------------------------- the live preview (SI Assistant §13k.8)
 
-  private live: { el: HTMLElement; host: HTMLElement; state: HTMLElement; empty: HTMLElement; view: DocView | null; shown: string } = null!;
+  private live: { el: HTMLElement; host: HTMLElement; ruler: HTMLElement; state: HTMLElement; empty: HTMLElement; view: DocView | null; shown: string } = null!;
   private liveOn = true;
   /** Compile puts the SI page's flags in as comments (the ribbon's Flags as Comments; remembered on this computer). */
   private liveTimer = 0;
@@ -3916,10 +4073,13 @@ export class SiMode {
     const fold = el('button', 'si-page-fold');
     fold.type = 'button';
     fold.addEventListener('click', () => this.setPageCollapsed(!this.pageCollapsed));
-    wrap.append(strip, grip, fold, head, host, empty);
+    // (View ▸ Ruler, over the pages)
+    const ruler = el('div', 'si-ruler');
+    ruler.hidden = true;
+    wrap.append(strip, grip, fold, head, ruler, host, empty);
     wrap.classList.toggle('off', !this.liveOn);
     this.pane.classList.toggle('si-live-off', !this.liveOn);
-    return { el: wrap, host, state, empty, view: null, shown: '' };
+    return { el: wrap, host, ruler, state, empty, view: null, shown: '' };
   }
 
   /** Synchronous Scrolling: scrolling the Live Preview to another page of the list chooses that page (remembered on this computer). */
@@ -4438,18 +4598,20 @@ export class SiMode {
         let done = false;
         const save = async (): Promise<void> => {
           // (everything read first: a file that can't be read, or a field changed since, writes nothing)
-          const items = change ? change(await readPreviewFormatsToChange(p.folder)) : null;
+          const file = change ? await readPreviewFormatFileToChange(p.folder) : null;
+          const items = file && change ? change(file.items) : null;
           const access = fields.map((x) => ({ x, a: sourceAccess(p, x.src) }));
           for (const { a, x } of access) {
             if (!a) throw new Error('The field is gone (deleted, or taken back by Undo).');
             if ((await a.read()) !== x.from) throw new Error(what === 'Replace' ? 'The text changed meanwhile. Find the words again and replace them.' : 'The text changed while it was being formatted. Select it and try again.');
           }
           for (const { a, x } of access) await a!.write(x.text);
-          if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items));
+          if (items) await p.folder.writeText(PREVIEW_FORMAT_FILE, previewFormatsJson(items, file?.version));
           done = true;
         };
         const label = what === 'Replace' ? 'Replace in Live Preview' : what === 'Format' ? 'Format in Live Preview' : what;
-        if (p !== this.project) await this.change(p, label, save);
+        if (p !== this.project) await this.change(p, label.endsWith('in Live Preview') ? label : `${label} in Live Preview`, save);
+        // (Undo names the command: Bullets, Change Case, Paste…)
         else await this.act(save, fields.length > 0, undefined, undefined, label);
         // (the reason was said)
         if (!done) throw Object.assign(new Error('Not saved'), { name: 'SaidAlready' });
@@ -4457,6 +4619,11 @@ export class SiMode {
       flag: (anchor, change) => this.flagChange(anchor, change),
       people: () => this.project?.people ?? [],
       undo: (redo) => void this.undo(redo),
+      oneStep: async (label, owner, f) => {
+        // (the steps the writes inside make are part of this one; it waits for an Undo under way, as every step does)
+        const j = journalOf(asProject(owner).folder);
+        await (j ? j.step(label, f) : f());
+      },
       refresh: () => this.liveSoon(0),
       structureChosen: (id) => this.structureChosen(id),
       structureMenu: (id, x, y) => this.structureMenu(id, x, y),
@@ -4469,6 +4636,28 @@ export class SiMode {
     this.preview.view.gridlines = this.gridlines;
     this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
     this.preview.onScrollSettled = () => this.followPreview();
+    this.preview.onCaret = () => this.previewParaState();
+    const pv = this.preview;
+    // (scrolled or zoomed: the ruler drawn again once a frame)
+    pv.onView = () => { if (!this.rulerFrame) this.rulerFrame = requestAnimationFrame(() => { this.rulerFrame = 0; this.ruler?.update(); }); };
+    this.ruler = new Ruler(this.live.ruler, {
+      geometry: () => {
+        const g = pv.rulerGeometry();
+        const o = this.rulerPending, sel = pv.selectedParaRange();
+        if (!g || !o) return g;
+        // (a change the preview shows by now, or another paragraph: built on what shows)
+        if (!sel || sel[0] !== o.para || Object.entries(o.patch).every(([k, v]) => JSON.stringify(g.para[k as keyof ParaStyle]) === JSON.stringify(v))) { this.rulerPending = null; return g; }
+        return { ...g, para: { ...g.para, ...o.patch } };
+      },
+      setParas: (patch, what) => {
+        const sel = pv.selectedParaRange();
+        if (sel) this.rulerPending = { para: sel[0], patch: { ...(this.rulerPending?.para === sel[0] ? this.rulerPending.patch : {}), ...patch } };
+        this.ruler?.update();
+        void this.previewParas(pv, patch, what === 'tabs' ? 'Tabs' : 'Indent').then((ok) => { if (!ok) { this.rulerPending = null; this.ruler?.update(); } });
+      },
+      focus: () => pv.input.focus(),
+    });
+    this.ruler.shown = siPreviewPrefs.ruler;
     // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
     const resized = this.preview.view.onResize;
     this.preview.view.onResize = () => { resized(); this.zoomBar?.show(); };
@@ -5999,7 +6188,7 @@ export class SiMode {
   /** Commands that change nothing themselves (Trash… makes a step of each thing done in it). */
   private static NO_STEP = new Set(['import-si', 'trash', 'reload', 'snapshot', 'project-settings', 'warnings', 'compile-doc', 'compile-pdf', 'spelling', 'live-preview', 'save-snapshot-docx',
     'paste', 'cut', 'copy', 'find', 'replace', 'go-to', 'select-all', 'cover-page', 'toc', 'manage-references', 'bibliography', 'page-setup', 'header', 'footer', 'page-number',
-    'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse',
+    'heading-numbers', 'styles', 'caption-labels', 'structure-layout', 'dictionary', 'manuscript-check', 'view-multiple', 'show-marks', 'nav-pane', 'page-collapse', 'view-ruler',
     'new-comment', 'comment-prev', 'comment-next', 'show-comments', 'show-resolved']);
 
   /** A ribbon command, as one step of Undo (named as on its button). */
@@ -6405,6 +6594,11 @@ export class SiMode {
         this.viewState();
         return;
       }
+      case 'view-ruler':
+        if (!this.liveOn) { this.host.flash('The Ruler is over the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
+        await this.livePreview();
+        this.setRuler(!siPreviewPrefs.ruler);
+        return;
       case 'page-collapse':
         if (!this.liveOn) { this.host.flash('The SI page is hidden for the Live Preview: turn it on first (View ▸ Live Preview).'); return; }
         this.setPageCollapsed(!this.pageCollapsed);
@@ -6425,9 +6619,11 @@ export class SiMode {
     set('view-multiple', !!this.preview?.multiplePages);
     set('nav-pane', !this.pane.classList.contains('si-tree-off'));
     set('page-collapse', this.pageCollapsed);
+    const ru = this.ribbon.querySelector<HTMLInputElement>('input[data-si="view-ruler"]');
+    if (ru) ru.checked = siPreviewPrefs.ruler;
     // (these change the Live Preview: not while it is off)
-    for (const cmd of ['show-marks', 'view-multiple']) {
-      const b = this.ribbon.querySelector<HTMLButtonElement>(`[data-si="${cmd}"]`);
+    for (const cmd of ['show-marks', 'view-multiple', 'view-ruler']) {
+      const b = this.ribbon.querySelector<HTMLButtonElement | HTMLInputElement>(`[data-si="${cmd}"]`);
       if (b) b.disabled = !this.liveOn;
     }
   }
@@ -6438,8 +6634,10 @@ export class SiMode {
     if (pv) {
       if (cmd === 'select-all') { pv.selectAll(); return; }
       if (cmd !== 'paste') { if (!pv.copyOut(cmd === 'cut')) this.host.flash(`Select some text in the Live Preview first, then ${cmd === 'cut' ? 'Cut' : 'Copy'}.`); return; }
-      const t = await this.clipboardText();
-      if (t !== null) pv.pasteText(t);
+      // (Keep Source Formatting, as Ctrl+V: bold, italics, underline, sub- and superscripts kept)
+      const got = await this.clipboardRich();
+      if (got?.html) await pv.pasteFormatted(got.html, got.plain);
+      else if (got?.plain) pv.pasteText(got.plain);
       return;
     }
     if (!this.restoreTyping()) { this.host.flash('Click in a text box on the SI page, or in the Live Preview, first.'); return; }
