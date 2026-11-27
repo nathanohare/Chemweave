@@ -1073,12 +1073,13 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
     const dvXml = standIn ? '' : validationsXml(s.validations, (f) => excelFunctionNames(f, book.excelPrefixes), longList, book.date1904 ? DAYS_1900_TO_1904 : 0);
     // links (Insert > Link): a place in the workbook as Excel's location, anything else through a relationship
+    // (a block of cells with the same link is one hyperlink with a range: Excel holds at most 65,530
+    // hyperlinks in a worksheet, "Excel specifications and limits", support.microsoft.com)
     const linkXml: string[] = [];
-    for (const [k, c] of s.cells) {
-      if (!c.link) continue;
-      const ref = cellName(rowOf(k), colOf(k));
-      if (c.link.startsWith('#')) linkXml.push(`<hyperlink ref="${ref}" location="${xmlAttr(c.link.slice(1))}" display="${xmlAttr(s.shownText(rowOf(k), colOf(k)))}"/>`);
-      else linkXml.push(`<hyperlink ref="${ref}" r:id="${pkg.relate(path, REL.hyperlink, officeTarget(c.link), true)}"/>`);
+    for (const B of linkBlocks(s)) {
+      const ref = B.r1 === B.r2 && B.c1 === B.c2 ? cellName(B.r1, B.c1) : `${cellName(B.r1, B.c1)}:${cellName(B.r2, B.c2)}`;
+      if (B.link.startsWith('#')) linkXml.push(`<hyperlink ref="${ref}" location="${xmlAttr(B.link.slice(1))}" display="${xmlAttr(s.shownText(B.r1, B.c1))}"/>`);
+      else linkXml.push(`<hyperlink ref="${ref}" r:id="${pkg.relate(path, REL.hyperlink, officeTarget(B.link), true)}"/>`);
     }
     const hyperlinks = linkXml.length ? `<hyperlinks>${linkXml.join('')}</hyperlinks>` : '';
     // printing: page setup, and the print area and titles as the workbook's names
@@ -1941,7 +1942,9 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const fileIndex = allSheetEls.indexOf(el);
         const gridName = definedNames.find((d) => d.getAttribute('name') === GRID_NAME && Number(d.getAttribute('localSheetId')) === fileIndex);
         const mover = ms.grid ? readGridName(gridName?.textContent, ms.grid) : STILL;
-        const got = restoreSheet(s, ms, raw, mover, dr ? structurePictures(dr) : new Map(), sameWrote, HIDDEN);
+        const sizeCol = (c: number) => (s.hiddenCols.has(c) ? 0 : s.colWidths.get(c) ?? DEFAULT_COL_W);
+        const sizeRow = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? s.fittedRows.get(r) ?? DEFAULT_ROW_H);
+        const got = restoreSheet(s, ms, raw, mover, dr ? structurePictures(dr, sizeCol, sizeRow) : new Map(), sameWrote, HIDDEN);
         restored.structures += got.structures;
         restored.changed += got.changed;
         const mine = ms.filter ? moveFilter(ms.filter, mover) : null;
@@ -2021,6 +2024,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const rowPx = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? s.fittedRows.get(r) ?? DEFAULT_ROW_H);
         // pictures, shapes and text boxes (not our structures' pictures, which are their cells)
         const drawRels = pkg.rels(drawingPath!);
+        // the cells our structures' pictures were saved over, by name (found once, not per picture)
+        const ownPictures = new Set(ms ? ms.cells.filter((x) => x.structure).map((x) => cellName(x.r, x.c)) : []);
         const got = readObjects(dr, (rid) => {
           const t = drawRels.get(rid)?.target;
           const bytes = t ? pkg.bytes(t) : null;
@@ -2029,7 +2034,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           // (only a structure's own picture, named for its cell as saved here: another object called
           // "Structure ..." is read like any other)
           const m = ms && el.localName === 'pic' ? /^Structure ([A-Z]{1,3}\d{1,7})$/.exec(name) : null;
-          return !!m && !!ms?.cells.some((x) => x.structure && cellName(x.r, x.c) === m[1]);
+          return !!m && ownPictures.has(m[1]);
         });
         foreignPictures += got.skipped;
         if (got.objects.length) { for (const o of got.objects) seenObjectId(o.id); s.setObjects(got.objects); }
@@ -2070,9 +2075,9 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           const tree = cref?.namespaceURI === C_NS && !kid(cdoc.documentElement, 'pivotSource') ? readTree(pkg, target!) : null;
           const withFile = (c: Chart): Chart => (tree ? { ...c, file: { print: keptChartPrint(c), path: target!, ...tree } } : c);
           // (where it is and its size as the file has them: moved or resized in Excel)
+          for (const l of got.lost ?? []) notKept.add(l);
           if (mine && sameChartData(mine, got.chart)) { seenChartId(mine.id); const { alt: _was, placement: _had, ...kept } = mine; charts.push(withFile({ ...kept, at, w: got.chart.w, h: got.chart.h, ...placement, ...alt })); continue; }
           if (got.partial) notKept.add('parts of combined charts');
-          for (const l of got.lost ?? []) notKept.add(l);
           charts.push(withFile({ ...got.chart, ...alt, ...placement }));
         }
         if (charts.length) s.setCharts(charts);
@@ -2304,14 +2309,16 @@ function asSaved(book: Workbook, values: Map<Sheet, Map<number, FileValue>>): bo
 }
 
 /** The cell each structure's picture (named "Structure A2" by the cell it was saved over) is over now. */
-function structurePictures(dr: Document): Map<string, { r: number; c: number }> {
+export function structurePictures(dr: Document, colPx: (c: number) => number, rowPx: (r: number) => number): Map<string, { r: number; c: number }> {
   const out = new Map<string, { r: number; c: number }>();
   for (const anchor of Array.from(dr.documentElement.children)) {
     const name = anchor.getElementsByTagNameNS(XDR, 'cNvPr')[0]?.getAttribute('name') ?? '';
     const m = /^Structure ([A-Z]{1,3}\d{1,7})$/.exec(name);
+    if (!m || !anchor.getElementsByTagNameNS(XDR, 'pic').length) continue;
+    // (a picture Excel gave a fixed place, an absoluteAnchor, is over the cell at that place)
     const from = kid(anchor, 'from');
-    if (!m || !from || !anchor.getElementsByTagNameNS(XDR, 'pic').length) continue;
-    const a = anchorPos(from);
+    const a = from ? anchorPos(from) : anchor.localName === 'absoluteAnchor' ? anchorPlace(anchor, colPx, rowPx)?.from : undefined;
+    if (!a) continue;
     out.set(m[1], { r: a.row, c: a.col });
   }
   return out;
@@ -2359,6 +2366,37 @@ function anchorPlace(anchor: Element, colPx: (c: number) => number, rowPx: (r: n
 const sameRange = (a: Range, b: Range) => a.r1 === b.r1 && a.c1 === b.c1 && a.c2 === b.c2;
 
 const OP_BACK: Record<string, CompareOp> = { lessThan: '<', lessThanOrEqual: '<=', greaterThan: '>', greaterThanOrEqual: '>=', equal: '=', notEqual: '<>' };
+
+/**
+ * A sheet's links as blocks of cells with the same link: runs along each row, joined with the
+ * same run in the rows below. In row and column order.
+ */
+function linkBlocks(s: Sheet): (Range & { link: string })[] {
+  const keys = [...s.cells].filter(([, c]) => c.link).map(([k]) => k).sort((a, b) => rowOf(a) - rowOf(b) || colOf(a) - colOf(b));
+  const out: (Range & { link: string })[] = [];
+  // the blocks still open at the row above, by their columns and link
+  let open = new Map<string, Range & { link: string }>();
+  let row = -1;
+  let next = new Map<string, Range & { link: string }>();
+  const runs: { r: number; c1: number; c2: number; link: string }[] = [];
+  for (const k of keys) {
+    const r = rowOf(k), c = colOf(k), link = s.cells.get(k)!.link!;
+    const last = runs[runs.length - 1];
+    if (last && last.r === r && last.c2 === c - 1 && last.link === link) last.c2 = c;
+    else runs.push({ r, c1: c, c2: c, link });
+  }
+  for (const run of runs) {
+    if (run.r !== row) { open = run.r === row + 1 ? next : new Map(); next = new Map(); row = run.r; }
+    const id = `${run.c1}:${run.c2}:${run.link}`;
+    const B = open.get(id);
+    if (B) { B.r2 = run.r; next.set(id, B); } else {
+      const nb = { r1: run.r, c1: run.c1, r2: run.r, c2: run.c2, link: run.link };
+      out.push(nb);
+      next.set(id, nb);
+    }
+  }
+  return out;
+}
 
 /**
  * A date cell's ISO 8601 text (t="d", ECMA-376 Part 1, 18.17.4) as a day number. Without a time

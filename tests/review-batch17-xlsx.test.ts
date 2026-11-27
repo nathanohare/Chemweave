@@ -6,9 +6,10 @@
 
 import { describe, it, expect } from 'vitest';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { writeXlsx, readXlsx, type XlsxPictures } from '../src/io/xlsx';
+import { writeXlsx, readXlsx, structurePictures, type XlsxPictures } from '../src/io/xlsx';
 import { Package, REL } from '../src/io/ooxml';
-import { Workbook } from '../src/sheet/workbook';
+import { Workbook, makeStructure } from '../src/sheet/workbook';
+import type { Contents } from '../src/model';
 import { chartFromRange } from '../src/sheet/chart';
 import { newValidation } from '../src/sheet/validation';
 import { DEFAULT_COL_W } from '../src/sheet/layout';
@@ -315,5 +316,75 @@ describe("a filter's last row (F135)", () => {
     expect(moveFilter(ms.filter!, mover)?.range).toEqual({ r1: 3, c1: 0, r2: 19, c2: 0 });
     // its last row taken out: Excel's own range stands
     expect(moveFilter(ms.filter!, readGridName('Data!$A:$A,Data!$4:$4,Data!#REF!', grid))).toBeNull();
+  });
+});
+
+describe('a ChemDraw object in a hidden column (F617)', () => {
+  it('is not written with a size below zero', async () => {
+    // a stand-in for the ChemDraw writer: CDX's "VjCD0100" header and a few bytes of picture
+    const cdx = new Uint8Array([0x56, 0x6a, 0x43, 0x44, 0x30, 0x31, 0x30, 0x30, 0x04, 0x03, 0x02, 0x01, 1, 1, 1, 1]);
+    const asObjects: XlsxPictures = { ...pictures, chemdrawObjects: true, chemdraw: () => ({ cdx, emf: new Uint8Array([1, 0, 0, 0, 9, 9, 9]), w: 30, h: 20 }) };
+    const mol: Contents = { atoms: [{ id: 1, x: 0, y: 0, z: 6, charge: 0, isotope: 0, label: 'CCO' } as never], bonds: [], captions: [], arrows: [], shapes: [] };
+    const wb = new Workbook(['Sheet1']);
+    wb.edit('s', () => { wb.sheet.setCell(1, 1, { structure: makeStructure(mol) }); wb.sheet.setColHidden(1, true); });
+    const files = unzipSync(await writeXlsx(wb, asObjects));
+    const all = Object.entries(files).filter(([n]) => /\.(xml|vml)$/.test(n)).map(([, b]) => strFromU8(b)).join('');
+    expect(all).not.toMatch(/<oleObject /);
+    expect(all).not.toMatch(/(?:cx|cy|colOff|rowOff)(?:="|>)-/);
+    // and the same in a shown column is written as an object
+    const shown = new Workbook(['Sheet1']);
+    shown.edit('s', () => shown.sheet.setCell(1, 1, { structure: makeStructure(mol) }));
+    expect(strFromU8(unzipSync(await writeXlsx(shown, asObjects))['xl/worksheets/sheet1.xml'])).toMatch(/<oleObject /);
+  });
+});
+
+describe('an embedded object after a self-closing VML shape (F612)', () => {
+  it('keeps its own VML shape', async () => {
+    // VML (ECMA-376 Part 4, 19.1.2.19): a self-closing shape, then the object's own shape
+    const vml = '<xml xmlns:v="urn:schemas-microsoft-com:vml" xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel">' +
+      '<v:shape id="_x0000_s1025" type="#_x0000_t75" style="width:1pt"/>' +
+      '<v:shape id="_x0000_s1026" type="#_x0000_t75" style="width:60pt;height:40pt"><v:fill o:detectmouseclick="t"/><x:ClientData ObjectType="Pict"><x:Anchor>1, 0, 1, 0, 3, 0, 4, 0</x:Anchor></x:ClientData></v:shape></xml>';
+    const file = excelBook([['Sheet1', `${DATA}<legacyDrawing r:id="rId1"/><oleObjects><oleObject progId="Word.Document.12" shapeId="1026" r:id="rId2"/></oleObjects>`]], {
+      parts: [
+        { path: 'xl/drawings/vmlDrawing1.vml', xml: vml, type: 'application/vnd.openxmlformats-officedocument.vmlDrawing', from: 'xl/worksheets/sheet1.xml', rel: `${R}/vmlDrawing`, target: '../drawings/vmlDrawing1.vml' },
+        { path: 'xl/embeddings/oleObject1.bin', xml: 'not a real object', type: 'application/vnd.openxmlformats-officedocument.oleObject', from: 'xl/worksheets/sheet1.xml', rel: `${R}/oleObject`, target: '../embeddings/oleObject1.bin' },
+      ],
+    });
+    const ole = (await readXlsx(file)).book.sheets[0].ole ?? [];
+    expect(ole).toHaveLength(1);
+    expect(ole[0].vml?.shape).toContain('ObjectType="Pict"');
+    expect(ole[0].vml?.shape).not.toContain('width:1pt');
+  });
+});
+
+describe('error bars on our own chart, added in Excel (F133)', () => {
+  it('are named on opening', async () => {
+    const { bytes } = await ownChartBook();
+    const chart = Object.keys(unzipSync(bytes)).find((k) => /^xl\/charts\/chart\d+\.xml$/.test(k))!;
+    const bars = '<c:errBars><c:errDir val="y"/><c:errBarType val="both"/><c:errValType val="stdErr"/><c:noEndCap val="0"/></c:errBars>';
+    const withBars = edit(bytes, { [chart]: (x) => x.replace(/(<c:yVal>)/, `${bars}$1`) });
+    expect((await readXlsx(withBars)).warnings.join(' ')).toMatch(/standard error bars/);
+  });
+});
+
+describe('a structure picture in an absoluteAnchor (F623)', () => {
+  it('is found over the cell at its place', () => {
+    // pos in EMUs, 9525 to the pixel: 2 columns and 3 rows in
+    const x = 2 * DEFAULT_COL_W * 9525 + 9525, y = 3 * 22 * 9525 + 9525;
+    const xml = `<xdr:wsDr xmlns:xdr="${XDR}" xmlns:a="${A}" xmlns:r="${R}"><xdr:absoluteAnchor><xdr:pos x="${x}" y="${y}"/><xdr:ext cx="95250" cy="95250"/>` +
+      '<xdr:pic><xdr:nvPicPr><xdr:cNvPr id="2" name="Structure B2"/><xdr:cNvPicPr/></xdr:nvPicPr><xdr:blipFill><a:blip r:embed="rId1"/></xdr:blipFill><xdr:spPr/></xdr:pic><xdr:clientData/></xdr:absoluteAnchor></xdr:wsDr>';
+    const dr = new DOMParser().parseFromString(xml, 'application/xml');
+    expect(structurePictures(dr, () => DEFAULT_COL_W, () => 22).get('B2')).toEqual({ r: 3, c: 2 });
+  });
+});
+
+describe('links saved for Excel (F624)', () => {
+  it('write a block of linked cells as one hyperlink', async () => {
+    // Excel holds at most 65,530 hyperlinks in a worksheet ("Excel specifications and limits"):
+    // a range is one of them, however many cells it covers
+    const got = await readXlsx(excelBook([['Sheet1', `${DATA}<hyperlinks><hyperlink ref="A1:Z2000" location="Sheet1!A1" display="top"/></hyperlinks>`]]));
+    const sheet = part(await writeXlsx(got.book, pictures), 'xl/worksheets/sheet1.xml');
+    expect(sheet.match(/<hyperlink /g)).toHaveLength(1);
+    expect(sheet).toContain('<hyperlink ref="A1:Z2000" location="Sheet1!A1"');
   });
 });

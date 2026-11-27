@@ -57,3 +57,24 @@ describe('cell styles take their parent style\'s look (F578)', () => {
     expect(s.cell(0, 1)?.style?.fill).toBe('#dddddd');
   });
 });
+
+describe('runs to the foot of the sheet (F120, F579)', () => {
+  it('holds a hidden tail as the sheet\'s setting, not row by row', () => {
+    const rows = '<table:table-row><table:table-cell office:value-type="string"><text:p>head</text:p></table:table-cell></table:table-row>'
+      + '<table:table-row table:visibility="collapse" table:number-rows-repeated="1048575"><table:table-cell/></table:table-row>';
+    const s = readOds(ods(rows)).book.sheets[0];
+    expect(s.hiddenRows.size).toBe(0);
+    expect(s.fileRowHeight?.zero).toBe(true);
+  });
+  it('cuts a value row repeated to the foot of the sheet, and says so', () => {
+    const rows = '<table:table-row table:number-rows-repeated="1048576"><table:table-cell office:value-type="float" office:value="1" table:number-columns-repeated="3"/></table:table-row>';
+    const t = Date.now();
+    const got = readOds(ods(rows));
+    expect(Date.now() - t).toBeLessThan(30000);
+    const s = got.book.sheets[0];
+    // about 250,000 cells: 83,333 rows of three
+    expect(s.cell(83332, 2)?.input).toBe('1');
+    expect(s.cell(83333, 0)).toBeUndefined();
+    expect(got.warnings.join(' ')).toMatch(/965,243 repeated rows/);
+  });
+});

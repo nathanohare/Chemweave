@@ -250,7 +250,7 @@ export function readOds(bytes: Uint8Array): { book: Workbook; warnings: string[]
   // another program's text is shown as it wrote it (Q1 stays Q1, not Q₁)
   book.autoChem = false;
   const warnings: string[] = [];
-  let pictures = 0, hiddenSheets = 0;
+  let pictures = 0, hiddenSheets = 0, cutRows = 0;
   book.build(() => {
     tables.forEach((t, si) => {
       const s = book.sheets[si];
@@ -274,7 +274,8 @@ export function readOds(bytes: Uint8Array): { book: Workbook; warnings: string[]
       }
       const merges: Range[] = [];
       let r = 0;
-      for (const row of rowsOf(t)) {
+      const rowEls = rowsOf(t);
+      for (const row of rowEls) {
         const rn = Math.min(Number(tAttr(row, 'number-rows-repeated') ?? 1) || 1, MAX_ROWS - r);
         const cells = kids(row).filter((k) => k.localName === 'table-cell' || k.localName === 'covered-table-cell');
         // each cell read once for all the row's copies: its columns, what it holds and its look
@@ -290,18 +291,27 @@ export function readOds(bytes: Uint8Array): { book: Workbook; warnings: string[]
         });
         const h = styles.rowHeights.get(tAttr(row, 'style-name') ?? '');
         const hidden = tAttr(row, 'visibility') === 'collapse';
-        // every copy of the run gets its height and hiding (LibreOffice ends a sheet with a million
-        // plain rows, which have neither)
-        if (h !== undefined || hidden) {
-          for (let k = 0; k < rn; k++) {
-            if (h !== undefined) s.setRowHeight(r + k, h);
-            if (hidden) s.setRowHidden(r + k, true);
-          }
-        }
-        // values and formulas go in every copy; a look on cells that hold nothing in the first 1000
+        // values and formulas go in every copy, up to about 250,000 cells for the run (a row repeated
+        // to the foot of the sheet is cut there, and said); a look on cells that hold nothing in the first 1000
         const holds = read.some((x) => x.input !== undefined);
         const looks = read.some((x) => x.shown && x.input === undefined && x.cn <= 256);
-        const copies = holds ? rn : looks ? Math.min(rn, 1000) : 0;
+        const perRow = read.reduce((n, x) => n + (x.input !== undefined ? x.cn : 0), 0);
+        const most = Math.max(1000, Math.floor(250000 / Math.max(1, perRow)));
+        const copies = holds ? Math.min(rn, most) : looks ? Math.min(rn, 1000) : 0;
+        if (holds && rn > copies) cutRows += rn - copies;
+        // the run's height and hiding: for each copy of it, but for empty rows that run on to the
+        // foot of the sheet (LibreOffice ends a sheet with a million of them): hidden ones are held as
+        // the sheet's own setting, rows not listed being hidden (Excel's zeroHeight, ECMA-376 Part 1,
+        // 18.3.1.81), and a height goes on the first 1000 only
+        if (h !== undefined || hidden) {
+          const tail = !holds && rn > 1000 && (r + rn >= MAX_ROWS || row === rowEls[rowEls.length - 1]);
+          if (tail && hidden) s.fileRowHeight = { pt: 15, zero: true };
+          const n = holds ? copies : tail ? Math.min(rn, 1000) : rn;
+          for (let k = 0; k < n; k++) {
+            if (h !== undefined) s.setRowHeight(r + k, h);
+            if (hidden && !tail) s.setRowHidden(r + k, true);
+          }
+        }
         for (let k = 0; k < copies; k++) {
           for (const { input, shown, at, cn } of read) {
             if (input === undefined && (!shown || cn > 256 || k >= 1000)) continue;
@@ -321,6 +331,7 @@ export function readOds(bytes: Uint8Array): { book: Workbook; warnings: string[]
   });
   if (hiddenSheets) warnings.push(`${hiddenSheets} hidden sheet${hiddenSheets > 1 ? 's show' : ' shows'} here.`);
   if (pictures) warnings.push(`${pictures} picture${pictures > 1 ? 's' : ''}, chart${pictures > 1 ? 's' : ''} or shape${pictures > 1 ? 's were' : ' was'} left out.`);
+  if (cutRows) warnings.push(`${cutRows.toLocaleString('en-US')} repeated row${cutRows > 1 ? 's' : ''} at the foot of a sheet ${cutRows > 1 ? 'were' : 'was'} left out (a row with values is repeated down to about 250,000 cells).`);
   warnings.push('.ods files open here but save as .xlsx.');
   return { book, warnings };
 }

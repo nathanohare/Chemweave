@@ -116,11 +116,12 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
   // compatExt names, found once for all the objects (the VML drawing is not always well-formed XML, so read as text)
   const vmlShapes = new Map<string, string>(), vmlTypes = new Map<string, string>();
   if (vmlText) {
-    for (const m of vmlText.matchAll(/<v:shape\b[^>]*>[\s\S]*?<\/v:shape>/g)) {
+    // (a self-closing shape is one on its own, not the start of the next shape's text)
+    for (const m of vmlText.matchAll(/<v:shape\b[^>]*?\/>|<v:shape\b[^>]*>[\s\S]*?<\/v:shape>/g)) {
       const open = m[0].slice(0, m[0].indexOf('>'));
       for (const a of open.matchAll(/(?:o:spid|\bid)="([^"]*)"/g)) if (!vmlShapes.has(a[1])) vmlShapes.set(a[1], m[0]);
     }
-    for (const m of vmlText.matchAll(/<v:shapetype\b[^>]*(?:\/>|>[\s\S]*?<\/v:shapetype>)/g)) {
+    for (const m of vmlText.matchAll(/<v:shapetype\b[^>]*?\/>|<v:shapetype\b[^>]*>[\s\S]*?<\/v:shapetype>/g)) {
       const id = /\bid="([^"]*)"/.exec(m[0].slice(0, m[0].indexOf('>')))?.[1];
       if (id && !vmlTypes.has(id)) vmlTypes.set(id, m[0]);
     }
