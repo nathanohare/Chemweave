@@ -203,6 +203,17 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     press('shown', any && shown);
     buttons.get('shown')!.disabled = !any;
     buttons.get('clear')!.disabled = !any;
+    // at the most guides a drawing keeps, adding is off, and the tip says why
+    const full = (g?.list.length ?? 0) >= MAX_GUIDES;
+    for (const a of ADD) {
+      if (a.kind === 'grid') continue;
+      const b = buttons.get(a.kind);
+      if (!b) continue;
+      b.disabled = full;
+      const tip = full ? `${a.title} (a drawing keeps up to ${MAX_GUIDES.toLocaleString('en-US')} guides: remove one first)` : a.title;
+      b.title = tip;
+      b.setAttribute('aria-label', tip);
+    }
     const u = h.units();
     const at = g ?? DEFAULT_GUIDES;
     if (d.activeElement !== major) major.value = showGuideLength(at.major, u);

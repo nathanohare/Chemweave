@@ -772,7 +772,11 @@ export class Editor {
         if (!panned) this.onContextMenu(e);
       }
     });
-    window.addEventListener('keydown', (e) => { if (!this.freeAngleKey(e)) this.onKey(e); });
+    window.addEventListener('keydown', (e) => {
+      // (a menu asked for from the keyboard, Shift+F10 or the Menu key, opens whatever pan came before)
+      this.rightDragged = false;
+      if (!this.freeAngleKey(e)) this.onKey(e);
+    });
     window.addEventListener('keyup', (e) => this.freeAngleKey(e));
     window.addEventListener('blur', () => { this.spaceHeld = false; });
     // holding Ctrl over the selection shows that a drag will copy it
@@ -1881,8 +1885,9 @@ export class Editor {
       return;
     }
     if (d.button === 2) {
-      this.rightDragged = d.moved;
       const ctx = this.pendingContext;
+      // a pan whose menu event came while the button was down (macOS) has had it: nothing left to hold back
+      this.rightDragged = d.moved && !ctx;
       this.pendingContext = null;
       if (ctx && !d.moved) this.onContextMenu(ctx);
     }
@@ -5852,7 +5857,7 @@ export class Editor {
     const none = !this.hasSelection();
     // (nothing picked: everything that can be picked, so hidden and locked things stay where they are)
     const sel = none
-      ? { atoms: new Set(doc.atoms.keys()), bonds: new Set(doc.bonds.keys()), captions: new Set(visibleCaptions(doc)), arrows: new Set(doc.arrows.keys()), shapes: new Set(pickableShapes(doc)) }
+      ? { atoms: new Set(this.structuresLocked ? [] : doc.atoms.keys()), bonds: new Set(this.structuresLocked ? [] : doc.bonds.keys()), captions: new Set(visibleCaptions(doc)), arrows: new Set(doc.arrows.keys()), shapes: new Set(pickableShapes(doc)) }
       : this.sel;
     const chosen = joinGroups(doc, units(doc, sel, m));
     // numbers under the chosen structures come along, picked or not
@@ -7200,7 +7205,14 @@ export class Editor {
     if (chord === 'Escape') {
       this.keyHot = null;
       // in the middle of a drag: it is called off, and what it moved goes back (as in Office and ChemDraw)
-      if (this.drag?.moved) { this.abandonPress(); this.showPointer(e.ctrlKey || e.metaKey); this.requestOverlay(); return; }
+      if (this.drag?.moved) {
+        // (a right-button pan called off: the menu event its release brings still doesn't open the menu)
+        if (this.drag.button === 2) { this.rightDragged = true; this.pendingContext = null; }
+        this.abandonPress();
+        this.showPointer(e.ctrlKey || e.metaKey);
+        this.requestOverlay();
+        return;
+      }
       if (this.cropping !== null) { this.cropping = null; this.requestOverlay(); this.onChange(); return; }
       this.clearSelection();
       return;
@@ -8105,7 +8117,7 @@ export class Editor {
     if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure(), this.schemeItems()));
     const h = this.helperHover;
     const hr = h ? this.doc.arrows.get(h.id) : undefined;
-    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure()));
+    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure(), this.schemeItems()));
     if (!boxes.length) return;
     ctx.save();
     ctx.strokeStyle = colour;

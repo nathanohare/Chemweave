@@ -14210,8 +14210,8 @@ function revealStylePanel(focus = false): void {
 // Unsaved work: ask before the window closes.
 if (isTauri()) {
   getCurrentWindow().onCloseRequested(async (e) => {
-    // closing for an update: every tab was kept, and comes back at the next start
-    if (closingForUpdate) return;
+    // closing for an update: every tab was kept, and comes back at the next start (and settings changed just now are written)
+    if (closingForUpdate) { await flushSettings().catch(() => {}); return; }
     // (a slide show running, as on a Mac's ⌘Q: it ends first, so the question about unsaved work can be seen)
     if (shows) await Promise.all([shows.presenter.finish(), shows.presenterView.finish()]);
     finishTab();

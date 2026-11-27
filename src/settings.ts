@@ -642,7 +642,7 @@ export async function loadSettings(notice: (msg: string) => void = () => {}, sto
   if (!where) keepOff = true;
   let backup: string | null = null;
   try { backup = await store.readBackup(); } catch { /* none */ }
-  const kept = where ? ` The damaged file was kept as ${where}.` : ' The damaged file couldn\u2019t be moved aside, so settings changes won\u2019t be saved until you restart, to protect it.';
+  const kept = where ? ` The damaged file was kept as ${where}.` : ' The damaged file couldn\u2019t be moved aside, so settings changes won\u2019t be saved, to protect it. To save them again, move or delete the damaged settings file (or make its folder one that can be written to), then restart.';
   if (backup && settingsReadable(backup)) {
     notice(`Your settings file was damaged, so the last good copy was restored.${kept}`);
     return parseSettings(backup);

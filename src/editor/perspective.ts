@@ -297,31 +297,37 @@ export async function prepareTurn(doc: Doc, structures: number[][], real: boolea
   const notes: string[] = [];
   const pieces: Piece[] = [];
   const jobs = structures.map((ids) => (real && host ? poseFor(doc, ids, host) : null));
+  // each structure as it was when its shape was asked for (before any wait), to tell whether it changed meanwhile
+  const version = doc.version;
+  const keys = structures.map((ids) => structureKey(doc, ids));
+  /** Atoms already in a piece (two structures joined meanwhile are turned as one). */
+  const taken = new Set<number>();
+  /** The structure as it is now: it may have gained or lost atoms, or joined another, during the waits. */
+  const now = (k: number) => structuresOf(doc, structures[k].filter((id) => doc.atoms.has(id) && !taken.has(id))).flat().filter((id) => !taken.has(id));
+  const add = (piece: Piece) => { pieces.push(piece); for (const id of piece.ids) taken.add(id); };
   for (let k = 0; k < structures.length; k++) {
     let job = jobs[k];
     if (!job) {
-      const ids = structures[k].filter((id) => doc.atoms.has(id));
-      if (ids.length) pieces.push(flatPiece(doc, ids));
+      const ids = now(k);
+      if (ids.length) add(flatPiece(doc, ids));
       continue;
     }
-    const key = structureKey(doc, structures[k]), version = doc.version;
     let r = await job.result;
-    // the structure as it is now (it may have gained or lost atoms while the shape was building)
-    let ids = structuresOf(doc, structures[k].filter((id) => doc.atoms.has(id))).flat();
+    let ids = now(k);
     if (!ids.length) continue;
-    if (doc.version !== version && (ids.length !== structures[k].length || structureKey(doc, ids) !== key)) {
+    if (doc.version !== version && (ids.length !== structures[k].length || structureKey(doc, ids) !== keys[k])) {
       // its shape no longer matches: built again for the structure as it is
       job = poseFor(doc, ids, host!);
       r = await job.result;
-      ids = ids.filter((id) => doc.atoms.has(id));
+      ids = ids.filter((id) => doc.atoms.has(id) && !taken.has(id));
       if (!ids.length) continue;
     }
     // (the shape's atoms are those of the molfile it was built from)
     const piece = 'pose' in r ? solidPiece(doc, ids, r.pose, job.ex) : null;
-    if (piece) pieces.push(piece);
+    if (piece) add(piece);
     else {
       notes.push('problem' in r ? r.message : 'No 3-D shape could be placed over this drawing.');
-      pieces.push(flatPiece(doc, ids));
+      add(flatPiece(doc, ids));
     }
   }
   const turn = new PerspectiveTurn(pieces);

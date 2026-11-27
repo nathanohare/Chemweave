@@ -12,6 +12,8 @@ import { describe, it, expect, afterEach } from 'vitest';
 import { Doc, PARTIAL, type Arrow } from '../src/model';
 import { Renderer } from '../src/render/renderer';
 import { Editor } from '../src/editor/editor';
+import { makeSmart, smartFrameOf } from '../src/chem/smart-scheme';
+import { plainMeasure } from '../src/chem/reaction';
 
 window.requestAnimationFrame = () => 0;
 // (a canvas that measures text: 5 px a character)
@@ -294,5 +296,115 @@ describe('F368: Align Center with a label and a caption picked', () => {
     expect(doc.undo()).toBe(true);
     expect(doc.captions.get(cap)!.justify).toBe(before.cap);
     expect(JSON.stringify(doc.atoms.get(o))).toBe(before.atom);
+  });
+});
+
+describe('F038: Arrange in a Row with nothing picked, structures locked', () => {
+  it('leaves the locked structures where they are', () => {
+    const { doc, ed } = setup();
+    chain(doc, 3, 100, 100);
+    chain(doc, 3, 300, 160);
+    doc.edit('more', () => { doc.addCaption({ x: 50, y: 250, runs: [{ text: 'one' }], justify: 'left' }); doc.addCaption({ x: 250, y: 300, runs: [{ text: 'two' }], justify: 'left' }); });
+    ed.structuresLocked = true;
+    ed.clearSelection();
+    // only the two text boxes: the structures can't be picked or moved
+    expect(ed.gridCount()).toBe(2);
+  });
+});
+
+describe('F366 and F353: the right-click menu and a right-button pan', () => {
+  const pan = (ev: ReturnType<typeof setup>['ev'], escape: boolean) => {
+    ev('pointerdown', { x: 100, y: 100 }, { button: 2, buttons: 2 });
+    for (let i = 1; i <= 5; i++) ev('pointermove', { x: 100 + 10 * i, y: 100 }, { buttons: 2 });
+    if (escape) window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape', code: 'Escape', bubbles: true }));
+    ev('pointerup', { x: 150, y: 100 }, { button: 2 });
+  };
+
+  it('Esc during the pan: the menu event its release brings (Windows) opens no menu', () => {
+    const { ed, overlay, ev } = setup();
+    let menus = 0;
+    ed.onContextMenu = () => { menus++; };
+    pan(ev, true);
+    overlay.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    expect(menus).toBe(0);
+  });
+
+  it('the menu event while the button is down (macOS): Shift+F10 afterwards opens the menu', () => {
+    const { ed, overlay, ev } = setup();
+    let menus = 0;
+    ed.onContextMenu = () => { menus++; };
+    ev('pointerdown', { x: 100, y: 100 }, { button: 2, buttons: 2 });
+    overlay.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, button: 2 }));
+    for (let i = 1; i <= 5; i++) ev('pointermove', { x: 100 + 10 * i, y: 100 }, { buttons: 2 });
+    ev('pointerup', { x: 150, y: 100 }, { button: 2 });
+    // the pan's own menu event doesn't open the menu
+    expect(menus).toBe(0);
+    window.dispatchEvent(new KeyboardEvent('keydown', { key: 'F10', code: 'F10', shiftKey: true, bubbles: true }));
+    overlay.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true }));
+    expect(menus).toBe(1);
+  });
+});
+
+/** A → B → C with structures for species, as a Smart Scheme. */
+function smartLine(doc: Doc) {
+  const species: number[][] = [];
+  const sel = { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set<number>() };
+  doc.edit('draw', () => {
+    for (let k = 0; k < 3; k++) {
+      const ids: number[] = [];
+      for (let i = 0; i < 5; i++) ids.push(doc.addAtom(k * 150 + i * L * 0.87, 100 + (i % 2 ? L / 2 : 0)).id);
+      for (let i = 1; i < 5; i++) doc.addBond(ids[i - 1], ids[i]);
+      species.push(ids);
+      ids.forEach((id) => sel.atoms.add(id));
+    }
+    for (let k = 0; k < 2; k++) {
+      const r = doc.addArrow({ tail: { x: k * 150 + 75, y: 100 }, head: { x: k * 150 + 140, y: 100 }, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: 4, headWidth: 1.5,
+        step: { reactants: ['a' + species[k][0]], products: ['a' + species[k + 1][0]], above: [], below: [], manual: true } } as Omit<Arrow, 'id'>);
+      sel.arrows.add(r.id);
+    }
+  });
+  let frame = 0;
+  doc.edit('smart', () => { frame = makeSmart(doc, plainMeasure(doc), sel)!; });
+  return { species, frame };
+}
+
+describe('F358: the branch marks of a Smart Scheme', () => {
+  it('follow every atom picked, past the fourth', () => {
+    const doc = new Doc();
+    const { species, frame } = smartLine(doc);
+    const { ed } = setup(doc);
+    const spots = (ed as unknown as { smartSpots(id: number): unknown; smartSpotsCache: { slot: number } });
+    ed.sel = { atoms: new Set(species[2].slice(0, 4)), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() };
+    spots.smartSpots(frame);
+    expect(spots.smartSpotsCache.slot).toBe(2);
+    // a fifth atom, of the first species: that species is the one picked now
+    ed.sel.atoms.add(species[0][0]);
+    spots.smartSpots(frame);
+    expect(spots.smartSpotsCache.slot).toBe(0);
+  });
+});
+
+describe('F357: the Smart Scheme a picked thing is in', () => {
+  it('is the one each thing belongs to, as looking through every scheme finds', () => {
+    const doc = new Doc();
+    const { frame } = smartLine(doc);
+    doc.edit('more', () => { doc.addAtom(900, 900); doc.addCaption({ x: 900, y: 0, runs: [{ text: 'loose' }], justify: 'left' }); });
+    const { ed } = setup(doc);
+    const one = (kind: 'atoms' | 'captions' | 'arrows' | 'shapes', id: number) => {
+      ed.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() };
+      ed.sel[kind].add(id);
+    };
+    const kinds = { atoms: 'atom', captions: 'caption', arrows: 'arrow', shapes: 'shape' } as const;
+    let checked = 0;
+    for (const [k, map] of [['atoms', doc.atoms], ['captions', doc.captions], ['arrows', doc.arrows], ['shapes', doc.shapes]] as const) {
+      for (const id of map.keys()) {
+        one(k, id);
+        expect(ed.selectedSmart()).toBe(smartFrameOf(doc, kinds[k], id));
+        checked++;
+      }
+    }
+    expect(checked).toBeGreaterThan(15);
+    one('atoms', [...doc.atoms.keys()][0]);
+    expect(ed.selectedSmart()).toBe(frame);
   });
 });

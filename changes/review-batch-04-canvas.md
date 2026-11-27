@@ -19,14 +19,14 @@ Fixed: Canvas: Delete after Select All deletes everything selected, even when a 
 Fixed: Canvas: the rotate handle and Flip use the box of the objects selected now, not that of an earlier selection.
 Fixed: Canvas: Align Left, Center or Right with atom labels and text selected is undone in one step.
 Fixed: Canvas: a frame read from a file keeps following its structure after an atom of it is deleted.
-Fixed: Canvas: up to 1,000 guides are kept when a file is opened again (none past the 200th were before); the Guides toolbox adds no more than that.
+Fixed: Canvas: up to 1,000 guides are kept when a file is opened again (none past the 200th were before); at that number the Guides toolbox's add buttons are turned off, with the reason in their tips.
 Fixed: Canvas: pinch-zoom goes on after a third finger touches and lifts.
 Fixed: Canvas: Redo no longer brings back an undone change after a paste or other change made since.
 Fixed: Canvas: the far side of an arc arrow bent far round is repainted when it moves.
 Fixed: Canvas: a long bond can be picked again after an Undo makes it long.
 Fixed: Design and Slides: connectors glued to a shape with a shadow or frame end on the shape's sides.
 Fixed: Canvas: a half-headed (fishhook) arrow bent through straight to the other side keeps its barb on the outside of the curve.
-Fixed: Settings: a damaged settings file that couldn't be moved aside is never written over; changes wait until the next start.
+Fixed: Settings: a damaged settings file that couldn't be moved aside is never written over; the message says how to get settings saved again.
 Fixed: Settings: a setting changed just before the window closes or the page is left (such as the file just saved on File ▸ Recent) is saved.
 Fixed: Files: opening a file no longer closes an untouched new tab that has another window open, an SI project, or a file opened with a name like a new one's (such as Document 1.docx in a browser).
 Fixed: Canvas: saving a drawing on a fixed page that is moved back onto the page leaves the tab saved, and recovery copies no longer move the drawing.

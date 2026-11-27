@@ -2,7 +2,8 @@
 //
 // Fixes from the code review of 2026-11-26 (batch 04): a damaged settings file that couldn't be
 // moved aside is never written over, a setting changed just before the window goes is still
-// written, and a pinch goes on after a third finger touches and lifts.
+// written, a pinch goes on after a third finger touches and lifts, and the Guides toolbox says
+// when a drawing has as many guides as it keeps.
 
 import { describe, it, expect, vi } from 'vitest';
 
@@ -10,6 +11,8 @@ vi.mock('@tauri-apps/api/core', () => ({ isTauri: () => false, invoke: async () 
 
 import { loadSettings, saveSettings, flushSettings, parseSettings, settingsText, type SettingsStore } from '../src/settings';
 import { installPenAndTouch } from '../src/editor/touch';
+import { buildGuidesToolbox } from '../src/ui/guides-toolbox';
+import { DEFAULT_GUIDES, MAX_GUIDES, type CanvasGuides } from '../src/editor/guides';
 
 describe('F525: a setting changed just before the page goes', () => {
   it('is written at once when asked', async () => {
@@ -59,5 +62,22 @@ describe('F377: a third finger touching and lifting during a pinch', () => {
     ev('pointermove', 1, 50); ev('pointermove', 2, 250);
     expect(view.scale).toBeGreaterThan(s0 * 1.5);
     el.remove();
+  });
+});
+
+describe('F373: the Guides toolbox at the most guides a drawing keeps', () => {
+  it('turns its add buttons off, saying why', () => {
+    const body = document.createElement('div');
+    document.body.append(body);
+    let g: CanvasGuides = { ...DEFAULT_GUIDES, list: [] };
+    const tb = buildGuidesToolbox(body, false, { get: () => g, set: (n) => { g = n ?? { ...DEFAULT_GUIDES, list: [] }; }, centre: () => ({ x: 0, y: 0 }), units: () => 'in' });
+    const add = () => [...body.querySelectorAll('button')].find((b) => (b.getAttribute('aria-label') ?? '').startsWith('Add Horizontal Guide'))!;
+    tb.refresh();
+    expect(add().disabled).toBe(false);
+    g = { ...g, list: Array.from({ length: MAX_GUIDES }, (_, i) => ({ kind: 'h' as const, x: 0, y: i })) };
+    tb.refresh();
+    expect(add().disabled).toBe(true);
+    expect(add().title).toMatch(/keeps up to 1,000 guides/);
+    body.remove();
   });
 });

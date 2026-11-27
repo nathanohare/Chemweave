@@ -10,10 +10,11 @@ import { describe, it, expect } from 'vitest';
 import { Doc, type Arrow, type Shape } from '../src/model';
 import { arrowEllipseFrame, ellipseArrow, arrowPoints, gluePoint, dragArrowHandle, shapePorts } from '../src/objects';
 import { freeSpace } from '../src/editor/free-space';
-import { distributeOffsets, POINTS, type Unit } from '../src/editor/arrange';
+import { distributeOffsets, units, POINTS, type Unit } from '../src/editor/arrange';
+import { withLabels } from '../src/editor/grid-arrange';
 import { fillFrameMembers, frameMembers } from '../src/editor/frames';
 import { parseGuides } from '../src/editor/guides';
-import { structureKey } from '../src/editor/perspective';
+import { structureKey, prepareTurn, type PerspectiveHost } from '../src/editor/perspective';
 import { DEG } from '../src/geom';
 
 const arrow = (extra: Partial<Arrow> = {}): Omit<Arrow, 'id'> => ({
@@ -213,5 +214,145 @@ describe('F042: the 3-D shape kept for a structure', () => {
     // a plain move of the whole structure keeps it
     doc.edit('Move', () => doc.moveAtoms(ids, 30, 10));
     expect(structureKey(doc, ids)).toBe(cis);
+  });
+});
+
+describe('F376: a structure changed while its 3-D shape is being built', () => {
+  // a 3-D builder that answers only when told to, with a zigzag of the molfile's atom count
+  function slowBuilder() {
+    const waits: (() => void)[] = [];
+    let calls = 0;
+    const host: PerspectiveHost = {
+      pose: (mol: string) => {
+        calls++;
+        const n = Number(mol.split('\n')[3].slice(0, 3));
+        return new Promise((res) => waits.push(() => res({ pose: {
+          pts: Array.from({ length: n }, (_, k) => [1.3 * k, k % 2 ? 0.7 : 0, 0] as [number, number, number]),
+          z: Array(n).fill(6), bonds: Array.from({ length: n - 1 }, (_, k) => [k, k + 1] as [number, number]), mirror: false,
+        } })));
+      },
+      smiles: async () => null,
+    };
+    const answerAll = async () => { for (let i = 0; i < 20; i++) { await new Promise((r) => setTimeout(r, 2)); while (waits.length) waits.shift()!(); } };
+    return { host, answerAll, calls: () => calls };
+  }
+  function twoChains() {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const mk = (y: number, n: number) => {
+      const ids: number[] = [];
+      doc.edit('c', () => { let prev = -1; for (let k = 0; k < n; k++) { const a = doc.addAtom(L * k, y + (k % 2 ? 7 : 0)).id; if (prev >= 0) doc.addBond(prev, a, 1); prev = a; ids.push(a); } });
+      return ids;
+    };
+    return { doc, A: mk(0, 3), B: mk(100, 4) };
+  }
+  const piecesOf = (prep: Awaited<ReturnType<typeof prepareTurn>>) => (prep.turn as unknown as { pieces: { ids: number[] }[] }).pieces;
+
+  it('builds the shape again with the atom added to it', async () => {
+    const { doc, B } = twoChains();
+    const { host, answerAll, calls } = slowBuilder();
+    const p = prepareTurn(doc, [B], true, host);
+    let added = 0;
+    doc.edit('Bond', () => { const n = doc.addAtom(200, 130); doc.addBond(B[3], n.id); added = n.id; });
+    await answerAll();
+    const pieces = piecesOf(await p);
+    expect(pieces.some((x) => x.ids.includes(added))).toBe(true);
+    expect(calls()).toBe(2);
+  });
+
+  it('does so for the second of two structures too', async () => {
+    const { doc, A, B } = twoChains();
+    const { host, answerAll } = slowBuilder();
+    const p = prepareTurn(doc, [A, B], true, host);
+    let added = 0;
+    doc.edit('Bond', () => { const n = doc.addAtom(200, 130); doc.addBond(B[3], n.id); added = n.id; });
+    await answerAll();
+    const pieces = piecesOf(await p);
+    expect(pieces.some((x) => x.ids.includes(added))).toBe(true);
+  });
+
+  it('turns two structures joined meanwhile as one, each atom once', async () => {
+    const { doc, A, B } = twoChains();
+    const { host, answerAll } = slowBuilder();
+    const p = prepareTurn(doc, [A, B], true, host);
+    doc.edit('Bond', () => doc.addBond(A[2], B[0]));
+    await answerAll();
+    const ids = piecesOf(await p).flatMap((x) => x.ids);
+    expect(new Set(ids).size).toBe(ids.length);
+    expect(ids.length).toBe(A.length + B.length);
+  });
+});
+
+describe('F042: the 3-D shape kept for a wedged stereocenter', () => {
+  it('is built again after the drawing is flipped (the other hand), and kept otherwise', async () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const ids: number[] = [];
+    doc.edit('draw', () => {
+      const c = doc.addAtom(0, 0);
+      ids.push(c.id);
+      for (const [x, y] of [[0, -L], [-0.87 * L, 0.5 * L], [0.87 * L, 0.5 * L]]) { const n = doc.addAtom(x, y); ids.push(n.id); doc.addBond(c.id, n.id); }
+      const w = doc.addAtom(0.5 * L, -0.87 * L);
+      ids.push(w.id);
+      doc.addBond(c.id, w.id, 1, 'wedge');
+    });
+    // a builder whose shape is the drawing with the wedged atom raised toward the reader (the hand drawn)
+    let calls = 0;
+    const host: PerspectiveHost = {
+      pose: async (_mol, cues, len) => {
+        calls++;
+        const lift = new Map(cues.wedges.map((w) => [w.b, (w.toward ? 1 : -1) * len * 0.5]));
+        const pts = cues.xy.map((p, i) => [p![0], -p![1], lift.get(i) ?? 0] as [number, number, number]);
+        const bonds = cues.xy.slice(1).map((_, k) => [0, k + 1] as [number, number]);
+        return { pose: { pts, z: pts.map(() => 6), bonds, mirror: false } };
+      },
+      smiles: async () => null,
+    };
+    await prepareTurn(doc, [ids], true, host);
+    expect(calls).toBe(1);
+    await prepareTurn(doc, [ids], true, host);
+    expect(calls).toBe(1);
+    // Flip Horizontal without keeping the configuration: the wedge now shows the other hand
+    doc.edit('Flip', () => { for (const id of ids) { const a = doc.atoms.get(id)!; doc.updateAtom(id, { x: -a.x }); } });
+    await prepareTurn(doc, [ids], true, host);
+    expect(calls).toBe(2);
+  });
+});
+
+describe('F352: Distribute with one object round the rest', () => {
+  it('leaves that object where it is', () => {
+    const unit = (x1: number, x2: number): Unit => ({ atoms: [], captions: [], arrows: [], shapes: [], box: { x1, y1: 0, x2, y2: 10 } });
+    // A 0–100 holds both outermost edges; B 40–45 and C 50–55 sit inside it
+    const off = distributeOffsets([unit(0, 100), unit(40, 45), unit(50, 55)], 'h');
+    expect(off[0].x).toBe(0);
+  });
+});
+
+describe('F372: compound numbers go with their structures', () => {
+  it('each number with the structure it is under, a caption away from any left alone', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const sel = { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set<number>() };
+    const nums: number[] = [], firsts: number[] = [];
+    let loose = 0;
+    doc.edit('draw', () => {
+      for (let k = 0; k < 4; k++) {
+        const a = doc.addAtom(k * 100, 0), b = doc.addAtom(k * 100 + L, L / 2);
+        doc.addBond(a.id, b.id);
+        firsts.push(a.id);
+        sel.atoms.add(a.id); sel.atoms.add(b.id);
+        const c = doc.addCaption({ x: k * 100 + L / 2 - 2, y: L / 2 + 14, runs: [{ text: String(k + 1) }], justify: 'left' });
+        nums.push(c.id); sel.captions.add(c.id);
+      }
+      loose = doc.addCaption({ x: 1000, y: 500, runs: [{ text: 'far away' }], justify: 'left' }).id;
+      sel.captions.add(loose);
+    });
+    const us = withLabels(doc, units(doc, sel, POINTS), L);
+    expect(us.length).toBe(5);
+    for (let k = 0; k < 4; k++) {
+      const u = us.find((x) => x.atoms.includes(firsts[k]))!;
+      expect(u.captions).toEqual([nums[k]]);
+    }
+    expect(us.some((u) => !u.atoms.length && u.captions.length === 1 && u.captions[0] === loose)).toBe(true);
   });
 });
