@@ -368,7 +368,9 @@ export function fromAtoms(a: string, b: string, electrons?: number, mixing?: boo
       // named plainly σ, σ, π, σ* with no numbers, as Miessler, Fischer and Tarr, 5th ed., label
       // HF's orbitals (Example 5.3 and its figure, section 5.3)
       const bond = nb(withS ? sg(0) : 'σ', r(Math.min(one.e, partner.e) - d), 1, pair, side), anti = nb(withS ? sg(0, true) : 'σ^{*}', r(Math.max(one.e, partner.e) + 1.6 * d), 1, pair, side);
-      delete bond.fromSide; delete anti.fromSide;
+      // (each name from its own side, the left one first: the atom's other orbital of the single
+      // orbital's name, such as Li's empty 2p beside a 2p orbital, isn't joined to them; review F435)
+      bond.fromSide = 'each'; anti.fromSide = 'each';
       if (withS) mid.push(bond, anti, nb(op.label, op.e, 3, op.label, side));
       else mid.push(nb('σ', os.e, 1, os.label, side), bond, nb('π', op.e, 2, op.label, side), anti);
     }

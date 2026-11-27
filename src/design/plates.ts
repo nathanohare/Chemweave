@@ -15,7 +15,7 @@ import { drawMo, fromAtoms, type MoSpec } from './mo';
 import { newDSplit } from './dsplit';
 import { crystalSvg, type CrystalSpec } from './xray';
 import { dataUrl } from '../render/images';
-import { isInkId } from './geo';
+import { isInkId, ORBITAL_LOBE } from './geo';
 import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
 
@@ -115,8 +115,8 @@ const COLOURS: Record<string, string> = {
 /** The spot colors offered in the TLC Plate window (words parseMarks reads). */
 export const SPOT_COLORS = ['red', 'pink', 'orange', 'yellow', 'green', 'blue', 'purple', 'brown', 'black'] as const;
 
-/** A spot color word's color ('blue' → '#2b5bb5'). */
-export const spotColorHex = (name: string): string | undefined => COLOURS[name];
+/** A spot color word's color ('blue' → '#2b5bb5'); only its own words, not 'constructor' and the like (review F438). */
+export const spotColorHex = (name: string): string | undefined => (Object.prototype.hasOwnProperty.call(COLOURS, name) ? COLOURS[name] : undefined);
 
 /** One spot as the TLC Plate window shows it: its Rf as typed, and how it looks. */
 export interface SpotRow {
@@ -142,7 +142,7 @@ export function spotRows(text: string): SpotRow[] {
       else if (/^(big|large|wide)$/.test(w)) r.size = 'large';
       else if (/^(small|tiny)$/.test(w)) r.size = 'small';
       else if (/^(streak|streaky|tail|tailing)$/.test(w)) r.streak = true;
-      else if (COLOURS[w]) r.color = w === 'grey' ? 'gray' : w;
+      else if (spotColorHex(w)) r.color = w === 'grey' ? 'gray' : w;
       else if (/^#[0-9a-f]{6}$/.test(w)) r.color = w;
     }
     out.push(r);
@@ -178,7 +178,7 @@ export function parseMarks(text: string): PlateMark[] {
       else if (/^(big|large|wide)$/.test(w)) m.size = 1.4;
       else if (/^(small|tiny)$/.test(w)) m.size = 0.65;
       else if (/^(streak|streaky|tail|tailing)$/.test(w)) m.tail = 0.12;
-      else if (COLOURS[w]) m.color = COLOURS[w];
+      else if (spotColorHex(w)) m.color = spotColorHex(w);
       else if (/^#[0-9a-f]{6}$/.test(w)) m.color = w;
     }
     out.push(m);
@@ -400,6 +400,15 @@ export function plateFromBox(b: Rect, d: PlateData, L: number): { at: Vec; w: nu
 }
 
 /**
+ * Whether a shape in a plate's frame is one the plate drew (drawn again with it) rather than one
+ * put on it: its lines, boxes and ovals, and an MO diagram's p-orbital and hybrid lobes (review F064).
+ */
+function drewIt(sh: Shape, frame: Shape): boolean {
+  if (sh.kind === 'line' || sh.kind === 'rect' || sh.kind === 'oval') return true;
+  return sh.kind === 'geo' && (isInkId(sh.geo) || (sh.geo === ORBITAL_LOBE && frame.plate?.kind === 'mo'));
+}
+
+/**
  * Draw a plate in a frame of its own with its top left at `at`, or draw the one in frame `id`
  * again (what it drew before goes; structures and pictures put on it stay). Returns the frame's
  * id. Call inside an edit.
@@ -417,7 +426,7 @@ export function putPlate(doc: Doc, m: Measure, d: PlateData, at: Vec, id?: numbe
     for (const r of f.arrows) doc.removeArrow(r);
     for (const s of f.shapes) {
       const sh = doc.shapes.get(s);
-      if (sh && (sh.kind === 'line' || sh.kind === 'rect' || sh.kind === 'oval' || (sh.kind === 'geo' && isInkId(sh.geo)))) doc.removeShape(s); else if (sh) kept.shapes.push(s);
+      if (sh && drewIt(sh, old)) doc.removeShape(s); else if (sh) kept.shapes.push(s);
     }
     kept.atoms = f.atoms.filter((a) => doc.atoms.has(a));
   }
@@ -455,7 +464,7 @@ function putCrystal(doc: Doc, d: PlateData, at: Vec, old: Shape | undefined): nu
     for (const r of f.arrows) doc.removeArrow(r);
     for (const s of f.shapes) {
       const sh = doc.shapes.get(s);
-      if (sh && (sh.kind === 'line' || sh.kind === 'rect' || sh.kind === 'oval' || (sh.kind === 'geo' && isInkId(sh.geo)))) doc.removeShape(s);
+      if (sh && drewIt(sh, old)) doc.removeShape(s);
     }
     doc.removeShape(old.id);
   }

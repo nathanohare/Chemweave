@@ -49,21 +49,29 @@ export async function encodeMp4(n: number, canvas: HTMLCanvasElement | Offscreen
     },
     error: (e) => { failure = e instanceof Error ? e : new Error(String(e)); },
   });
-  enc.configure({ codec, width: w, height: h, bitrate: bitrate(w, h, fps), framerate: fps, avc: { format: 'avc' } });
-  const keyEvery = Math.max(1, Math.round(fps * 2));
-  for (let i = 0; i < n; i++) {
-    if (failure) break;
-    draw(i);
-    const f = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
-    enc.encode(f, { keyFrame: i % keyEvery === 0 });
-    f.close();
-    // let the encoder catch up, and the window repaint
-    if (enc.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 0));
-    progress?.(i + 1);
+  // the encoder's own error is the one reported (a closed encoder's flush would only say it is
+  // closed), and the encoder is closed however the encoding ends (review F649)
+  const failed = (): Error | null => failure;
+  try {
+    enc.configure({ codec, width: w, height: h, bitrate: bitrate(w, h, fps), framerate: fps, avc: { format: 'avc' } });
+    const keyEvery = Math.max(1, Math.round(fps * 2));
+    for (let i = 0; i < n; i++) {
+      if (failed()) break;
+      draw(i);
+      const f = new VideoFrame(canvas, { timestamp: Math.round((i * 1e6) / fps), duration: Math.round(1e6 / fps) });
+      try { enc.encode(f, { keyFrame: i % keyEvery === 0 }); } finally { f.close(); }
+      // let the encoder catch up, and the window repaint
+      if (enc.encodeQueueSize > 8) await new Promise((r) => setTimeout(r, 0));
+      progress?.(i + 1);
+    }
+    const before = failed();
+    if (before) throw before;
+    try { await enc.flush(); } catch (e) { throw failed() ?? e; }
+    const after = failed();
+    if (after) throw after;
+  } finally {
+    if (enc.state !== 'closed') try { enc.close(); } catch { /* already closing */ }
   }
-  await enc.flush();
-  enc.close();
-  if (failure) throw failure;
   if (!avcC) throw new Error('The video encoder gave no stream description.');
   return muxMp4(w, h, fps, avcC, samples);
 }

@@ -53,8 +53,9 @@ export function mapAtoms(doc: Doc, r: Renderer, opts: { arrow?: number; measure?
     let hint: NodeMap;
     try {
       // (the animation's own pairing only breaks ties, and takes seconds on a big step: there, only
-      // the pairs chosen by hand are used)
-      hint = A.nodes.size * B.nodes.size > HINT_LIMIT && !cfg.pairs?.length ? new Map() : resolve(cfg, A, B).nmap;
+      // the pairs chosen by hand are used, however many there are (review F645); with 'Use only
+      // my pairs' the pairing is just those pairs, checked as on a small step)
+      hint = A.nodes.size * B.nodes.size > HINT_LIMIT && !(cfg.exact && cfg.pairs) ? handPairs(A, B, cfg.pairs) : resolve(cfg, A, B).nmap;
     } catch (e) {
       // pairs saved in Animate Reaction that no longer fit: map without them
       out.errors.push((e as Error).message);
@@ -73,6 +74,18 @@ export function mapAtoms(doc: Doc, r: Renderer, opts: { arrow?: number; measure?
     const kept = new Set(bmap.values());
     for (const key of A.bonds.keys()) if (!bmap.has(key)) out.broken.push(Number(key));
     for (const key of B.bonds.keys()) if (!kept.has(key)) out.made.push(Number(key));
+  }
+  return out;
+}
+
+/** The pairs chosen by hand whose atoms are still there, each atom in one pair at most. */
+function handPairs(A: MScene, B: MScene, pairs: [string, string][] | undefined): NodeMap {
+  const out: NodeMap = new Map();
+  const taken = new Set<string>();
+  for (const [a, b] of pairs ?? []) {
+    if (!A.nodes.has(a) || !B.nodes.has(b) || out.has(a) || taken.has(b)) continue;
+    out.set(a, b);
+    taken.add(b);
   }
   return out;
 }

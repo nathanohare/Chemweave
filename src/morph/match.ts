@@ -44,6 +44,7 @@ export function matchNodes(A: MScene, B: MScene, forced: NodeMap = new Map(), ma
     let t = { x: bm.x - pm.x, y: bm.y - pm.y };
     let m: NodeMap = new Map();
     let bonus: number[][] | null = null;
+    let was: NodeMap | null = null;
     for (let it = 0; it < iters; it++) {
       const C = ka.map((_, i) => {
         const q = apply({ R, t }, P[i]);
@@ -63,6 +64,10 @@ export function matchNodes(A: MScene, B: MScene, forced: NodeMap = new Map(), ma
       const X = [...m.keys()].map((a) => P[ia.get(a)!]);
       const Y = [...m.values()].map((b) => PB[ib.get(b)!]);
       ({ R, t } = procrustes(X, Y));
+      // the same pairing as the round before gives the same fit and the same costs, so every
+      // further round would only repeat it: stop (each round is a full assignment; review F644)
+      if (was && sameMap(was, m)) break;
+      was = m;
       bonus = ka.map(() => kb.map(() => 0));
       for (const [a, b] of m) for (const x of na.get(a)!) for (const y of nb.get(b)!) bonus[ia.get(x)!][ib.get(y)!] += consistency;
     }
@@ -82,6 +87,9 @@ export function matchNodes(A: MScene, B: MScene, forced: NodeMap = new Map(), ma
   }
   return best![2];
 }
+
+/** Do two pairings pair the same atoms the same way? */
+const sameMap = (a: NodeMap, b: NodeMap): boolean => a.size === b.size && [...a].every(([k, v]) => b.get(k) === v);
 
 const mean = (P: Vec[]): Vec => {
   let x = 0, y = 0;
@@ -135,6 +143,9 @@ function growEmbedding(A: MScene, B: MScene, a0: string, b0: string, flip: boole
   return m;
 }
 
+/** Seed pairs matchConnectivity grows a pairing from, at most (each both ways round). */
+export const SEEDS = 1000;
+
 /**
  * Pair two drawings by their connectivity, not their positions: seeded at every compatible
  * pair of atoms and grown along the bonds both ways round; the pairing carrying the most bonds
@@ -148,10 +159,28 @@ export function matchConnectivity(A: MScene, B: MScene, forced: NodeMap = new Ma
     const same = lab(X) === lab(Y) || (!!ea && ea === eb);
     return same && Math.abs(nA.get(x)!.length - nB.get(y)!.length) <= 1;
   };
-  const cands: [string, string][] = [];
-  for (const a of A.nodes.keys()) for (const b of B.nodes.keys()) if (compat(a, b)) cands.push([a, b]);
+  const byA = new Map<string, string[]>();
+  let count = 0;
+  for (const a of A.nodes.keys()) {
+    const bs = [...B.nodes.keys()].filter((b) => compat(a, b));
+    if (bs.length) { byA.set(a, bs); count += bs.length; }
+  }
+  // every compatible pair seeds a pairing on a small step; on a big one (two 100-atom drawings
+  // have some 10⁴ such pairs) only the atoms of A with the fewest partners (its rarest labels,
+  // then its most bonded atoms), each with every partner it has, up to SEEDS pairs: a shared
+  // skeleton holding any of them is still found from it (review F141)
+  let seeds: [string, string][] = [];
+  if (count <= SEEDS) for (const [a, bs] of byA) for (const b of bs) seeds.push([a, b]);
+  else {
+    const order = [...byA.keys()].sort((x, y) => byA.get(x)!.length - byA.get(y)!.length || nA.get(y)!.length - nA.get(x)!.length);
+    for (const a of order) {
+      const bs = byA.get(a)!;
+      if (seeds.length && seeds.length + bs.length > SEEDS) break;
+      seeds = seeds.concat(bs.map((b): [string, string] => [a, b]));
+    }
+  }
   let best: NodeMap = new Map(), bestN = -1, bestMove = Infinity;
-  for (const [a0, b0] of [...forced, ...cands]) {
+  for (const [a0, b0] of [...forced, ...seeds]) {
     if (!compat(a0, b0)) continue;
     for (const flip of [false, true]) {
       let m = growEmbedding(A, B, a0, b0, flip, compat);
@@ -216,28 +245,56 @@ export function matchFragments(A: MScene, B: MScene, forced: NodeMap = new Map()
   return out;
 }
 
+/** Partial pairings matchEquivalent tries before it gives up (the caller then pairs by position). */
+export const EQUIV_BUDGET = 200_000;
+
 /**
  * Atoms of two drawings of the SAME molecule (an equivalency sign between them), paired by
  * connectivity: an isomorphism of the drawn bonds with labels and degrees as constraints. Where
- * the molecule has symmetry, the solution that moves the atoms least wins.
+ * the molecule has symmetry, the solution that moves the atoms least wins. `forced` pins pairs
+ * chosen by hand (the rest of a symmetric pairing then follows them). The atoms are tried along
+ * the bonds, so a wrong choice is found at once, and the search stops after `budget` partial
+ * pairings (review F142); an empty map means none was found.
  */
-export function matchEquivalent(A: MScene, B: MScene, limit = 400): NodeMap {
+export function matchEquivalent(A: MScene, B: MScene, limit = 400, forced: NodeMap = new Map(), budget = EQUIV_BUDGET): NodeMap {
   const nA = A.nbr, nB = B.nbr;
-  const ka = [...A.nodes.keys()].sort((x, y) => nA.get(y)!.length - nA.get(x)!.length);
+  const deg = (k: string) => nA.get(k)!.length;
+  // each part of the drawing from a pinned atom, else its most-bonded one, then outward along the bonds
+  const ka: string[] = [];
+  const placed = new Set<string>();
+  const starts = [...forced.keys()].filter((k) => A.nodes.has(k)).concat([...A.nodes.keys()].sort((x, y) => deg(y) - deg(x)));
+  for (const s0 of starts) {
+    if (placed.has(s0)) continue;
+    placed.add(s0);
+    const queue = [s0];
+    for (let qi = 0; qi < queue.length; qi++) {
+      ka.push(queue[qi]);
+      for (const w of [...nA.get(queue[qi])!].sort((x, y) => deg(y) - deg(x))) {
+        if (placed.has(w)) continue;
+        placed.add(w);
+        queue.push(w);
+      }
+    }
+  }
+  const pinned = new Set(forced.values());
   const compat = new Map<string, string[]>();
   for (const u of A.nodes.keys()) {
-    const c = [...B.nodes.keys()].filter((v) => nB.get(v)!.length === nA.get(u)!.length && lab(B.nodes.get(v)!) === lab(A.nodes.get(u)!));
+    let c = [...B.nodes.keys()].filter((v) => nB.get(v)!.length === nA.get(u)!.length && lab(B.nodes.get(v)!) === lab(A.nodes.get(u)!));
+    const want = forced.get(u);
+    c = want !== undefined ? c.filter((v) => v === want) : c.filter((v) => !pinned.has(v));
     if (!c.length) return new Map();
     compat.set(u, c);
   }
   const sols: NodeMap[] = [];
   const m: NodeMap = new Map(), inv = new Map<string, string>();
+  let tried = 0;
   const walk = (i: number) => {
-    if (sols.length >= limit) return;
+    if (sols.length >= limit || tried > budget) return;
     if (i === ka.length) { sols.push(new Map(m)); return; }
     const u = ka[i];
     for (const v of compat.get(u)!) {
       if (inv.has(v)) continue;
+      if (++tried > budget) return;
       if (nA.get(u)!.some((w) => m.has(w) && !nB.get(v)!.includes(m.get(w)!))) continue;
       if (nB.get(v)!.some((x) => inv.has(x) && !nA.get(u)!.includes(inv.get(x)!))) continue;
       m.set(u, v); inv.set(v, u);

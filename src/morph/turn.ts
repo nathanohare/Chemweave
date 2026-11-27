@@ -107,7 +107,6 @@ export function turnPlan(A: MScene, B: MScene, nmap: NodeMap, fixedTol = 0.5, al
   const { pa, pb, med, res, movers } = common(A, B, nmap, fixedTol);
   if (!movers.size || nmap.size - movers.size < 3) return null;
   const nb = A.nbr;
-  const all = A.nodes.size;
   let big = '';
   for (const k of movers) if (!big || res.get(k)! > res.get(big)!) big = k;
   let best: { rank: [number, number, number]; bid: string; grp: Set<string>; along: number; o: Vec; ax: Vec; nr: Vec; swing: number } | null = null;
@@ -127,7 +126,9 @@ export function turnPlan(A: MScene, B: MScene, nmap: NodeMap, fixedTol = 0.5, al
       }
       sides.push(seen);
     }
-    if (sides[0].size + sides[1].size !== all) continue; // a ring bond is not free to turn
+    // a ring bond is not free to turn: one end reaches the other the long way round (a test of
+    // its own molecule, not of every atom drawn, which may hold other molecules; review F143)
+    if (sides[0].has(v) || sides[1].has(u)) continue;
     const side = sides.find((s) => s.has(big));
     if (!side) continue;
     const grp = new Set([...side].filter((k) => k !== u && k !== v));

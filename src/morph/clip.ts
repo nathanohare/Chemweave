@@ -249,6 +249,13 @@ export function planOf(doc: Doc, opts: { arrow?: number; atoms?: Set<number>; me
       for (let k = 0; k < steps.length; k++) if (!seen.has(k) && steps[k].r.some((g) => shares(atomsOf(g), prod))) { nxt = k; break; }
       if (nxt === null || s.p.length > 1) s.p.forEach((g, i) => add(g, i ? 'turn' : 'morph', i ? null : s.arrow));
       else pending = s.arrow;
+      if (nxt === null) {
+        // a reaction of its own after the chain ends (sharing no structure with it): its chain
+        // follows, from its first step, rather than being left out (review F646)
+        const left = steps.map((_, k) => k).filter((k) => !seen.has(k));
+        const made = left.flatMap((k) => steps[k].p.flatMap(atomsOf));
+        nxt = left.find((k) => !steps[k].r.some((g) => shares(atomsOf(g), made))) ?? left[0] ?? null;
+      }
       cur = nxt;
     }
     // structures an equivalency sign joins to either end of the scheme

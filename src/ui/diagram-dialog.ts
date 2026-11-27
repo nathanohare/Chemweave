@@ -161,7 +161,7 @@ export function askDiagram(editing: DiagramData | null, o: DiagramDialogOptions)
     // (a layout's sample text is replaced by the next layout's sample until the text is changed)
 
     const data = (): DiagramData => ({
-      layout, ...fromRows(rows),
+      layout, ...fromRows(rows, layout),
       colours: coloursSel.value as DiagramColours, accent: accent.value,
       rounded: rounded.checked, shadow: shadow.checked,
       ...(Number(size.value) > 0 ? { size: Number(size.value) } : {}),

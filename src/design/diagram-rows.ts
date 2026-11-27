@@ -4,7 +4,7 @@
 
 import { chemRuns } from '../text/chemtext';
 import { labelFromParts, labelParts, type LabelPart } from './energy';
-import { lineParts, type DiagramData } from './diagrams';
+import { lineParts, readsIcons, type DiagramData } from './diagrams';
 
 /** One row of the window: how far down the outline it is, its words (an icon in [ ] in front kept as typed), and their pieces when they hold looks. */
 export interface DiagramRow { level: number; label: string; rich?: LabelPart[] }
@@ -24,16 +24,17 @@ export function sliceParts(parts: LabelPart[], a: number, b: number): LabelPart[
 }
 
 /** Where an item's words sit in its row's shown text (after an icon or bullet typed in front). */
-function wordsAt(rowLabel: string): { from: number; to: number } | null {
-  const words = lineParts(rowLabel).text;
+function wordsAt(rowLabel: string, icons: boolean): { from: number; to: number } | null {
+  const words = lineParts(rowLabel, icons).text;
   if (!words) return null;
   const shown = plain(chemRuns(rowLabel)), w = plain(chemRuns(words));
   const from = shown.lastIndexOf(w);
   return from < 0 ? null : { from, to: from + w.length };
 }
 
-/** The rows for a diagram's text and its items' looks. */
-export function rowsOf(d: Pick<DiagramData, 'text' | 'rich'>): DiagramRow[] {
+/** The rows for a diagram's text and its items' looks (the layout says whether "[name]" in front is an icon). */
+export function rowsOf(d: Pick<DiagramData, 'text' | 'rich'> & { layout?: string }): DiagramRow[] {
+  const icons = readsIcons(d.layout);
   const rows: DiagramRow[] = [];
   let n = 0;
   for (const line of d.text.split(/\r?\n/)) {
@@ -45,10 +46,10 @@ export function rowsOf(d: Pick<DiagramData, 'text' | 'rich'>): DiagramRow[] {
     const label = line.slice(lead.length);
     const row: DiagramRow = { level: Math.floor(level + 1e-9), label };
     const r = d.rich?.[String(n)];
-    const at = r?.length ? wordsAt(label) : null;
+    const at = r?.length ? wordsAt(label, icons) : null;
     if (r && at) {
       const all = chemRuns(label) as LabelPart[];
-      const words = lineParts(label).text;
+      const words = lineParts(label, icons).text;
       if (labelParts(words, r) === r) {
         const parts = [...sliceParts(all, 0, at.from), ...r, ...sliceParts(all, at.to, plain(all).length)];
         if (labelParts(label, parts) === parts) row.rich = parts;
@@ -59,8 +60,9 @@ export function rowsOf(d: Pick<DiagramData, 'text' | 'rich'>): DiagramRow[] {
   return rows;
 }
 
-/** The diagram's text and its items' looks, from the rows. */
-export function fromRows(rows: DiagramRow[]): { text: string; rich?: DiagramData['rich'] } {
+/** The diagram's text and its items' looks, from the rows (for `layout`, which says whether "[name]" in front is an icon). */
+export function fromRows(rows: DiagramRow[], layout?: string): { text: string; rich?: DiagramData['rich'] } {
+  const icons = readsIcons(layout);
   const lines: string[] = [];
   const rich: NonNullable<DiagramData['rich']> = {};
   let n = 0;
@@ -70,11 +72,11 @@ export function fromRows(rows: DiagramRow[]): { text: string; rich?: DiagramData
     lines.push(line);
     n++;
     if (!row.rich) continue;
-    const at = wordsAt(row.label);
+    const at = wordsAt(row.label, icons);
     if (!at) continue;
     const parts = sliceParts(row.rich, at.from, at.to);
     // the item's words alone, as the diagram reads them, with their pieces
-    const words = lineParts(row.label).text;
+    const words = lineParts(row.label, icons).text;
     if (labelParts(words, parts) === parts && labelFromParts(parts).rich) rich[String(n)] = parts;
   }
   return { text: lines.join('\n'), ...(Object.keys(rich).length ? { rich } : {}) };

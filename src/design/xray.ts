@@ -295,12 +295,14 @@ export function crystalShapes(c: CrystalSpec, v: XView): XShape[] {
     out.push({
       kind: 'ellipse', depth: s[2], centre: pt(s), axes: [cc * Math.sqrt(w[1]) * scale, cc * Math.sqrt(w[0]) * scale],
       angle: (Math.atan2(-e.major[1], e.major[0]) * 180) / Math.PI, fill: v.colour ? tintOf(colour) : '#ffffff', stroke: '#000000', width: 0.7,
+      // (its atom, so a faded atom fades in ORTEP style too; review F439)
+      atom: i,
     });
     radius.set(i, cc * Math.sqrt((w[0] + w[1]) / 2));
     const det = u[0][0] * u[1][1] - u[0][1] * u[1][0] || 1e-12;
     outline.set(i, { c: cc, inv: [u[1][1] / det, -u[0][1] / det, u[0][0] / det] });
     if (v.principal && a.aniso) {
-      for (const line of principalEllipses(u, cc)) out.push({ kind: 'polyline', depth: s[2] + 1e-6, points: line.map((p) => pt([s[0] + p[0], s[1] + p[1], s[2] + p[2]])), fill: 'none', stroke: '#000000', width: 0.45 });
+      for (const line of principalEllipses(u, cc)) out.push({ kind: 'polyline', depth: s[2] + 1e-6, points: line.map((p) => pt([s[0] + p[0], s[1] + p[1], s[2] + p[2]])), fill: 'none', stroke: '#000000', width: 0.45, atom: i });
     }
   }
   // bonds: from the edge of one atom's outline to the other's (so they never run over an atom)
@@ -581,14 +583,21 @@ function autoPlace(which: number[], fixed: Set<number>, offsets: Map<number, [nu
 
 /** [x0, y0, x1, y1] the shapes cover (pt), labels included. */
 export function shapesBounds(items: XShape[]): [number, number, number, number] {
-  const xs: number[] = [], ys: number[] = [];
+  // (a running smallest and largest: a big ORTEP drawing has more points than a spread into Math.min takes; review F441)
+  let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+  const take = (xa: number, ya: number, xb: number, yb: number): void => {
+    if (xa < x0) x0 = xa;
+    if (ya < y0) y0 = ya;
+    if (xb > x1) x1 = xb;
+    if (yb > y1) y1 = yb;
+  };
   for (const s of items) {
-    if (s.kind === 'ellipse' || s.kind === 'ball') { const rad = Math.max(...s.axes!); xs.push(s.centre![0] - rad, s.centre![0] + rad); ys.push(s.centre![1] - rad, s.centre![1] + rad); }
-    else if (s.kind === 'text') { const w = 0.6 * s.size! * s.text!.length; xs.push(s.centre![0], s.centre![0] + w); ys.push(s.centre![1] - s.size!, s.centre![1] + 0.3 * s.size!); }
-    else for (const [x, y] of s.points!) { xs.push(x); ys.push(y); }
+    if (s.kind === 'ellipse' || s.kind === 'ball') { const rad = Math.max(s.axes![0], s.axes![1]); take(s.centre![0] - rad, s.centre![1] - rad, s.centre![0] + rad, s.centre![1] + rad); }
+    else if (s.kind === 'text') { const w = 0.6 * s.size! * s.text!.length; take(s.centre![0], s.centre![1] - s.size!, s.centre![0] + w, s.centre![1] + 0.3 * s.size!); }
+    else for (const [x, y] of s.points!) take(x, y, x, y);
   }
-  if (!xs.length) return [0, 0, 1, 1];
-  return [Math.min(...xs), Math.min(...ys), Math.max(...xs), Math.max(...ys)];
+  if (x0 > x1) return [0, 0, 1, 1];
+  return [x0, y0, x1, y1];
 }
 
 /** The zoom at which the drawing, its labels too, fits `w` × `h` points. */
