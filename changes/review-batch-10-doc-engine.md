@@ -1,9 +1,9 @@
 Fixed: Document: typing into a shape's text puts the caret and the typed words in the middle of the shape, where its text is drawn, and a click lands on the letter under it.
 Fixed: Document: double-clicking a plain header in a protected document no longer takes away the last step of Undo.
 Fixed: Document: Outline view's Promote and Promote to Heading 1 no longer turn body text hidden by Show Level or a folded heading into headings.
-Fixed: Document: applying a style, deleting one, or Home ▸ Clear All Formatting keeps a paragraph's index entries, marked citations, Set Numbering Value, Shift+Enter lines and content controls, and the text's language, content control and tracked formatting changes.
+Fixed: Document: applying a style or deleting one keeps a paragraph's index entries, marked citations, Set Numbering Value, Shift+Enter lines and content controls; Home ▸ Clear All Formatting keeps its index entries, marked citations and content controls, and the text's language, content control and tracked formatting changes.
 Fixed: Document: Select Text with Similar Formatting no longer takes in a single different character, line break or figure between two matching stretches.
-Fixed: Document: Remove Cover Page can no longer delete the whole document after the cover's page break was joined away, and it puts back the first page's header and page number only if the document had them before.
+Fixed: Document: Remove Cover Page no longer deletes the document's own text after the cover's page break was joined away, and it puts back the first page's header and page number only if the document had them before.
 Fixed: Document: Accept All Changes, Reject All Changes and the count of changes now include footnotes and endnotes, and a reviewer can type tracked changes in a footnote of a document protected for tracked changes.
 Fixed: Document: Home ▸ Sort changes only the paragraphs sorted: tracked changes, comments and the look of the paragraph breaks elsewhere stay as they were.
 Fixed: Document: Sort by Date no longer reads text such as "see note 2" as a date, and the same day written two ways sorts together; Case sensitive puts capitals first, as its label says.
@@ -16,5 +16,5 @@ Fixed: Document: in an exported PDF, links in table cells, footnotes and endnote
 Fixed: References: BibTeX import reads \url, \ce and \underline as commands instead of accents; a RIS record with only an end page has no stray dash, and one with no ER line is no longer lost.
 Fixed: References: a damaged file naming a citation style such as "constructor" no longer stops the reference list from showing.
 Fixed: Review ▸ Compare keeps characters such as mathematical italic letters and emoji whole.
-Changed: Document: Replace All, Accept All Changes, tracked formatting, Sort, Delete Style, Promote and Demote, dragging headings in the Navigation pane, change bars, rich headers and footers, typing in a protected document and Zotero's Refresh are much faster in long documents.
-Under the hood: regression tests for the document engine findings of the November 2026 code review (batch 10).
+Changed: Document: in long documents, Replace All, Accept All Changes, tracked formatting, Sort, Delete Style, Promote and Demote, dragging headings in the Navigation pane, change bars, formatted headers and footers, typing in a protected document and Zotero's Refresh do their work in one pass over the text instead of once for each change, place or paragraph.
+Under the hood: Document: regression tests for the document engine fixes from the November 2026 code review.

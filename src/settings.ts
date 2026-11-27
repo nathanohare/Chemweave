@@ -32,7 +32,7 @@ import { parseDarkPalettes, type DarkPalette } from './dark-page';
 import { DEFAULT_SCHEME_PREFS, parseSchemePrefs, type SchemePrefs } from './chem/scheme-layout';
 import { DEFAULT_ANALYSIS, parseAnalysisPrefs, type AnalysisPrefs } from './chem/analysis-prefs';
 import { DEFAULT_NEWMAN_PREFS, parseNewmanPrefs, type NewmanPrefs } from './design/newman-prefs';
-import { CITE_PRESETS, DEFAULT_STYLE, cleanOptions, type CiteFormat } from './document/cite-styles';
+import { DEFAULT_STYLE, cleanOptions, knownStyle, type CiteFormat } from './document/cite-styles';
 import { DEFAULT_KEEP, parseKeepPrefs, type KeepPrefs } from './keep/prefs';
 import { parseThemes, type SlideTemplate } from './deck/templates';
 import { parseRecent } from './text/symbols';
@@ -468,7 +468,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (r.notesHeight === 84) s.notesHeight = 32;
   if (r.slidePaneWidth === 212) s.slidePaneWidth = 160;
   if (typeof r.slideNotes === 'boolean') s.slideNotes = r.slideNotes;
-  if (typeof r.citeStyle === 'string' && r.citeStyle in CITE_PRESETS) s.citeStyle = r.citeStyle;
+  if (typeof r.citeStyle === 'string' && knownStyle(r.citeStyle)) s.citeStyle = r.citeStyle;
   s.citeOptions = cleanOptions(r.citeOptions);
   s.palettes = parsePalettes(r.palettes);
   s.toolboxes = parseToolboxes(r.toolboxes);

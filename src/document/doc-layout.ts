@@ -1083,7 +1083,7 @@ export class DocLayouter {
     const box = { x1: 0, y1: 0, x2: maxW, y2: last.top + last.h };
     const g0 = geoms[0];
     const textLayout: TextLayout = { lines, boxWidth: g0.textW, box, length: text.length, measure: this.deps.measure };
-    const hfs = this.hfBodies(t, pages, sizes, inline, objKey, N, extentOf);
+    const hfs = this.hfBodies(t, pages, sizes, inline, objKey, N, extentOf, lines);
     const changeBars = colours ? this.changeBars(t, lines, pages) : [];
     stackFloats(objects, t);
     return { text: textLayout, pages, objects, fields, sizes, boxes, tables, maths, paraTops, pageW: maxW, pageH: maxH, textW: g0.textW, cols: { n: g0.cs.n, w: g0.textW, x: g0.colX }, notes, noteRules, lineNums, frames, hfs, changeBars };
@@ -1095,7 +1095,7 @@ export class DocLayouter {
    * distance from the bottom, between the margins. Tables in them are placed row by row, and
    * pictures where their lines (or cells) put them.
    */
-  private hfBodies(t: DocText, pages: PageBox[], sizes: Map<number, { w: number; h: number }>, inline: (id: number, room: number) => InlineBox | null, objKey: (id: number) => string, N: NamedStyle, extentOf: (id: number) => number[]): PlacedHf[] {
+  private hfBodies(t: DocText, pages: PageBox[], sizes: Map<number, { w: number; h: number }>, inline: (id: number, room: number) => InlineBox | null, objKey: (id: number) => string, N: NamedStyle, extentOf: (id: number) => number[], lines: LaidLine[]): PlacedHf[] {
     const out: PlacedHf[] = [];
     if (!pages.some((p) => p.hf.bodies)) return out;
     // (the bookmarks and paragraph texts fields look up, found once for all the pages)
@@ -1115,7 +1115,7 @@ export class DocLayouter {
         const shown = new Map<number, string>();
         const fieldShown = (id: number, o: FieldObj): string => {
           let s = shown.get(id);
-          if (s === undefined) { s = hfFieldText(o, t, num, pages.length, pageOfPara, fieldCache); shown.set(id, s); }
+          if (s === undefined) { s = hfFieldText(o, t, num, pages.length, pageOfPara, fieldCache, lines[pg.first]?.para ?? 0); shown.set(id, s); }
           return s;
         };
         const own = (id: number, room: number): InlineBox | null => {
@@ -1469,6 +1469,13 @@ function shiftLine(l: LaidLine, dx: number, dy: number, offset: number, para: nu
     pieces: l.pieces.map((g) => ({ ...g, start: g.start + offset, x: g.x + dx })),
     marker: l.marker ? { ...l.marker, start: l.marker.start + offset, x: l.marker.x + dx } : undefined,
   };
+}
+
+/** Where a text box's text starts down the page: at its top, or a shape's in its middle (as PowerPoint puts it). */
+export function boxTextTop(o: { geo?: string }, at: { y: number; h: number }, bl: TextLayout): number {
+  const textH = bl.box.y2 - bl.box.y1;
+  const top = o.geo ? at.y + Math.max(BOX_PAD.y, (at.h - textH) / 2) : at.y + BOX_PAD.y;
+  return top - bl.box.y1;
 }
 
 /** A text layout moved across and down (a text box's text, onto its page). */

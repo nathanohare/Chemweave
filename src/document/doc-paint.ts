@@ -12,6 +12,7 @@ import { BOX_PAD, SHADOWS, borderRect, lookOf, styleOf, watermarkPlace, type Doc
 import { withStack, type TextLayout } from '../text/layout';
 import { geoDef, moveSteps, traceSteps } from '../design/geo';
 import type { DocLayout, PageBox, PlacedObject, TableBox } from './doc-layout';
+import { boxTextTop } from './doc-layout';
 import type { BorderLine, TableData } from '../model';
 import { coveringCell, rowSpanOf, spanOf } from '../table';
 import { DEFAULT_MARGINS, hasLines, resolveTable, strokeOf, type TableStyleDef } from './table-styles';
@@ -437,12 +438,8 @@ export function traceGeo(ctx: Parameters<typeof traceSteps>[0], geo: string, at:
   if (lines && out.lines) traceSteps(ctx, moveSteps(out.lines, at.x, at.y));
 }
 
-/** Where a text box's text starts down the page: at its top, or a shape's in its middle (as PowerPoint puts it). */
-export function boxTextTop(o: { geo?: string }, at: { y: number; h: number }, bl: TextLayout): number {
-  const textH = bl.box.y2 - bl.box.y1;
-  const top = o.geo ? at.y + Math.max(BOX_PAD.y, (at.h - textH) / 2) : at.y + BOX_PAD.y;
-  return top - bl.box.y1;
-}
+// (boxTextTop lives with the layout, so typing into a box (doc-file.ts) and drawing it agree)
+export { boxTextTop };
 
 /** A recorded picture's shapes and text scaled and moved to fill a box. */
 export function placeItems(pic: Picture, at: { x: number; y: number; w: number; h: number }): Item[] {

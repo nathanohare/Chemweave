@@ -85,7 +85,7 @@ export function replaceRanges(runs: TextRun[], hits: [number, number][], replace
   const sorted = [...hits].sort((x, y) => x[0] - y[0]);
   if (keep) return rt.applyStyles(runs, sorted.map(([a, b]) => ({ start: a, end: b, patch: patch! })));
   if (!separate(sorted)) {
-    // (places that touch or overlap: one at a time, from the last)
+    // (places that overlap or are empty: one at a time, from the last)
     let out = runs;
     for (const [a, b] of [...sorted].reverse()) {
       const style = rt.typingStyle(out, a, b, fallback);
@@ -104,9 +104,9 @@ export function replaceRanges(runs: TextRun[], hits: [number, number][], replace
   return rt.normalizeRuns(out);
 }
 
-/** Places in order, none empty and none touching or overlapping the next. */
+/** Places in order, none empty and none overlapping the next (they may touch: "a" found twice in "aa"). */
 function separate(sorted: [number, number][]): boolean {
-  return sorted.every(([a, b], i) => b > a && (i === 0 || sorted[i - 1][1] < a));
+  return sorted.every(([a, b], i) => b > a && (i === 0 || sorted[i - 1][1] <= a));
 }
 
 /**
@@ -152,8 +152,9 @@ function walkHits(runs: TextRun[], sorted: [number, number][], text: (r: TextRun
 export function trackedReplaceRanges<T extends Revisable>(t: T, hits: [number, number][], replacement: string, look: ReplaceLook, fallback: rt.RunStyle, who: { author: string; date: string }): { t: T; caret: number } {
   const patch = lookPatch(look);
   const sorted = [...hits].sort((x, y) => x[0] - y[0]);
-  if (!separate(sorted) || replacement.includes('\n') || sorted.some(([a, b]) => rt.plainText(rt.sliceRuns(t.runs, a, b)).includes('\n'))) {
-    // (places that touch, or line breaks: one at a time, from the last)
+  const text = rt.plainText(t.runs);
+  if (!separate(sorted) || replacement.includes('\n') || sorted.some(([a, b]) => { const nl = text.indexOf('\n', a); return nl >= 0 && nl < b; })) {
+    // (places that overlap, or line breaks: one at a time, from the last)
     let caret = 0;
     for (const [a, b] of [...sorted].reverse()) {
       const style = rt.typingStyle(t.runs, a, b, fallback);
@@ -187,7 +188,7 @@ export function trackedReplaceRanges<T extends Revisable>(t: T, hits: [number, n
     if (h === 0) caret = a + kept + added;
     kept = 0;
   });
-  return { t: { ...t, runs: rt.normalizeRuns(out), paras: fitParas(t.paras, paraCount(rt.plainText(t.runs))) }, caret };
+  return { t: { ...t, runs: rt.normalizeRuns(out), paras: fitParas(t.paras, paraCount(text)) }, caret };
 }
 
 /** Leave out places in text deleted while tracking changes (still there, struck through, but gone from what the text says). */

@@ -49,7 +49,7 @@ function monthOf(name: string): number {
 }
 
 /**
- * A date in some text (2026-10-22, 10/22/2026, 22 Oct 2026, October 22, 2026), as a time, or
+ * A date in some text (2026-10-22, 2026/10/22, 10/22/2026, 22 Oct 2026, October 22, 2026, October 2026), as a time, or
  * null. Only these forms count (text that only looks a little like a date, "see note 2", is no
  * date), and every one is read as the same day wherever the computer is (UTC).
  */
@@ -58,6 +58,9 @@ export function dateValue(s: string): number | null {
   if (!t) return null;
   const iso = /(\d{4})-(\d{1,2})-(\d{1,2})/.exec(t);
   if (iso) return Date.UTC(+iso[1], +iso[2] - 1, +iso[3]);
+  // 2026/10/22 (year first: before the US form, which would read it as 26/10/22)
+  const ymd = /(\d{4})\/(\d{1,2})\/(\d{1,2})/.exec(t);
+  if (ymd) return Date.UTC(+ymd[1], +ymd[2] - 1, +ymd[3]);
   const us = /(\d{1,2})\/(\d{1,2})\/(\d{2,4})/.exec(t);
   if (us) { const y = +us[3] < 100 ? 2000 + +us[3] : +us[3]; return Date.UTC(y, +us[1] - 1, +us[2]); }
   // 22 Oct 2026, 22 October 2026, 22-Oct-2026
@@ -66,6 +69,9 @@ export function dateValue(s: string): number | null {
   // October 22, 2026, Oct. 22 2026
   const mdy = /\b([A-Za-z]{3,9})\.? (\d{1,2}),? (\d{4})\b/.exec(t);
   if (mdy && monthOf(mdy[1]) >= 0 && +mdy[2] >= 1 && +mdy[2] <= 31) return Date.UTC(+mdy[3], monthOf(mdy[1]), +mdy[2]);
+  // October 2026, Oct 2026: the first of the month
+  const my = /\b([A-Za-z]{3,9})\.?,? (\d{4})\b/.exec(t);
+  if (my && monthOf(my[1]) >= 0) return Date.UTC(+my[2], monthOf(my[1]), 1);
   return null;
 }
 

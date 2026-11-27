@@ -78,7 +78,7 @@ export function blankRef(type: RefType = 'article', id = newRefId()): Reference 
  * (from a damaged file) falls back to empty rather than stopping the document from opening.
  */
 export function cleanRef(r: Partial<Record<keyof Reference, unknown>>): Reference {
-  const type = typeof r.type === 'string' && r.type in REF_TYPES ? (r.type as RefType) : 'article';
+  const type = typeof r.type === 'string' && Object.hasOwn(REF_TYPES, r.type) ? (r.type as RefType) : 'article';
   const id = r.id !== undefined && r.id !== null && r.id !== '' && typeof r.id !== 'object' ? String(r.id) : newRefId();
   const out = blankRef(type, id);
   let authors = r.authors;

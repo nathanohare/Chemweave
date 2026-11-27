@@ -6,7 +6,7 @@ import type { Measure, TextFrame } from '../text/layout';
 import { TextEditing, type ChangeKind } from '../text/editing';
 import { documentMeasure } from '../text/font-measure';
 import { cellMargins } from './table-styles';
-import { DocLayouter, movedLayout, type DocLayout } from './doc-layout';
+import { DocLayouter, boxTextTop, movedLayout, type DocLayout } from './doc-layout';
 import { reviewAuthor, revisionDate, type ReviewView } from './revisions';
 import { setPart } from '../table';
 import { FigurePictures } from './figures';
@@ -14,7 +14,6 @@ import { BOX_PAD, newDocument, nextObjectId, noteStyle, runStyleOf, styleOf, typ
 import { bodyAsZones, hfKeyFor, plainLook, zonesAsBody } from './hf-bodies';
 import { changeSection, sectionsOf } from './sections';
 import { allowedEdit } from './protect';
-import { boxTextTop } from './doc-paint';
 import type { ParaStyle, TextRun } from '../model';
 import { fitParas, paraCount, storedParas } from '../text/paragraphs';
 import { PRINT_VIEW, continuous, hiddenParas, outlineLevel, screenText, type ScreenView } from './doc-views';

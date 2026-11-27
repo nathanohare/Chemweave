@@ -4,7 +4,8 @@
 
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
-const count = vi.hoisted(() => ({ sliceRuns: 0, replaceRange: 0, plainText: 0, decideEverywhere: 0, trackedReplace: 0, changeSlices: 0, layoutText: 0 }));
+const count = vi.hoisted(() => ({ sliceRuns: 0, replaceRange: 0, plainText: 0, decideEverywhere: 0, trackedReplace: 0, changeSlices: 0, layoutText: 0, citationTexts: 0 }));
+const fieldCaches = vi.hoisted(() => [] as unknown[]);
 
 vi.mock('../src/richtext', async (orig) => {
   const m = await orig<typeof import('../src/richtext')>();
@@ -30,6 +31,16 @@ vi.mock('../src/document/revisions', async (orig) => {
   };
 });
 
+vi.mock('../src/document/fields', async (orig) => {
+  const m = await orig<typeof import('../src/document/fields')>();
+  return { ...m, fieldText: (...a: Parameters<typeof m.fieldText>) => { fieldCaches.push(a[5]); return m.fieldText(...a); } };
+});
+
+vi.mock('../src/document/references', async (orig) => {
+  const m = await orig<typeof import('../src/document/references')>();
+  return { ...m, citationTexts: (...a: Parameters<typeof m.citationTexts>) => { count.citationTexts++; return m.citationTexts(...a); } };
+});
+
 vi.mock('../src/text/layout', async (orig) => {
   const m = await orig<typeof import('../src/text/layout')>();
   return { ...m, layoutText: (...a: Parameters<typeof m.layoutText>) => { count.layoutText++; return m.layoutText(...a); } };
@@ -46,6 +57,9 @@ import { DocLayouter } from '../src/document/doc-layout';
 import { documentMeasure } from '../src/text/font-measure';
 import * as rt from '../src/richtext';
 import type { ParaStyle, TextRun } from '../src/model';
+import { runZotero, type ZoteroHost, type ZoteroPost } from '../src/document/zotero-live';
+import { writeCite } from '../src/document/live-cites';
+import { cleanRef, type Reference } from '../src/document/references';
 
 const who = { author: 'A. Reviewer', date: '2026-11-27T10:00:00Z' };
 const INS = revText({ kind: 'ins', ...who }), DEL = revText({ kind: 'del', ...who });
@@ -217,5 +231,114 @@ describe('rich headers (F494)', () => {
     reset();
     L.layout({ ...t });
     expect(count.layoutText).toBe(0);
+  });
+});
+
+describe('Replace All, second round (F088)', () => {
+  const runs: TextRun[] = Array.from({ length: 300 }, (_, i) => ({ text: 'the cat ', ...(i % 2 ? { italic: true } : {}) }));
+  const text = rt.plainText(runs);
+  const hits: [number, number][] = [];
+  for (let i = text.indexOf('cat'); i >= 0; i = text.indexOf('cat', i + 1)) hits.push([i, i + 3]);
+
+  it('tracked: looks for line breaks in the places without cutting the runs for each', () => {
+    reset();
+    trackedReplaceRanges({ runs, paras: [{}] }, hits, 'dog', {}, {}, who);
+    expect(count.sliceRuns).toBeLessThan(5);
+    expect(count.trackedReplace).toBe(0);
+  });
+
+  it('places that touch ("a" twice in "aa") still go in one pass, with the same result', () => {
+    const aa: TextRun[] = [{ text: 'aaaa' }, { text: 'aa', bold: true }];
+    const touching: [number, number][] = [[0, 1], [1, 2], [2, 3], [3, 4], [4, 5], [5, 6]];
+    reset();
+    const out = replaceRanges(aa, touching, 'bc');
+    expect(count.replaceRange).toBe(0);
+    expect(out).toEqual([{ text: 'bcbcbcbc' }, { text: 'bcbc', bold: true }]);
+    const tr = trackedReplaceRanges({ runs: aa, paras: [{}] }, touching, 'b', {}, {}, who);
+    expect(count.trackedReplace).toBe(0);
+    expect(rt.plainText(decide(tr.t, true).runs)).toBe('bbbbbb');
+    expect(rt.plainText(decide(tr.t, false).runs)).toBe('aaaaaa');
+    expect(tr.caret).toBe(2);
+  });
+});
+
+describe('places in deleted text (F501)', () => {
+  it('walks the places and the deletions together, not every deletion for each place', () => {
+    const del: TextRun[] = [];
+    for (let i = 0; i < 200; i++) del.push({ text: 'cat ' }, { text: 'cat ', rev: DEL });
+    const hits: [number, number][] = del.map((_, i) => [i * 4, i * 4 + 3]);
+    const some = vi.spyOn(Array.prototype, 'some');
+    let calls = 0;
+    try {
+      const got = withoutDeleted(del, hits);
+      calls = some.mock.calls.length;
+      expect(got).toEqual(hits.filter((_, i) => i % 2 === 0));
+    } finally {
+      some.mockRestore();
+    }
+    expect(calls).toBeLessThan(5);
+  });
+});
+
+describe('the protection check keeps little (F091 follow-up)', () => {
+  it('keeps only the last documents worked out, not one for every step of Undo', () => {
+    const d = newDocument();
+    const docs: DocText[] = [{ ...d, track: true, protect: { edit: 'trackedChanges' }, runs: [{ text: 'Dry.' }], paras: [{}] }];
+    for (let i = 1; i < 5; i++) docs.push({ ...docs[0], runs: [...docs[0].runs, { text: 'x'.repeat(i), rev: INS }] });
+    for (let i = 1; i < 5; i++) expect(allowedEdit(docs[i - 1], docs[i])).toBe(true);
+    // the first document was let go: worked out again
+    reset();
+    expect(allowedEdit(docs[0], docs[1])).toBe(true);
+    expect(count.decideEverywhere).toBe(2);
+  });
+});
+
+describe('fields in headers (F502)', () => {
+  it('look the bookmarks up once for all the pages', () => {
+    const d = newDocument();
+    const lines = Array.from({ length: 5 }, (_, i) => `Page ${i}`);
+    const t: DocText = {
+      ...d, runs: [{ text: lines.join('\n') }], paras: lines.map((_, i) => (i ? { pageBreak: true } : { marks: ['Start'] })),
+      objects: { 9: { kind: 'field', code: 'ref', target: 'Start' } },
+      hf: { ...d.hf, numbers: 'none', bodies: { header: { runs: [{ text: 'See ' }, objectRun(9, {})], paras: [{}] } } },
+    };
+    fieldCaches.length = 0;
+    const lay = new DocLayouter({ measure: documentMeasure((x: string, size: number) => x.length * size * 0.5), drawingSize: () => ({ w: 1, h: 1 }) }).layout(t);
+    expect(lay.hfs).toHaveLength(5);
+    // the header's fields (the body's own fields are worked out apart): one cache shared by the pages
+    const mine = fieldCaches.filter((c) => c !== undefined);
+    expect(mine.length).toBeGreaterThanOrEqual(5);
+    expect(new Set(mine).size).toBe(1);
+    expect(fieldCaches.filter((c) => c === undefined).length).toBeLessThan(mine.length);
+  });
+});
+
+describe('Zotero asking for each field in turn (F517)', () => {
+  const refs = (n: number): Reference[] => Array.from({ length: n }, (_, i) => cleanRef({ id: `r${i}`, type: 'article', title: `Paper ${i}`, authors: ['Smith, Jane'], year: '2020' }));
+
+  it('works the citations out once while the document is unchanged', async () => {
+    const n = 20;
+    const runs: TextRun[] = [];
+    const objects: DocText['objects'] = {};
+    for (let i = 0; i < n; i++) { objects[i + 1] = { kind: 'cite', refs: [`r${i}`] }; runs.push({ text: 'Text ' }, objectRun(i + 1, {})); }
+    const t: DocText = { ...newDocument(), runs, paras: [{}], objects, references: refs(n) };
+    const host = { docId: 'd', text: () => t, change: () => undefined, finish: () => undefined, activate: () => undefined } as unknown as ZoteroHost;
+    const steps: [string, unknown[]][] = [];
+    for (let i = 0; i < n; i++) steps.push(['Field.getCode', ['d', String(i + 1)]], ['Field.getText', ['d', String(i + 1)]]);
+    steps.push(['Document.complete', ['d']]);
+    let k = 0;
+    const post: ZoteroPost = async () => ({ status: 200, text: JSON.stringify({ command: steps[k][0], arguments: steps[k++][1] }) });
+    reset();
+    expect(await runZotero('refresh', host, post)).toBe('done');
+    expect(count.citationTexts).toBe(1);
+  });
+
+  it('leaves a citation whose Zotero code is up to date as it is, without writing its references out', () => {
+    let read = 0;
+    const r = new Proxy(refs(1)[0], { get: (o, k) => { if (k !== 'id' && k !== 'live') read++; return o[k as keyof Reference]; } });
+    const code = `ITEM CSL_CITATION ${JSON.stringify({ citationID: 'c1', properties: { formattedCitation: '1', plainCitation: '1', noteIndex: 0 }, citationItems: [], schema: 'x' })}`;
+    const out = writeCite('zotero', [r], { app: 'zotero', code, text: '1', for: 'r0' }, '1');
+    expect(out.instr).toBe(` ADDIN ZOTERO_${code} `);
+    expect(read).toBe(0);
   });
 });

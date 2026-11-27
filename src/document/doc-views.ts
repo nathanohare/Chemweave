@@ -178,7 +178,7 @@ export function changeLevel(t: DocText, o: OutlineState, first: number, last: nu
   // promote and demote (body text folded away or below the level shown stays body text)
   const moving = new Set<number>();
   for (let p = first; p <= last; p++) {
-    if (!hidden.has(p) || p === first || (levels[p] && (op === 'promote' || op === 'demote'))) moving.add(p);
+    if (!hidden.has(p) || (levels[p] && (op === 'promote' || op === 'demote'))) moving.add(p);
   }
   // a folded heading's hidden lower headings move with it (by promote and demote)
   let foldedAbove = false;

@@ -768,6 +768,22 @@ export function runStyleOf(s: NamedStyle): rt.RunStyle {
   return rt.cleanStyle({ font: s.font, size: s.size, bold: s.bold, italic: s.italic, color: s.color });
 }
 
+/** Word's kept settings that say which of the file's lists a list paragraph is in (io/docx-read.ts, docx-write.ts). */
+const LIST_WPX = ['num', 'nk', 'nl', 'ni', 'nv', 'nr', 'nd'];
+
+/**
+ * Of a paragraph's kept Word settings (ParaStyle.wpx), only those naming its list: the rest are
+ * its own formatting (contextual spacing, an outline level, text direction...), which a style
+ * applied or Clear All Formatting replaces.
+ */
+function listWpx(wpx: string | undefined): string | undefined {
+  if (!wpx) return undefined;
+  let raw: Record<string, string>;
+  try { raw = JSON.parse(wpx) as Record<string, string>; } catch { return undefined; }
+  const kept = Object.fromEntries(Object.entries(raw).filter(([k]) => LIST_WPX.includes(k)));
+  return Object.keys(kept).length ? JSON.stringify(kept) : undefined;
+}
+
 /** A paragraph in a style: the style's spacing, indents and alignment, keeping its list, level and page break. */
 export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle): ParaStyle {
   // (lines and shading the paragraph had from its old style give way to the new style's; its own stay)
@@ -778,7 +794,7 @@ export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle):
     marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet,
     // what the paragraph is or holds, not its look: index and authority marks, its content
     // control, a Shift+Enter line, its list numbering, a frame, Word's kept settings
-    xe: keep.xe, ta: keep.ta, cc: keep.cc, soft: keep.soft, clear: keep.clear, frame: keep.frame, wpx: keep.wpx,
+    xe: keep.xe, ta: keep.ta, cc: keep.cc, soft: keep.soft, clear: keep.clear, frame: keep.frame, wpx: keep.list ? listWpx(keep.wpx) : undefined,
     startAt: keep.startAt, numLook: keep.numLook, numType: keep.numType, noHyphen: keep.noHyphen, border: was ? ownBorder ?? s.border : s.border ?? keep.border, shade: was ? ownShade ?? s.shade : s.shade ?? keep.shade,
     style: s.id === 'Normal' ? undefined : s.id,
     align: s.align === 'left' ? undefined : s.align,

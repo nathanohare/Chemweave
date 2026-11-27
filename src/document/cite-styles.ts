@@ -129,7 +129,7 @@ export const CITE_PRESETS: Record<string, CitePreset> = {
 export const DEFAULT_STYLE = 'acs';
 
 /** A style id that is one of the presets (its own key: not 'constructor' or 'toString' from a damaged file). */
-const knownStyle = (style: string | undefined): style is string => !!style && Object.hasOwn(CITE_PRESETS, style);
+export const knownStyle = (style: string | undefined): style is string => !!style && Object.hasOwn(CITE_PRESETS, style);
 
 /** The person's own style for documents that haven't chosen one (settings.json: citeStyle, citeOptions). */
 let preferred: { style: string; options: Partial<CiteFormat> } = { style: DEFAULT_STYLE, options: {} };
