@@ -240,7 +240,7 @@ export class Presenter {
     const p = this.player, d = this.deck;
     if (!this.bar || !p || !d) return;
     const order = p.order ?? d.slides.map((_, i) => i).filter((i) => !d.slides[i].hidden);
-    const k = order.indexOf(p.i);
+    const k = p.order ? p.position : order.indexOf(p.i);
     this.bar.count.textContent = `Slide ${k >= 0 ? k + 1 : p.i + 1} of ${order.length}`;
   }
 

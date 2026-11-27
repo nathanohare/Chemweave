@@ -4,6 +4,7 @@
 // a slide, a cell) comes from the mode, through the LinkHost the app sets up.
 
 import { showDialog } from './dialog-host';
+import { addInfo } from './info-tip';
 import { describeLink, doiOf, filePath, linkKind, normalizeLink, type LinkKind, type LinkPlace } from '../links';
 
 const isTauri = () => typeof window !== 'undefined' && '__TAURI_INTERNALS__' in window;
@@ -152,10 +153,10 @@ export function mailLink(to: string, subject: string, fields: (string | null)[])
 }
 
 const KINDS: { id: LinkKind; label: string }[] = [
-  { id: 'web', label: 'Web page or DOI' },
-  { id: 'place', label: 'Place in this file' },
+  { id: 'web', label: 'Web Page or DOI' },
+  { id: 'place', label: 'Place in This File' },
   { id: 'file', label: 'File' },
-  { id: 'mail', label: 'Email address' },
+  { id: 'mail', label: 'Email Address' },
 ];
 
 /** Pick a file for a file link (the desktop app's Open window). */
@@ -222,10 +223,9 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     const addr = document.createElement('input');
     addr.placeholder = 'URL or DOI (e.g. 10.1021/acs.orglett.5b00001)';
     addr.value = startKind === 'web' ? (doiOf(start) ?? start) : '';
-    const webHelp = document.createElement('p');
-    webHelp.className = 'ask-help muted';
-    webHelp.textContent = 'A DOI links through doi.org, so it finds the paper wherever the journal moves it.';
-    web.append(row('Address', addr), webHelp);
+    const addrRow = row('Address', addr);
+    addInfo(addrRow.firstElementChild, 'A DOI links through doi.org, so it finds the paper wherever the journal moves it.');
+    web.append(addrRow);
     panes.set('web', web);
 
     // a place here
@@ -258,10 +258,9 @@ export function askLink(q: LinkAsk): Promise<LinkAnswer | null> {
     pick.textContent = 'Browse…';
     pick.hidden = !isTauri();
     pick.addEventListener('click', () => void browse().then((p) => { if (p) { pathIn.value = p; if (!textIn.value) textIn.value = p.split(/[\\/]/).pop() ?? p; } }));
-    const fileHelp = document.createElement('p');
-    fileHelp.className = 'ask-help muted';
-    fileHelp.textContent = 'Canvases, documents, presentations and spreadsheets open here; other files open in their default program. A relative path is relative to this file.';
-    file.append(row('File', pathIn, pick), fileHelp);
+    const fileRow = row('File', pathIn, pick);
+    addInfo(fileRow.firstElementChild, 'Canvases, documents, presentations and spreadsheets open here; other files open in their default program. A relative path is relative to this file.');
+    file.append(fileRow);
     panes.set('file', file);
 
     // an e-mail address

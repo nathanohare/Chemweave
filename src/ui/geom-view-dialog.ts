@@ -20,6 +20,25 @@ const LOOKS: { id: GeomLook | '2d'; name: string; tip: string }[] = [
   { id: '2d', name: '2-D', tip: 'A 2-D structure (carbons as corners); hiding atoms works on it too' },
 ];
 
+/**
+ * What a click on atom `i` does to the hidden and faded atoms (`group`: the atom, or its whole
+ * molecule). Clicking what is already faded (or hidden) with that tool undoes it, and an undo
+ * only takes back what that tool did: atoms of the group that are hidden stay hidden when a
+ * fade is undone.
+ */
+export function pickAtoms(v: { hidden?: number[]; faded?: number[] }, pick: 'fade' | 'hide' | 'show', i: number, group: number[]): { hidden: number[]; faded: number[] } {
+  const hidden = new Set(v.hidden), faded = new Set(v.faded);
+  // a click on what is already so undoes it
+  const undo = pick === 'fade' ? faded.has(i) && !hidden.has(i) : pick === 'hide' ? hidden.has(i) : false;
+  for (const a of group) {
+    if (pick === 'show') { hidden.delete(a); faded.delete(a); }
+    else if (undo) { if (pick === 'fade') faded.delete(a); else hidden.delete(a); }
+    else if (pick === 'fade') { faded.add(a); hidden.delete(a); }
+    else { hidden.add(a); faded.delete(a); }
+  }
+  return { hidden: [...hidden], faded: [...faded] };
+}
+
 /** The window's own size for the figure (points): a species' box on the diagram is about this shape. */
 const FIG = { w: 200, h: 160 };
 
@@ -172,16 +191,7 @@ export function askGeomView(name: string, atoms: QmAtom[], bonds: QmBond[], view
       return [...seen];
     };
     const apply = (i: number) => {
-      const g = group(i);
-      const hidden = new Set(v.hidden), faded = new Set(v.faded);
-      // a click on what is already so undoes it
-      const undo = pick === 'fade' ? faded.has(i) && !hidden.has(i) : pick === 'hide' ? hidden.has(i) : false;
-      for (const a of g) {
-        if (pick === 'show' || undo) { hidden.delete(a); faded.delete(a); }
-        else if (pick === 'fade') { faded.add(a); hidden.delete(a); }
-        else { hidden.add(a); faded.delete(a); }
-      }
-      v = { ...v, hidden: [...hidden], faded: [...faded] };
+      v = { ...v, ...pickAtoms(v, pick, i, group(i)) };
       draw();
     };
 

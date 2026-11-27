@@ -184,13 +184,13 @@ export class OutlineView {
     const looks = { title: title.lookList(), body: bodyLooks(body.value, body.lookList()) };
     const now = outlineLooks(d.docOf(i));
     if (t === o.title && outlineText(b ?? []) === outlineText(o.body ?? []) && JSON.stringify(looks.title) === JSON.stringify(now.title ?? []) && JSON.stringify(looks.body) === JSON.stringify(now.body ?? [])) return;
-    d.editSlides('Edit outline', [i], (doc) => { applyOutline(doc, t, b, looks); });
+    d.editSlides('Edit Outline', [i], (doc) => { applyOutline(doc, t, b, looks); });
   }
 
   private addAfter(i: number): void {
     const d = this.hooks.deck();
     if (!d) return;
-    d.insertSlide(i + 1, 'title-content', () => {}, 'New slide');
+    d.insertSlide(i + 1, 'title-content', () => {}, 'New Slide');
     this.rebuild();
     this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
   }
@@ -217,7 +217,7 @@ export class OutlineView {
       const d = this.hooks.deck();
       if (!d) return;
       const rest = parseOutline(after);
-      d.insertSlide(i + 1, 'title-content', (doc) => { applyOutline(doc, lines[0], rest, moved); }, 'New slide');
+      d.insertSlide(i + 1, 'title-content', (doc) => { applyOutline(doc, lines[0], rest, moved); }, 'New Slide');
       this.rebuild();
       this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
       return;

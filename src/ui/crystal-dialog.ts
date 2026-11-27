@@ -243,6 +243,8 @@ export function askCrystal(editing: PlateData | null, L: number, opts: CrystalOp
       draw();
     };
     $<HTMLInputElement>('.crystal-find').addEventListener('input', (e) => { e.stopPropagation(); fillAtoms(); });
+    // Enter finishes the search; it doesn't place the figure
+    $<HTMLInputElement>('.crystal-find').addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
 
     const fillTable = () => {
       const body = $<HTMLTableElement>('.crystal-table').tBodies[0];

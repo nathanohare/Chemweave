@@ -156,14 +156,15 @@ export function fileValues(book: Workbook): (s: Sheet, k: number) => Value | und
   const done = new Map<Cell, boolean>();
   let bookSig: number | undefined;
   // the cells with kept values, by sheet (a kept value read by another stays only while that one does)
-  let keptKeys: Map<Sheet, number[]> | null = null;
+  // (as a list and a set, so a range is looked through cell by cell when it is the smaller)
+  let keptKeys: Map<Sheet, { list: number[]; set: Set<number> }> | null = null;
   const keptCells = () => {
     if (keptKeys) return keptKeys;
     keptKeys = new Map();
     for (const s of book.sheets) {
       const list: number[] = [];
       for (const [k, c] of s.cells) if (kept.has(c)) list.push(k);
-      if (list.length) keptKeys.set(s, list);
+      if (list.length) keptKeys.set(s, { list, set: new Set(list) });
     }
     return keptKeys;
   };
@@ -183,7 +184,13 @@ export function fileValues(book: Workbook): (s: Sheet, k: number) => Value | und
       const refs = refsOf(book, cell.input ?? '') ?? [];
       const inside: [Sheet, number][] = [];
       ok = reader.sig(s, refs, (sheet, r1, c1, r2, c2) => {
-        for (const x of keptCells().get(sheet) ?? []) {
+        const on = keptCells().get(sheet);
+        if (!on) return;
+        if ((r2 - r1 + 1) * (c2 - c1 + 1) <= on.list.length) {
+          for (let r = r1; r <= r2; r++) for (let c = c1; c <= c2; c++) if (on.set.has(keyOf(r, c))) inside.push([sheet, keyOf(r, c)]);
+          return;
+        }
+        for (const x of on.list) {
           const row = rowOf(x), col = colOf(x);
           if (row >= r1 && row <= r2 && col >= c1 && col <= c2) inside.push([sheet, x]);
         }

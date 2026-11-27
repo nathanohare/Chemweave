@@ -226,7 +226,8 @@ function drawArt(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   }
 }
 
-const itemDocs = new WeakMap<Contents, Doc>();
+/** The drawing of each set of items for each layout it is drawn under (the master's items are every layout's), and the master whose styles it is set to. */
+const itemDocs = new WeakMap<Contents, Map<string, { doc: Doc; master: unknown }>>();
 
 /** What is drawn on the master and on the slide's layout (Slide Master view), behind the slide's own things. */
 function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
@@ -234,14 +235,23 @@ function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   const layer = layoutDef(p.master, p.layout).items;
   for (const c of [p.master.items, layer]) {
     if (!c) continue;
-    let doc = itemDocs.get(c);
-    if (!doc) {
-      doc = new Doc();
-      doc.style = { ...p.master.drawing };
-      doc.textStyles = textStyles(p.master, p.layout);
-      doc.restoreContents(c);
-      itemDocs.set(c, doc);
+    let byLayout = itemDocs.get(c);
+    if (!byLayout) itemDocs.set(c, (byLayout = new Map()));
+    let held = byLayout.get(p.layout);
+    if (!held) {
+      held = { doc: new Doc(), master: null };
+      held.doc.restoreContents(c);
+      byLayout.set(p.layout, held);
     }
+    // in the master's style and its layout's text styles as they are now (a change of the master keeps the items themselves; one drawing for each layout, so slides of different layouts do not set each other's text out again)
+    if (held.master !== p.master) {
+      held.doc.style = { ...p.master.drawing };
+      held.doc.textStyles = textStyles(p.master, p.layout);
+      held.doc.allDirty = true;
+      held.doc.version++;
+      held.master = p.master;
+    }
+    const doc = held.doc;
     const r = new Renderer(noCanvas, noCanvas);
     r.showWarnings = false;
     if ('picture' in ctx) r.makePath = () => new VecPath() as unknown as Path2D;

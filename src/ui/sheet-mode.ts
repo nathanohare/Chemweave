@@ -4,6 +4,7 @@
 // by a part of a structure drawn as a query. The panel on the right shows what the selected
 // cell holds and how its value was worked out.
 
+import { dismissPopupMenu } from './popup-menu';
 import { paletteRows } from './palette-ui';
 import { SheetView, popupMenu, selectionName, CELL_SIZE } from './sheet-view';
 import { ACTUAL_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -33,6 +34,7 @@ import { StructurePictures } from './structure-pictures';
 import { askProperties, PropertyChoice, type HammettChoice, type HammettColumn, type HammettSetup, type PropertyAnswer } from './property-dialog';
 import { attachRefs, refAtoms, refLabel, refMarks } from '../sheet/hammett-refs';
 import { ask } from './ask';
+import { addInfo } from './info-tip';
 import { SheetFormatting } from './sheet-format-ui';
 import { ChartGallery } from './chart-gallery';
 import { SheetCharts } from './sheet-chart-ui';
@@ -1204,7 +1206,7 @@ export class SheetMode {
   }
 
   private colourMenu(x: number, y: number, which: 'color' | 'fill'): void {
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu colour-menu';
     m.setAttribute('role', 'menu');
@@ -1227,7 +1229,7 @@ export class SheetMode {
     }
     const none = document.createElement('button');
     none.type = 'button';
-    none.textContent = which === 'fill' ? 'No fill' : 'Automatic (black)';
+    none.textContent = which === 'fill' ? 'No Fill' : 'Automatic';
     none.addEventListener('click', () => pick(undefined));
     const more = document.createElement('label');
     more.className = 'colour-more';
@@ -1235,7 +1237,7 @@ export class SheetMode {
     input.type = 'color';
     input.dataset.systemPicker = '';
     input.addEventListener('change', () => pick(input.value));
-    more.append('More colors ', input);
+    more.append('More Colors… ', input);
     m.append(themeColourGrid(this.look.theme, pick), grid, paletteRows(undefined, pick, () => m.remove()), none, more);
     document.body.append(m);
     m.style.left = `${Math.min(x, innerWidth - m.offsetWidth - 4)}px`;
@@ -1254,14 +1256,14 @@ export class SheetMode {
     const v = this.view;
     const set = (how: Parameters<Sheet['setBorders']>[1], label: string) => () => this.edit(label, (s) => s.setBorders(growToMerges(s, v.sel.range), how));
     popupMenu(x, y, [
-      ['Bottom border', set('bottom', 'Bottom border')],
-      ['Top border', set('top', 'Top border')],
-      ['Top and bottom border', set('top-bottom', 'Top and bottom border')],
-      ['Thick bottom border', set('thick-bottom', 'Thick bottom border')],
-      ['Outside borders', set('outside', 'Outside borders')],
-      ['All borders', set('all', 'All borders')],
+      ['Bottom Border', set('bottom', 'Bottom Border')],
+      ['Top Border', set('top', 'Top Border')],
+      ['Top and Bottom Border', set('top-bottom', 'Top and Bottom Border')],
+      ['Thick Bottom Border', set('thick-bottom', 'Thick Bottom Border')],
+      ['Outside Borders', set('outside', 'Outside Borders')],
+      ['All Borders', set('all', 'All Borders')],
       null,
-      ['No border', set('none', 'No border')],
+      ['No Border', set('none', 'No Border')],
     ]);
   }
 
@@ -1314,17 +1316,17 @@ export class SheetMode {
 
   private insertMenu(x: number, y: number): void {
     popupMenu(x, y, [
-      ['Insert rows above', () => this.insertCells('row')],
-      ['Insert columns to the left', () => this.insertCells('col')],
-      ['Insert a worksheet', () => this.view.addSheet()],
+      ['Insert Sheet Rows', () => this.insertCells('row')],
+      ['Insert Sheet Columns', () => this.insertCells('col')],
+      ['Insert Sheet', () => this.view.addSheet()],
     ]);
   }
 
   private deleteMenu(x: number, y: number): void {
     popupMenu(x, y, [
-      ['Delete rows', () => this.deleteCells('row')],
-      ['Delete columns', () => this.deleteCells('col')],
-      ['Delete this worksheet', () => this.view.deleteSheet()],
+      ['Delete Sheet Rows', () => this.deleteCells('row')],
+      ['Delete Sheet Columns', () => this.deleteCells('col')],
+      ['Delete Sheet', () => this.view.deleteSheet()],
     ]);
   }
 
@@ -1337,7 +1339,7 @@ export class SheetMode {
     kind ??= this.wholeRows(R) ? 'row' : this.wholeCols(R) ? 'col' : undefined;
     if (!kind) { const b = this.ribbon.querySelector('[data-sh=insert]')!.getBoundingClientRect(); this.insertMenu(b.left, b.bottom + 2); return; }
     const n = kind === 'row' ? Math.min(R.r2, R.r1 + 999) - R.r1 + 1 : Math.min(R.c2, R.c1 + 199) - R.c1 + 1;
-    this.edit(kind === 'row' ? 'Insert rows' : 'Insert columns', (s) => (kind === 'row' ? s.insertRows(R.r1, n) : s.insertCols(R.c1, n)));
+    this.edit(kind === 'row' ? 'Insert Sheet Rows' : 'Insert Sheet Columns', (s) => (kind === 'row' ? s.insertRows(R.r1, n) : s.insertCols(R.c1, n)));
   }
 
   private deleteCells(kind?: 'row' | 'col'): void {
@@ -1347,7 +1349,7 @@ export class SheetMode {
     if (!kind) { const b = this.ribbon.querySelector('[data-sh=delete]')!.getBoundingClientRect(); this.deleteMenu(b.left, b.bottom + 2); return; }
     const s = v.sheet!;
     const n = deleteCount(R, kind, kind === 'row' ? s.lastRow : s.lastCol);
-    this.edit(kind === 'row' ? 'Delete rows' : 'Delete columns', (sh) => (kind === 'row' ? sh.deleteRows(R.r1, n) : sh.deleteCols(R.c1, n)));
+    this.edit(kind === 'row' ? 'Delete Sheet Rows' : 'Delete Sheet Columns', (sh) => (kind === 'row' ? sh.deleteRows(R.r1, n) : sh.deleteCols(R.c1, n)));
   }
 
   private hide(kind: 'row' | 'col', hide: boolean): void {
@@ -1476,7 +1478,7 @@ export class SheetMode {
     // structures sort by their weight, which may still be being worked out
     if (this.columnHasStructures(s, col, t.data)) { this.book!.recalc(); await this.chem.settled(); }
     // (the sheet may have changed meanwhile: the sort is of the sheet it was asked on)
-    if (!this.editSheet(s, descending ? 'Sort largest to smallest' : 'Sort smallest to largest', (sh) => sh.sort(t.data, [{ col, descending }]))) return;
+    if (!this.editSheet(s, descending ? 'Sort Largest to Smallest' : 'Sort Smallest to Largest', (sh) => sh.sort(t.data, [{ col, descending }]))) return;
     const what = s.cell(t.data.r1, col)?.structure ? ' (structures by molecular weight)' : '';
     this.host.flash(`Sorted ${t.data.r2 - t.data.r1 + 1} rows by column ${colName(col)}${what}.`);
   }
@@ -1579,7 +1581,7 @@ export class SheetMode {
     const s = this.view.sheet!;
     const f = s.filter;
     if (!f) return;
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu filter-menu';
     m.setAttribute('role', 'dialog');
@@ -1595,8 +1597,8 @@ export class SheetMode {
       return b;
     };
     m.append(
-      btn('Sort smallest to largest', () => { this.view.selectCell(rows.r1, col); void this.sort(false); }),
-      btn('Sort largest to smallest', () => { this.view.selectCell(rows.r1, col); void this.sort(true); }),
+      btn('Sort Smallest to Largest', () => { this.view.selectCell(rows.r1, col); void this.sort(false); }),
+      btn('Sort Largest to Smallest', () => { this.view.selectCell(rows.r1, col); void this.sort(true); }),
       document.createElement('hr'),
     );
     const structures = this.columnHasStructures(s, col, { r1: rows.r1, c1: col, r2: rows.r2, c2: col });
@@ -1643,21 +1645,21 @@ export class SheetMode {
       const allowed = cond?.kind === 'values' ? new Set(cond.allowed) : null;
       const boxes: HTMLInputElement[] = [];
       const everyValue = [...seen.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
-      // a long list shows its first values; the others have no box: they follow (Select all)
+      // a long list shows its first values; the others have no box: they follow (Select All)
       const sorted = everyValue.slice(0, FILTER_LIST_MAX);
       const listed = new Set(sorted);
       const all = document.createElement('label');
       const allBox = document.createElement('input');
       allBox.type = 'checkbox';
       allBox.checked = !allowed;
-      all.append(allBox, ' (Select all)');
+      all.append(allBox, ' (Select All)');
       let allTouched = false;
       allBox.addEventListener('change', () => { allTouched = true; boxes.forEach((b) => { b.checked = allBox.checked; }); });
       list.append(all);
       if (everyValue.length > sorted.length) {
         const more = document.createElement('p');
         more.className = 'muted';
-        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others are shown while (Select all) is checked, unless another filter hides them.`;
+        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others are shown while (Select All) is checked, unless another filter hides them.`;
         list.append(more);
       }
       for (const t of sorted) {
@@ -1671,7 +1673,7 @@ export class SheetMode {
         list.append(l);
       }
       const ok = btn('OK', () => {
-        // the values not listed are not in a box: they follow (Select all), or an earlier choice if it was left alone
+        // the values not listed are not in a box: they follow (Select All), or an earlier choice if it was left alone
         const picked = boxes.filter((b) => b.checked).map((b) => b.value);
         const unlisted = everyValue.filter((t) => !listed.has(t) && (allTouched ? allBox.checked : !allowed || allowed.has(t)));
         const everyThing = picked.length === boxes.length && unlisted.length === everyValue.length - sorted.length;
@@ -2093,7 +2095,7 @@ export class SheetMode {
     const R = v.sel.range;
     const keys = s.keysIn(R).filter((k) => s.isOverride(rowOf(k), colOf(k)));
     if (!keys.length) { this.host.flash('None of the selected cells has a value typed over a calculated one.'); return; }
-    this.edit('Reset to calculated', (sh) => {
+    this.edit('Reset to Calculated', (sh) => {
       for (const k of keys) sh.setCell(rowOf(k), colOf(k), { style: sh.cell(rowOf(k), colOf(k))?.style });
     });
     this.host.flash(`Reset ${keys.length} cell${keys.length > 1 ? 's' : ''} to the calculated value.`);
@@ -2529,11 +2531,11 @@ export class SheetMode {
     const v = this.view;
     const R = v.sel.range;
     const cur = kind === 'row' ? v.rowHeight(R.r1) : v.colWidth(R.c1);
-    const ans = await ask(kind === 'row' ? 'Row height' : 'Column width', [{ name: 'px', label: kind === 'row' ? 'Height' : 'Width', value: String(Math.round(cur)), type: 'number', unit: 'pixels' }]);
+    const ans = await ask(kind === 'row' ? 'Row Height' : 'Column Width', [{ name: 'px', label: kind === 'row' ? 'Height' : 'Width', value: String(Math.round(cur)), type: 'number', unit: 'pixels' }]);
     // (a cleared box is no size, not a size of nothing)
     const n = ans && ans.px.trim() !== '' ? Number(ans.px) : NaN;
     if (!ans || !Number.isFinite(n) || n < 0) return;
-    this.edit(kind === 'row' ? 'Row height' : 'Column width', (sh) => {
+    this.edit(kind === 'row' ? 'Row Height' : 'Column Width', (sh) => {
       const end = this.reachOf(R, kind);
       if (kind === 'row') for (let r = R.r1; r <= end; r++) sh.setRowHeight(r, Math.min(2000, n));
       else for (let c = R.c1; c <= end; c++) sh.setColWidth(c, Math.min(2000, n));
@@ -2848,18 +2850,20 @@ export class SheetMode {
     if (cell?.structure) {
       parts.push(para('A drawn structure.'), rowOfButtons(
         button('Change…', () => this.drawStructure(r, c), 'Open the drawing tools on it (or double-click the cell)'),
-        button('Add property columns…', () => void this.propertyColumns(), 'Columns of formula, MW, HRMS m/z… calculated for every structure in this column'),
+        button('Insert Property Columns…', () => void this.propertyColumns(), 'Columns of formula, MW, HRMS m/z… calculated for every structure in this column'),
       ));
       parts.push(this.structureTable(cell.structure, c));
     } else if (def) {
       const own = s.isOverride(r, c);
       const shifted = s.effectiveInput(r, c);
       if (own) {
-        parts.push(para(`Typed over the calculated value. The column calculates ${defFormula(s, r, c)}.`, 'cp-note'), rowOfButtons(button('Reset to calculated', () => this.resetCalculated())));
+        parts.push(para(`Typed over the calculated value. The column calculates ${defFormula(s, r, c)}.`, 'cp-note'), rowOfButtons(button('Reset to Calculated', () => this.resetCalculated())));
       } else {
-        parts.push(para(`Calculated by the column: ${shifted}`), para('Type in the cell to put a custom value instead.', 'muted'));
+        const calculated = para(`Calculated by the column: ${shifted}`);
+        addInfo(calculated, 'Type in the cell to put a custom value instead.');
+        parts.push(calculated);
       }
-      parts.push(rowOfButtons(button('Change the column\'s formula…', () => void this.editColumnFormula(c))));
+      parts.push(rowOfButtons(button('Change the Column\'s Formula…', () => void this.editColumnFormula(c))));
     } else if (cell?.input?.startsWith('=')) {
       parts.push(para('A formula:'), Object.assign(document.createElement('code'), { textContent: cell.input, className: 'cp-formula' }));
     } else if (cell?.input) {

@@ -62,6 +62,38 @@ export interface SlideListOptions {
   thumbW?: number;
 }
 
+/** A number for each object, to tell whether it is the same one (a drawing, a master) as when a picture was drawn. */
+const ids = new WeakMap<object, number>();
+let lastId = 0;
+/**
+ * JSON.stringify's replacer for a stamp: a long text (a picture background's data URL) stands for
+ * itself by its length, its ends and a sample of the characters between, not whole (a stamp is
+ * made for every slide on every rebuild).
+ */
+function shortLong(_k: string, v: unknown): unknown {
+  if (typeof v !== 'string' || v.length <= 200) return v;
+  let mid = 0;
+  for (let k = 64; k < v.length - 64; k += 997) mid = (mid * 31 + v.charCodeAt(k)) | 0;
+  return `${v.length}:${v.slice(0, 64)}:${mid}:${v.slice(-64)}`;
+}
+
+function identity(o: object): number {
+  let n = ids.get(o);
+  if (n === undefined) { n = ++lastId; ids.set(o, n); }
+  return n;
+}
+
+/** Copy one painted picture onto another canvas; false when the browser has no canvas to copy with. */
+function copyPicture(from: HTMLCanvasElement, to: HTMLCanvasElement): boolean {
+  if (!from.width || !from.height) return false;
+  const ctx = to.getContext('2d');
+  if (!ctx) return false;
+  to.width = from.width;
+  to.height = from.height;
+  ctx.drawImage(from, 0, 0);
+  return true;
+}
+
 export class SlideList {
   private deck: Deck | null = null;
   /** Picked slides (by index), for deleting, duplicating or moving several. */
@@ -75,6 +107,15 @@ export class SlideList {
   private dragSection: number | null = null;
   private dropMark: HTMLDivElement;
   private thumbTimer = 0;
+  /** Slides whose pictures are to be redrawn when the timer runs out (F839). */
+  private thumbPending = new Set<number>();
+  /** Slides still to be painted after a rebuild or a repaint of every picture (a few at a time). */
+  private paintQueue: number[] = [];
+  private paintTimer = 0;
+  /** What each slide's picture shows (by slide id), so a rebuild paints only the slides that changed (F185). */
+  private painted = new Map<number, { stamp: string; thumb: HTMLCanvasElement; keys: Map<number, HTMLCanvasElement> }>();
+  /** The slide whose section was last opened for it (a folded section opens when its slide is gone to). */
+  private openedFor: { deck: Deck | null; slide: object | null } = { deck: null, slide: null };
   private grid: boolean;
   thumbW: number;
   /** Canvas slides (by id) whose keyframes are folded away in the list. */
@@ -125,6 +166,7 @@ export class SlideList {
   /** Show this deck's slides (or none). */
   show(deck: Deck | null): void {
     this.deck = deck;
+    this.painted.clear();
     this.picked = new Set(deck ? [deck.index] : []);
     this.anchor = deck?.index ?? 0;
     this.rebuild();
@@ -140,9 +182,14 @@ export class SlideList {
     // keep picked slides that still exist, and always the one being edited
     this.picked = new Set([...this.picked].filter((i) => i < deck.slides.length));
     if (!this.picked.has(deck.index)) this.picked = new Set([deck.index]);
-    // the slide being edited is never hidden in a folded section
-    const curSec = deck.slides[deck.index]?.section;
-    if (curSec !== undefined) deck.folded.delete(curSec);
+    // going to a slide that sits in a folded section opens the section, but only then: the
+    // section holding the slide being edited can be folded like any other (F838)
+    // (the slide itself is remembered, not its number: deleting a slide before it moves its number)
+    if (this.openedFor.deck !== deck || this.openedFor.slide !== deck.slides[deck.index]) {
+      this.openedFor = { deck, slide: deck.slides[deck.index] ?? null };
+      const curSec = deck.slides[deck.index]?.section;
+      if (curSec !== undefined) deck.folded.delete(curSec);
+    }
     const kids: HTMLElement[] = [];
     this.items = [];
     this.heads = [];
@@ -169,7 +216,7 @@ export class SlideList {
     if (before && moving()) for (const [id, el] of before) if (el.isConnected) was.set(id, el.getBoundingClientRect());
     this.list.replaceChildren(...kids, this.dropMark);
     this.mark();
-    for (let i = 0; i < deck.slides.length; i++) this.paint(i);
+    this.paintAll(false);
     this.items[deck.index]?.scrollIntoView({ block: 'nearest' });
     const now = new Map<string, HTMLElement>();
     deck.slides.forEach((sl, i) => { if (this.items[i]) now.set(String(sl.id), this.items[i]); });
@@ -219,7 +266,8 @@ export class SlideList {
       if (!deck || !count) return;
       this.picked = new Set(Array.from({ length: count }, (_, k) => start + k));
       this.anchor = start;
-      if (!this.picked.has(deck.index)) this.hooks.go(start);
+      // (going to the section's first slide is picking the section, not opening it: a folded one stays folded)
+      if (!this.picked.has(deck.index)) { this.openedFor = { deck, slide: deck.slides[start] ?? null }; this.hooks.go(start); }
       this.mark();
       this.list.focus();
     });
@@ -390,6 +438,8 @@ export class SlideList {
     const deck = this.deck;
     if (!deck) return;
     if (!this.items[deck.index]) { this.rebuild(); return; }
+    // the slide gone to has its picture in the list: its section is as open or folded as it is
+    this.openedFor = { deck, slide: deck.slides[deck.index] ?? null };
     if (!this.picked.has(deck.index)) this.picked = new Set([deck.index]);
     this.mark();
     this.items[deck.index]?.scrollIntoView({ block: 'nearest' });
@@ -419,36 +469,111 @@ export class SlideList {
     if (paint) this.refreshAll();
   }
 
-  /** Redraw one slide's picture (soon, for the slide being edited, so typing stays quick). */
+  /**
+   * Redraw one slide's picture (soon, for the slide being edited, so typing stays quick). Slides
+   * edited within the wait are all redrawn when it is over, not just the last one (F839).
+   */
   refresh(i = this.deck?.index ?? 0, soon = true): void {
-    if (!soon) { this.paint(i); return; }
+    if (!soon) { this.paint(i, true); return; }
+    this.thumbPending.add(i);
     clearTimeout(this.thumbTimer);
-    this.thumbTimer = window.setTimeout(() => this.paint(i), 250);
+    this.thumbTimer = window.setTimeout(() => {
+      const list = [...this.thumbPending];
+      this.thumbPending.clear();
+      for (const k of list) this.paint(k, true);
+    }, 250);
   }
 
-  /** Redraw every slide's picture (after the master changed, or a picture loaded). */
+  /**
+   * Redraw every slide's picture (after the master changed, or a picture loaded). Asking again
+   * before they are drawn starts the one run over, so a picture loading after another does not
+   * draw every slide once for each (F186).
+   */
   refreshAll(): void {
     if (!this.deck) return;
-    for (let i = 0; i < this.deck.slides.length; i++) this.paint(i);
+    this.paintAll(true);
   }
 
-  private paint(i: number): void {
+  /** Paint the slides again: the one being edited at once, the others a few at a time so the list stays quick. */
+  private paintAll(force: boolean): void {
+    const deck = this.deck;
+    if (!deck) return;
+    if (force) this.painted.clear();
+    const ids = new Set(deck.slides.map((s) => s.id));
+    for (const id of [...this.painted.keys()]) if (!ids.has(id)) this.painted.delete(id);
+    const rest: number[] = [];
+    for (let i = 0; i < deck.slides.length; i++) if (i !== deck.index) rest.push(i);
+    this.paintQueue = rest;
+    if (!force) {
+      this.paint(deck.index);
+      this.runQueue();
+      return;
+    }
+    // every picture is out of date: they are drawn from the next frame on, once however often this is asked for
+    this.paintQueue.unshift(deck.index);
+    if (this.paintTimer) this.cancelFrame(this.paintTimer);
+    this.paintTimer = this.nextFrame(() => { this.paintTimer = 0; this.runQueue(); });
+  }
+
+  private runQueue(): void {
+    if (this.paintTimer) { this.cancelFrame(this.paintTimer); this.paintTimer = 0; }
+    const t0 = performance.now();
+    while (this.paintQueue.length) {
+      this.paint(this.paintQueue.shift()!);
+      // a slide that is only copied from its last picture takes no time; a painted one takes its share of the frame
+      if (performance.now() - t0 > 8) break;
+    }
+    if (this.paintQueue.length) this.paintTimer = this.nextFrame(() => { this.paintTimer = 0; this.runQueue(); });
+  }
+
+  private nextFrame(f: () => void): number {
+    return typeof requestAnimationFrame === 'function' ? requestAnimationFrame(f) : window.setTimeout(f, 16);
+  }
+
+  private cancelFrame(id: number): void {
+    if (typeof cancelAnimationFrame === 'function') cancelAnimationFrame(id); else clearTimeout(id);
+  }
+
+  /** Everything that decides how slide i's picture looks, as text: the same text, the same picture. */
+  private stampOf(i: number): string {
+    const deck = this.deck!;
+    const page = deck.page(i);
+    const doc = deck.docOf(i);
+    const { size: _size, master, ...rest } = page;
+    return [identity(doc), doc.version, identity(master), deck.size.w, deck.size.h, this.wOf(i), this.keyW(), window.devicePixelRatio || 1, JSON.stringify(rest, shortLong), deck.slides[i].layout].join('|');
+  }
+
+  private paint(i: number, force = false): void {
     const deck = this.deck;
     const item = this.items[i];
     if (!deck || !item || !deck.slides[i]) return;
     const canvas = item.querySelector('canvas')!;
     const tw = this.wOf(i), h = Math.round((tw * deck.size.h) / deck.size.w);
-    paintSlide(canvas, tw, h, window.devicePixelRatio || 1, deck.page(i), deck.docOf(i));
+    const dpr = window.devicePixelRatio || 1;
+    const id = deck.slides[i].id;
+    const stamp = this.stampOf(i);
+    const was = this.painted.get(id);
     const keys = this.keyLists.get(i);
+    const keyCanvases = new Map<number, HTMLCanvasElement>();
+    if (keys) for (const c of keys.querySelectorAll('canvas')) keyCanvases.set(Number((c.parentElement as HTMLElement).dataset.k), c);
+    // the same slide looking the same as when it was last drawn (a rebuild moved or folded the list): copy its picture
+    if (!force && was && was.stamp === stamp && (was.thumb === canvas || copyPicture(was.thumb, canvas)) && [...keyCanvases].every(([k, c]) => {
+      const old = was.keys.get(k);
+      return !!old && (old === c || copyPicture(old, c));
+    })) {
+      this.painted.set(id, { stamp, thumb: canvas, keys: keyCanvases });
+      return;
+    }
+    paintSlide(canvas, tw, h, dpr, deck.page(i), deck.docOf(i));
     if (keys) {
       const w = this.keyW(), kh = Math.round((w * deck.size.h) / deck.size.w);
-      for (const c of keys.querySelectorAll('canvas')) {
-        const k = Number((c.parentElement as HTMLElement).dataset.k);
+      for (const [k, c] of keyCanvases) {
         c.style.width = `${w}px`;
         c.style.height = `${kh}px`;
-        paintSlide(c, w, kh, window.devicePixelRatio || 1, deck.page(i, k), deck.docOf(i));
+        paintSlide(c, w, kh, dpr, deck.page(i, k), deck.docOf(i));
       }
     }
+    this.painted.set(id, { stamp, thumb: canvas, keys: keyCanvases });
   }
 
   // ---------------------------------------------------------------- picking
@@ -604,6 +729,8 @@ export class SlideList {
     this.dragFrom = null;
     this.dragSection = null;
     if (sec !== null) {
+      // let go over its own heading: it stays where it is (F187)
+      if (d.section === sec) return;
       // a section dropped: it goes before the section the drop point is in (or after the last)
       const spans = deck.sectionSpans().filter((x) => x.section.id !== sec);
       let to = spans.length;

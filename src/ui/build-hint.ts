@@ -80,7 +80,9 @@ export class BuildHint {
     const s = h.onSlide() ? h.scope() : null;
     if (!s) { this.hide(); return; }
     const doc = h.doc();
-    const key = `${doc.version}|${[...s.scope.arrows].join(',')}|${[...s.scope.shapes].join(',')}|${s.smart}|${h.anims().length}`;
+    // (everything the offer is worked out from: the atoms and captions in scope, and what each animation is of, as well as the arrows)
+    const ids = (x: Set<number>) => [...x].join(',');
+    const key = `${doc.version}|${ids(s.scope.arrows)}|${ids(s.scope.shapes)}|${ids(s.scope.atoms)}|${ids(s.scope.captions)}|${s.smart}|${JSON.stringify(h.anims().map((a) => a.target))}`;
     if (key !== this.last) {
       this.last = key;
       this.offer = buildOffer(doc, h.measure(), s.scope, s.smart, h.anims());

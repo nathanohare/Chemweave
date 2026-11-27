@@ -259,6 +259,8 @@ interface CheckState {
   text: string;
   editing: boolean;
   results: Map<CheckNucleus, CheckEntry>;
+  /** The solvent the prediction was for when the results were made. */
+  solvent?: string;
 }
 
 interface Shown {
@@ -327,6 +329,8 @@ export class NmrPanel {
   private items: (Item | null)[] = [];
   private marks = false;
   private hot: number[] = [];
+  /** The row last hovered, and from where (the list, the panel's strip or the Spectrum window). */
+  private hovered: { i: number; row: number | null; from: 'list' | 'strip' | 'window' } = { i: -1, row: null, from: 'list' };
   private seq = 0;
   private win: SpectrumWindow | null = null;
   /** Check Data by structure (molfile), kept while the program runs. */
@@ -409,6 +413,7 @@ export class NmrPanel {
     this.items = items;
     this.shown.clear();
     this.hot = [];
+    this.hovered = { i: -1, row: null, from: 'list' };
     const seq = ++this.seq;
     const frags = [...panel.querySelectorAll<HTMLElement>(':scope > .frag')];
     if (this.host.unavailable) {
@@ -439,7 +444,13 @@ export class NmrPanel {
         <div class="an-buttons"><button type="button" class="nmr-check" aria-pressed="false" title="Compare a measured peak list (pasted in SI format) with the prediction">Check Data</button><button type="button" class="nmr-copy" title="Copy the predicted 1H and 13C data in SI format">Copy as SI Text</button><button type="button" class="nmr-view" aria-pressed="${this.report}" title="Show the predicted 1H and 13C data in journal format">Peak Report</button><button type="button" class="nmr-marks" aria-pressed="${this.marks}" title="Show the predictions on the drawing">Show on Drawing</button>${this.host.saveSpectra ? '<button type="button" class="nmr-save" title="Keep the predicted peak report, and a pasted measured one, with this compound in the Compound Library">Save to Library</button>' : ''}<select class="nmr-mode" title="What Show on Drawing shows: shifts by each atom, atom numbers matching the list, or confidence dots (green: small expected error; amber: larger; red: large, or no similar measured atoms)">${(['shifts', 'numbers', 'confidence'] as const).map((m) => `<option value="${m}"${m === this.mode ? ' selected' : ''}>${{ shifts: 'Shifts', numbers: 'Atom Numbers', confidence: 'Confidence' }[m]}</option>`).join('')}</select></div>`;
       const buttons = [...frag.querySelectorAll(':scope > .an-buttons')].pop();
       frag.insertBefore(d, buttons ?? null);
-      d.addEventListener('toggle', () => { this.open = d.open; if (d.open) void this.fill(i, d, seq); else if (this.marks) this.host.redraw(); });
+      // (a section opened here is filled below: the toggle event this queues is not a second reason to fill it)
+      let initial = d.open;
+      d.addEventListener('toggle', () => {
+        this.open = d.open;
+        if (initial) { initial = false; if (d.open) return; }
+        if (d.open) void this.fill(i, d, seq); else if (this.marks) this.host.redraw();
+      });
       d.querySelector('select')!.addEventListener('click', (e) => e.stopPropagation());
       d.querySelector('select')!.addEventListener('change', (e) => {
         this.solvent = (e.target as HTMLSelectElement).value;
@@ -485,6 +496,7 @@ export class NmrPanel {
         this.hot = el && s ? el.dataset.row!.split(',').flatMap((k) => s.rows[Number(k)].atoms).map((a) => s.ids[a]).filter((x): x is number => x !== null) : [];
         this.host.redraw();
         const row = el ? Number(el.dataset.row!.split(',')[0]) : null;
+        this.hovered = { i, row, from: 'list' };
         this.drawStrip(i, d, row);
         if (this.win?.visible && this.winItem === i) this.win.highlight(row);
       });
@@ -570,6 +582,9 @@ export class NmrPanel {
       for (const sh of shifts) if (sh.h1gap !== undefined && sh.h1gap >= MIN_GAP && graph.atoms[sh.atom].h === 2 && !Number.isNaN(h1[sh.atom])) netGap[sh.atom] = sh.h1gap;
       this.shown.set(i, { rows, ids, ring, graph, h1, codes, rowOf, specs: new Map(), pending: new Set(), molblock: item.molblock, heavy, baseRows: rows, baseRowOf: rowOf, netGap });
       this.render(i, d);
+      // a measured list checked before was compared with the last prediction (another solvent, say): check it again against this one
+      const ck = this.checkState(i, false);
+      if (ck?.results.size && !ck.editing && ck.solvent !== this.solvent) void this.runCheck(i, d, true);
       if (this.win?.visible && this.winItem === i) this.win.refresh();
       if (this.marks) this.host.redraw();
     } catch (e) {
@@ -582,6 +597,8 @@ export class NmrPanel {
     const s = this.shown.get(i);
     if (!s) return;
     this.useRows(i, s);
+    // (the list is made again, without its marks: the next hover of the same peak marks it again)
+    if (this.hovered.i === i) this.hovered = { i: -1, row: null, from: 'list' };
     const body = d.querySelector<HTMLElement>('.nmr-body')!;
     if (!s.rows.length) { body.innerHTML = '<p class="muted small">No carbons or hydrogens to predict.</p>'; return; }
     body.innerHTML = `<div class="nmr-strip" data-item="${i}"><button type="button" class="nmr-popout" title="Open the spectrum in a window (zoom, labels, field, Copy as Picture)" aria-label="Open the spectrum in a window">⤢</button></div>`
@@ -669,16 +686,17 @@ export class NmrPanel {
   }
 
   /** Reads the pasted lists and compares each with the prediction. */
-  private async runCheck(i: number, d: HTMLElement): Promise<void> {
+  /** @param again the list was checked before and the prediction changed (the solvent): the same view stays, no word about an empty list */
+  private async runCheck(i: number, d: HTMLElement, again = false): Promise<void> {
     const st = this.checkState(i, true)!, s = this.shown.get(i);
     const ta = d.querySelector<HTMLTextAreaElement>('.ck-box textarea');
     if (ta) st.text = ta.value;
     if (!s) return;
     const lists = parsePeakLists(st.text);
-    if (!lists.length) { this.host.flash('No peaks found: paste a list such as 1H NMR (400 MHz, CDCl3) δ 7.26 (s, 1H).'); return; }
-    st.results.clear();
+    if (!lists.length) { if (!again) this.host.flash('No peaks found: paste a list such as 1H NMR (400 MHz, CDCl3) δ 7.26 (s, 1H).'); return; }
+    const made = new Map<CheckNucleus, CheckEntry>();
     for (const list of lists) {
-      if (st.results.has(list.nuc)) continue;
+      if (made.has(list.nuc)) continue;
       const rowIdx: number[] = [], rows: PredictedRow[] = [];
       s.rows.forEach((r, k) => {
         const a = s.graph.atoms[r.atoms[0]];
@@ -690,10 +708,14 @@ export class NmrPanel {
       const known = await knownPeaks(solvent, list.nuc, await this.host.importedTables?.().catch(() => null) ?? null);
       const res = checkData(list, rows, known);
       const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${solventLabel(list.solvent)}; the prediction is for ${solventLabel(this.solvent)}. Select ${solventLabel(list.solvent)} above so they match.` : undefined;
-      st.results.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
+      made.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
     }
+    // (a newer prediction of this structure came meanwhile: its own check follows)
+    if (again && this.shown.get(i) !== s) return;
+    st.results = made;
+    st.solvent = this.solvent;
     st.editing = false;
-    if (!this.report && !st.results.has(this.nuc as CheckNucleus)) { this.nuc = st.results.keys().next().value!; this.restyle(d.closest<HTMLElement>('.frag')?.parentElement ?? document.body); }
+    if (!again && !this.report && !st.results.has(this.nuc as CheckNucleus)) { this.nuc = st.results.keys().next().value!; this.restyle(d.closest<HTMLElement>('.frag')?.parentElement ?? document.body); }
     else this.render(i, d);
     if (this.win?.visible && this.winItem === i) this.win.refresh();
   }
@@ -727,9 +749,14 @@ export class NmrPanel {
       if (job) {
         // first-order lines straight away; the exact spectrum replaces them when it is ready
         s.pending.add(key);
-        job.then((sp) => { s.specs.set(key, sp); this.specReady(i, s); }, () => { s.specs.set(key, predictSpectrum(s.graph, s.h1, s.codes, sf, 'fast', undefined, undefined, s.netGap)); this.specReady(i, s); });
+        job.then((sp) => { s.specs.set(key, sp); s.pending.delete(key); this.specReady(i, s); }, () => { s.specs.set(key, predictSpectrum(s.graph, s.h1, s.codes, sf, 'fast', undefined, undefined, s.netGap)); s.pending.delete(key); this.specReady(i, s); });
       }
-      if (s.pending.has(key)) spec = s.specs.get(`${sf}|fast`) ?? predictSpectrum(s.graph, s.h1, s.codes, sf, 'fast', undefined, undefined, s.netGap);
+      if (s.pending.has(key)) {
+        // (made once and kept: this runs on every pointer move over the list or the strip)
+        const fast = `${sf}|fast`;
+        spec = s.specs.get(fast);
+        if (!spec) { spec = predictSpectrum(s.graph, s.h1, s.codes, sf, 'fast', undefined, undefined, s.netGap); s.specs.set(fast, spec); }
+      }
       else { spec = predictSpectrum(s.graph, s.h1, s.codes, sf, quality, undefined, undefined, s.netGap); s.specs.set(key, spec); }
       if (quality === 'fast') s.specs.set(key, spec);
     }
@@ -879,12 +906,20 @@ export class NmrPanel {
     this.win?.refresh();
   }
 
+  /** The quality was changed in the Spectrum window: each section's list is made again from the rows that quality gives. */
+  private sectionsAgain(): void {
+    for (const d of this.sections()) this.render(Number(d.dataset.item), d);
+  }
+
   qualityChanged(panel: HTMLElement | null): void {
     if (panel) this.restyle(panel); else this.win?.refresh();
   }
 
   /** Hovering a row or a peak: its atoms on the drawing, its row in the list, its peaks in both spectra. */
   private hoverRow(i: number, row: number | null, from: 'list' | 'strip' | 'window'): void {
+    // the same row again from the same place (the pointer moving along one peak) changes nothing: the drawing isn't drawn again
+    if (this.hovered.i === i && this.hovered.row === row && this.hovered.from === from) return;
+    this.hovered = { i, row, from };
     const s = this.shown.get(i);
     this.hot = s && row !== null ? s.rows[row].atoms.map((a) => s.ids[a]).filter((x): x is number => x !== null) : [];
     this.host.redraw();
@@ -909,6 +944,7 @@ export class NmrPanel {
       closed: () => this.stopCheckWait(),
       solvent: { ids: NMR_SOLVENTS, label: solventLabel, get: () => this.solvent, set: (v) => this.setSolvent(v) },
       checkData: () => this.openCheck(this.winItem),
+      qualityChanged: () => this.sectionsAgain(),
       ...this.host.openSettings ? { openSettings: () => this.host.openSettings!() } : {},
     });
     this.win.open(near);

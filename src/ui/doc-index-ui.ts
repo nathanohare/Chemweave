@@ -358,7 +358,8 @@ export class DocIndexUI {
     if (!out.count && t === f.t) { this.host.flash('This paragraph has that citation marked already.'); return; }
     f.ed.update(out.t, 'Mark citation');
     const listed = Object.values(f.t.objects).some((o) => o.kind === 'toa');
-    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs` : 'Marked'} under ${categoryName(cat)}.${listed ? '' : ' Insert the table with References ▸ Insert Table of Authorities.'}`, 6000);
+    // nothing newly marked: only the citation's long form or category was changed
+    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs under` : out.count ? 'Marked under' : 'Updated the citation under'} ${categoryName(cat)}.${listed ? '' : ' Insert the table with References ▸ Insert Table of Authorities.'}`, 6000);
   }
 
   private async askToa(now: Extract<DocObject, { kind: 'toa' }>, ok: string): Promise<Extract<DocObject, { kind: 'toa' }> | null> {

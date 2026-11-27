@@ -19,7 +19,7 @@ import { joinWideEnds, lineMitres, endTip, LINE_MITRE_LIMIT, type WideEnd, type 
 import { CAP, chargeInk, labelBonds, labelSpec, layoutLabel, LabelLayout, labelLook } from '../chem/labels';
 import type { StructureChecks } from '../chem/warnings';
 import { isGenericLabel } from '../chem/labels';
-import { bracketPath, shaftOffset, shapeOrder, elbowRoute, boxOf, shapeBox, shapeMid, shapeTurn, bezPoints, bezHeadBack, bezPathAt, bezSlice, type PathStep } from '../objects';
+import { bracketPath, shaftOffset, shapeOrder, elbowRoute, boxOf, paintedBox, shapeMid, shapeTurn, bezPoints, bezHeadBack, bezPathAt, bezSlice, type PathStep } from '../objects';
 import { atomStereoText, bondStereoText, shownDescriptor, axialStyle, StereoPlacer, PlacedLabel } from '../chem/stereo';
 import { arialWidth } from '../text-metrics';
 import { attachDiamondSize, attachStarSize, hasAttachDiamond, isMapNumber, mapBox } from './atom-marks';
@@ -31,7 +31,7 @@ import { cutCorners, fillInk, patternClear, patternInk, ringShadowGroups, ringSh
 import { placeholderRect, isEmptyText } from '../deck/deck';
 import { imageFor } from './images';
 import { hasShapeFx, shapeFx, type ShapeFxPaints } from './shape-fx';
-import { fxCanvas, fxSrc, shapeDef, traceShape } from './picture-fx';
+import { fxCanvas, fxSideFor, fxSrc, shapeDef, traceShape } from './picture-fx';
 import { layoutTable, drawTable, type TableLayout, type TablePart } from '../table';
 import type { TableData, TextRun } from '../model';
 import { repeatLabelPlace } from '../chem/polymer';
@@ -168,7 +168,9 @@ export function withMeasure<T>(m: TextMeasure, fn: () => T): T {
 }
 
 /** A patterned shape's dots or hatching, kept with the shape (a changed shape is a new object). */
-const patternPaths = new WeakMap<Shape, { make: () => Path2D; path: Path2D }>();
+/** Blurred shadows worked out as areas, by the shape (or fused rings) casting them (see paintShadow). */
+const shadowAreas = new WeakMap<object, { sig: string; paints: FxPaint[] }>();
+const patternPaths = new WeakMap<Shape, { kind: unknown; sig: string; path: Path2D }>();
 /** Design shapes' effects, worked out once for each shape as it is. */
 const geoFx = new WeakMap<Shape, ShapeFxPaints>();
 
@@ -251,6 +253,7 @@ export class Renderer {
   private freeCanvases: (OffscreenCanvas | HTMLCanvasElement)[] = [];
   private shapeList: Shape[] | null = null;
   private shapeVersion = -1;
+  private shapeDoc: Doc | null = null;
   /** True when some tiles still need painting (the caller should ask for another frame). */
   incomplete = false;
   private bondCache = new Map<number, BondCache>();
@@ -627,6 +630,7 @@ export class Renderer {
         if (!this.stale || this.tiles.size >= this.stale.tiles.size / 2) this.stale = { tiles: new Map([...this.tiles].filter(([, t]) => !t.patch)), scale: this.tileScale };
       } else this.stale = null;
       this.tiles = new Map();
+      this.paintedPad = 0;
       this.scaledAt = t0;
       this.tileScale = scale;
       this.tileDpr = dpr;
@@ -635,7 +639,7 @@ export class Renderer {
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.fillStyle = doc.background;
     ctx.fillRect(0, 0, this.width, this.height);
-    const T = TILE;
+    const T = tileSide(dpr);
     const tx0 = Math.floor(-ox / T), tx1 = Math.floor((this.width - ox) / T);
     const ty0 = Math.floor(-oy / T), ty1 = Math.floor((this.height - oy) / T);
     // stale placeholders first
@@ -673,8 +677,8 @@ export class Renderer {
   }
 
   private paintTile(doc: Doc, tx: number, ty: number): Tile {
-    const T = TILE, dpr = this.dpr, scale = this.view.scale;
-    const px = Math.round(T * dpr);
+    const dpr = this.dpr, scale = this.view.scale;
+    const T = tileSide(dpr), px = Math.round(T * dpr);
     const canvas = this.freeCanvases.pop() ?? (typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(px, px) : Object.assign(document.createElement('canvas'), { width: px, height: px }));
     if (canvas.width !== px) { canvas.width = px; canvas.height = px; }
     const ctx = canvas.getContext('2d', { alpha: false }) as CanvasRenderingContext2D;
@@ -684,6 +688,7 @@ export class Renderer {
     ctx.setTransform(dpr * scale, 0, 0, dpr * scale, -tx * T * dpr, -ty * T * dpr);
     const x1 = (tx * T) / scale, y1 = (ty * T) / scale;
     const pad = this.pad(doc);
+    this.paintedPad = Math.max(this.paintedPad, pad);
     this.page?.draw(ctx);
     this.drawContent(ctx, doc, { x1: x1 - pad, y1: y1 - pad, x2: x1 + T / scale + pad, y2: y1 + T / scale + pad });
     return { canvas, tx, ty, patch: null };
@@ -693,6 +698,7 @@ export class Renderer {
   private startTile(ctx: CanvasRenderingContext2D): void {
     ctx.setTransform(1, 0, 0, 1, 0, 0);
     ctx.lineJoin = 'miter';
+    ctx.miterLimit = 10;
     ctx.lineCap = 'butt';
     ctx.setLineDash([]);
     ctx.globalAlpha = 1;
@@ -706,8 +712,8 @@ export class Renderer {
   private patchTile(doc: Doc, t: Tile): void {
     const r = t.patch!;
     t.patch = null;
-    const T = TILE, dpr = this.dpr, scale = this.tileScale;
-    const px = Math.round(T * dpr);
+    const dpr = this.dpr, scale = this.tileScale;
+    const T = tileSide(dpr), px = Math.round(T * dpr);
     // the area in the tile's pixels, out to whole pixels
     const k = scale * dpr;
     const ix0 = Math.max(0, Math.floor(r.x1 * k - t.tx * T * dpr)), iy0 = Math.max(0, Math.floor(r.y1 * k - t.ty * T * dpr));
@@ -723,6 +729,7 @@ export class Renderer {
     ctx.fillRect(ix0, iy0, ix1 - ix0, iy1 - iy0);
     ctx.setTransform(k, 0, 0, k, -t.tx * T * dpr, -t.ty * T * dpr);
     const pad = this.pad(doc);
+    this.paintedPad = Math.max(this.paintedPad, pad);
     const x1 = (t.tx * T + ix0 / dpr) / scale, y1 = (t.ty * T + iy0 / dpr) / scale;
     const x2 = (t.tx * T + ix1 / dpr) / scale, y2 = (t.ty * T + iy1 / dpr) / scale;
     this.page?.draw(ctx);
@@ -730,17 +737,44 @@ export class Renderer {
     ctx.restore();
   }
 
+  /** The largest pad the tiles kept were painted with (see dropTiles). */
+  private paintedPad = 0;
+
   /** How far outside a tile an object can sit and still reach into it. */
   private pad(doc: Doc): number {
     const st = doc.style;
-    return Math.max(doc.maxBondLength, 2 * st.bondLength, 8 * st.labelSize) + 4;
+    return Math.max(doc.maxBondLength, 2 * st.bondLength, 8 * st.labelSize, this.labelReach(doc)) + 4;
   }
+
+  /**
+   * About how far the longest atom label reaches from its atom (a long condensed label, or a
+   * label on a structure scaled up), so a tile draws the atoms whose labels reach into it.
+   * Counted from the labels' lengths, generously, once for each change to the drawing.
+   */
+  private labelReach(doc: Doc): number {
+    const got = this.reachOf;
+    if (got && got.doc === doc && got.version === doc.version && got.size === doc.style.labelSize) return got.reach;
+    let most = 0;
+    for (const a of doc.atoms.values()) {
+      if (a.z === 6 && !a.label && !a.showCarbon && !a.isotope) continue;
+      // (an element's own label: its symbol, hydrogens and charge)
+      const chars = (a.label?.length ?? 4) + (a.charge || a.isotope ? 3 : 0);
+      const reach = chars * (a.s ?? 1);
+      if (reach > most) most = reach;
+    }
+    const reach = most * 0.75 * doc.style.labelSize;
+    this.reachOf = { doc, version: doc.version, size: doc.style.labelSize, reach };
+    return reach;
+  }
+  private reachOf: { doc: Doc; version: number; size: number; reach: number } | null = null;
 
   private dropTiles(doc: Doc, rects: Rect[]): void {
     this.stale = null;
     if (!this.tiles.size) return;
-    const T = TILE, s = this.tileScale;
-    const pad = this.pad(doc);
+    const T = tileSide(this.tileDpr), s = this.tileScale;
+    // as far out as anything drawn in the tiles reached when they were painted: a long label
+    // shortened or deleted leaves its far end in tiles further off than the drawing reaches now
+    const pad = Math.max(this.pad(doc), this.paintedPad);
     // what each tile needs painted again, in drawing units
     const hit = new Map<Tile, Rect>();
     for (const r of rects) {
@@ -768,6 +802,7 @@ export class Renderer {
   private dropAllTiles(): void {
     for (const t of this.tiles.values()) this.freeCanvases.push(t.canvas);
     this.tiles.clear();
+    this.paintedPad = 0;
     this.stale = null;
     if (this.freeCanvases.length > 64) this.freeCanvases.length = 64;
   }
@@ -775,7 +810,7 @@ export class Renderer {
   /** Keep the tile cache to a sensible size by forgetting tiles far off screen. */
   private pruneTiles(tx0: number, tx1: number, ty0: number, ty1: number): void {
     // a tile holds (256 × screen scale)² pixels: on a high-resolution screen, fewer of them fit the budget
-    const px = TILE * this.dpr;
+    const px = Math.round(tileSide(this.dpr) * this.dpr);
     if (this.tiles.size <= Math.min(MAX_TILES, Math.floor(TILE_BYTES / (px * px * 4)))) return;
     const m = 4;
     for (const [key, t] of this.tiles) {
@@ -902,9 +937,11 @@ export class Renderer {
   }
 
   private sortedShapes(doc: Doc): Shape[] {
-    if (this.shapeVersion !== doc.version || !this.shapeList) {
+    // (a version number alone can match another drawing's: an animation's copies of a scheme)
+    if (this.shapeVersion !== doc.version || this.shapeDoc !== doc || !this.shapeList) {
       this.shapeList = shapeOrder([...doc.shapes.values()].filter((s) => !s.hidden));
       this.shapeVersion = doc.version;
+      this.shapeDoc = doc;
       this.ringShadows = ringShadowGroups(this.shapeList, doc.style.bondLength);
     }
     return this.shapeList;
@@ -975,7 +1012,8 @@ export class Renderer {
   private drawShapeList(ctx: CanvasRenderingContext2D, doc: Doc, list: Iterable<Shape>, vis: Rect): void {
     const st = doc.style;
     for (const s of list) {
-      const b = s.kind === 'table' ? this.tableBox(s) : s.rot ? shapeBox(s) : { x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2), x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2) };
+      // (all it paints: a tall shape's reflection reaches tiles far below its box)
+      const b = s.kind === 'table' ? this.tableBox(s) : paintedBox(s);
       if (b.x2 < vis.x1 || b.x1 > vis.x2 || b.y2 < vis.y1 || b.y1 > vis.y2) continue;
       this.drawShape(ctx, s, st.lineWidth, st.labelSize);
     }
@@ -1078,8 +1116,15 @@ export class Renderer {
     for (const r of list) {
       const lo = Math.min(r.tail.x, r.head.x), hi = Math.max(r.tail.x, r.head.x);
       const top = Math.min(r.tail.y, r.head.y), bot = Math.max(r.tail.y, r.head.y);
-      const pad = r.sweep || r.bez ? Math.hypot(hi - lo, bot - top) * (r.bez ? 1.5 : 1) : 10;
-      if (hi + pad < vis.x1 || lo - pad > vis.x2 || bot + pad < vis.y1 || top - pad > vis.y2) continue;
+      if (r.sweep && !r.bez?.length && Math.abs(r.sweep) > Math.PI) {
+        // more than half a turn bulges out past the chord by more than its length: the arc's circle
+        const { center, radius } = arcCenter(r.tail, r.head, r.sweep);
+        const reach = radius + 10 + r.headLength + (r.shaftSpacing ?? 0);
+        if (center.x + reach < vis.x1 || center.x - reach > vis.x2 || center.y + reach < vis.y1 || center.y - reach > vis.y2) continue;
+      } else {
+        const pad = r.sweep || r.bez ? Math.hypot(hi - lo, bot - top) * (r.bez ? 1.5 : 1) : 10;
+        if (hi + pad < vis.x1 || lo - pad > vis.x2 || bot + pad < vis.y1 || top - pad > vis.y2) continue;
+      }
       this.drawArrow(ctx, r, r.lineWidth ?? st.lineWidth);
     }
   }
@@ -1713,12 +1758,14 @@ export class Renderer {
    */
   chargeBox(doc: Doc, a: Atom): Rect | null {
     if (!a.charge || a.hideCharge) return null;
-    if (a.z === 6 && !a.label && !a.attach && !a.multi) {
+    const info = this.atomInfo(doc, a);
+    // as drawStructures draws it: beside a carbon with no label shown, else in the label (a lone
+    // CH3+, a carbon with an isotope or Show Carbon has one, with the charge laid out in it)
+    if (!info.layout && a.z === 6) {
       const { size, at } = carbonCharge(doc, a);
       const h = size * 0.45;
       return { x1: at.x - h, y1: at.y - h, x2: at.x + h, y2: at.y + h };
     }
-    const info = this.atomInfo(doc, a);
     return info.charge ? info.boxes[info.charge.index] ?? null : null;
   }
 
@@ -1733,6 +1780,9 @@ export class Renderer {
   }
 
   private drawFlatShape(ctx: CanvasRenderingContext2D, s: Shape, lw: number, labelSize = 10): void {
+    // corners as on a fresh tile, whatever was drawn before (Format > Order can put a shape after bonds)
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 10;
     const x = Math.min(s.x1, s.x2), y = Math.min(s.y1, s.y2);
     const w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1);
     // (a box or oval from a PowerPoint file: its outline's own width)
@@ -1769,7 +1819,7 @@ export class Renderer {
           ctx.beginPath();
         }
         ctx.roundRect(x, y, w, h, r);
-        this.fillAndOutline(ctx, r ? { ...s, radius: r } : s, x, y, w, h);
+        this.fillAndOutline(ctx, r ? { ...s, radius: r } : s, x, y, w, h, s);
         if (s.picture) {
           ctx.fillStyle = '#eef1f5';
           ctx.fillRect(x, y, w, h);
@@ -1802,10 +1852,10 @@ export class Renderer {
           // down and to the right unless set, as a highlight's shadow, showing only where it sticks out;
           // fused rings cast one round their outer edge, before any of their fills
           const group = this.ringShadows.get(s.id);
-          if (!group) this.paintShadow(ctx, [pts], shadowLook(s, ringShadowSize(s, L)), true);
+          if (!group) this.paintShadow(ctx, [pts], shadowLook(s, ringShadowSize(s, L)), true, s);
           else if (!this.shadowsCast.has(group)) {
             this.shadowsCast.add(group);
-            this.paintShadow(ctx, group.map((r) => this.ringPoints(r)), shadowLook(s, ringShadowSize(s, L)), true);
+            this.paintShadow(ctx, group.map((r) => this.ringPoints(r)), shadowLook(s, ringShadowSize(s, L)), true, group);
           }
           ctx.beginPath();
         }
@@ -1819,7 +1869,7 @@ export class Renderer {
           const doc = this.ringDoc;
           const labelled = pts.map((_, i) => { const a = doc?.atoms.get(s.ring?.[i] ?? -1); return !!a && !!doc && this.hasLabel(doc, a); });
           const area = s.patternClear ? insetPolygon(pts, L * 0.26) : cutCorners(insetPolygon(pts, L * 0.03), labelled, 0.4);
-          this.paintFill(ctx, { ...s, filled: false }, x, y, w, h, [area]);
+          this.paintFill(ctx, { ...s, filled: false }, x, y, w, h, [area], s);
         }
         break;
       }
@@ -1951,7 +2001,9 @@ export class Renderer {
       edge();
       return;
     }
-    const img = s.src && !s.chart && !s.math ? fxCanvas(s) ?? imageFor(s.src) : null;
+    // (a picture with effects worked out at about the pixels it is drawn at here: screen, zoom, export)
+    const tm = typeof ctx.getTransform === 'function' ? ctx.getTransform() : null;
+    const img = s.src && !s.chart && !s.math ? fxCanvas(s, tm ? fxSideFor(w, h, Math.hypot(tm.a, tm.b), s.crop) : undefined) ?? imageFor(s.src) : null;
     ctx.save();
     if (look?.shadow) {
       // canvas shadows ignore the zoom, so they are scaled by it here
@@ -1996,6 +2048,10 @@ export class Renderer {
     ctx.strokeStyle = ctx.fillStyle = r.color ?? '#000';
     ctx.lineWidth = r.line === 'bold' ? r.boldWidth ?? lw * 2.5 : lw;
     ctx.lineCap = 'butt';
+    // (set here, not left from whatever was drawn before: bonds leave it round, so an open head's
+    // point would be sharp in one tile and round in the next)
+    ctx.lineJoin = 'miter';
+    ctx.miterLimit = 10;
     const shaft = (tail: Vec, head: Vec, headStyle: Arrow['headStyle'], tailStyle: Arrow['headStyle']) => {
       const d = sub(head, tail);
       const l = len(d);
@@ -2013,8 +2069,9 @@ export class Renderer {
       ctx.moveTo(s.x, s.y); ctx.lineTo(e.x, e.y);
       ctx.stroke();
       ctx.setLineDash([]);
-      this.arrowHead(ctx, head, dir, headStyle, r);
-      this.arrowHead(ctx, tail, mul(dir, -1), tailStyle, r);
+      // (a short arrow's heads are shortened as its shaft is, so they don't reach back past its tail)
+      this.arrowHead(ctx, head, dir, headStyle, r, hl);
+      this.arrowHead(ctx, tail, mul(dir, -1), tailStyle, r, hl);
     };
     if (r.elbow && !r.equilibrium && !r.shaftSpacing) {
       this.elbowArrow(ctx, r, lw);
@@ -2195,9 +2252,9 @@ export class Renderer {
     ctx.fill();
   }
 
-  private arrowHead(ctx: CanvasRenderingContext2D, tip: Vec, dir: Vec, style: Arrow['headStyle'], r: Arrow): void {
+  private arrowHead(ctx: CanvasRenderingContext2D, tip: Vec, dir: Vec, style: Arrow['headStyle'], r: Arrow, length = r.headLength): void {
     if (style === 'none') return;
-    const hl = r.headLength, hw = r.headWidth;
+    const hl = Math.min(r.headLength, length), hw = r.headWidth;
     const n = perp(dir);
     const base = sub(tip, mul(dir, hl));
     const c = r.headCenter ?? 0.75;
@@ -2404,7 +2461,15 @@ export class Renderer {
       return;
     }
     const mv = layer.move ?? { x: 0, y: 0 };
-    const at = (st: FxStep) => { const ps = st.t === 1 && !st.grow ? fx.base : this.highlightPieces(doc, g, st.t, st.grow); return mv.x || mv.y ? movePieces(ps, mv.x, mv.y) : ps; };
+    const steps = (fx.steps ??= new Map());
+    const piecesAt = (t: number, grow: number) => {
+      if (t === 1 && !grow) return fx.base;
+      const k = `${t}|${grow}`;
+      let ps = steps.get(k);
+      if (!ps) steps.set(k, (ps = this.highlightPieces(doc, g, t, grow)));
+      return ps;
+    };
+    const at = (st: FxStep) => { const ps = piecesAt(st.t, st.grow); return mv.x || mv.y ? movePieces(ps, mv.x, mv.y) : ps; };
     // only the part of the page the layer covers is cleared and copied
     const m = ctx.getTransform();
     const W = ctx.canvas.width, H = ctx.canvas.height;
@@ -2517,6 +2582,17 @@ export class Renderer {
 
   /** A highlight's effects, worked out again only when it or its look changes. */
   private highlightFx(doc: Doc, g: HighlightGroup): FxEntry {
+    // the whole drawing's highlights are worked out once for each change to it: the same group
+    // again (another tile, another paint) has the same effects, with nothing to measure
+    const mine = this.fxOfGroup.get(g);
+    if (mine && mine.style === doc.style) return mine.e;
+    const e = this.highlightFxFor(doc, g);
+    this.fxOfGroup.set(g, { style: doc.style, e });
+    return e;
+  }
+  private fxOfGroup = new WeakMap<HighlightGroup, { style: Doc['style']; e: FxEntry }>();
+
+  private highlightFxFor(doc: Doc, g: HighlightGroup): FxEntry {
     const base = this.highlightPieces(doc, g, 1, 0);
     const key = g.colour + JSON.stringify(g.style) + g.scale + JSON.stringify(base);
     let e = this.fxCache.get(key);
@@ -2604,9 +2680,9 @@ export class Renderer {
    * its own gets the outline drawn round it in the line colour, and a pattern with no fill
    * keeps the outline.
    */
-  private fillAndOutline(ctx: CanvasRenderingContext2D, s: Shape, x: number, y: number, w: number, h: number): void {
+  private fillAndOutline(ctx: CanvasRenderingContext2D, s: Shape, x: number, y: number, w: number, h: number, key: Shape = s): void {
     if (!s.filled && !s.pattern) { ctx.stroke(); return; }
-    this.paintFill(ctx, s, x, y, w, h);
+    this.paintFill(ctx, s, x, y, w, h, undefined, key);
     if (!s.filled || (s.fillColor && s.fillColor.toLowerCase() !== (s.color ?? '#000000').toLowerCase())) ctx.stroke();
   }
 
@@ -2614,7 +2690,8 @@ export class Renderer {
    * Fill the path just traced (it stays traced, for an outline after): evenly, with a light
    * tint (faded), shaded light to dark, or a gradient; then its pattern of lines or dots.
    */
-  private paintFill(ctx: CanvasRenderingContext2D, s: Shape, x: number, y: number, w: number, h: number, polys?: Vec[][]): void {
+  /** `key` is the shape as it is in the drawing (`s` may be a copy with a setting changed for drawing), which its pattern is kept by. */
+  private paintFill(ctx: CanvasRenderingContext2D, s: Shape, x: number, y: number, w: number, h: number, polys?: Vec[][], key: Shape = s): void {
     const c = fillInk(s);
     const outline = () => (polys ??= shapePolygons(s));
     if (s.filled) {
@@ -2661,9 +2738,13 @@ export class Renderer {
       const clear = patternClear(s);
       const pc = clear ? withAlpha(patternInk(s), 1 - clear) : patternInk(s);
       // the dots or lines are worked out once for the shape as it is, not again for every tile it crosses
-      let cached = patternPaths.get(s);
-      const fresh = !cached || cached.make !== this.makePath;
-      if (fresh) patternPaths.set(s, (cached = { make: this.makePath, path: this.makePath() }));
+      // kept by the shape in the drawing, and worked out again when where it is drawn changes (a
+      // ring's fill follows its atoms) or for another kind of path (a picture's, not the screen's)
+      const sig = `${x},${y},${w},${h},${s.radius ?? ''}|${polys ? polys.map((q) => q.map((v) => `${v.x},${v.y}`).join(' ')).join('|') : ''}`;
+      const path0 = this.makePath(), kind = (path0 as object).constructor;
+      let cached = patternPaths.get(key);
+      const fresh = !cached || cached.kind !== kind || cached.sig !== sig;
+      if (fresh) patternPaths.set(key, (cached = { kind, sig, path: path0 }));
       const p = cached!.path;
       if (isDotPattern(s.pattern)) {
         const r = Math.max(0.25, gap * (s.pattern === 'dense-dots' ? 0.24 : 0.18));
@@ -2720,9 +2801,22 @@ export class Renderer {
   }
 
   /** A ring fill's or design shape's shadow, worked out as areas (see shapeShadow). */
-  private paintShadow(ctx: CanvasRenderingContext2D, polys: Vec[][], look: ReturnType<typeof shadowLook>, cut: boolean): void {
+  /**
+   * `owner` keeps the areas worked out (a dozen polygon clippings) for the next tile and paint:
+   * kept by the look, and by the outline when it is given as points (a ring's follows its atoms);
+   * an outline given as a function is the owner's own, which is replaced when it changes.
+   */
+  private paintShadow(ctx: CanvasRenderingContext2D, polys: Vec[][] | (() => Vec[][]), look: ReturnType<typeof shadowLook>, cut: boolean, owner?: object): void {
+    let paints: FxPaint[];
+    const sig = `${JSON.stringify(look)}|${cut}|${typeof polys === 'function' ? '' : polys.map((q) => q.map((v) => `${v.x},${v.y}`).join(' ')).join('|')}`;
+    const kept = owner ? shadowAreas.get(owner) : undefined;
+    if (kept && kept.sig === sig) paints = kept.paints;
+    else {
+      paints = shapeShadow(typeof polys === 'function' ? polys() : polys, look, cut);
+      if (owner) shadowAreas.set(owner, { sig, paints });
+    }
     ctx.save();
-    for (const p of shapeShadow(polys, look, cut)) {
+    for (const p of paints) {
       ctx.fillStyle = p.colour;
       ctx.beginPath();
       traceRegion(ctx, p.region);
@@ -2749,7 +2843,7 @@ export class Renderer {
         traceSteps(ctx, moveSteps(body, Math.cos(a) * d, Math.sin(a) * d));
         ctx.fill();
         ctx.restore();
-      } else this.paintShadow(ctx, shapePolygons(s), look, !s.filled || (s.transparency ?? 0) > 0);
+      } else this.paintShadow(ctx, () => shapePolygons(s), look, !s.filled || (s.transparency ?? 0) > 0, s);
       ctx.beginPath();
     }
     // Shape Effects: the reflection and glow under the shape, a soft-edged fill, a bevel over it
@@ -2762,7 +2856,18 @@ export class Renderer {
     }
     traceSteps(ctx, body);
     if (s.picFill) {
-      this.paintPicFill(ctx, s, def.prst, body, x, y, w, h);
+      if (fx?.fill && !('picture' in ctx)) {
+        // soft edges fade a picture fill too: the picture drawn in each ring of the fade, as see-through as the ring
+        for (const p of fx.fill) {
+          ctx.save();
+          ctx.beginPath();
+          traceRegion(ctx, p.region);
+          ctx.clip();
+          ctx.globalAlpha *= p.share ?? 1;
+          this.paintPicFill(ctx, s, def.prst, body, x, y, w, h);
+          ctx.restore();
+        }
+      } else this.paintPicFill(ctx, s, def.prst, body, x, y, w, h);
       ctx.beginPath();
       traceSteps(ctx, body);
     } else if (fx?.fill) {
@@ -2775,7 +2880,7 @@ export class Renderer {
       if (s.fill) this.paintFill(ctx, { ...s, pattern: undefined }, x, y, w, h);
       else { ctx.fillStyle = clear ? withAlpha(c, 1 - clear) : c; ctx.fill(); }
     }
-    if (s.pattern) this.paintFill(ctx, { ...s, filled: false }, x, y, w, h);
+    if (s.pattern) this.paintFill(ctx, { ...s, filled: false }, x, y, w, h, undefined, s);
     if (fx?.over.length) {
       this.paintRegions(ctx, fx.over);
       ctx.beginPath();
@@ -2785,8 +2890,10 @@ export class Renderer {
     // glassware is drawn with round joins and ends (as PowerPoint gets it), so thick lines stay neat at the lips and tips
     const glass = def.group === 'Lab equipment', join = ctx.lineJoin, cap = ctx.lineCap;
     if (glass) { ctx.lineJoin = 'round'; ctx.lineCap = 'round'; }
-    // soft edges soften the outline away too
-    if (width > 0 && !s.softEdge) ctx.stroke();
+    // soft edges soften the outline away too, where they fade a fill (a shape with no fill keeps its outline)
+    // (in pictures and copies a picture fill isn't faded: its outline stays)
+    const faded = !!s.softEdge && !!fx?.fill && !(s.picFill && 'picture' in ctx);
+    if (width > 0 && !faded) ctx.stroke();
     if (out.lines && width > 0) {
       ctx.beginPath();
       traceSteps(ctx, moveSteps(out.lines, x, y));
@@ -2971,6 +3078,12 @@ export class Renderer {
 
 /** Tile size in CSS pixels. */
 const TILE = 256;
+/**
+ * A tile's side in CSS pixels: the nearest to TILE that is a whole number of the screen's pixels
+ * (281 at 110%, not 281.6), so every tile starts and ends on a whole screen pixel, and is drawn
+ * pixel for pixel, sharp and meeting its neighbours, at any browser zoom.
+ */
+const tileSide = (dpr: number) => Math.round(TILE * dpr) / dpr;
 /** How long after a zoom step new tiles wait for another step (the stretched old ones show meanwhile). */
 const ZOOM_REST_MS = 120;
 const MAX_TILES = 600;
@@ -2989,7 +3102,7 @@ interface Tile {
 
 /** One colour and look of highlight: its atoms and bonds (with where each atom's highlight runs, when centred on double bonds). */
 /** A highlight's effects as worked out: its pieces as drawn, what it draws, and (made when first needed) its joined areas and plain-area paints. */
-type FxEntry = { base: Piece[]; fx: HighlightFx; levels: Map<string, ReturnType<typeof unionOf>>; shadow?: FxPaint[]; body?: FxPaint[] };
+type FxEntry = { base: Piece[]; fx: HighlightFx; levels: Map<string, ReturnType<typeof unionOf>>; shadow?: FxPaint[]; body?: FxPaint[]; /** The pieces of each step of a glow or shadow, by size and widening (worked out once). */ steps?: Map<string, Piece[]> };
 
 /** The box round some pieces. */
 function piecesBox(ps: Piece[]): Rect {

@@ -24,6 +24,7 @@ function setup(start: Partial<AiPrefs> = {}) {
     apply: async (a) => { applied.push(a); return 'Drew the structure.'; },
     markStep: () => true,
     undo: vi.fn(),
+    position: () => [],
     openSettings: async () => {},
     area: () => new DOMRect(0, 0, 1000, 700),
     tab: () => tab,

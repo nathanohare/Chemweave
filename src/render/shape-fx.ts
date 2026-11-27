@@ -103,11 +103,11 @@ export function shapeFx(s: Shape, polys: Vec[][], colour: string): ShapeFxPaints
       const inner = offsetArea(area, -(R * i) / n);
       const region = regionOf(minus(outer, inner));
       const alpha = solid * ((i - 0.5) / n);
-      if (region.length) out.fill.push({ region, colour: rgba(colour, alpha) });
+      if (region.length) out.fill.push({ region, colour: rgba(colour, alpha), share: (i - 0.5) / n });
       outer = inner;
     }
     const core = regionOf(outer);
-    if (core.length) out.fill.push({ region: core, colour: rgba(colour, solid) });
+    if (core.length) out.fill.push({ region: core, colour: rgba(colour, solid), share: 1 });
   }
 
   if (s.bevel && s.bevel.w > 0) {
@@ -136,7 +136,10 @@ export function shapeFx(s: Shape, polys: Vec[][], colour: string): ShapeFxPaints
 
 /** Ready-made glows (PowerPoint's Glow Variations): sizes in points and how see-through. */
 export const GLOW_SIZES = [5, 8, 11, 18];
-export const GLOW_TRANSPARENCY = 0.4;
+// (PowerPoint writes its Glow Variations into its files as an a:glow whose colour carries
+// <a:alpha val="40000"/>, 40% opaque, which its Format Shape pane shows as 60% Transparency; a:glow
+// and a:alpha are ECMA-376 Part 1, 20.1.8.32 and 20.1.2.3.1)
+export const GLOW_TRANSPARENCY = 0.6;
 export const SOFT_EDGES = [1, 2.5, 5, 10, 25, 50];
 
 /** Ready-made reflections (PowerPoint's Reflection Variations). */

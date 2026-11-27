@@ -28,6 +28,18 @@ export function withQuick(list: readonly string[], cmd: string, on: boolean, at?
   return out;
 }
 
+/**
+ * Where Add puts `cmd`: just after the button selected on the bar (the place counted once `cmd`
+ * itself is taken out of the list, as withQuick does when it is on the bar already), at the end
+ * with none selected, and where it is when it is the one selected.
+ */
+export function quickInsertAt(list: readonly string[], cmd: string, selected: string | undefined): number | undefined {
+  if (!selected) return undefined;
+  if (selected === cmd) return list.indexOf(cmd) < 0 ? undefined : list.indexOf(cmd);
+  const at = list.filter((c) => c !== cmd).indexOf(selected);
+  return at < 0 ? undefined : at + 1;
+}
+
 export interface QuickHooks {
   /** The bar's commands (null: as it comes). */
   get(): string[] | null;
@@ -193,8 +205,8 @@ export class QuickBar {
     const add = () => {
       const c = all.value;
       if (!c) return;
-      const i = at();
-      this.put(withQuick(this.list(), c, true, i < 0 ? undefined : i + 1));
+      const list = this.list();
+      this.put(withQuick(list, c, true, quickInsertAt(list, c, bar.value || undefined)));
       fillBar(c);
     };
     const remove = () => {

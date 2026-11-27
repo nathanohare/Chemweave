@@ -38,7 +38,7 @@ export class TypingDialog {
       <label class="hk-opt"><input type="checkbox" data-opt="spell" /><span data-info="Red underlines for spelling, with chemistry words known; blue underlines for chemistry formatting. Right-click an underlined word for suggestions.">Check spelling and chemistry formatting in text being typed</span></label>
       <h3 data-info="When you finish a word with a space or punctuation, text on the left becomes text on the right. A replacement that starts with a letter only applies as a whole word (65 oC, not ZnoC).">Replacements as you type</h3>
       <div class="ty-table-wrap"><table class="ty-table"><thead><tr><th>Type</th><th>Becomes</th><th></th></tr></thead><tbody></tbody></table></div>
-      <div class="ty-row-buttons"><button type="button" data-act="add">Add a replacement</button><button type="button" data-act="reset">Use the standard list</button></div>
+      <div class="ty-row-buttons"><button type="button" data-act="add">Add a Replacement</button><button type="button" data-act="reset">Use the Standard List</button></div>
       <h3 data-info="Words the spelling check accepts, one per line (Add to Dictionary on an underlined word adds it here).">My dictionary</h3>
       <textarea class="ty-words" rows="6" spellcheck="false" aria-label="My dictionary, one word per line"></textarea>
       <div class="hk-foot">

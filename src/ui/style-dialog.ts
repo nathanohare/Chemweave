@@ -213,7 +213,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
     for (const i of [arrowWidth, inputs.get('lineWidth')!]) i.addEventListener('input', showArrowLook);
 
     // ID labels and linked captions: each kind's look and place, side by side (blank: the
-    // captions' font and size, or the usual gap of a third of a bond length)
+    // captions' font and size, or the usual gap of 30% of a bond length)
     const tiedHead = el('h3', { textContent: 'ID labels and captions' });
     tiedHead.append(infoIcon('ID labels: compound numbers from Add ID Label and Number Compounds, and text that reads as an ID when you link it to a structure. Linked captions: names, CAS numbers, descriptors and other text linked to a structure. Linking text gives it this look and place.'));
     const tiedGrid = el('div', { className: 'md-tied' });
@@ -237,7 +237,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
       for (const [v, t] of [['center', 'Centered'], ['left', 'Left edges lined up'], ['right', 'Right edges lined up']]) align.append(new Option(t, v));
       align.title = 'Above or below the structure: centered under it, or lined up with its left or right edge';
       const gap = el('input', { type: 'number', className: 'md-num', step: 'any' });
-      gap.title = 'Leave blank for a third of the bond length. From 0 to 100 pt';
+      gap.title = 'Leave blank for 30% of the bond length. From 0 to 100 pt';
       keepInRange(gap, 0, 100, 'pt');
       side.addEventListener('change', () => { align.disabled = side.value === 'left' || side.value === 'right'; });
       return { font, size, b: toggle('<b>B</b>', 'Bold'), i: toggle('<i>I</i>', 'Italic'), u: toggle('<u>U</u>', 'Underline'), color: el('span'), side, align, gap };

@@ -117,7 +117,9 @@ export class RefsBox {
     };
     foot.append(button('Add from Library…', () => this.hooks.addFromLibrary()), button('Add with Zotero…', () => this.hooks.addWithZotero()));
     if (this.mode === 'tick') {
-      const look = button('Look…', () => this.hooks.look());
+      // the same command, with the same name, as Insert ▸ References on Slide…
+      const look = button('References on Slide…', () => this.hooks.look());
+      look.title = 'Choose which of the presentation\'s references the selected slides show at the bottom, and how they look';
       look.classList.add('rfb-look');
       foot.append(look);
     }

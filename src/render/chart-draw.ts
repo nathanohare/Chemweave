@@ -113,6 +113,8 @@ interface TextOpts {
   size: number; bold?: boolean; color?: string; align?: 'left' | 'center' | 'right'; angle?: 0 | 90; family: string;
   /** A title's own runs, with bold and italic text (titleRunsOf): drawn in place of the markup's (lines joined by a space). */
   rich?: readonly TitleRun[] | null;
+  /** Text as typed, with no markup (series names, categories and numbers from cells: only titles take k_{obs}). */
+  plain?: boolean;
 }
 
 /** A title typed as markup (k_{obs}) as title runs. */
@@ -133,6 +135,7 @@ const fontOf = (size: number, bold: boolean | undefined, family: string, italic?
 
 /** The pieces text is drawn in: its markup's, or a title's own runs with their looks. */
 function pieces(text: string, o: TextOpts): (Run & { b?: boolean; i?: boolean; u?: boolean })[] {
+  if (o.plain) return [{ t: text, pos: 'base' }];
   if (!o.rich) return textRuns(text);
   return o.rich.map((r) => (r.text === '\n' ? { t: ' ', pos: 'base' as const } : { t: r.text, pos: r.sub ? 'sub' as const : r.sup ? 'sup' as const : 'base' as const, b: r.bold, i: r.italic, u: r.underline }));
 }
@@ -206,7 +209,7 @@ export function numAxis(lo: number, hi: number, a: ChartAxis, zero: 'always' | '
   if (log) {
     const t = logTicks(a.min && a.min > 0 ? a.min : lo > 0 ? lo : 1, a.max && a.max > 0 ? a.max : hi > 0 ? hi : 10);
     min = a.min && a.min > 0 ? a.min : t.min;
-    max = a.max && a.max > 0 ? a.max : t.max;
+    max = a.max && a.max > min ? a.max : t.max > min ? t.max : min * 10;
     ticks = t.ticks.filter((v) => v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9));
   } else {
     if (a.min === undefined && a.max === undefined) {
@@ -218,7 +221,8 @@ export function numAxis(lo: number, hi: number, a: ChartAxis, zero: 'always' | '
     if (hi <= lo) hi = lo + (Math.abs(lo) || 1);
     const t = niceTicks(lo, hi, want, a.step);
     min = a.min ?? t.min;
-    max = a.max ?? t.max;
+    // a set maximum at or below the minimum can't make an axis: the range is widened as above
+    max = a.max !== undefined && a.max > min ? a.max : t.max > min ? t.max : hi;
     step = t.step;
     ticks = t.ticks.filter((v) => v >= min - step * 1e-9 && v <= max + step * 1e-9);
   }
@@ -385,14 +389,14 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   }
   const sw = 22; // legend key width
   if (chart.legend !== 'none' && legend.length) {
-    const widths = legend.map((l) => measure(ctx, l.name, opt(fs)) + sw + 6);
+    const widths = legend.map((l) => measure(ctx, l.name, opt(fs, { plain: true })) + sw + 6);
     const rowH = fs * 1.5;
     if (chart.legend === 'right') {
       const lw = Math.min(Math.max(...widths), w * 0.4);
       const lh = rowH * legend.length;
       const lx = right - lw;
       let ly = Math.max(top, top + (bottom - top - lh) / 2);
-      for (const l of legend) { legendKey(ctx, l, lx, ly + rowH / 2, sw); text(ctx, l.name, lx + sw + 6, ly + rowH / 2 + fs * 0.35, opt(fs)); ly += rowH; }
+      for (const l of legend) { legendKey(ctx, l, lx, ly + rowH / 2, sw); text(ctx, l.name, lx + sw + 6, ly + rowH / 2 + fs * 0.35, opt(fs, { plain: true })); ly += rowH; }
       right = lx - 10;
     } else {
       // rows of entries, centred
@@ -406,7 +410,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
       let ly = chart.legend === 'top' ? top : bottom - lh;
       for (const r of rows) {
         let lx = (left + right) / 2 - r.w / 2;
-        for (const i of r.items) { legendKey(ctx, legend[i], lx, ly + rowH / 2, sw); text(ctx, legend[i].name, lx + sw + 6, ly + rowH / 2 + fs * 0.35, opt(fs)); lx += widths[i] + 12; }
+        for (const i of r.items) { legendKey(ctx, legend[i], lx, ly + rowH / 2, sw); text(ctx, legend[i].name, lx + sw + 6, ly + rowH / 2 + fs * 0.35, opt(fs, { plain: true })); lx += widths[i] + 12; }
         ly += rowH;
       }
       if (chart.legend === 'top') top += lh + 4; else bottom -= lh + 4;
@@ -417,8 +421,9 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   if (kind === 'pie') return drawPie(ctx, chart, data, space, fs, family, shown);
   if (hasLevels(kind)) {
     const pen: Pen = {
-      write: (s, x, y, size, style = {}) => text(ctx, s, x, y, opt(size, style)),
-      width: (s, size, style = {}) => measure(ctx, s, opt(size, style)),
+      // node and level names come from cells: drawn as typed, with no markup
+      write: (s, x, y, size, style = {}) => text(ctx, s, x, y, opt(size, { ...style, plain: true })),
+      width: (s, size, style = {}) => measure(ctx, s, opt(size, { ...style, plain: true })),
     };
     const draw = kind === 'sankey' ? drawSankey : kind === 'treemap' ? drawTreemap : drawDecomp;
     return { plot: space, fitLabels: [], fits: [], parts: draw(ctx, pen, chart, data, space, shown) };
@@ -500,12 +505,12 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   const tickFs = fs * 0.92;
   const cats = boxes ? boxes.cats : data[0]?.cats ?? [];
   const leftLabels = horizontal ? cats.slice(0, ncat) : vAxis.ticks.map(vAxis.label);
-  const leftW = Math.max(0, ...leftLabels.map((l) => measure(ctx, l, opt(tickFs))));
+  const leftW = leftLabels.reduce((m, l) => Math.max(m, measure(ctx, l, opt(tickFs, { plain: true }))), 0);
   left += Math.min(leftW, w * 0.35) + 6;
   bottom -= tickFs * 1.4 + 2;
   const bottomLabels = horizontal ? vAxis.ticks.map(vAxis.label) : xAxis ? xAxis.ticks.map(xAxis.label) : [];
-  if (v2Axis) right -= Math.min(Math.max(0, ...v2Axis.ticks.map((t) => measure(ctx, v2Axis.label(t), opt(tickFs)))), w * 0.3) + 6;
-  else if (bottomLabels.length) right -= Math.min(measure(ctx, bottomLabels[bottomLabels.length - 1], opt(tickFs)) / 2, 30);
+  if (v2Axis) right -= Math.min(Math.max(0, ...v2Axis.ticks.map((t) => measure(ctx, v2Axis.label(t), opt(tickFs, { plain: true })))), w * 0.3) + 6;
+  else if (bottomLabels.length) right -= Math.min(measure(ctx, bottomLabels[bottomLabels.length - 1], opt(tickFs, { plain: true })) / 2, 30);
   const plot: Box = { x: left, y: top + fs * 0.5, w: Math.max(10, right - left), h: Math.max(10, bottom - top - fs * 0.5) };
 
   // where things go
@@ -519,6 +524,21 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   const groupW = kind === 'histogram' ? Math.max(1, band - 1) : band / 1.8;
   const each = stackable ? groupW : groupW / (boxes ? Math.max(1, data.length) : nBars);
   const barMid = (i: number, j: number) => catAt(j) - groupW / 2 + (stackable ? 0 : (boxes ? i : barNo[i]) * each) + each / 2;
+  /**
+   * Where a point's value ends on its axis: on a stacked chart the top of its piece of the stack
+   * (positive and negative values stack apart on columns and bars, as the bars are drawn), so data
+   * labels and error bars sit on the end of each piece, as in Excel.
+   */
+  const ends: number[][] | null = stackable ? (() => {
+    const pos = new Array<number>(ncat).fill(0), neg = new Array<number>(ncat).fill(0);
+    return data.map((d) => d.ys.map((v, j) => {
+      if (kind === 'area') { pos[j] += Number.isFinite(v) ? v : 0; return pos[j]; }
+      if (!Number.isFinite(v)) return v;
+      if (v >= 0) { pos[j] += v; return pos[j]; }
+      neg[j] += v; return neg[j];
+    }));
+  })() : null;
+  const endOf = (i: number, j: number, v: number) => (ends ? ends[i][j] : v);
   const inside = (x: number, y: number) => x >= plot.x - 0.5 && x <= plot.x + plot.w + 0.5 && y >= plot.y - 0.5 && y <= plot.y + plot.h + 0.5;
 
   // grid lines
@@ -665,7 +685,9 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
       ctx.lineJoin = 'round'; ctx.lineCap = 'round';
       ctx.setLineDash(dashOf(s.dash));
       let line = pts;
-      if (kind === 'scatter') line = pts.filter((p) => Number.isFinite(p[0])).slice().sort((p, q) => p[0] - q[0]);
+      // joined in the rows' order, as Excel's Scatter with Lines joins them (a loop stays a loop);
+      // a point with no x leaves a gap
+      if (kind === 'scatter') line = pts.map((p) => (Number.isFinite(p[0]) ? p : [NaN, NaN] as [number, number]));
       polyline(ctx, s.smooth ? smoothPoints(line) : line, plot);
       ctx.setLineDash([]);
     }
@@ -698,7 +720,9 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
   }
   // bubbles: each one's area goes with its size, the largest a quarter of the plot across (as Excel)
   if (kind === 'bubble') {
-    const biggest = Math.max(0, ...data.flatMap((d) => (d.sizes ?? []).filter((v) => Number.isFinite(v) && v > 0)));
+    // a loop, not Math.max(...sizes), which overflows the stack for a very long series
+    let biggest = 0;
+    for (const d of data) for (const v of d.sizes ?? []) if (Number.isFinite(v) && v > biggest) biggest = v;
     const rMax = Math.min(plot.w, plot.h) / 8;
     data.forEach((d) => {
       d.ys.forEach((v, j) => {
@@ -722,7 +746,8 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
       d.ys.forEach((v, j) => {
         if (!Number.isFinite(v)) return;
         const c = bars ? barMid(i, j) : ptX(d, j);
-        const hi = v + (d.plus![j] || 0), lo = v - (d.minus![j] || 0);
+        const e = endOf(i, j, v);
+        const hi = e + (d.plus![j] || 0), lo = e - (d.minus![j] || 0);
         if (horizontal) {
           const seg = clipSegment(valAt(lo), c, valAt(hi), c, plot);
           if (!seg) return;
@@ -821,20 +846,21 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
       if (showX && !Number.isFinite(d.xs[j])) return;
       const fmt = chart.series[i].labelFmt;
       const t = showX ? formatValue(d.xs[j], fmt ?? chart.x.numFmt).text : formatValue(v, fmt ?? (onRight(i) ? chart.y2?.numFmt : valueAxisDef.numFmt)).text;
+      const e = endOf(i, j, v);
       if (horizontal) {
-        text(ctx, t, valAt(v) + 4, barMid(i, j) + tickFs * 0.35, opt(tickFs));
+        text(ctx, t, valAt(e) + 4, barMid(i, j) + tickFs * 0.35, opt(tickFs, { plain: true }));
       } else {
         const x = bars ? barMid(i, j) : ptX(d, j);
-        const y = valAt(v, i);
+        const y = valAt(e, i);
         // under a peak drawn downwards
         const below = chart.series[i].sticks && v < 0;
-        if (inside(x, y)) text(ctx, t, x, below ? y + tickFs + 4 : y - 6, opt(tickFs, { align: 'center' }));
+        if (inside(x, y)) text(ctx, t, x, below ? y + tickFs + 4 : y - 6, opt(tickFs, { align: 'center', plain: true }));
       }
     });
   });
 
   // tick labels
-  const tick = opt(tickFs);
+  const tick = opt(tickFs, { plain: true });
   if (horizontal) {
     for (const t of vAxis.ticks) text(ctx, vAxis.label(t), valAt(t), plot.y + plot.h + tickFs * 1.2, { ...tick, align: 'center' });
     labelCats(ctx, cats.slice(0, ncat), (j) => catAt(j), plot.h / Math.max(1, ncat), tickFs * 1.3, (l, p) => text(ctx, l, plot.x - 6, p + tickFs * 0.35, { ...tick, align: 'right' }));
@@ -843,7 +869,7 @@ export function drawChart(ctx: Ctx, chart: Chart, data0: SeriesData[], w: number
     if (v2Axis) for (const t of v2Axis.ticks) text(ctx, v2Axis.label(t), plot.x + plot.w + 6, Y(v2Axis.frac(t)) + tickFs * 0.35, tick);
     if (xAxis) for (const t of xAxis.ticks) text(ctx, xAxis.label(t), X(xAxis.frac(t)), plot.y + plot.h + tickFs * 1.2, { ...tick, align: 'center' });
     else {
-      const widest = Math.max(1, ...cats.slice(0, ncat).map((c) => measure(ctx, c, tick)));
+      const widest = cats.slice(0, ncat).reduce((m, c) => Math.max(m, measure(ctx, c, tick)), 1);
       labelCats(ctx, cats.slice(0, ncat), catAt, band, widest + 8, (l, p) => text(ctx, l, p, plot.y + plot.h + tickFs * 1.2, { ...tick, align: 'center' }));
     }
   }
@@ -909,7 +935,7 @@ function drawRadar(ctx: Ctx, chart: Chart, data: SeriesData[], area: Box, opt: (
   if (lo === Infinity) { lo = 0; hi = 1; }
   const a = numAxis(lo, hi, { ...chart.y, log: false }, 'auto', 5);
   const cats = (data[0]?.cats ?? []).slice(0, n);
-  const labelW = Math.max(0, ...cats.map((c) => measure(ctx, c, opt(tickFs))));
+  const labelW = cats.reduce((m, c) => Math.max(m, measure(ctx, c, opt(tickFs, { plain: true }))), 0);
   const cx = area.x + area.w / 2, cy = area.y + area.h / 2;
   const R = Math.max(10, Math.min(area.w / 2 - Math.min(labelW, area.w * 0.25) - 8, area.h / 2 - tickFs * 1.6));
   const ang = (j: number) => -Math.PI / 2 + (2 * Math.PI * j) / n;
@@ -958,15 +984,15 @@ function drawRadar(ctx: Ctx, chart: Chart, data: SeriesData[], area: Box, opt: (
     d.ys.forEach((v, j) => {
       if (!Number.isFinite(v)) return;
       const [x, y] = at(j, v);
-      text(ctx, formatValue(v, chart.series[i].labelFmt ?? chart.y.numFmt).text, x, y - 6, opt(tickFs, { align: 'center' }));
+      text(ctx, formatValue(v, chart.series[i].labelFmt ?? chart.y.numFmt).text, x, y - 6, opt(tickFs, { align: 'center', plain: true }));
     });
   });
   // the scale up the first spoke, and the categories round the outside
-  for (const t of a.ticks) { const [x, y] = at(0, t); text(ctx, a.label(t), x + 4, y + tickFs * 0.35, opt(tickFs * 0.9)); }
+  for (const t of a.ticks) { const [x, y] = at(0, t); text(ctx, a.label(t), x + 4, y + tickFs * 0.35, opt(tickFs * 0.9, { plain: true })); }
   cats.forEach((c, j) => {
     const cos = Math.cos(ang(j)), sin = Math.sin(ang(j));
     const x = cx + cos * (R + 6), y = cy + sin * (R + 6) + tickFs * 0.35 + sin * tickFs * 0.5;
-    text(ctx, c, x, y, opt(tickFs, { align: Math.abs(cos) < 0.2 ? 'center' : cos > 0 ? 'left' : 'right' }));
+    text(ctx, c, x, y, opt(tickFs, { plain: true, align: Math.abs(cos) < 0.2 ? 'center' : cos > 0 ? 'left' : 'right' }));
   });
   return { plot, fitLabels: [], fits: [] };
 }

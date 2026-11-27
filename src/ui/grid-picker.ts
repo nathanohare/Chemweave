@@ -57,6 +57,8 @@ export function askGridLayout(n: number, start: GridPick, preview: (p: GridPick)
       cols.value = String(Math.ceil(n / r));
       draw();
     });
+    // (written back once the box is left, so typing isn't interrupted: the rows the columns really make)
+    rows.addEventListener('change', () => { rows.value = String(Math.ceil(n / pick().cols)); });
     rowGap.addEventListener('input', draw);
     colGap.addEventListener('input', draw);
     d.append(form);

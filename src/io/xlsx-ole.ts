@@ -101,8 +101,6 @@ function declareRequired(copy: Element, from: Element): void {
   }
 }
 
-const escapeRe = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
 /**
  * The embedded objects of a worksheet (`ws`, at `path`), with their VML shapes (`vmlPath`) and
  * Excel 2010's twin shapes in the DrawingML drawing (`drawing`).
@@ -114,6 +112,29 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
   const vmlText = vmlPath ? pkg.text(vmlPath) : null;
   const vmlRels = vmlPath ? pkg.rels(vmlPath) : null;
   const out: KeptSheetOle[] = [];
+  // the VML drawing's shapes and shape types by id, and Excel 2010's twins by the shape id their
+  // compatExt names, found once for all the objects (the VML drawing is not always well-formed XML, so read as text)
+  const vmlShapes = new Map<string, string>(), vmlTypes = new Map<string, string>();
+  if (vmlText) {
+    // (a self-closing shape is one on its own, not the start of the next shape's text)
+    for (const m of vmlText.matchAll(/<v:shape\b[^>]*?\/>|<v:shape\b[^>]*>[\s\S]*?<\/v:shape>/g)) {
+      const open = m[0].slice(0, m[0].indexOf('>'));
+      for (const a of open.matchAll(/(?:o:spid|\bid)="([^"]*)"/g)) if (!vmlShapes.has(a[1])) vmlShapes.set(a[1], m[0]);
+    }
+    for (const m of vmlText.matchAll(/<v:shapetype\b[^>]*?\/>|<v:shapetype\b[^>]*>[\s\S]*?<\/v:shapetype>/g)) {
+      const id = /\bid="([^"]*)"/.exec(m[0].slice(0, m[0].indexOf('>')))?.[1];
+      if (id && !vmlTypes.has(id)) vmlTypes.set(id, m[0]);
+    }
+  }
+  const twins = new Map<string, Element>();
+  if (drawing) {
+    for (const ac of kids(drawing.documentElement, 'AlternateContent')) {
+      for (const x of Array.from(ac.getElementsByTagName('*'))) {
+        const sp = x.localName === 'compatExt' ? x.getAttribute('spid') : null;
+        if (sp && !twins.has(sp)) twins.set(sp, ac);
+      }
+    }
+  }
   for (const item of kids(list)) {
     const ole = item.localName === 'oleObject' ? item : item.localName === 'AlternateContent' ? Array.from(item.getElementsByTagName('*')).find((x) => x.localName === 'oleObject') : undefined;
     if (!ole) { lost.push(''); continue; }
@@ -142,15 +163,13 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
     // (one whose data isn't in the file, a linked object: said on opening, as it can't be kept: review F2-R08)
     if (missing || !parts.length) { lost.push(ole.getAttribute('progId') ?? ''); continue; }
     const kept: KeptSheetOle = { progId: ole.getAttribute('progId') ?? '', xml: elementXml(copy), parts };
-    // its VML shape, found by its shape id (the VML drawing is not always well-formed XML, so read as text)
+    // its VML shape, found by its shape id
     const spid = `_x0000_s${shapeId}`;
-    const shape = shapeId && vmlText
-      ? new RegExp(`<v:shape\\b(?=[^>]*(?:o:spid|\\bid)="${escapeRe(spid)}")[^>]*>[\\s\\S]*?</v:shape>`).exec(vmlText)?.[0]
-      : undefined;
+    const shape = shapeId && vmlText ? vmlShapes.get(spid) : undefined;
     if (shape && vmlRels) {
       const vparts: KeptOlePart[] = [];
       const vseen = new Map<string, number>();
-      const text = shape.replace(new RegExp(escapeRe(spid), 'g'), '_x0000_s@@spid@@').replace(/(o:relid|r:id)="([^"]*)"/g, (all, attr: string, id: string) => {
+      const text = shape.split(spid).join('_x0000_s@@spid@@').replace(/(o:relid|r:id)="([^"]*)"/g, (all, attr: string, id: string) => {
         let n = vseen.get(id);
         if (n === undefined) {
           const r = vmlRels.get(id);
@@ -162,25 +181,20 @@ export function readSheetOle(pkg: PackageReader, path: string, ws: Element, vmlP
         return `${attr}="@@v${n}@@"`;
       });
       const typeId = /\btype="#([^"]+)"/.exec(shape)?.[1];
-      const shapeType = typeId ? new RegExp(`<v:shapetype\\b(?=[^>]*\\bid="${escapeRe(typeId)}")[^>]*(?:/>|>[\\s\\S]*?</v:shapetype>)`).exec(vmlText!)?.[0] ?? '' : '';
+      const shapeType = typeId ? vmlTypes.get(typeId) ?? '' : '';
       kept.vml = { shape: text, shapeType, parts: vparts };
     }
     // Excel 2010's twin in the drawing: an AlternateContent whose compatExt names the shape
-    if (shapeId && drawing) {
-      for (const ac of kids(drawing.documentElement, 'AlternateContent')) {
-        const compat = Array.from(ac.getElementsByTagName('*')).find((x) => x.localName === 'compatExt' && x.getAttribute('spid') === spid);
-        if (!compat) continue;
-        // (it must lead to no parts of its own to be kept as text)
-        if (Array.from(ac.getElementsByTagName('*')).some((x) => Array.from(x.attributes).some((a) => a.namespaceURI === REL_NS))) break;
-        const twin = ac.cloneNode(true) as Element;
-        declareRequired(twin, ac);
-        for (const x of Array.from(twin.getElementsByTagName('*'))) {
-          if (x.localName === 'compatExt') x.setAttribute('spid', '_x0000_s@@spid@@');
-          else if (x.localName === 'cNvPr' && x.getAttribute('id') === shapeId) x.setAttribute('id', '@@spid@@');
-        }
-        kept.drawing = elementXml(twin);
-        break;
+    const ac = shapeId ? twins.get(spid) : undefined;
+    // (it must lead to no parts of its own to be kept as text)
+    if (ac && !Array.from(ac.getElementsByTagName('*')).some((x) => Array.from(x.attributes).some((a) => a.namespaceURI === REL_NS))) {
+      const twin = ac.cloneNode(true) as Element;
+      declareRequired(twin, ac);
+      for (const x of Array.from(twin.getElementsByTagName('*'))) {
+        if (x.localName === 'compatExt') x.setAttribute('spid', '_x0000_s@@spid@@');
+        else if (x.localName === 'cNvPr' && x.getAttribute('id') === shapeId) x.setAttribute('id', '@@spid@@');
       }
+      kept.drawing = elementXml(twin);
     }
     // the cells it is over, from its anchor (x14 objectPr, else the twin's, else VML's)
     const a = /<(?:\w+:)?from\b[^>]*>[\s\S]*?<(?:\w+:)?col\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?row\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?to\b[^>]*>[\s\S]*?<(?:\w+:)?col\b[^>]*>(\d+)<[\s\S]*?<(?:\w+:)?row\b[^>]*>(\d+)</.exec(kept.xml + (kept.drawing ?? ''));
