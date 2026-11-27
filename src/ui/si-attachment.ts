@@ -29,6 +29,29 @@ function drawnPages(key: string, count: number): (string | undefined)[] {
   return got;
 }
 
+/**
+ * What tells a PDF from another of the same name and length without reading all of it each time the
+ * page is drawn: its ends (where a PDF keeps its dates, IDs and cross-reference table) and 4096 bytes
+ * spread over the rest.
+ */
+function sampleKey(b: Uint8Array): string {
+  const EDGE = 8192;
+  if (b.length <= 3 * EDGE) return fingerprint(b);
+  const mid = new Uint8Array(4096);
+  const step = (b.length - 2 * EDGE) / mid.length;
+  for (let i = 0; i < mid.length; i++) mid[i] = b[EDGE + Math.floor(i * step)];
+  return [fingerprint(b.subarray(0, EDGE)), fingerprint(mid), fingerprint(b.subarray(b.length - EDGE))].join('.');
+}
+
+/** The pages drawn of a file of a section are forgotten (it was replaced or removed). */
+function forgetDrawn(prefix: string): void {
+  for (const [k, urls] of [...drawnPdfs]) {
+    if (!k.startsWith(prefix)) continue;
+    for (const u of urls) if (u) URL.revokeObjectURL(u);
+    drawnPdfs.delete(k);
+  }
+}
+
 export interface SiAttachmentHost {
   project: SiProject;
   section: SiSection;
@@ -75,6 +98,7 @@ export class SiAttachmentPage {
     const ext = (/\.([^.]+)$/.exec(name)?.[1] ?? '').toLowerCase();
     if (!ATTACHMENT_EXTS.includes(ext)) { this.host.flash(`${name} is not a PDF or a picture, so it can't be printed as a section.`, 6000); return; }
     try {
+      forgetDrawn(`${this.s.folder}/`);
       const kept = await this.host.project.attachSectionFile(this.s, name, bytes);
       this.host.flash(`${kept} is this section's file now (a copy is kept in the project folder).`);
     } catch (e) {
@@ -91,6 +115,7 @@ export class SiAttachmentPage {
     // (the section is saved without the file first: a failed save leaves the file where it is, and a
     // failed move to the Trash puts the file's name back)
     this.s.data.file = null;
+    forgetDrawn(`${this.s.folder}/`);
     try {
       await p.saveSection(this.s);
     } catch (e) {
@@ -139,7 +164,7 @@ export class SiAttachmentPage {
     this.reader = reader;
     const first = await reader.size(1).catch(() => ({ w: 595, h: 842 }));
     if (this.disposed) return 0;
-    const key = `${this.s.folder}/${file}\0${bytes.length}\0${fingerprint(bytes)}`;
+    const key = `${this.s.folder}/${file}\0${bytes.length}\0${sampleKey(bytes)}`;
     const drawn = drawnPages(key, reader.count);
     const imgs: HTMLImageElement[] = [];
     for (let i = 0; i < reader.count; i++) {

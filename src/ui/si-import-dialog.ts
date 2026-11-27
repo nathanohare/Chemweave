@@ -510,6 +510,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       const status = el('span', 'muted');
       look.addEventListener('click', async () => {
         const todo = refs.filter((r) => (r.ref as unknown as Record<string, unknown>).doi && r.looked_up !== 'done');
+        // (every row as it is now: what is typed in a row still waiting for its turn is kept too)
+        const asked = new Map(todo.map((r) => [r, { ...(r.ref as unknown as Record<string, unknown>) }]));
         let done = 0, failed = 0;
         look.disabled = true;
         for (let k = 0; k < todo.length && !closed; k++) {      // (not after the window has closed)
@@ -517,7 +519,7 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
           status.textContent = `Looking up ${k + 1} of ${todo.length}…`;
           try {
             const ref = r.ref as unknown as Record<string, unknown>;
-            const before = { ...ref };
+            const before = asked.get(r) ?? { ...ref };
             const found = await fetchDoi(String(ref.doi));
             if (closed) return;
             // (filled in place: the boxes of the table write to this very object, and what was typed in one during the lookup is kept)

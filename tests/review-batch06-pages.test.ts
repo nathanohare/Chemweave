@@ -124,6 +124,49 @@ describe('the Attachment page’s file', () => {
   });
 });
 
+describe('the Attachment page’s drawn pages of a large PDF (F960)', () => {
+  const big = (mark: number, at: number): Uint8Array => { const b = new Uint8Array(100_000).fill(65); b.set(new TextEncoder().encode('%PDF-1.4'), 0); b[at] = mark; return b; };
+  const setup = async (): Promise<{ p: Awaited<ReturnType<typeof openProject>>['p']; host: Record<string, unknown>; shownSrc: () => Promise<string>; sec: Awaited<ReturnType<Awaited<ReturnType<typeof openProject>>['p']['addSection']>> }> => {
+    let urls = 0;
+    (URL as unknown as { createObjectURL: () => string }).createObjectURL = () => `blob:big-${++urls}`;
+    (URL as unknown as { revokeObjectURL: () => void }).revokeObjectURL = () => {};
+    const { p } = await openProject();
+    const sec = await p.addSection('file', 'Att');
+    const host = {
+      project: p, section: sec, flash, pickFiles: async () => [], pdfPages: async () => null, redraw: () => {},
+      openPdf: async () => ({ count: 1, size: async () => ({ w: 595, h: 842 }), picture: async () => new Blob(['page']), close: () => {} }),
+    };
+    const shownSrc = async (): Promise<string> => {
+      const page = new SiAttachmentPage(host as never);
+      await tick(60);
+      const src = page.el.querySelector('img')!.getAttribute('src') ?? '';
+      page.dispose();
+      return src;
+    };
+    return { p, host, shownSrc, sec };
+  };
+
+  it('does not read the whole file at each draw, and still tells a file with a changed end from the old one', async () => {
+    const { p, sec, shownSrc } = await setup();
+    await p.attachSectionFile(sec, 'big.pdf', big(66, 99_990));
+    const first = await shownSrc();
+    // (drawn again, nothing changed: the pages drawn before are shown at once)
+    expect(await shownSrc()).toBe(first);
+    await p.attachSectionFile(sec, 'big.pdf', big(67, 99_990));
+    expect(await shownSrc()).not.toBe(first);
+  });
+
+  it('forgets the pages when the file is replaced from the page, however alike the new one is', async () => {
+    const { p, host, sec, shownSrc } = await setup();
+    await p.attachSectionFile(sec, 'big.pdf', big(66, 8193));
+    const first = await shownSrc();
+    const page = new SiAttachmentPage(host as never);
+    await page.use('big.pdf', big(67, 8193));
+    page.dispose();
+    expect(await shownSrc()).not.toBe(first);
+  });
+});
+
 describe('the Manuscript Check page', () => {
   const manuscript = async (): Promise<{ page: SiManuscriptPage; state: ReturnType<typeof newManuscriptState> }> => {
     const { p } = await openProject();
@@ -206,7 +249,8 @@ describe('Project ▸ Trash (F991)', () => {
     row.dispatchEvent(new MouseEvent('dblclick', { bubbles: true }));
     await tick(150);
     expect(messages.length).toBe(1);
-    expect(document.querySelector('.si-trash-say, dialog .muted.si-trash-none, dialog')!.textContent).not.toMatch(/not (in|there)|no longer/i);
+    // (the second click found the row's file already restored: no "not in the Trash" message)
+    expect(messages[0]).not.toMatch(/not (in|there)|no longer|could not/i);
   });
 });
 
@@ -214,6 +258,19 @@ describe('pasted HTML (F983)', () => {
   it('keeps the cells of a table row apart and gives a list item holding a paragraph one line', () => {
     expect(cleanPastedHtml('<table><tr><td>Entry</td><td>Yield</td></tr><tr><td>1</td><td>89%</td></tr></table>', true)).toBe('Entry Yield<br>1 89%');
     expect(cleanPastedHtml('<ul><li><p>one</p></li><li><p>two</p></li></ul>', true)).toBe('one<br>two');
+  });
+
+  it('keeps a blank paragraph, and a line break before a paragraph, as the blank line they are', () => {
+    expect(cleanPastedHtml('<p>a</p><p></p><p>b</p>', true)).toBe('a<br><br>b');
+    expect(cleanPastedHtml('a<br><p>b</p>', true)).toBe('a<br><br>b');
+  });
+
+  it('does not take the markup’s own line breaks and indents between blocks for text', () => {
+    expect(cleanPastedHtml('<ul>\n  <li>one</li>\n  <li>two</li>\n</ul>', true)).toBe('one<br>two');
+    expect(cleanPastedHtml('<div>\n <p>a</p>\n <p>b</p>\n</div>', true)).toBe('a<br>b');
+    expect(cleanPastedHtml('<table>\n<tr>\n<td>1</td>\n<td>2</td>\n</tr>\n</table>', true)).toBe('1 2');
+    // (a space between two words stays)
+    expect(cleanPastedHtml('<p><b>a</b> <i>b</i></p>', true)).toBe('<b>a</b> <i>b</i>');
   });
 });
 
@@ -231,6 +288,29 @@ describe('the progress window (F984)', () => {
       progress.close();
     } finally { window.requestAnimationFrame = was; }
   }, 10000);
+});
+
+describe('the progress window while the document is hidden (F984)', () => {
+  it('does not wait for a timer a hidden window slows to a second', async () => {
+    const wasRaf = window.requestAnimationFrame, wasTimeout = window.setTimeout;
+    Object.defineProperty(document, 'hidden', { configurable: true, get: () => true });
+    window.requestAnimationFrame = (() => 0) as never;
+    // (a hidden window's timers are held back to about a second)
+    window.setTimeout = ((f: () => void, ms?: number) => wasTimeout(f, Math.max(ms ?? 0, 1000))) as never;
+    try {
+      const progress = compileProgress('Compile', ['One']);
+      await progress.at(1, 10, 'Working');
+      await new Promise((r) => wasTimeout(r, 150));
+      const waited = Date.now();
+      await progress.at(2, 10, 'Working');
+      expect(Date.now() - waited).toBeLessThan(500);
+      progress.close();
+    } finally {
+      window.requestAnimationFrame = wasRaf;
+      window.setTimeout = wasTimeout;
+      delete (document as unknown as Record<string, unknown>).hidden;
+    }
+  });
 });
 
 describe('Add by DOI (F972)', () => {
@@ -359,6 +439,29 @@ describe('Import SI window', () => {
     await asked;
   });
 
+  it('what is typed in a row still waiting for its turn is kept too (F965)', async () => {
+    const plan = I.analyse([para('**Phenol (2).** Colorless oil (1 mg, 1%).')]);
+    const mk = (id: string, doi: string) => ({ id, type: 'article', authors: [], title: 'Old title', journal: '', year: '', volume: '', issue: '', pages: '', doi, url: '', publisher: '', note: '' });
+    const one = mk('r1', '10.1000/one'), two = mk('r2', '10.1000/two');
+    plan.references = [{ number: '1', text: 'a', ref: one, keep: true, looked_up: '' }, { number: '2', text: 'b', ref: two, keep: true, looked_up: '' }] as never;
+    for (const r of [one, two]) vi.mocked(fetchDoi).mockImplementationOnce(async () => { await tick(60); return { ...r, title: 'Crossref title', journal: 'Crossref journal' } as never; });
+    const asked = askImport(plan, read, host);
+    const d = document.querySelector('dialog.si-import')!;
+    label(d, 'References')!.click();
+    [...d.querySelectorAll<HTMLButtonElement>('button')].find((b) => /Look Up/.test(b.textContent ?? ''))!.click();
+    await tick(10);
+    // (the second row is typed in while the first is being asked)
+    const title = d.querySelectorAll<HTMLInputElement>('.si-imp-refs tr:nth-child(3) td input[type=text]')[1];
+    title.value = 'My own title';
+    title.dispatchEvent(new Event('input', { bubbles: true }));
+    await tick(250);
+    expect(two.title).toBe('My own title');
+    expect(two.journal).toBe('Crossref journal');
+    expect(one.title).toBe('Crossref title');
+    cancel(d);
+    await asked;
+  });
+
   it('a section name cleared and left comes back in its box (F966)', async () => {
     const plan = I.analyse([para('**1. General Information**'), para('All reactions were run under nitrogen in flame-dried glassware with magnetic stirring unless stated otherwise in the text.')]);
     plan.sections = [{ key: 's1', name: 'General', kind: 'text', parent: '', keep: true, compounds: [], figures: new Map() } as never];
@@ -450,6 +553,26 @@ describe('Project Settings', () => {
     expect(file.styles.Normal).toEqual({ font: 'Arial' });
     expect(file.styles.SICompound).toBeUndefined();
     expect(file.styles.SITocHeading).toBeUndefined();
+  });
+
+  it('a font typed in a style stays when Normal is changed to the same font and then to another (F237)', async () => {
+    const seen: string[] = [];
+    askHook = async (title, _fields, opts) => {
+      if (title !== 'Styles') return null;
+      const rows = [...opts.body!.querySelectorAll<HTMLTableRowElement>('.si-styles-table tbody tr')];
+      const font = (name: string): HTMLInputElement => rows.find((r) => r.cells[0].textContent === name)!.querySelector<HTMLInputElement>('input.si-st-font')!;
+      const set = (x: HTMLInputElement, v: string): void => { x.value = v; x.dispatchEvent(new Event('input', { bubbles: true })); x.dispatchEvent(new Event('change', { bubbles: true })); };
+      set(font('Compound Title'), 'Georgia');
+      set(font('Normal'), 'Georgia');
+      set(font('Normal'), 'Arial');
+      seen.push(font('Compound Title').value, font('Contents Heading').value);
+      return {};
+    };
+    const { f } = await settings('styles');
+    // (Contents Heading was not typed in: it follows Normal)
+    expect(seen).toEqual(['Georgia', 'Arial']);
+    const file = JSON.parse(new TextDecoder().decode(f.files.get('chemweave-styles.json')!)) as { styles: Record<string, Json> };
+    expect(file.styles.SICompound).toEqual({ font: 'Georgia' });
   });
 });
 

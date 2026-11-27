@@ -2756,15 +2756,25 @@ export class SiMode {
     this.dashShown();
     this.lockFields(out);
     this.mentionTip.hide();
-    // (a page drawn again after a change made in one of its boxes (Tab out of an ID, a tick): the box the keys had moved on to keeps them)
+    // (a page drawn again after a change made in one of its boxes (Tab out of an ID, a tick): the box the keys had moved on to keeps them, and
+    // what was typed in it meanwhile; never a button, which a second key press (Enter on a ✕) would take again for the next row)
     const was = document.activeElement;
-    const wasKey = was instanceof HTMLElement && this.page.contains(was) && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(was.tagName) ? [...focusKeys(this.page)].find(([, e]) => e === was)?.[0] ?? '' : '';
+    const wasKey = was instanceof HTMLElement && this.page.contains(was) && /^(INPUT|SELECT|TEXTAREA)$/.test(was.tagName) ? [...focusKeys(this.page)].find(([, e]) => e === was)?.[0] ?? '' : '';
+    const wasText = was instanceof HTMLInputElement || was instanceof HTMLTextAreaElement ? { value: was.value, from: was.selectionStart, to: was.selectionEnd } : null;
     this.page.replaceChildren(out);
     if (wasKey && key0 === JSON.stringify(this.pick)) {
       const back = focusKeys(this.page).get(wasKey);
       if (back && !(back as HTMLInputElement).disabled) {
         back.focus({ preventScroll: true });
-        if (back instanceof HTMLInputElement && (back.type === 'text' || back.type === 'search')) { try { back.setSelectionRange(back.value.length, back.value.length); } catch { /* (no caret in this kind of box) */ } }
+        if ((back instanceof HTMLInputElement && (back.type === 'text' || back.type === 'search')) || back instanceof HTMLTextAreaElement) {
+          try {
+            // (characters typed before the page was drawn again are not lost)
+            if (wasText && back.value !== wasText.value) { back.value = wasText.value; back.dispatchEvent(new Event('input', { bubbles: true })); }
+            // (the caret where it was in the same text, else at its end)
+            const at = wasText && wasText.value === back.value && wasText.from !== null && wasText.to !== null ? [wasText.from, wasText.to] : [back.value.length, back.value.length];
+            back.setSelectionRange(at[0], at[1]);
+          } catch { /* (no caret in this kind of box) */ }
+        }
       }
     }
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
@@ -3236,8 +3246,10 @@ export class SiMode {
       if (go !== 'yes') return;
     }
     if (!this.sameStructure(p, c, mol!)) { this.host.flash('The structure changed (or another project is showing) meanwhile, so PubChem’s name was not used. Look it up again.', 8000); return; }
-    await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }));
-    this.host.flash(got.message, 6000);
+    // (said only when the name was written: a save that failed has said so)
+    let done = false;
+    await this.act(async () => { await p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: got.name, from_pubchem: { cid: got.cid, name: got.name, stereo: got.status === 'found' } }); done = true; });
+    if (done) this.host.flash(got.message, 6000);
   }
 
   /** Whether a compound in a project still has the structure (molfile) some slow work started from, in the project showing. */
@@ -3279,8 +3291,7 @@ export class SiMode {
       if (!p.compounds.includes(c) || (await p.readStructure(c).catch(() => '')) !== mol) { why = 'The structure changed while it was being named, so the name was not used.'; continue; }
       if (!got.ok) { why = got.message; continue; }
       const v = valuesOf(c).name;
-      await this.act(() => p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }));
-      named++;
+      await this.act(async () => { await p.setValue(c, 'name', { ...(v && typeof v === 'object' && !Array.isArray(v) ? v : {}), text: capitalizeName(got.name) }); named++; });
     }
     if (todo.length === 1) this.host.flash(named ? 'Named from its structure; you can change the name.' : why || 'No name found.', named ? 3000 : 6000);
     else this.host.flash(`Named ${named} of ${todo.length} compounds${named < todo.length ? '; the others have no name the namer could confirm' : ''}.`, 6000);
@@ -6264,7 +6275,7 @@ export class SiMode {
           const i = list.indexOf(s), j = i + step;
           if (j < 0 || j >= list.length) return;
           await this.act(() => p.moveSection(s.id, step > 0 ? j + 1 : j, s.parentId));
-        }
+        } else this.host.flash('Select a compound, a scheme page or a section to move; a compound’s spectra page moves with its compound.', 5000);
         return;
       }
       case 'id-table': {
@@ -6872,15 +6883,14 @@ function guessSpectrum(name: string): string {
   return '1H';
 }
 
-/** Check items in a list (searchable); resolves with those checked (none when cancelled). */
 /**
- * The page's boxes and buttons by what tells them apart (kind, label, tip, class and place among
+ * The page's boxes by what tells them apart (kind, label, tip, class and place among
  * those alike), so the one that had the keys can be found again when the page is drawn again.
  */
 function focusKeys(root: HTMLElement): Map<string, HTMLElement> {
   const seen = new Map<string, number>();
   const out = new Map<string, HTMLElement>();
-  for (const e of root.querySelectorAll<HTMLElement>('input, select, textarea, button')) {
+  for (const e of root.querySelectorAll<HTMLElement>('input, select, textarea')) {
     const base = [e.tagName, (e as HTMLInputElement).type ?? '', e.getAttribute('aria-label') ?? '', e.title, e.className].join('|');
     const n = seen.get(base) ?? 0;
     seen.set(base, n + 1);
@@ -6892,6 +6902,7 @@ function focusKeys(root: HTMLElement): Map<string, HTMLElement> {
 /** A mention's kind from its id's start, for tables, figures and schemes. */
 const OBJECT_WORDS: Record<string, string> = { 't-': 'Table', 'f-': 'Figure', 'k-': 'Scheme' };
 
+/** Check items in a list (searchable); resolves with those checked (none when cancelled). */
 function pickFromList<T>(title: string, items: T[], main: (x: T) => string, sub: (x: T) => string, empty: string): Promise<T[]> {
   return new Promise((resolve) => {
     const d = el('dialog', 'ask si-pick');

@@ -451,7 +451,11 @@ async function styles(p: SiProject, host: SiSettingsHost): Promise<void> {
     // default (Compound Title and Contents Heading follow Normal as it is set now, not as it was when this opened).
     let filled: StyleLook = {};
     let own = new Set<string>();
-    const fill = (look: StyleLook): void => {
+    // The properties typed or changed here by hand since the boxes were filled by Reset or a Use button: they keep their value even when
+    // it is the same as the default's now (and so stay when the default moves).
+    const touched = new Set<string>();
+    const fill = (look: StyleLook, keepTouched = false): void => {
+      if (!keepTouched) touched.clear();
       const def = defOf();
       const v = { ...def, ...look };
       font.value = v.font; size.value = String(v.size); bold.checked = !!v.bold; italic.checked = !!v.italic;
@@ -475,7 +479,16 @@ async function styles(p: SiProject, host: SiSettingsHost): Promise<void> {
       }
       return out;
     };
-    const follow = (): void => { if (id !== 'Normal') fill(read()); };
+    const follow = (): void => {
+      if (id === 'Normal') return;
+      const look = read();
+      const got = controls() as Record<string, unknown>;
+      for (const k of touched) (look as Record<string, unknown>)[k] = got[k];
+      fill(look, true);
+    };
+    for (const [x, k] of [[font, 'font'], [size, 'size'], [bold, 'bold'], [italic, 'italic'], [color, 'color'], [align, 'align'], [before, 'spaceBefore'], [after, 'spaceAfter'], [line, 'line']] as const) {
+      for (const ev of ['input', 'change']) x.addEventListener(ev, () => { touched.add(k); });
+    }
     if (id === 'Normal') for (const x of [font, size, bold, italic, color, align, before, after, line]) for (const ev of ['input', 'change']) x.addEventListener(ev, () => { for (const r of rows) if (r.id !== 'Normal') r.follow(); });
     reset.addEventListener('click', () => fill({}));
     fill(now[id] ?? {});

@@ -137,23 +137,42 @@ describe('Move Up and Move Down on a scheme page (F233)', () => {
     await mode.saved();
     expect(p.section(DATA).items.indexOf(k)).toBe(at);
   });
+
+  it('say why when what is picked is not something that moves, and move nothing', async () => {
+    const { p, mode, tab } = await open({ kind: 'section', id: SPECTRA });
+    const top = p.top.map((s) => s.id);
+    tab.sheetState = { pick: { kind: 'spectra', id: 'c-26c39a99', section: SPECTRA } };
+    flashes.length = 0;
+    await mode.run('move-down');
+    await mode.saved();
+    expect(p.top.map((s) => s.id)).toEqual(top);
+    expect(flashes.some((m) => /Select a compound, a scheme page or a section/.test(m))).toBe(true);
+  });
 });
 
 describe('Cite from My Library (F234, F982)', () => {
   const lib = { now: { references: [{ type: 'article', authors: ['A. Author'], title: 'A Paper', journal: 'J', year: '2020', volume: '', issue: '', pages: '', doi: '10.1000/xyz', url: '', publisher: '', note: '' }] } };
 
   it('Enter in the Search box takes the Add button, not Cancel', async () => {
-    const { mode } = await open({ kind: 'compound', id: 'c-26c39a99' }, { library: async () => lib });
+    const { p, mode } = await open({ kind: 'compound', id: 'c-26c39a99' }, { library: async () => lib });
+    const c = p.compound('c-26c39a99');
+    const before = ((valuesOf(c).references as Json | undefined)?.refs as string[] | undefined)?.length ?? 0;
     const done = mode.run('cite-library');
     await tick(30);
-    const form = document.querySelector('dialog.si-pick form')!;
-    // (implicit submission, on Enter in a box, clicks the form's first submit button)
-    const first = [...form.querySelectorAll('button')].find((b) => b.type === 'submit')!;
+    const dialog = document.querySelector<HTMLDialogElement>('dialog.si-pick')!;
+    const form = dialog.querySelector('form')!;
+    // (jsdom has no method="dialog": a submit closes the window with its submitter's value, as a browser does)
+    form.addEventListener('submit', (e) => { e.preventDefault(); dialog.close((e as SubmitEvent).submitter?.getAttribute('value') ?? ''); });
+    const row = dialog.querySelector<HTMLInputElement>('.si-pick-row input')!;
+    row.checked = true;
+    row.dispatchEvent(new Event('change', { bubbles: true }));
+    // (Enter in a box clicks the form's first submit button)
+    const first = [...form.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.type === 'submit')!;
     expect(first.textContent).toBe('Add');
-    const cancel = [...form.querySelectorAll('button')].find((b) => b.textContent === 'Cancel')!;
-    cancel.click();
+    form.requestSubmit(first);
     await done;
-    expect(document.querySelector('dialog.si-pick')).toBeNull();
+    await mode.saved();
+    expect(((valuesOf(c).references as Json).refs as string[]).length).toBe(before + 1);
   });
 
   it('cites into a compound whose References value is missing', async () => {
@@ -198,6 +217,21 @@ describe('Structure to Name on a section (F228)', () => {
   });
 });
 
+describe('Structure to Name when a name can’t be saved (F981)', () => {
+  it('counts only the names written', async () => {
+    const { p, mode } = await open({ kind: 'section', id: DATA }, { nameStructure: async () => ({ ok: true, name: 'some name' }) });
+    const c = p.compounds.find((x) => p.hasStructure(x))!;
+    await p.setValue(c, 'name', { text: '' });
+    await mode.saved();
+    vi.spyOn(p, 'setValue').mockRejectedValueOnce(new Error('locked'));
+    flashes.length = 0;
+    await mode.run('structure-to-name');
+    await mode.saved();
+    expect(flashes.some((m) => /Could not save|locked/.test(m))).toBe(true);
+    expect(flashes.some((m) => /^Named from its structure/.test(m))).toBe(false);
+  });
+});
+
 describe('the ID table (F230)', () => {
   it('keeps the keys in the next row after Tab out of a row that was changed', async () => {
     const { mode } = await open({ kind: 'section', id: DATA });
@@ -211,6 +245,36 @@ describe('the ID table (F230)', () => {
     expect(document.activeElement?.getAttribute('aria-label')).toBe('ID for row 2');
     expect(document.activeElement?.isConnected).toBe(true);
     expect(row(1).value).toBe('9z');
+  });
+
+  it('keeps what was typed in that row before the page was drawn again, caret included', async () => {
+    const { mode } = await open({ kind: 'section', id: DATA });
+    const row = (n: number): HTMLInputElement => document.querySelector<HTMLInputElement>(`input[aria-label="ID for row ${n}"]`)!;
+    row(1).focus();
+    row(1).value = '9z';
+    row(1).dispatchEvent(new Event('change', { bubbles: true }));
+    const two = row(2);
+    two.focus();
+    // (typed while the change of row 1 is being saved, before the page is drawn again)
+    two.value = '3b';
+    two.setSelectionRange(1, 1);
+    await mode.saved();
+    await tick(30);
+    expect(document.activeElement?.getAttribute('aria-label')).toBe('ID for row 2');
+    expect(document.activeElement).not.toBe(two);
+    expect((document.activeElement as HTMLInputElement).value).toBe('3b');
+    expect((document.activeElement as HTMLInputElement).selectionStart).toBe(1);
+  });
+
+  it('does not give the keys to a button of the page drawn again', async () => {
+    const { mode } = await open({ kind: 'section', id: DATA });
+    const button = [...document.querySelectorAll<HTMLButtonElement>('.si-page button')].find((b) => !b.disabled && !b.closest('[hidden]'))!;
+    button.focus();
+    expect(document.activeElement).toBe(button);
+    const m = mode as unknown as { shownKey: string; refresh(): void };
+    m.shownKey = '';
+    m.refresh();
+    expect(document.activeElement?.tagName).not.toBe('BUTTON');
   });
 });
 
@@ -383,6 +447,34 @@ describe('the labels of tables, figures and schemes (F971)', () => {
     show(mode, tab);
     await tick(60);
     expect(calls.mock.calls.length).toBeGreaterThan(n0);
+  });
+
+  it('are worked out again after the project is read again from its files, and after Undo', async () => {
+    const { p, j, mode, tab } = await open({ kind: 'compound', id: 'c-26c39a99' });
+    const calls = vi.mocked(CompileDoc.objectLabelSets);
+    const again = async (): Promise<number> => {
+      const n = calls.mock.calls.length;
+      tab.sheetState = { pick: { kind: 'compound', id: 'c-cf3f4417' } };
+      show(mode, tab);
+      await tick(60);
+      tab.sheetState = { pick: { kind: 'compound', id: 'c-26c39a99' } };
+      show(mode, tab);
+      await tick(60);
+      return calls.mock.calls.length - n;
+    };
+    await again();
+    expect(await again()).toBe(0);
+    // (a sync brought changes made elsewhere: Reload Project)
+    await p.reload();
+    expect(await again()).toBeGreaterThan(0);
+    expect(await again()).toBe(0);
+    await p.setValue(p.compound('c-cf3f4417'), 'name', { text: 'changed' });
+    j.settle();
+    await again();
+    const n = calls.mock.calls.length;
+    await mode.undo();
+    await tick(100);
+    expect(calls.mock.calls.length).toBeGreaterThan(n);
   });
 });
 
