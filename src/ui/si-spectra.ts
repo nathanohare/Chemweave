@@ -280,14 +280,27 @@ export class SiSpectraPage {
     this.host.compound.data.spectra_order = files.map(([k, f]) => [k, f]);
     this.remember();
     await this.host.act(() => this.p.saveCompound(this.host.compound));
-    await this.load();
+    this.reorder();
   }
 
   async automaticOrder(): Promise<void> {
     delete this.host.compound.data.spectra_order;
     this.remember();
     await this.host.act(() => this.p.saveCompound(this.host.compound));
-    await this.load();
+    this.reorder();
+  }
+
+  /**
+   * The list in the order the compound's spectra now print in: only the order changed, so the files
+   * are not read (and fingerprinted) again; the one shown stays the one shown.
+   */
+  private reorder(): void {
+    const cur = this.current;
+    const order = spectrumItems(this.host.compound).map(([, i]) => i);
+    const rank = (e: Entry): number => { const r = order.indexOf(e.item); return r < 0 ? order.length : r; };
+    this.entries = this.entries.map((e, n) => ({ e, n })).sort((a, b) => rank(a.e) - rank(b.e) || a.n - b.n).map((x) => x.e);
+    this.index = Math.max(0, cur ? this.entries.indexOf(cur) : 0);
+    this.render();
   }
 
   setScope(file: boolean): void { this.wholeFile = file; this.render(); }
@@ -452,6 +465,7 @@ export class SiSpectraPage {
       box.setPointerCapture(ev.pointerId);
       let moved = false;
       let result: Json = {};
+      let resizing = false;
       // resizing keeps the box's centre when it was dragged somewhere of its own, else its corner
       const dragged = eff.x !== undefined && eff.y !== undefined;
       const anchor = dragged ? { x: g.box.x + g.box.w / 2, y: g.box.y + g.box.h / 2 }
@@ -467,6 +481,7 @@ export class SiSpectraPage {
           const now = ptAt(m.clientX, m.clientY);
           const scale = Math.round(Math.min(SCALE_RANGE[1], Math.max(SCALE_RANGE[0], eff.struct_scale * Math.hypot(now.x - anchor.x, now.y - anchor.y) / startDist)) * 100) / 100;
           result = { struct_scale: scale };
+          resizing = true;
           const sw = g.size.w * scale / eff.struct_scale, sh = g.size.h * scale / eff.struct_scale;
           pic.style.width = `${sw * k}px`; pic.style.height = `${sh * k}px`;
         } else if (labelOnly) {
@@ -487,7 +502,8 @@ export class SiSpectraPage {
         box.removeEventListener('pointerup', up);
         box.removeEventListener('pointercancel', up);
         if (!moved) return;
-        if ('struct_scale' in result) void this.resized(Number(result.struct_scale));
+        // (a box moved after it was made smaller on blank space keeps that size with its new place: its x and y are written too)
+        if (resizing) void this.resized(Number(result.struct_scale));
         else void this.write({ ...this.pageOwn(), ...result }, 'page');
       };
       box.addEventListener('pointermove', move);

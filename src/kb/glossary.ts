@@ -184,6 +184,12 @@ export function glossaryTip(term: string): string | null {
 const EXACT_ONLY = new Set(['s', 'd', 't', 'q', 'm', 'br', 'j', 'po', 'ip', 'iv', 'sc', 'mp', 'bp', 'pe', 'kf', 'tier']);
 
 /**
+ * Words that are glossary terms only in brackets, as NIOSH writes them after a limit ("500 ppm
+ * (Ca)"): Ca is otherwise calcium (the Symbol column, Ca²⁺).
+ */
+const PAREN_ONLY = new Set(['ca']);
+
+/**
  * Text cut into pieces, each known abbreviation a piece with its tooltip: for showing a header or
  * cell with the abbreviations explained on hover. Short words that are ordinary English or NMR
  * letters (s, d, m, bp) are explained only when they are the whole text.
@@ -200,6 +206,7 @@ export function explainPieces(text: string): { text: string; tip?: string }[] {
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const w = m[0];
     if (EXACT_ONLY.has(w.toLowerCase())) continue;
+    if (PAREN_ONLY.has(w.toLowerCase()) && !(text[m.index - 1] === '(' && text[m.index + w.length] === ')')) continue;
     const tip = glossaryTip(w);
     if (!tip) continue;
     if (m.index > last) out.push({ text: text.slice(last, m.index) });

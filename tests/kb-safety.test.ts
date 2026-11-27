@@ -35,7 +35,8 @@ describe('numbers', () => {
       { kind: 'LC50', species: 'guinea pig', route: 'inhalation', value: 32, unit: 'ppm', time: '60 min', source: 'HSDB' },
     ] });
     expect(oralLd50(r)).toBe(200);
-    expect(lethalByRoute(r)).toEqual({ oral: 'rat 440 mg/kg', inhalation: 'guinea pig 32 ppm / 60 min' });
+    // 0.2 g/kg is 200 mg/kg, lower than 440 mg/kg: the table shows the same lowest dose the tier uses
+    expect(lethalByRoute(r)).toEqual({ oral: 'mouse 200 mg/kg', inhalation: 'guinea pig 32 ppm / 60 min' });
   });
 });
 

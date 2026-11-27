@@ -36,6 +36,7 @@ import { OutlineGroup, outlineGroups, maxLevel, setCollapsed, showLevel } from '
 import { SparklineGroup, sparkShape, sparkSource, sparklineAt } from '../sheet/sparklines';
 import { headerRuns, paperSize, DEFAULT_MARGINS } from '../sheet/page-setup';
 import { themeOf } from '../sheet/themes';
+import { MAX_CELLS, lastLine } from './sheet-lines';
 
 /** The row numbers' width and the column letters' height (when shown). */
 const HEAD_W = 44;
@@ -193,11 +194,16 @@ type Floating = { at: Chart['at']; w: number; h: number };
 
 const HANDLE = 7;
 
+/** How far down and across a selection reaches, for how much of the sheet is laid out: a whole column or row counts by its active cell. */
+function selReach(sel: { range: Range; active: Cursor }): { r: number; c: number } {
+  return { r: sel.range.r2 >= MAX_ROWS - 1 ? sel.active.r : sel.range.r2, c: sel.range.c2 >= MAX_COLS - 1 ? sel.active.c : sel.range.c2 };
+}
+
 export class SheetView {
   wb: Workbook | null = null;
   zoom = 1;
   /** The cell being typed in, if any. 'enter': arrows finish typing (Excel's Enter mode); 'edit': arrows move in the text. */
-  editing: { r: number; c: number; mode: 'enter' | 'edit'; original: string; runs?: TextRun[] } | null = null;
+  editing: { r: number; c: number; mode: 'enter' | 'edit'; original: string; runs?: TextRun[]; /** The sheet it is typed on (what is typed goes there, whichever sheet shows when it is finished). */ sheet: Sheet } | null = null;
   /** Format Painter, while the brush is held (set by the app): called when a click or drag has picked the cells to paint. */
   painter: (() => void) | null = null;
   /** Cells copied (shown with a dashed border until Esc or the next edit). */
@@ -218,6 +224,8 @@ export class SheetView {
   private cols!: Axis;
   private metricsKey = '';
   private extentRows = 200;
+  /** The cell last scrolled to, which the layout makes room for (until the selection changes). */
+  private revealed = { r: 0, c: 0 };
   private extentCols = 40;
   private queued = false;
   private drag: Drag | null = null;
@@ -315,6 +323,7 @@ export class SheetView {
     this.scroller.addEventListener('pointermove', (e) => this.onMove(e));
     this.scroller.addEventListener('pointerleave', () => this.setHovered(null));
     this.scroller.addEventListener('pointerup', (e) => this.onUp(e));
+    this.scroller.addEventListener('pointercancel', (e) => this.onCancel(e));
     this.scroller.addEventListener('dblclick', (e) => this.onDouble(e));
     this.scroller.addEventListener('contextmenu', (e) => this.onContext(e));
     this.scroller.addEventListener('wheel', (e) => this.onWheel(e), { passive: false });
@@ -363,6 +372,11 @@ export class SheetView {
       this.zoom = 1;
     }
     this.metricsKey = '';
+    // (what an earlier workbook's selection made room for isn't kept)
+    this.extentRows = 200;
+    this.extentCols = 40;
+    this.revealed = { r: 0, c: 0 };
+    this.autoDrag = null;
     this.renderTabs();
     this.restoreScroll();
     this.render();
@@ -398,6 +412,8 @@ export class SheetView {
     const wb = this.wb;
     if (!wb || i < 0 || i >= wb.sheets.length || i === wb.active) return;
     this.commitEdit();
+    // typing that broke its cell's rule stays until its alert is answered
+    if (this.editing) return;
     this.chartSel = null;
     this.saveScroll();
     wb.active = i;
@@ -415,6 +431,11 @@ export class SheetView {
 
   private restoreScroll(): void {
     const p = this.sheet ? this.scrolls.get(this.sheet) : null;
+    // room for the place scrolled to (rows are at least as tall as the standard row, so this is enough)
+    if (p) {
+      this.extentRows = Math.min(MAX_ROWS, Math.max(this.extentRows, Math.ceil(p.y / (DEFAULT_ROW_H * this.zoom)) + 60));
+      this.extentCols = Math.min(MAX_COLS, Math.max(this.extentCols, Math.ceil(p.x / (DEFAULT_COL_W * this.zoom)) + 12));
+    }
     this.layout();
     this.scroller.scrollLeft = p?.x ?? 0;
     this.scroller.scrollTop = p?.y ?? 0;
@@ -429,37 +450,68 @@ export class SheetView {
 
   // ---------------------------------------------------------------- sizes and positions
 
+  /**
+   * While a column's or row's border is dragged, the heights the other columns' cells need don't
+   * change: they are worked out once (`base`), and only the dragged column's cells are measured
+   * again for each step.
+   */
+  private autoDrag: { sheet: Sheet; edits: number; col: number; base: Map<number, number>; keys: number[] } | null = null;
+
+  /** The height one cell needs (0 when the standard height does). */
+  private cellAutoHeight(s: Sheet, row: number, col: number, c: { structure?: Structure; input?: string }): number {
+    const style = s.styleAt(row, col);
+    let h = 0;
+    if (c.structure) {
+      // a structure in a column narrower than it shrinks, and needs less height
+      h = structureHeight(this.host.structureBox(c.structure), s.colWidths.get(col) ?? DEFAULT_COL_W);
+    } else if (style?.wrap && c.input) {
+      // (as Excel does, a merged cell doesn't fit its row: its text isn't wrapped at its first column's width)
+      if (s.mergeAt(row, col)) return 0;
+      const w = (s.colWidths.get(col) ?? DEFAULT_COL_W) - 2 * PAD;
+      const lines = this.wrapLines(s.shownText(row, col), this.font(style, 1), w).length;
+      h = lines * this.lineHeight(style) + 6;
+    } else if (style?.rotate && c.input) {
+      if (s.mergeAt(row, col)) return 0;
+      // turned text: as tall as it reaches
+      const text = s.shownText(row, col);
+      const lh = this.lineHeight(style);
+      if (style.rotate === 255) h = [...text].length * lh + 6;
+      else {
+        const a = (style.rotate * Math.PI) / 180;
+        h = Math.abs(this.textWidth(text, this.font(style, 1)) * Math.sin(a)) + Math.abs(lh * Math.cos(a)) + 6;
+      }
+    } else if (style?.size && style.size > CELL_SIZE) {
+      h = this.lineHeight(style) + 6;
+    }
+    return h;
+  }
+
   /** The height a row needs for its structures and wrapped text (null: the standard height). */
   autoHeights(s: Sheet): Map<number, number> {
     const out = new Map<number, number>();
-    for (const [k, c] of s.cells) {
-      const row = rowOf(k), col = colOf(k);
-      let h = 0;
-      const style = s.styleAt(row, col);
-      if (c.structure) {
-        // a structure in a column narrower than it shrinks, and needs less height
-        h = structureHeight(this.host.structureBox(c.structure), s.colWidths.get(col) ?? DEFAULT_COL_W);
-      } else if (style?.wrap && c.input) {
-        const w = (s.colWidths.get(col) ?? DEFAULT_COL_W) - 2 * PAD;
-        const lines = this.wrapLines(s.shownText(row, col), this.font(style, 1), w).length;
-        h = lines * this.lineHeight(style) + 6;
-      } else if (style?.rotate && c.input) {
-        // turned text: as tall as it reaches
-        const text = s.shownText(row, col);
-        const lh = this.lineHeight(style);
-        if (style.rotate === 255) h = [...text].length * lh + 6;
-        else {
-          const a = (style.rotate * Math.PI) / 180;
-          h = Math.abs(this.textWidth(text, this.font(style, 1)) * Math.sin(a)) + Math.abs(lh * Math.cos(a)) + 6;
-        }
-      } else if (style?.size && style.size > CELL_SIZE) {
-        h = this.lineHeight(style) + 6;
-      }
-      if (h > DEFAULT_ROW_H) out.set(row, Math.min(MAX_AUTO_ROW, Math.max(out.get(row) ?? 0, Math.ceil(h))));
+    const add = (row: number, h: number) => { if (h > DEFAULT_ROW_H) out.set(row, Math.min(MAX_AUTO_ROW, Math.max(out.get(row) ?? 0, Math.ceil(h)))); };
+    const d = this.autoDrag;
+    if (d && d.sheet === s && d.edits === this.wb!.edits) {
+      for (const [r, h] of d.base) out.set(r, h);
+      for (const k of d.keys) { const c = s.cells.get(k); if (c) add(rowOf(k), this.cellAutoHeight(s, rowOf(k), colOf(k), c)); }
+    } else {
+      for (const [k, c] of s.cells) add(rowOf(k), this.cellAutoHeight(s, rowOf(k), colOf(k), c));
     }
     // rows Excel fitted itself, where nothing here fits them
     for (const [r, px] of s.fittedRows) if (!out.has(r)) out.set(r, px);
     return out;
+  }
+
+  /** A border is being dragged (`col`: the column whose width changes, or -1 for a row, which changes nothing here): remember what the other cells need. */
+  private startAutoDrag(s: Sheet, col: number): void {
+    const base = new Map<number, number>();
+    const keys: number[] = [];
+    for (const [k, c] of s.cells) {
+      if (colOf(k) === col) { keys.push(k); continue; }
+      const h = this.cellAutoHeight(s, rowOf(k), colOf(k), c);
+      if (h > DEFAULT_ROW_H) base.set(rowOf(k), Math.min(MAX_AUTO_ROW, Math.max(base.get(rowOf(k)) ?? 0, Math.ceil(h))));
+    }
+    this.autoDrag = { sheet: s, edits: this.wb!.edits, col, base, keys };
   }
 
   private lineHeight(style: CellStyle | undefined): number {
@@ -474,9 +526,10 @@ export class SheetView {
     if (key === this.metricsKey) return;
     this.metricsKey = key;
     const z = this.zoom;
-    const sel = this.sel;
-    this.extentRows = Math.max(this.extentRows, s.lastRow + 60, sel.range.r2 + 30);
-    this.extentCols = Math.max(this.extentCols, s.lastCol + 12, sel.range.c2 + 8);
+    // room for what is in use, selected, scrolled to or in view; what an earlier trip far down or across made room for goes again
+    const need = this.needed(s);
+    this.extentRows = this.extentRows > need.r + 5000 ? need.r : Math.max(this.extentRows, need.r);
+    this.extentCols = this.extentCols > need.c + 200 ? need.c : Math.max(this.extentCols, need.c);
     const auto = this.autoHeights(s);
     // the row numbers and column letters (unless hidden), and the outline's buttons beside them
     const heads = s.viewOpts?.headings !== false;
@@ -538,12 +591,29 @@ export class SheetView {
     };
   }
 
-  /** Scrolling near the end makes more rows and columns. */
+  /**
+   * How many rows and columns the grid needs now: those in use, those the selection reaches (a
+   * whole column, row or sheet counts by its active cell: the million rows beyond aren't laid
+   * out), the cell last scrolled to and the place in view.
+   */
+  private needed(s: Sheet): { r: number; c: number } {
+    const reach = selReach(this.sel), sc = this.scroller;
+    return {
+      r: Math.min(MAX_ROWS, Math.max(s.lastRow + 60, reach.r + 30, this.revealed.r + 30, this.rows.at(sc.scrollTop + sc.clientHeight) + 60)),
+      c: Math.min(MAX_COLS, Math.max(s.lastCol + 12, reach.c + 8, this.revealed.c + 8, this.cols.at(sc.scrollLeft + sc.clientWidth) + 12)),
+    };
+  }
+
+  /** Scrolling near the end makes more rows and columns; back near the start, a trip far down or across is let go. */
   private growExtent(): void {
     const sc = this.scroller;
     let grew = false;
     if (sc.scrollTop + sc.clientHeight > this.rows.total - 200 && this.extentRows < MAX_ROWS) { this.extentRows += 500; grew = true; }
     if (sc.scrollLeft + sc.clientWidth > this.cols.total - 200 && this.extentCols < MAX_COLS) { this.extentCols += 20; grew = true; }
+    if (!grew && this.sheet) {
+      const need = this.needed(this.sheet);
+      grew = this.extentRows > need.r + 5000 || this.extentCols > need.c + 200;
+    }
     if (grew) { this.metricsKey = ''; this.layout(); }
   }
 
@@ -657,6 +727,9 @@ export class SheetView {
 
   /** Scroll so a cell can be seen. */
   reveal(r: number, c: number): void {
+    // (room for the place scrolled to: a selection run to the end of the sheet still scrolls there)
+    this.revealed = { r: Math.max(this.revealed.r, r), c: Math.max(this.revealed.c, c) };
+    if (r + 30 > this.extentRows || c + 8 > this.extentCols) this.metricsKey = '';
     this.layout();
     const { fr, fc, FH, FW, x0, y0 } = this.frozen();
     const sc = this.scroller;
@@ -1402,14 +1475,28 @@ export class SheetView {
     // merged blocks in view
     const merges = s.merges.filter((m) => m.r2 >= g.r1 && m.r1 <= g.r2 && m.c2 >= g.c1 && m.c1 <= g.c2);
     const inMerge = (r: number, c: number) => merges.find((m) => inRange(m, r, c));
-    // cells: fills, then contents, then borders on top
+    // cells: fills, then contents (text that runs over empty cells shows over their fills), then borders on top
     const filter = s.filter;
     const filterRow = filter ? filter.range.r1 : -1;
     const drawn = new Set<Range>();
     const borders: (() => void)[] = [];
+    const contents: (() => void)[] = [];
     for (let r = g.r1; r <= g.r2; r++) {
       if (s.hiddenRows.has(r)) continue;
       let spillUntil = -1;
+      // text that runs on from a cell left of this part (scrolled out of view, or in the frozen columns beside it) into the empty cells in it
+      const reach = g.c1 === g.clo && g.clo > 0 && this.scroller.scrollLeft === 0 ? 0 : g.clo;
+      for (let c0 = g.c1 - 1; c0 >= Math.max(reach, g.c1 - 60); c0--) {
+        if (s.hiddenCols.has(c0)) continue;
+        const nv = s.values.get(keyOf(r, c0));
+        const here = s.cell(r, c0);
+        if ((nv === undefined || nv === null || nv === '') && !here?.structure && !s.mergeAt(r, c0)) continue;
+        if (typeof nv === 'string' && !here?.structure && !s.mergeAt(r, c0) && !s.condLook(r, c0)?.hideValue) {
+          const x0 = X(c0), y0 = Y(r), w0 = this.cols.size(c0), h0 = this.rows.size(r);
+          contents.push(() => this.drawText(r, c0, x0, y0, w0, h0, s.shownStyleAt(r, c0), g, X));
+        }
+        break;
+      }
       for (let c = g.c1; c <= g.c2; c++) {
         if (s.hiddenCols.has(c)) continue;
         const m = inMerge(r, c);
@@ -1438,6 +1525,7 @@ export class SheetView {
           const sp = sparklineAt(s.sparklines, rr, cc);
           if (sp) this.drawSparkline(s, sp.group, sp.item, x, y, w, h);
         }
+        contents.push(() => {
         if (cell?.structure) this.drawStructure(cell.structure, x, y, w, h, style, budget);
         else if (look?.hideValue) { /* only the bar or icon shows */ }
         else if (v !== undefined && v !== null && v !== '' && c > spillUntil) {
@@ -1477,8 +1565,10 @@ export class SheetView {
           ctx.fill();
         }
         if (rr === filterRow && filter && cc >= filter.range.c1 && cc <= filter.range.c2) this.drawFilterButton(x, y, w, h, cc in filter.conditions);
+        });
       }
     }
+    for (const f of contents) f();
     for (const b of borders) b();
     if (pg) ctx.restore();
     // the copied cells
@@ -1937,9 +2027,14 @@ export class SheetView {
         cc++;
       }
       if (last > c) {
-        // hide the grid lines under the text
-        ctx.fillStyle = style?.fill ?? '#ffffff';
-        ctx.fillRect(x + w - 2, y, clipW - w, h - 1);
+        // hide the grid lines under the text (the cells it runs over keep their own fills)
+        for (let k = c + 1; k <= last; k++) {
+          if (s.hiddenCols.has(k) || s.shownStyleAt(r, k)?.fill) continue;
+          // a sparkline, bar or icon in an empty cell was drawn before the text: keep it
+          if ((s.sparklines.length && sparklineAt(s.sparklines, r, k)) || s.condLook(r, k)?.bar || s.condLook(r, k)?.icon) continue;
+          ctx.fillStyle = '#ffffff';
+          ctx.fillRect(X(k) - 1, y, X(k + 1) - X(k), h - 1);
+        }
         ctx.fillStyle = shown.color ?? style?.color ?? '#000000';
       }
     }
@@ -2329,7 +2424,7 @@ export class SheetView {
   private outlineClick(x: number, y: number): boolean {
     const s = this.sheet, wb = this.wb;
     if (!s || !wb || (!this.OW && !this.OH)) return false;
-    const act = (label: string, fn: () => void) => { this.commitEdit(); wb.edit(label, fn, this.place()); this.refresh(); this.host.changed(); };
+    const act = (label: string, fn: () => void) => { this.commitEdit(); if (this.editing) return; wb.edit(label, fn, this.place()); this.refresh(); this.host.changed(); };
     // level buttons
     if (this.OW && x < this.OW && y >= this.HH - OUTLINE_STEP - 1 && y < this.HH) {
       const n = Math.floor((x - 3) / OUTLINE_STEP) + 1;
@@ -2395,6 +2490,7 @@ export class SheetView {
     const wb = this.wb;
     if (!wb) return;
     this.commitEdit();
+    if (this.editing) return;
     const s = wb.edit('New sheet', () => wb.addSheet(undefined, wb.active + 1), this.place());
     this.goSheet(wb.sheets.indexOf(s));
   }
@@ -2404,6 +2500,7 @@ export class SheetView {
     const wb = this.wb;
     if (!wb) return;
     this.commitEdit();
+    if (this.editing) return;
     let n = 1;
     while (wb.sheetNamed(`Dashboard${n === 1 ? '' : n}`)) n++;
     const s = wb.edit('New dashboard', () => {
@@ -2467,6 +2564,10 @@ export class SheetView {
     if (!wb) return;
     const s = wb.sheet;
     if (wb.sheets.length < 2) { this.host.flash('A workbook needs at least one sheet.'); return; }
+    // what was being typed on the sheet goes with it, and so does what was picked on it
+    this.cancelEdit();
+    this.chartSel = null;
+    this.objSel = null;
     wb.edit('Delete sheet', () => wb.removeSheet(s), this.place());
     this.metricsKey = '';
     this.renderTabs();
@@ -2494,7 +2595,9 @@ export class SheetView {
     if (!s) return;
     const r = normRange({ r1: clampR(range.r1), c1: clampC(range.c1), r2: clampR(range.r2), c2: clampC(range.c2) });
     this.sels.set(s, { active: { r: clampR(active.r), c: clampC(active.c) }, anchor: { r: clampR(anchor.r), c: clampC(anchor.c) }, range: r, ...(more?.length ? { more } : {}) });
-    if (r.r2 + 30 > this.extentRows || r.c2 + 8 > this.extentCols) { this.metricsKey = ''; }
+    const reach = selReach({ range: r, active: { r: clampR(active.r), c: clampC(active.c) } });
+    this.revealed = { r: 0, c: 0 };
+    if (reach.r + 30 > this.extentRows || reach.c + 8 > this.extentCols) { this.metricsKey = ''; }
     if (reveal) this.reveal(active.r, active.c);
     this.render();
     this.host.changed();
@@ -2578,7 +2681,32 @@ export class SheetView {
       if (dc < 0) c = m.c1;
     }
     do { r += dr; c += dc; } while ((dr && s.hiddenRows.has(r)) || (dc && s.hiddenCols.has(c)));
+    // nothing but hidden rows (columns) above (to the left): stay, rather than land on a hidden one
+    if (r < 0 || c < 0) return { r: from.r, c: from.c };
     return { r: clampR(r), c: clampC(c) };
+  }
+
+  /**
+   * Page Down and Page Up: the active cell goes down (up) by the rows that fill the window, as
+   * tall as they really are, and the window scrolls by the same distance, so the cell stays
+   * where it was on the screen.
+   */
+  private pageMove(dir: 1 | -1, extend: boolean): void {
+    this.layout();
+    const sc = this.scroller;
+    const { FH, y0 } = this.frozen();
+    const room = Math.max(this.rows.def, sc.clientHeight - y0 - FH - 40);
+    const sel = this.sel;
+    const from = extend ? (sel.anchor.r === sel.range.r1 ? sel.range.r2 : sel.range.r1) : sel.active.r;
+    const startPos = this.rows.pos(from);
+    let to = dir > 0 ? this.rows.at(startPos + room) : this.rows.at(Math.max(0, startPos - room));
+    // at least one row (the window may be shorter than the row)
+    if (dir > 0 && to <= from) to = from + 1;
+    if (dir < 0 && to >= from) to = from - 1;
+    to = Math.max(0, Math.min(MAX_ROWS - 1, to));
+    const top = sc.scrollTop;
+    this.move(to - from, 0, extend);
+    sc.scrollTop = Math.max(0, top + this.rows.pos(to) - startPos);
   }
 
   /** Ctrl+arrow: to the edge of the block of filled cells, or the next filled cell. */
@@ -2629,7 +2757,7 @@ export class SheetView {
     }
     const original = s.effectiveInput(r, c) ?? '';
     const runs = runsOf(cell);
-    this.editing = { r, c, mode: text === undefined ? 'edit' : 'enter', original, runs };
+    this.editing = { r, c, mode: text === undefined ? 'edit' : 'enter', original, runs, sheet: s };
     this.input.setText(text ?? original, text === undefined ? looksForInput(original, runs) : undefined);
     this.input.hidden = false;
     this.pointRef = null;
@@ -2648,7 +2776,7 @@ export class SheetView {
       const s = this.sheet!;
       if (s.cell(r, c)?.structure) return;
       const runs = runsOf(s.cell(r, c));
-      this.editing = { r, c, mode: 'edit', original: s.effectiveInput(r, c) ?? '', runs };
+      this.editing = { r, c, mode: 'edit', original: s.effectiveInput(r, c) ?? '', runs, sheet: s };
       this.input.setText(this.editing.original, looksForInput(this.editing.original, runs));
       this.input.hidden = false;
       this.placeInput();
@@ -2698,7 +2826,7 @@ export class SheetView {
     const e = this.editing;
     const wb = this.wb;
     if (!e || !wb) return false;
-    const s = wb.sheet;
+    const s = e.sheet;
     const text = this.input.value;
     // part of the text bold, italic… (only typed text holds it)
     const runs = runsForInput(text, this.input.charLooks);
@@ -2715,18 +2843,29 @@ export class SheetView {
       });
       return true;
     }
+    const areas = this.areas();
+    // Ctrl+Enter: every cell of each block (a whole column or row: as far as the cells in use go, and one more)
+    const filled = areas.map((sel) => ({
+      sel,
+      lastR: sel.r2 >= MAX_ROWS - 1 ? Math.min(sel.r2, Math.max(s.lastRow, e.r, sel.r1) + 1) : sel.r2,
+      lastC: sel.c2 >= MAX_COLS - 1 ? Math.min(sel.c2, Math.max(s.lastCol, e.c, sel.c1) + 1) : sel.c2,
+    }));
+    if (allSelected && (text !== e.original || !sameRuns(runs, e.runs))
+      && filled.reduce((n, f) => n + (f.lastR - f.sel.r1 + 1) * (f.lastC - f.sel.c1 + 1), 0) > MAX_CELLS) {
+      this.host.flash(`That is more than ${MAX_CELLS.toLocaleString('en-US')} cells. Select fewer cells, or fill a part at a time.`, 5000);
+      return true; // the typing stays open
+    }
     this.editing = null;
     this.pointRef = null;
     this.input.hidden = true;
     this.copied = null;
     if (text !== e.original || !sameRuns(runs, e.runs)) {
-      const areas = this.areas();
       wb.edit('Typing', () => {
         if (allSelected) {
-          // Ctrl+Enter: the same typing in every selected cell, in every block (formulas move with each cell)
+          // the same typing in every selected cell, in every block (formulas move with each cell)
           const block = { rows: 1, cols: 1, cells: [[{ input: text }]], origin: { row: e.r, col: e.c } };
-          for (const sel of areas) {
-            for (let r = sel.r1; r <= Math.min(sel.r2, Math.max(s.lastRow, e.r, sel.r1) + 1); r++) for (let c = sel.c1; c <= Math.min(sel.c2, Math.max(s.lastCol, e.c, sel.c1) + 1); c++) {
+          for (const { sel, lastR, lastC } of filled) {
+            for (let r = sel.r1; r <= lastR; r++) for (let c = sel.c1; c <= lastC; c++) {
               if (text.startsWith('=')) s.paste({ row: r, col: c }, block, 'values');
               else s.setRichInput(r, c, text, runs);
             }
@@ -2962,9 +3101,7 @@ export class SheetView {
     if ((k === 'PageDown' || k === 'PageUp') && !e.altKey) {
       e.preventDefault();
       if (ctrl) { this.goSheet(this.wb.active + (k === 'PageDown' ? 1 : -1)); return; }
-      const page = Math.max(1, Math.floor(this.scroller.clientHeight / (DEFAULT_ROW_H * this.zoom)) - 2);
-      this.move(k === 'PageDown' ? page : -page, 0, e.shiftKey);
-      this.scroller.scrollTop += (k === 'PageDown' ? 1 : -1) * (this.scroller.clientHeight - this.HH - 40);
+      this.pageMove(k === 'PageDown' ? 1 : -1, e.shiftKey);
       return;
     }
     if (k === 'F2' && !e.shiftKey && !ctrl) { e.preventDefault(); this.editCell(); return; }
@@ -3026,7 +3163,7 @@ export class SheetView {
       if (sheetX - left <= 3 && c > 0) {
         let p = c - 1;
         while (p > 0 && this.cols.size(p) === 0) p--;
-        return { kind: 'col', index: p };
+        if (this.cols.size(p) > 0) return { kind: 'col', index: p };
       }
     }
     if (x < this.HW && y > this.HH) {
@@ -3035,7 +3172,12 @@ export class SheetView {
       const r = this.rows.at(sheetY);
       const top = this.rows.pos(r), bottom = top + this.rows.size(r);
       if (bottom - sheetY <= 3) return { kind: 'row', index: r };
-      if (sheetY - top <= 2 && r > 0) return { kind: 'row', index: r - 1 };
+      if (sheetY - top <= 2 && r > 0) {
+        // (the border under a hidden row is the visible row's above it)
+        let p = r - 1;
+        while (p > 0 && this.rows.size(p) === 0) p--;
+        if (this.rows.size(p) > 0) return { kind: 'row', index: p };
+      }
     }
     return null;
   }
@@ -3280,6 +3422,7 @@ export class SheetView {
   private previewSize(kind: 'col' | 'row', index: number, size: number): void {
     this.sizePreview = { kind, index, size };
     const s = this.sheet!;
+    if (!this.autoDrag || this.autoDrag.sheet !== s) this.startAutoDrag(s, kind === 'col' ? index : -1);
     // show it at once, without recording each step
     const map = kind === 'col' ? s.colWidths : s.rowHeights;
     map.set(index, Math.round(size));
@@ -3342,6 +3485,7 @@ export class SheetView {
     if ((d.kind === 'resize-col' || d.kind === 'resize-row') && this.sizePreview) {
       const p = this.sizePreview;
       this.sizePreview = null;
+      this.autoDrag = null;
       const map = p.kind === 'col' ? s.colWidths : s.rowHeights;
       // put the old size back so the change is recorded (and undoable)
       if (d.orig === undefined) map.delete(p.index);
@@ -3350,8 +3494,9 @@ export class SheetView {
       const whole = p.kind === 'col' ? sel.r1 === 0 && sel.r2 >= MAX_ROWS - 1 && p.index >= sel.c1 && p.index <= sel.c2 : sel.c1 === 0 && sel.c2 >= MAX_COLS - 1 && p.index >= sel.r1 && p.index <= sel.r2;
       wb.edit(p.kind === 'col' ? 'Column width' : 'Row height', () => {
         // with several whole columns (or rows) selected, they all get the new size
-        const from = whole ? (p.kind === 'col' ? sel.c1 : sel.r1) : p.index, to = whole ? (p.kind === 'col' ? Math.min(sel.c2, s.lastCol + 1) : Math.min(sel.r2, s.lastRow + 1)) : p.index;
-        for (let i = from; i <= Math.max(from, to); i++) {
+        // (as far as the cells in use go, and always as far as the one dragged)
+        const from = whole ? (p.kind === 'col' ? sel.c1 : sel.r1) : p.index, to = whole ? lastLine(sel, p.kind === 'col' ? 'col' : 'row', p.kind === 'col' ? s.lastCol : s.lastRow) : p.index;
+        for (let i = from; i <= Math.max(from, to, p.index); i++) {
           if (p.kind === 'col') s.setColWidth(i, p.size);
           else s.setRowHeight(i, p.size);
         }
@@ -3360,11 +3505,7 @@ export class SheetView {
       this.render();
     } else if (d.kind === 'fill' && !sameRange(d.src, d.to)) {
       const src = d.src;
-      const nums = [];
-      for (let r = src.r1; r <= src.r2; r++) for (let c = src.c1; c <= src.c2; c++) nums.push(readTyped(s.effectiveInput(r, c) ?? '').value);
-      // as in Excel: a single number is copied (Ctrl counts on), anything else counts on (Ctrl copies)
-      const single = nums.length === 1 && typeof nums[0] === 'number';
-      const series = single ? d.ctrl : !d.ctrl;
+      const series = this.fillSeries(s, src, d.ctrl);
       wb.edit('Fill', () => s.fill(src, d.to, series), this.place(), () => ({ sheet: s, sel: d.to }));
       this.select(d.to, this.sel.active, this.sel.anchor, false);
     } else if (d.kind === 'point') {
@@ -3372,6 +3513,29 @@ export class SheetView {
     } else if ((d.kind === 'select' || d.kind === 'rows' || d.kind === 'cols') && this.painter) {
       this.painter();
     }
+    this.render();
+  }
+
+  /** The browser took the pointer over (a touch pan): end the drag as if it had never been, without changing anything. */
+  private onCancel(e: PointerEvent): void {
+    const d = this.drag;
+    if (!d || e.pointerId !== d.pointer) return;
+    this.drag = null;
+    if (this.scroller.hasPointerCapture?.(e.pointerId)) this.scroller.releasePointerCapture(e.pointerId);
+    // a size shown while dragging goes back to what it was (nothing was recorded for it)
+    const p = this.sizePreview;
+    if (p && (d.kind === 'resize-col' || d.kind === 'resize-row')) {
+      const map = p.kind === 'col' ? this.sheet!.colWidths : this.sheet!.rowHeights;
+      if (d.orig === undefined) map.delete(p.index);
+      else map.set(p.index, d.orig);
+    }
+    this.sizePreview = null;
+    this.autoDrag = null;
+    this.chartPreview = null;
+    this.objPreview = null;
+    this.breakPreview = null;
+    this.splitPreview = null;
+    this.metricsKey = '';
     this.render();
   }
 
@@ -3405,6 +3569,14 @@ export class SheetView {
     else this.editCell();
   }
 
+  /** Does a fill from these cells count on (1, 2 → 3; S1 → S2) or copy? As in Excel: a single number is copied (Ctrl counts on), anything else counts on (Ctrl copies). */
+  private fillSeries(s: Sheet, src: Range, ctrl: boolean): boolean {
+    const nums = [];
+    for (let r = src.r1; r <= src.r2; r++) for (let c = src.c1; c <= src.c2; c++) nums.push(readTyped(s.effectiveInput(r, c) ?? '').value);
+    const single = nums.length === 1 && typeof nums[0] === 'number';
+    return single ? ctrl : !ctrl;
+  }
+
   /** Double-clicking the fill handle fills down as far as the column beside it has data (Excel's). */
   fillToEnd(): void {
     const wb = this.wb!;
@@ -3423,20 +3595,34 @@ export class SheetView {
     }
     if (end === src.r2) return;
     const to = { ...src, r2: end };
-    wb.edit('Fill', () => s.fill(src, to, false), this.place(), () => ({ sheet: s, sel: to }));
+    // as dragging the handle does: numbers and compound numbers count on, a single number is copied
+    const series = this.fillSeries(s, src, false);
+    wb.edit('Fill', () => s.fill(src, to, series), this.place(), () => ({ sheet: s, sel: to }));
     this.select(to, this.sel.active, this.sel.anchor, false);
   }
 
   /** Make a column as wide (or a row as tall) as its contents need. */
   autoFit(kind: 'col' | 'row', index: number): void {
+    this.autoFitLines(kind, index, index);
+  }
+
+  /** Make columns (or rows) `from` to `to` as wide (tall) as their contents need: one step to undo, one drawing. */
+  autoFitLines(kind: 'col' | 'row', from: number, to: number): void {
     const wb = this.wb!;
     const s = wb.sheet;
-    if (kind === 'row') {
-      wb.edit('Row height', () => s.setRowHeight(index, undefined), this.place());
-      this.metricsKey = '';
-      this.render();
-      return;
-    }
+    this.commitEdit();
+    wb.edit(kind === 'row' ? 'Row height' : 'Column width', () => {
+      for (let i = from; i <= to; i++) {
+        if (kind === 'row') s.setRowHeight(i, undefined);
+        else s.setColWidth(i, Math.max(24, Math.min(600, this.fittedWidth(s, i) || DEFAULT_COL_W)));
+      }
+    }, this.place());
+    this.metricsKey = '';
+    this.render();
+  }
+
+  /** How wide a column needs to be for what is in it (0 when it holds nothing). */
+  private fittedWidth(s: Sheet, index: number): number {
     let w = 0;
     for (const k of s.keysIn({ r1: 0, c1: index, r2: Math.max(0, s.lastRow), c2: index })) {
       const r = rowOf(k);
@@ -3452,9 +3638,7 @@ export class SheetView {
       const style = s.styleAt(r, index);
       w = Math.max(w, this.textWidth(s.shownText(r, index), this.font(style, 1)) + 10);
     }
-    wb.edit('Column width', () => s.setColWidth(index, Math.max(24, Math.min(600, w || DEFAULT_COL_W))), this.place());
-    this.metricsKey = '';
-    this.render();
+    return w;
   }
 
   private onContext(e: MouseEvent): void {
@@ -3553,8 +3737,16 @@ export class SheetView {
   onZoom?: () => void;
 
   setZoom(z: number): void {
+    const was = this.zoom, sc = this.scroller;
     this.zoom = Math.max(0.25, Math.min(4, Math.round(z * 100) / 100));
     this.metricsKey = '';
+    // the same cells stay at the top left: the scroll is in pixels, and they are bigger or smaller now
+    if (this.sheet && this.zoom !== was) {
+      const top = sc.scrollTop / was, left = sc.scrollLeft / was;
+      this.layout();
+      sc.scrollTop = top * this.zoom;
+      sc.scrollLeft = left * this.zoom;
+    }
     this.render();
     this.onZoom?.();
     this.host.flash(`Zoom ${Math.round(this.zoom * 100)}%`, 900);
