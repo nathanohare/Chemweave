@@ -3,7 +3,7 @@
 // are single lines; larger coupled groups are split into clusters that fit the quality setting's
 // size limit, with the couplings between clusters kept to first order.
 
-import { predictCouplings, protonGroups, type JGraph, type ProtonGroup } from './coupling';
+import { partnerCount, predictCouplings, protonGroups, type JGraph, type ProtonGroup } from './coupling';
 import { lorentzian, mergeLines, transitions, type LineList } from './spin';
 import type { ProtonJ } from './karplus';
 
@@ -44,6 +44,30 @@ const SPLIT = 0.5;
 const GEM_SP3 = -12.5;
 
 /**
+ * A CH2 with a predicted gap: its two protons' couplings are shared, the mean over its two
+ * protons (over all four pairs when both atoms are such CH2s), since which proton is which is not
+ * known. `perH`: per proton pair "a.ka,b.kb" (a < b), changed in place. The means are taken from
+ * the couplings as given, never from ones already shared.
+ */
+export function shareGapCouplings(perH: Map<string, number>, g: JGraph, gap: Record<number, number>): void {
+  const given = new Map(perH);
+  const shared = (x: number) => gap[x] !== undefined && g.atoms[x].h === 2;
+  for (const [k, v] of given) {
+    const [p, q] = k.split(',');
+    const [a, ka] = p.split('.').map(Number), [b, kb] = q.split('.').map(Number);
+    if (!shared(a) && !shared(b)) continue;
+    let t = 0, n = 0;
+    for (const x of shared(a) ? [0, 1] : [ka]) {
+      for (const y of shared(b) ? [0, 1] : [kb]) {
+        const j = given.get(`${a}.${x},${b}.${y}`);
+        if (j !== undefined) { t += j; n++; }
+      }
+    }
+    perH.set(k, n ? t / n : v);
+  }
+}
+
+/**
  * The structure's predicted 1H spectrum at sf MHz. h1: predicted shift per heavy atom (NaN when
  * none). pj: vicinal couplings from 3-D conformers (karplus.ts), which replace the 2-D values for
  * their atom pairs; where the protons of one CH2 couple differently (axial and equatorial, or the
@@ -66,13 +90,7 @@ export function predictSpectrum(g: JGraph, h1: number[], codes: string[], sf = 4
     cs = cs.filter((c) => c.a === c.b || !mean.has(`${c.a},${c.b}`));
     for (const [k, m] of mean) { const [a, b] = k.split(',').map(Number); cs.push({ a, b, j: m.t / m.n, kind: 'vic-3d' }); }
   }
-  // a CH2 with a predicted gap: its protons' couplings are shared (mean over its two protons)
-  for (const [k, v] of [...perH]) {
-    const [p, q] = k.split(',');
-    const [a, ka] = p.split('.').map(Number), [b, kb] = q.split('.').map(Number);
-    if (gap[a] !== undefined && g.atoms[a].h === 2) perH.set(k, (v + (perH.get(`${a}.${1 - ka},${b}.${kb}`) ?? v)) / 2);
-    else if (gap[b] !== undefined && g.atoms[b].h === 2) perH.set(k, (v + (perH.get(`${a}.${ka},${b}.${1 - kb}`) ?? v)) / 2);
-  }
+  shareGapCouplings(perH, g, gap);
   // atoms whose protons couple differently to some neighbour, or have different predicted shifts
   const split = new Set<number>(Object.keys(gap).map(Number).filter((a) => g.atoms[a]?.h === 2 && gap[a] > 0 && !Number.isNaN(h1[a])));
   const shiftOf = (p: { atom: number; k: number }) => h1[p.atom] + (split.has(p.atom) && gap[p.atom] ? (p.k === 0 ? 1 : -1) * gap[p.atom] / 2 : 0);
@@ -102,7 +120,7 @@ export function predictSpectrum(g: JGraph, h1: number[], codes: string[], sf = 4
       if (c.a !== rep && c.b !== rep) continue;
       const o = c.a === rep ? c.b : c.a;
       if (o === rep) { partners.push([c.j, 1]); continue; }
-      if (!same.has(o)) partners.push([c.j, g.atoms[o].h]);
+      if (!same.has(o)) partners.push([c.j, partnerCount(g, c, o)]);
     }
     push(firstOrder(gr.shift * sf, partners, n, width));
   };

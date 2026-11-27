@@ -79,7 +79,7 @@ function listKeys(folder: string, all: { key: string; size: number; modified: nu
 }
 
 /** A browser: the page's IndexedDB storage. */
-function browserStore(): KeepStore {
+export function browserStore(): KeepStore {
   let db: Promise<IDBDatabase> | null = null;
   const open = () => db ??= new Promise((resolve, reject) => {
     // ask the browser to keep this storage when space runs short (it may still say no, or ask the person)
@@ -98,11 +98,17 @@ function browserStore(): KeepStore {
     });
   };
   type Row = { data: Uint8Array; modified: number };
-  const all = async () => {
+  // Everything under a folder: the keys from "folder/" up to (not including) "folder0", as '0'
+  // comes straight after '/'. Only those rows are read, never the whole store.
+  const under = (folder: string) => {
+    const pre = folder.replace(/\/$/, '') + '/';
+    return IDBKeyRange.bound(pre, pre.slice(0, -1) + '0', false, true);
+  };
+  const all = async (folder: string) => {
     const s = (await open()).transaction('kept', 'readonly').objectStore('kept');
     const out: { key: string; size: number; modified: number }[] = [];
     return new Promise<typeof out>((resolve, reject) => {
-      const r = s.openCursor();
+      const r = s.openCursor(under(folder));
       r.onsuccess = () => {
         const c = r.result;
         if (!c) { resolve(out); return; }
@@ -116,9 +122,11 @@ function browserStore(): KeepStore {
   return {
     async put(key, data) { await run('readwrite', (s) => s.put({ data: data.slice(), modified: Date.now() } satisfies Row, key)); },
     async get(key) { const r = await run('readonly', (s) => s.get(key)) as Row | undefined; return r ? r.data : null; },
-    async list(folder) { return listKeys(folder, await all()); },
+    async list(folder) { return listKeys(folder, await all(folder)); },
     async remove(key) {
-      for (const f of await all()) if (f.key === key || f.key.startsWith(key + '/')) await run('readwrite', (s) => s.delete(f.key));
+      // the copy itself and everything under it, deleted by key without reading any of them
+      await run('readwrite', (s) => s.delete(key));
+      await run('readwrite', (s) => s.delete(under(key)));
     },
     async where() { return 'this browser’s storage for the page'; },
   };

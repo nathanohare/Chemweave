@@ -4751,6 +4751,7 @@ const ws: Workspace = new Workspace(doc, {
   beforeSaveAs: (tab, name) => offerChemdrawToPictures(tab, name),
   saved: (tab, data, how, was) => { keeper.saved(tab, data, how, was); if (how !== 'autosaved') void noteFileCompounds(tab).catch(() => {}); },
   autoSaveFailed: (tab, msg) => keeper.autoSaveFailed(tab, msg),
+  written: (tab) => keeper.written(tab),
   canvasEdited: async (name, n) => {
     const got = await ask('Canvas Slides Changed in PowerPoint', [{
       name: 'keep', label: 'Keep', value: 'canvas',

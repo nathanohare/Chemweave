@@ -5,7 +5,7 @@
 // scripts/kb/build-safety.mjs, which builds the bundled tables, and by the Knowledge Base window to
 // rate a compound that isn't in them, live from PubChem. Plain functions, no imports to run.
 
-import type { Lethal, SafetyRecord, Sourced } from './safety';
+import { lowerDose, type Lethal, type SafetyRecord, type Sourced } from './safety';
 
 /** Sources whose values may be shipped, in order of preference. */
 export const OPEN_SOURCES = ['Hazardous Substances Data Bank (HSDB)', 'The National Institute for Occupational Safety and Health (NIOSH)', 'CAMEO Chemicals', 'Occupational Safety and Health Administration (OSHA)', 'PAC Chemical Database, U.S. Department of Energy'];
@@ -188,7 +188,7 @@ export function compactRecord(r: SafetyRecord): SafetyRecord {
   for (const l of r.lethal) {
     if (l.kind !== 'LD50' && l.kind !== 'LC50') continue;
     const cur = best.get(l.route);
-    if (!cur || (cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value)) best.set(l.route, l);
+    if (!cur || lowerDose(l, cur)) best.set(l.route, l);
   }
   const idlh = r.idlh ? { ...r.idlh } : null;
   if (idlh) delete idlh.url;

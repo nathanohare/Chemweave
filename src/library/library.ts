@@ -21,7 +21,8 @@ export interface LibReference extends Reference {
   pmid?: string;
   abstract?: string;
   /** The Zotero item it came from (Sync with Zotero). */
-  zotero?: { key: string; version: number; library: string };
+  /** `tags`: Zotero's own tags as last brought in (the others were added here). */
+  zotero?: { key: string; version: number; library: string; tags?: string[] };
 }
 
 /** Where a compound was seen: a file (by its path, or its name when there is no path) and the number it had there. */
@@ -79,7 +80,7 @@ function cleanSpectrum(raw: unknown): LibSpectrum | null {
   const m = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
   const text = str(m.text).trim();
   if (!text) return null;
-  const out: LibSpectrum = { id: str(m.id) || newId('s'), kind: m.kind === 'measured' ? 'measured' : 'predicted', text, solvent: str(m.solvent).trim(), saved: num(m.saved) };
+  const out: LibSpectrum = { id: str(m.id) || stableId('s', m), kind: m.kind === 'measured' ? 'measured' : 'predicted', text, solvent: str(m.solvent).trim(), saved: num(m.saved) };
   if (str(m.quality)) out.quality = str(m.quality);
   return out;
 }
@@ -123,6 +124,22 @@ export function newId(prefix: string, taken: Iterable<string> = []): string {
   }
 }
 
+/**
+ * An id for an item the file gives none: made from what the item holds, so reading the same file
+ * again gives the same id (a random one each time made every save's merge keep two copies).
+ */
+export function stableId(prefix: string, raw: unknown): string {
+  const text = JSON.stringify(raw) ?? '';
+  // FNV-1a, 32 bits, twice (the second seeded differently): 16 hex digits
+  let a = 0x811c9dc5, b = 0x1b873593;
+  for (let i = 0; i < text.length; i++) {
+    const c = text.charCodeAt(i);
+    a = Math.imul(a ^ c, 0x01000193) >>> 0;
+    b = Math.imul(b ^ c, 0x01000193) >>> 0;
+  }
+  return `${prefix}-${a.toString(16).padStart(8, '0')}${b.toString(16).padStart(8, '0')}`;
+}
+
 /** Tags typed as "a, b; c" (commas or semicolons), tidied: no blanks, no repeats. */
 export function parseTags(text: string): string[] {
   return uniq(text.split(/[,;\n]/).map((t) => t.trim()).filter(Boolean));
@@ -131,7 +148,8 @@ export function parseTags(text: string): string[] {
 /** A library reference from anything (a damaged file, a reference from a document). */
 export function cleanLibRef(raw: unknown, now = Date.now()): LibReference {
   const r = (raw && typeof raw === 'object' ? raw : {}) as Record<string, unknown>;
-  const out: LibReference = { ...cleanRef(r as Partial<Reference>), added: num(r.added, now), modified: num(r.modified, now) };
+  const given = r.id !== undefined && r.id !== null && r.id !== '' && typeof r.id !== 'object';
+  const out: LibReference = { ...cleanRef({ ...(r as Partial<Reference>), ...(given ? {} : { id: stableId('r', r) }) }), added: num(r.added, now), modified: num(r.modified, now) };
   const tags = uniq(strings(r.tags));
   if (tags.length) out.tags = tags;
   const cols = uniq(strings(r.collections));
@@ -140,7 +158,7 @@ export function cleanLibRef(raw: unknown, now = Date.now()): LibReference {
   if (str(r.pmid)) out.pmid = str(r.pmid).trim();
   if (str(r.abstract)) out.abstract = str(r.abstract);
   const z = r.zotero as Record<string, unknown> | undefined;
-  if (z && typeof z === 'object' && str(z.key)) out.zotero = { key: str(z.key), version: num(z.version), library: str(z.library) };
+  if (z && typeof z === 'object' && str(z.key)) out.zotero = { key: str(z.key), version: num(z.version), library: str(z.library), ...(Array.isArray(z.tags) ? { tags: uniq(strings(z.tags)) } : {}) };
   return out;
 }
 
@@ -161,7 +179,7 @@ export function cleanCompound(raw: unknown, now = Date.now()): LibCompound | nul
   const drawing = c.drawing as Contents | undefined;
   const files = (Array.isArray(c.files) ? c.files : []).map(cleanMention).filter((m): m is FileMention => !!m);
   return {
-    id: str(c.id) || newId('c'),
+    id: str(c.id) || stableId('c', c),
     label: str(c.label).trim(), name: str(c.name).trim(), synonyms: uniq(strings(c.synonyms)),
     smiles, molfile,
     ...(drawing && typeof drawing === 'object' && Array.isArray(drawing.atoms) && Array.isArray(drawing.bonds) ? { drawing } : {}),

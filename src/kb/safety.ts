@@ -257,13 +257,33 @@ export function vapourRatio(r: SafetyRecord): number | null {
   return (Math.min(vp, 760) / 760) * 1e6 / ppm;
 }
 
+/** A dose in mg/kg, or null when its unit isn't a dose per body weight. */
+function mgPerKg(l: Lethal): number | null {
+  const u = l.unit.toLowerCase();
+  return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : null;
+}
+
+/** Whether dose `l` is lower than `cur` (for the same route): compared in mg/kg when both can be; otherwise only in the same unit. */
+export function lowerDose(l: Lethal, cur: Lethal): boolean {
+  const a = mgPerKg(l), b = mgPerKg(cur);
+  if (a !== null && b !== null) return a < b;
+  return cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value;
+}
+
 /** The lowest oral LD50 in mg/kg, or null. */
 export function oralLd50(r: SafetyRecord): number | null {
   const v = r.lethal.filter((l) => l.kind === 'LD50' && l.route === 'oral').map((l) => { const u = l.unit.toLowerCase(); return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : NaN; }).filter((n) => Number.isFinite(n));
   return v.length ? Math.min(...v) : null;
 }
 
-const has = (r: SafetyRecord, ...codes: string[]) => !!r.ghs?.codes.some((c) => codes.some((x) => c === x || c.startsWith(x + '+') || c.includes('+' + x)));
+/**
+ * Whether a stored code (H330, H300+H310+H330 combined) is one of these. Harmonized codes keep
+ * their EU letter suffix (H360D, H360FD, H350i), and those count as the bare code.
+ */
+export function codeIs(c: string, x: string): boolean {
+  return c.split('+').some((part) => part === x || (/^H\d{3}[A-Za-z]{1,2}$/.test(part) && part.slice(0, 4) === x));
+}
+const has = (r: SafetyRecord, ...codes: string[]) => !!r.ghs?.codes.some((c) => codes.some((x) => codeIs(c, x)));
 const alert = (r: SafetyRecord, re: RegExp) => r.alerts.some((a) => re.test(a));
 const pyrophoric = (r: SafetyRecord) => has(r, 'H250') || PYROPHORIC.has(r.cid);
 /** Saturated vapour at least this many times the IDLH: the compound can readily reach it in air. */
@@ -364,8 +384,8 @@ export function lethalByRoute(r: SafetyRecord): Partial<Record<Lethal['route'], 
   for (const l of r.lethal) {
     if (l.kind !== 'LD50' && l.kind !== 'LC50') continue;
     const cur = best.get(l.route);
-    // a lower dose in the same unit wins; otherwise keep the first (a rat value, as HSDB lists it)
-    if (!cur || (cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value)) best.set(l.route, l);
+    // a lower dose wins (in mg/kg, or in the same unit); otherwise keep the first (a rat value, as HSDB lists it)
+    if (!cur || lowerDose(l, cur)) best.set(l.route, l);
   }
   for (const route of ROUTE_ORDER) {
     const l = best.get(route);
@@ -386,13 +406,26 @@ export function logKowOf(r: SafetyRecord): { value: number; source: string } | n
 }
 
 /**
+ * The net charge written in a SMILES ([N+](=O)[O-] adds to none: a neutral nitro group written
+ * with its charges apart, as PubChem does; [NH4+] is +1).
+ */
+export function netCharge(smiles: string): number {
+  let q = 0;
+  for (const m of smiles.matchAll(/\[[^\]]*?([+-]+)(\d*)\]/g)) {
+    const sign = m[1][0] === '+' ? 1 : -1;
+    q += sign * (m[2] ? Number(m[2]) : m[1].length);
+  }
+  return q;
+}
+
+/**
  * How fast the compound crosses skin from water, estimated by the Potts–Guy equation
  * (Pharm. Res. 1992, 9, 663): log Kp (cm/h) = −2.72 + 0.71 log Kow − 0.0061 MW. Only for neutral
  * organic molecules up to 500 g/mol; salts, metals and ions get none. A rough guide to which
  * compounds go through skin quickly, never a substitute for the skin notation or glove data.
  */
 export function skinKp(r: SafetyRecord): { kp: number; band: 'high' | 'moderate' | 'low'; source: string } | null {
-  if (!r.smiles || !r.mw || r.mw > 500 || /\.|[+-]\]|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
+  if (!r.smiles || !r.mw || r.mw > 500 || netCharge(r.smiles) !== 0 || /\.|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
   const k = logKowOf(r);
   if (!k) return null;
   const kp = 10 ** (-2.72 + 0.71 * k.value - 0.0061 * r.mw);

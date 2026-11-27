@@ -322,10 +322,14 @@ export function chemWord(w: string): string {
     else if (c === ';' && (inner || /(O|Ph)$/.test(before))) out += sub(before, after);
     else out += c;
   }
-  // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI); not CIP and the like
-  out = out.replace(/(^|[A-Z0-9(])CI(?=$|[A-Z0-9,)(/;])/g, '$1Cl');
-  // O read as a nought beside a subscript or element (H20 is H2O, Et20 is Et2O)
-  out = out.replace(/([A-Za-z)]\d)0(?=$|[^0-9])/g, '$1O');
+  // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI, AcCI), before the end, a subscript, a bracket
+  // or the C or O of a formula going on (ClCO2Et, NaClO4); not CIP, CIS and the like. After a
+  // small letter only in a word that starts as a formula does (Na, Ac, Ms), not in an English word
+  out = out.replace(/(^|[A-Za-z0-9(])CI(?=$|[0-9,)(/;]|[CO](?![a-z]))/g, (all, pre: string) =>
+    (/[a-z]/.test(pre) && !/^[A-Z]/.test(out) ? all : `${pre}Cl`));
+  // O read as a nought after a group's subscript (H20 is H2O, Et20 is Et2O, (Boc)20 is (Boc)2O,
+  // CH30H is CH3OH); never in a compound's label or a count of carbons (S10, C10H21)
+  out = out.replace(/([A-Za-z)]+)([23])0(?=$|[^0-9])/g, (all, pre: string, d: string) => (/(?:H|D|Et|Ac|Bz|Tf|Ms|Ts|Piv|Me|\))$/.test(pre) ? `${pre}${d}O` : all));
   return out;
 }
 

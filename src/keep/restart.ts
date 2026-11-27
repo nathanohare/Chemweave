@@ -327,9 +327,11 @@ export async function reopenAfterRestart(ws: Workspace, store: KeepStore, hooks:
     setViews(ws.pane ?? ws.active);
   }
   // the unsaved tabs have recovery copies of their own before the restart's copies go
-  await hooks.secure?.().catch(() => {});
-  if (failed.length) {
-    const keep: RestartList = { kind: 'restart', made: list.made, tabs: failed.map((i) => ({ ...list.tabs[i], windowOf: undefined })), active: -1, tries };
+  // (if they couldn't be made, the restart's copies of the unsaved tabs are all there is: they stay for the next start)
+  const secured = hooks.secure ? await hooks.secure().then(() => true, () => false) : true;
+  const keepIdx = secured ? failed : list.tabs.flatMap((e, i) => (e.copy && (failed.includes(i) || opened[i]) ? [i] : []));
+  if (keepIdx.length) {
+    const keep: RestartList = { kind: 'restart', made: list.made, tabs: keepIdx.map((i) => ({ ...list.tabs[i], windowOf: undefined })), active: -1, tries };
     await putText(store, `${FOLDER}/${LIST}`, JSON.stringify(keep));
     await tidy(store, keep);
   } else {

@@ -183,8 +183,10 @@ export function glyphAt(p: Pixels, at: [number, number], r: number, most = r * 2
     }
   }
   const g = { x: gx1, y: gy1, w: gx2 - gx1 + 1, h: gy2 - gy1 + 1 };
-  // a stroke rather than a letter (a bond running on from the label): long and thin
-  if (Math.max(g.w, g.h) > 3 * Math.min(g.w, g.h)) return null;
+  // a stroke rather than a letter (a bond running on from the label): long and thin. A short
+  // upright stem, no taller than a letter, is a letter (I, l): capitals are about half a bond tall
+  const letterTall = g.h > g.w && g.h <= 0.6 * most;
+  if (Math.max(g.w, g.h) > 3 * Math.min(g.w, g.h) && !letterTall) return null;
   return g;
 }
 
