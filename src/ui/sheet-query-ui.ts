@@ -649,12 +649,12 @@ export class SheetQueries {
     const v = this.host.view;
     const old = fresh ? null : wb.queries.find((x) => x.id === q.id) ?? null;
     let place = old ? queryTable(wb, old) : null;
-    // a new query goes on a new sheet; one that was loaded only as a connection (or whose table is gone) stays one
-    let target: { kind: 'new' } | { kind: 'here'; sheet: Sheet; at: { row: number; col: number } } | { kind: 'none' } = place ? { kind: 'here', sheet: place.sheet, at: { row: place.table.range.r1, col: place.table.range.c1 } } : old ? { kind: 'none' } : { kind: 'new' };
+    // a new query goes on a new sheet; one that was loaded only as a connection stays one
+    let target: { kind: 'new' } | { kind: 'here'; sheet: Sheet; at: { row: number; col: number } } | { kind: 'none' } = place ? { kind: 'here', sheet: place.sheet, at: { row: place.table.range.r1, col: place.table.range.c1 } } : old && !old.table ? { kind: 'none' } : { kind: 'new' };
     if (where === 'ask') {
       const s = v.sheet!;
       const a = await ask('Import Data', [
-        { name: 'where', label: 'Where do you want to put the data?', value: place ? 'here' : old ? 'none' : 'new', options: [{ value: 'new', label: 'New worksheet' }, { value: 'here', label: 'Existing worksheet' }, { value: 'none', label: 'Only Create Connection' }] },
+        { name: 'where', label: 'Where do you want to put the data?', value: place ? 'here' : old && !old.table ? 'none' : 'new', options: [{ value: 'new', label: 'New worksheet' }, { value: 'here', label: 'Existing worksheet' }, { value: 'none', label: 'Only Create Connection' }] },
         { name: 'cell', label: 'Existing worksheet: top left cell', value: place ? `${place.sheet.name}!${cellName(place.table.range.r1, place.table.range.c1)}` : `${s.name}!${cellName(v.sel.active.r, v.sel.active.c)}` },
       ], { ok: 'OK', note: 'The data goes in as a table, which Refresh fills in again.' });
       if (!a) return false;
@@ -823,17 +823,6 @@ export class SheetQueries {
       return out;
     };
     return { problems, write };
-  }
-
-  /** Refresh every query, as one step. Returns what went wrong, if anything. */
-  async refreshQueries(): Promise<string[]> {
-    const { problems, write } = await this.readQueries();
-    const v = this.host.view;
-    v.commitEdit();
-    this.wb.edit('Refresh All', () => { problems.push(...write()); }, v.place());
-    v.refresh();
-    this.refreshPane();
-    return problems;
   }
 
   /** The Queries & Connections window, drawn again when it is open. */

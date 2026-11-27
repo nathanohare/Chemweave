@@ -609,11 +609,6 @@ export function matrix(groups: Group[], kind: 'correlation' | 'covariance'): Too
 // ---------------------------------------------------------------- Moving Average and Exponential Smoothing
 
 /**
- * A moving average of the last `interval` values, as formulas reading the input cells (`refs`
- * names each one, in order). With `stdErrors`, a second column of standard errors. In the
- * formulas, %OUT<i> stands for the forecast in row i of the results (the caller puts in its cell).
- */
-/**
  * The block from one cell to another as a range. The cells may carry their sheet's name
  * ("Sheet1!A1"), which a range names once, at the front: Sheet1!A1:A3, not Sheet1!A1:Sheet1!A3.
  */
@@ -621,6 +616,11 @@ function span(first: string, last: string): string {
   return `${first}:${last.slice(last.lastIndexOf('!') + 1)}`;
 }
 
+/**
+ * A moving average of the last `interval` values, as formulas reading the input cells (`refs`
+ * names each one, in order). With `stdErrors`, a second column of standard errors. In the
+ * formulas, %OUT<i> stands for the forecast in row i of the results (the caller puts in its cell).
+ */
 export function movingAverage(refs: string[], interval: number, stdErrors: boolean): ToolOutput | string {
   const k = Math.trunc(interval);
   if (k < 2) return 'The interval must be 2 or more.';

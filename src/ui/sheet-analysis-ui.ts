@@ -667,13 +667,13 @@ export class SheetAnalysis {
       // as in Excel, the sheet shows the answer while the status shows; Cancel takes it back, leaving
       // nothing to undo (OK keeps this one step)
       const was = sh.cell(b.range.r1, b.range.c1);
-      this.wb.edit('Goal Seek', () => sh.setCell(b.range.r1, b.range.c1, { ...was, input: String(+res.x.toPrecision(15)) }), this.view.place());
+      const preview = this.wb.preview('Goal Seek', () => sh.setCell(b.range.r1, b.range.c1, { ...was, input: String(+res.x.toPrecision(15)) }), { sheet: sh, sel: b.range });
       this.view.refresh();
       let kept = false;
       st.onClose = () => {
         if (kept) return;
         // (when something else was done since, the cell is put back as a step of its own)
-        if (!this.wb.retract('Goal Seek')) this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), this.view.place());
+        if (!preview.retract()) this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), { sheet: sh, sel: b.range });
         this.view.refresh();
       };
       st.actions('OK', () => { kept = true; });
@@ -716,7 +716,7 @@ export class SheetAnalysis {
       this.wb.edit('Data Table', () => {
         s.clear(ref, 'contents');
         s.setDataTables([...s.dataTables, { id: newDataTableId(), ref, ...(ri ? { rowInput: ri } : {}), ...(ci ? { colInput: ci } : {}) }]);
-      }, this.view.place());
+      }, { sheet: s, sel: sel });
       this.view.refresh();
       return null;
     });
@@ -796,19 +796,37 @@ export class SheetAnalysis {
       precision: numberOr(precision.value, 1e-6), intTolerance: numberOr(intTol.value, 1) / 100, maxTime: Number(maxTime.value) || 30,
       seed: Number(seed.value) || 0, ignoreInt: ignoreInt.checked,
     });
+    // Excel takes a Constraint Precision above 0 and below 1 (0 would ask for exact answers and run to Max Time)
+    const precisionProblem = (): string | null => {
+      const p = numberOr(precision.value, 1e-6);
+      return p > 0 && p < 1 ? null : 'Constraint Precision: give a number above 0 and below 1 (such as 0.000001).';
+    };
+    let solving = false;
     w.actions('Solve', async () => {
+      // (the window stays open while it waits: one Solve at a time)
+      if (solving) return false;
+      const bad = precisionProblem();
+      if (bad) return bad;
       const mm = model();
       if (!mm.objective) return 'Give the objective cell.';
       if (!mm.vars) return 'Give the variable cells.';
-      // the window repaints before the solver holds the page (it can run for Max Time)
-      this.host.flash('Solving…', 2000);
-      await new Promise((r) => setTimeout(r, 30));
-      const run = runSolver(this.wb, s, mm);
-      if (typeof run === 'string') { this.saveSolverModel(s, mm); return run; }
-      // (the model is kept with the answer, in the one step of Solver Results)
-      setTimeout(() => this.solverResults(s, mm, run));
-      return null;
-    }, [['Close (Keep Model)', () => { this.saveSolverModel(s, model()); w.close(); }]]);
+      solving = true;
+      const go = w.d.querySelector<HTMLButtonElement>('button.primary');
+      if (go) go.disabled = true;
+      try {
+        // the window repaints before the solver holds the page (it can run for Max Time)
+        this.host.flash('Solving…', 2000);
+        await new Promise((r) => setTimeout(r, 30));
+        const run = runSolver(this.wb, s, mm);
+        if (typeof run === 'string') { this.saveSolverModel(s, mm); return run; }
+        // (the model is kept with the answer, in the one step of Solver Results)
+        setTimeout(() => this.solverResults(s, mm, run));
+        return null;
+      } finally {
+        solving = false;
+        if (go) go.disabled = false;
+      }
+    }, [['Close (Keep Model)', () => { const bad = precisionProblem(); if (bad) { w.error(bad); return; } this.saveSolverModel(s, model()); w.close(); }]]);
     w.show();
   }
 
@@ -841,15 +859,25 @@ export class SheetAnalysis {
     // model, the answer and the Answer Report together)
     const wb = this.wb, v = this.view;
     const was = run.built.vars.map((k) => ({ k, cell: s.cells.get(k) }));
+    const restore = () => { for (const { k, cell } of was) s.setCell(rowOf(k), colOf(k), { ...cell }); };
     let showing = false, finished = false;
+    let preview: ReturnType<Workbook['preview']> | null = null;
+    /** Take the preview back; false when something else was done since, so it stays as a step. */
+    const takeBack = (): boolean => {
+      const p = preview;
+      preview = null;
+      showing = false;
+      return !p || p.retract();
+    };
     const show = (answer: boolean) => {
       if (answer === showing) return;
-      if (answer) wb.edit('Solver', () => keepAnswer(s, run), v.place());
-      else if (!wb.retract('Solver')) {
+      if (answer) {
+        preview = wb.preview('Solver', () => keepAnswer(s, run), v.place());
+        showing = true;
+      } else if (!takeBack()) {
         // (something else was done meanwhile: the values go back as a step of their own)
-        wb.edit('Restore Original Values', () => { for (const { k, cell } of was) s.setCell(rowOf(k), colOf(k), { ...cell }); }, v.place());
+        wb.edit('Restore Original Values', restore, v.place());
       }
-      showing = answer;
       v.refresh();
     };
     show(keep.get() === 'keep');
@@ -866,7 +894,8 @@ export class SheetAnalysis {
       // the report reads the values as they will stand, so it is made while the sheet shows them
       show(wantKeep);
       const rows = report.checked ? answerReport(s, m, run, new Date()) : null;
-      show(false);
+      // the preview gives way to the one step of the run (if it can't, because something was done since, it stays as a step of its own)
+      takeBack();
       let sheet: Sheet | undefined;
       const names = this.solverNames(s, m);
       wb.edit(wantKeep || rows ? 'Solver' : 'Solver model', () => {

@@ -21,6 +21,7 @@ import { SheetSparklines } from '../src/ui/sheet-sparkline-ui';
 import { SheetFormulas } from '../src/ui/sheet-formulas-ui';
 import { chartFromRange } from '../src/sheet/chart';
 import { makeSparklines } from '../src/sheet/sparklines';
+import { rig, stubBrowser } from './review-batch12-harness';
 import type { CompoundCard } from '../src/sheet/compound';
 
 const pubchem = vi.hoisted(() => ({ card: null as null | ((q: unknown) => Promise<unknown>) }));
@@ -112,6 +113,22 @@ describe('F248: Freeze Panes far down a long sheet', () => {
   });
 });
 
+describe('F248: Freeze header row (Sheet mode) far down a long sheet', () => {
+  it('refuses to freeze 204 rows too, and still freezes a few', () => {
+    stubBrowser();
+    const { mode, wb, flashes } = rig();
+    const s = wb.sheets[0];
+    wb.edit('fill', () => { for (let r = 0; r < 500; r++) s.setInput(r, 0, String(r)); });
+    mode.view.selectCell(204, 0);
+    (mode as unknown as { freezeHeader(): void }).freezeHeader();
+    expect(s.frozen.rows).toBe(0);
+    expect(flashes.at(-1)).toContain('Freezing here would fill the window');
+    mode.view.selectCell(3, 0);
+    (mode as unknown as { freezeHeader(): void }).freezeHeader();
+    expect(s.frozen.rows).toBe(3);
+  });
+});
+
 describe('F1028: Split on a sheet with frozen panes is one step', () => {
   it('one Undo brings the frozen panes back', () => {
     const { wb, view, data } = grid();
@@ -173,7 +190,7 @@ describe('F1024 and F1026: the Series window and Custom Sort', () => {
 
 describe('F247: Data > Clear after an in-place Advanced Filter on a sheet with an AutoFilter', () => {
   it('shows the hidden rows again', () => {
-    const { wb, view, data, setTable } = grid();
+    const { wb, view, data, setTable, flash } = grid();
     const s = wb.sheets[0];
     wb.edit('fill', () => {
       for (let r = 0; r < 6; r++) { s.setInput(r, 0, r ? String(r) : 'n'); s.setInput(r, 1, 'x'); }
@@ -187,8 +204,33 @@ describe('F247: Data > Clear after an in-place Advanced Filter on a sheet with a
     data.clearFilter();
     expect(s.hiddenRows.size).toBe(0);
     expect(wb.undoLabel).toBe('Clear filter');
+    // it says the rows are shown, not that none were hidden
+    expect(String(flash.mock.calls.at(-1)?.[0])).toBe('2 hidden rows show again.');
     wb.undo();
     expect(s.hiddenRows.size).toBe(2);
+  });
+
+  it('a filter with a condition: the rows it hid show, and the message says so (not that none were hidden)', () => {
+    const { wb, view, data, flash } = grid();
+    const s = wb.sheets[0];
+    wb.edit('fill', () => {
+      ['n', '10', '60', '20', '70'].forEach((v, r) => s.setInput(r, 0, v));
+      s.setFilter({ range: range(0, 0, 4, 0), conditions: {} });
+    });
+    wb.edit('filter', () => s.setCondition(0, { kind: 'values', allowed: ['10', '20'] }));
+    expect(s.hiddenRows.size).toBe(2);
+    view.selectCell(0, 0);
+    data.clearFilter();
+    expect(s.hiddenRows.size).toBe(0);
+    expect(String(flash.mock.calls.at(-1)?.[0])).toBe('2 hidden rows show again.');
+  });
+
+  it('says there is nothing to clear only when nothing was hidden or filtered', () => {
+    const { wb, view, data, flash } = grid();
+    wb.edit('fill', () => { for (let r = 0; r < 3; r++) wb.sheets[0].setInput(r, 0, String(r)); });
+    view.selectCell(0, 0);
+    data.clearFilter();
+    expect(String(flash.mock.calls.at(-1)?.[0])).toBe('No rows are hidden here.');
   });
 });
 
@@ -208,6 +250,25 @@ function fakeView(wb: Workbook, sel = range(0, 0, 0, 0)) {
 }
 
 describe('F1051 to F1053: Subtotal', () => {
+  it('F1053: a table that grew while the window stayed open is not subtotaled over the old range', async () => {
+    const wb = new Workbook(['Sheet1']);
+    wb.edit('fill', () => {
+      const s = wb.sheets[0];
+      [['Solvent', 'Yield'], ['THF', '10'], ['DMF', '20']].forEach((row, r) => row.forEach((v, c) => s.setInput(r, c, v)));
+    });
+    const { view } = fakeView(wb);
+    let t = { data: range(1, 0, 2, 1), header: 0 as number | null };
+    const ui = new SheetOutline({ view: view as never, edit: (l, fn) => wb.edit(l, () => fn(view.sheet)), flash: vi.fn(), table: () => t });
+    ui.subtotal();
+    const d = lastDialog();
+    for (const l of d.querySelectorAll('fieldset label')) if (l.textContent === 'Yield') l.querySelector('input')!.checked = true;
+    wb.edit('grow', () => wb.sheets[0].setInput(3, 0, 'THF'));
+    t = { data: range(1, 0, 3, 1), header: 0 };
+    await submit(d);
+    expect(d.querySelector('.tool-error')!.textContent).toContain('The table has changed');
+    expect(wb.undoLabel).not.toBe('Subtotal');
+  });
+
   const book = () => {
     const wb = new Workbook(['Sheet1', 'Sheet2']);
     wb.edit('fill', () => {
@@ -220,14 +281,15 @@ describe('F1051 to F1053: Subtotal', () => {
     return wb;
   };
 
-  it('F1051: no header row found: says so, and does not take the first data row for the headings', () => {
+  it('F1051: no header row found: the window still opens, reads the first row as the headings and says so', () => {
     const wb = book();
     const { view } = fakeView(wb);
-    const flash = vi.fn();
-    const ui = new SheetOutline({ view: view as never, edit: () => {}, flash, table: () => ({ data: range(0, 0, 3, 2), header: null }) });
+    const ui = new SheetOutline({ view: view as never, edit: () => {}, flash: vi.fn(), table: () => ({ data: range(0, 0, 3, 2), header: null }) });
     ui.subtotal();
-    expect(String(flash.mock.calls.at(-1)?.[0])).toContain('Subtotal needs a header row');
-    expect(document.querySelector('dialog.tool-window')).toBeNull();
+    const d = lastDialog();
+    expect(d.textContent).toContain('No header row was found, so row 1 is read as the headings');
+    const names = [...d.querySelectorAll('select')[0].querySelectorAll('option')].map((o) => o.textContent);
+    expect(names).toEqual(['Solvent', 'Note', 'Yield']);
   });
 
   it('F1052: the numeric column is ticked though its first data row is blank', () => {
@@ -400,7 +462,8 @@ describe('F262 and F1066: sparkline groups go where they were made', () => {
     expect(wb.sheets[0].sparklines.length).toBe(1);
     expect(wb.sheets[0].sparklines[0].items[0]).toMatchObject({ row: 1, col: 6 });
     expect(wb.sheets[1].sparklines.length).toBe(0);
-    wb.undo();
+    // Undo shows the sheet that was edited, not the one that showed when OK was pressed
+    expect(wb.undo()?.sheet).toBe(wb.sheets[0]);
     expect(wb.sheets[0].sparklines.length).toBe(0);
   });
 

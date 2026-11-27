@@ -18,6 +18,7 @@ import { newPivotId, type PivotTable } from '../src/sheet/pivot';
 import { writePivot } from '../src/sheet/pivot-sheet';
 import { SheetPivots } from '../src/ui/sheet-pivot-ui';
 import { SheetQueries } from '../src/ui/sheet-query-ui';
+import { rig, stubBrowser } from './review-batch12-harness';
 import { writeXlsx } from '../src/io/xlsx';
 import { ToolWindow } from '../src/ui/tool-window';
 import type { Query } from '../src/sheet/query';
@@ -231,25 +232,36 @@ async function replaceFile(ui: SheetQueries, name: string, text: string): Promis
   ToolWindow.open?.close();
 }
 
-describe('F261: Refresh All is one step', () => {
-  it('one Undo puts every query\'s table back', async () => {
-    const { wb, ui } = queryBook();
-    await loadCsv(ui, 'a.csv', CSV_A);
-    await loadCsv(ui, 'b.csv', CSV_B);
-    expect(wb.queries.length).toBe(2);
-    const tables = () => wb.queries.map((q) => { const t = wb.sheets.flatMap((s) => s.tables).find((x) => x.name === q.table)!; return t.range.r2 - t.range.r1; });
-    expect(tables()).toEqual([2, 2]);
-    await replaceFile(ui, 'a.csv', CSV_A_GROWN);
-    await replaceFile(ui, 'b.csv', CSV_B_GROWN);
-    wb.build(() => {});
-    wb.edit('mark', () => {});
-    const problems = await ui.refreshQueries();
-    expect(problems).toEqual([]);
-    expect(tables()).toEqual([3, 3]);
-    expect(wb.undoLabel).toBe('Refresh All');
-    wb.undo();
-    expect(tables()).toEqual([2, 2]);
-    expect(wb.canUndo()).toBe(false);
+vi.setConfig({ testTimeout: 60000 });
+describe('F261: Refresh All is one step, and the PivotTables read what the queries just wrote', () => {
+  it('SheetMode Refresh All: a PivotTable of a query\'s table shows the new rows, and one Undo undoes both', async () => {
+    stubBrowser();
+    try {
+      const { mode, wb } = rig(['Sheet1']);
+      const queries = (mode as unknown as { queries: SheetQueries }).queries;
+      await loadCsv(queries, 'a.csv', CSV_A);
+      const home = wb.sheets.find((x) => x.name === 'Sheet1')!;
+      const table = wb.queries[0].table!;
+      // the Yield of each Entry, from the query's table (1 and 2 of the file as first read)
+      wb.edit('pivot', () => {
+        const kept = writePivot(home, pivot({ name: 'PivotTable1', source: table, at: { row: 0, col: 6 }, rows: ['Entry'], values: [{ field: 'Yield', fn: 'sum' }] }));
+        if (typeof kept === 'string') throw new Error(kept);
+      });
+      const labels = () => { const r = home.pivots[0].last!; const out: unknown[] = []; for (let i = r.r1 + 1; i <= r.r2; i++) out.push(`${home.value(i, 6)}=${home.value(i, 7)}`); return out; };
+      expect(labels()).toEqual(['1=10', '2=20', 'Grand Total=30']);
+      // a newer copy of the file: three rows, one of them new
+      files.next.push({ name: 'a.csv', bytes: bytesOf(CSV_A_GROWN) });
+      await queries.fromText();
+      ToolWindow.open?.close();
+      wb.build(() => {});
+      wb.edit('mark', () => {});
+      await mode.refreshAll();
+      expect(labels()).toEqual(['1=11', '2=21', '3=31', 'Grand Total=63']);
+      expect(wb.undoLabel).toBe('Refresh All');
+      wb.undo();
+      expect(labels()).toEqual(['1=10', '2=20', 'Grand Total=30']);
+      expect(wb.undoLabel).not.toBe('Refresh All');
+    } finally { vi.restoreAllMocks(); }
   });
 });
 
@@ -283,6 +295,19 @@ describe('F1061: a connection-only query stays one when it is edited', () => {
     expect(wb.sheets.length).toBe(1);
     expect(wb.queries[0].table).toBeNull();
     expect(wb.sheets[0].tables.length).toBe(0);
+  });
+
+  it('a query whose table was deleted is loaded to a new sheet again, not turned into a connection', async () => {
+    const { wb, ui } = queryBook();
+    await loadCsv(ui, 'a.csv', CSV_A);
+    const q = wb.queries[0];
+    const home = wb.sheets.find((x) => x.tables.length)!;
+    wb.edit('delete the table', () => home.setTables([]));
+    ui.editor(q, { bytes: bytesOf(CSV_A) }, false);
+    await submit(ToolWindow.open!.d);
+    expect(wb.sheets.length).toBe(3);
+    expect(wb.queries[0].table).toBeTruthy();
+    expect(wb.sheets.flatMap((x) => x.tables).length).toBe(1);
   });
 
   it('a query loaded to a table still writes over its table, and a new one still gets a sheet', async () => {

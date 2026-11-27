@@ -166,10 +166,13 @@ describe('F243: Goal Seek and Solver take one undo step, and Cancel leaves none'
   });
 
   /** y = 10 - (x - 3)^2 in B1, with x in A1 (starting at 1): the best x is 3. */
-  async function solve() {
+  function solveModel() {
     const w = setup(['Sheet1'], 0);
     w.wb.edit('fill', () => { w.wb.sheets[0].setInput(0, 0, '1'); w.wb.sheets[0].setInput(0, 1, '=10-(A1-3)^2'); });
     w.wb.build(() => {});
+    return w;
+  }
+  async function solveAgain(w: ReturnType<typeof setup>) {
     w.ui.solverWindow();
     const d = open();
     const [objective, vars] = refBoxes(d);
@@ -177,8 +180,68 @@ describe('F243: Goal Seek and Solver take one undo step, and Cancel leaves none'
     vars.value = '$A$1';
     await submit(d);
     await wait(120);
-    return { ...w, results: open() };
+    return open();
   }
+  async function solve() {
+    const w = solveModel();
+    return { ...w, results: await solveAgain(w) };
+  }
+
+  it('a second Goal Seek that changes nothing, then Cancel, leaves the first kept answer', async () => {
+    const { wb, ui, state } = model();
+    await submit(goalSeekOn(ui, state));
+    await wait(5);
+    button(open(), 'OK').click();
+    const kept = wb.sheets[0].cell(0, 0)?.input;
+    await submit(goalSeekOn(ui, state));
+    await wait(5);
+    button(open(), 'Cancel').click();
+    expect(wb.sheets[0].cell(0, 0)?.input).toBe(kept);
+    expect(wb.undoLabel).toBe('Goal Seek');
+    wb.undo();
+    expect(wb.sheets[0].value(0, 0)).toBe(2);
+    expect(wb.canUndo()).toBe(false);
+  });
+
+  it('Cancel after Ctrl+Z on the preview leaves nothing to redo', async () => {
+    const { wb, ui, state } = model();
+    await submit(goalSeekOn(ui, state));
+    await wait(5);
+    wb.undo();
+    expect(wb.sheets[0].value(0, 0)).toBe(2);
+    button(open(), 'Cancel').click();
+    expect(wb.canRedo()).toBe(false);
+    expect(wb.sheets[0].value(0, 0)).toBe(2);
+  });
+
+  it('Solver run a second time from its answer: Cancel leaves the first run as it was', async () => {
+    const w = solveModel();
+    const first = await solveAgain(w);
+    button(first, 'OK').click();
+    const kept = w.wb.sheets[0].cell(0, 0)?.input;
+    expect(w.wb.undoLabel).toBe('Solver');
+    const second = await solveAgain(w);
+    button(second, 'Cancel').click();
+    expect(w.wb.sheets[0].cell(0, 0)?.input).toBe(kept);
+    expect(w.wb.undoLabel).toBe('Solver');
+    w.wb.undo();
+    expect(w.wb.sheets[0].value(0, 0)).toBe(1);
+    expect(w.wb.canUndo()).toBe(false);
+  });
+
+  it('Solver run a second time with an Answer Report: OK adds a second report and one more step', async () => {
+    const w = solveModel();
+    for (let i = 0; i < 2; i++) {
+      // the report sheet goes in before Sheet1, so show Sheet1 again, as a person would
+      w.state.cur = w.wb.sheets.findIndex((s) => s.name === 'Sheet1');
+      const results = await solveAgain(w);
+      [...results.querySelectorAll<HTMLInputElement>('input[type=checkbox]')][0].checked = true;
+      button(results, 'OK').click();
+    }
+    expect(w.wb.sheets.filter((s) => s.name.startsWith('Answer Report')).length).toBe(2);
+    w.wb.undo();
+    expect(w.wb.sheets.filter((s) => s.name.startsWith('Answer Report')).length).toBe(1);
+  });
 
   it('Solver: switching Keep and Restore and pressing Cancel leaves only the model step, and the cell as it was', async () => {
     const { wb, results } = await solve();
@@ -193,6 +256,18 @@ describe('F243: Goal Seek and Solver take one undo step, and Cancel leaves none'
     expect(wb.undoLabel).toBe('Solver model');
     wb.undo();
     expect(wb.canUndo()).toBe(false);
+  });
+
+  it('Solver: something else edited while the results show: OK still keeps the answer and Undo reaches every step', async () => {
+    const { wb, results } = await solve();
+    wb.edit('Type', () => wb.sheets[0].setInput(5, 3, 'note'));
+    button(results, 'OK').click();
+    expect(wb.sheets[0].value(0, 0)).toBeCloseTo(3, 2);
+    expect(wb.sheets[0].cell(5, 3)?.input).toBe('note');
+    let n = 0;
+    while (wb.canUndo() && n++ < 10) wb.undo();
+    expect(wb.sheets[0].value(0, 0)).toBe(1);
+    expect(wb.sheets[0].cell(5, 3)).toBeUndefined();
   });
 
   it('Solver: OK with the answer and a report is one step', async () => {
@@ -231,7 +306,9 @@ describe('F244: Data Table is made on the sheet it was set up on', () => {
     expect(wb.sheets[0].dataTables.length).toBe(1);
     expect(wb.sheets[1].dataTables.length).toBe(0);
     expect(wb.sheets[1].cell(1, 1)?.input).toBe('keep me');
-    wb.undo();
+    // Undo goes back to the sheet that was edited, whichever sheet showed when OK was pressed
+    const place = wb.undo();
+    expect(place?.sheet).toBe(wb.sheets[0]);
     expect(wb.sheets[0].dataTables.length).toBe(0);
   });
 });
@@ -260,7 +337,7 @@ describe('F1014: the Constraint box follows the Relation of the constraint picke
 });
 
 describe('F1015: an option of 0 stays 0', () => {
-  it('Integer Optimality of 0% is saved as 0, not 1%', async () => {
+  it('Integer Optimality of 0% is saved as 0, not 1%, and a Constraint Precision of 0 is refused', async () => {
     const { wb, ui } = setup(['Sheet1'], 0);
     wb.edit('fill', () => { wb.sheets[0].setInput(0, 0, '1'); wb.sheets[0].setInput(0, 1, '=10-(A1-3)^2'); });
     ui.solverWindow();
@@ -271,11 +348,16 @@ describe('F1015: an option of 0 stays 0', () => {
     const box = (label: string) => [...d.querySelectorAll('label')].find((l) => l.textContent?.startsWith(label))!.querySelector('input')!;
     box('Integer Optimality').value = '0';
     box('Constraint Precision').value = '0';
+    // a precision of 0 asks for exact answers (Excel takes above 0 and below 1): it is refused, not changed
+    button(d, 'Close (Keep Model)').click();
+    expect(d.querySelector('.tool-error')!.textContent).toContain('Constraint Precision');
+    expect(wb.names.length).toBe(0);
+    box('Constraint Precision').value = '0.001';
     button(d, 'Close (Keep Model)').click();
     const { modelFromNames } = await import('../src/sheet/solver');
     const m = modelFromNames(wb.names, wb.sheets[0])!;
     expect(m.intTolerance).toBe(0);
-    expect(m.precision).toBe(0);
+    expect(m.precision).toBe(0.001);
   });
 });
 
@@ -327,5 +409,24 @@ describe('F1016: Solver says it is working before it holds the page', () => {
     await submit(d);
     expect(flash.mock.calls.some((c) => String(c[0]).startsWith('Solving'))).toBe(true);
     expect(ToolWindow.open).not.toBeNull();
+  });
+});
+
+describe('F1016: Solve starts once, however often it is pressed', () => {
+  it('a second press during the wait does not run the solver again', async () => {
+    const w = setup(['Sheet1'], 0);
+    w.wb.edit('fill', () => { w.wb.sheets[0].setInput(0, 0, '1'); w.wb.sheets[0].setInput(0, 1, '=10-(A1-3)^2'); });
+    w.ui.solverWindow();
+    const d = open();
+    const [objective, vars] = refBoxes(d);
+    objective.value = '$B$1';
+    vars.value = '$A$1';
+    const form = d.querySelector('form')!;
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    form.dispatchEvent(new Event('submit', { cancelable: true }));
+    expect(d.querySelector<HTMLButtonElement>('button.primary')!.disabled).toBe(true);
+    await wait(150);
+    expect(document.querySelectorAll('dialog.tool-window').length).toBe(1);
+    expect(open().querySelector('h2')!.textContent).toBe('Solver Results');
   });
 });

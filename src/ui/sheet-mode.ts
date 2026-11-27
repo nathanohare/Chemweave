@@ -936,6 +936,8 @@ export class SheetMode {
     this.view.commitEdit();
     wb.edit('Refresh All', () => {
       problems.push(...read.write());
+      // the PivotTables read the tables the queries just wrote, so their values are worked out first
+      wb.settle();
       piv = this.pivots.refreshAll(true);
     }, this.view.place());
     this.view.refresh();
@@ -1579,6 +1581,8 @@ export class SheetMode {
     if (s.frozen.rows) { this.edit('Unfreeze', (sh) => sh.setFrozen(0, sh.frozen.cols)); return; }
     const t = this.tableAt();
     const rows = t?.header !== null && t?.header !== undefined ? t.header + 1 : Math.max(1, v.sel.active.r);
+    // (as Freeze Panes: rows counted from row 1 must leave room in the window to scroll)
+    if (!v.roomToFreeze(rows, s.frozen.cols)) { this.host.flash('Freezing here would fill the window with frozen rows. Scroll to the top, or select a cell nearer the top, and try again.', 8000); return; }
     v.keepPlaceForFreeze();
     this.edit('Freeze header row', (sh) => { sh.setSplit(null); sh.setFrozen(rows, sh.frozen.cols); });
     this.host.flash(`Rows 1–${rows} stay in view as you scroll.`);

@@ -854,12 +854,17 @@ export class SheetData {
     const t = this.host.table();
     // the filter's own block when it has one: rows an Advanced Filter hid in place are hidden by hand, not by its conditions
     const R = s.filter ? { ...s.filter.range, r2: Math.max(s.filter.range.r2, s.filterRows()?.r2 ?? 0) } : t ? { ...t.data, r1: t.header ?? t.data.r1 } : { r1: 0, c1: 0, r2: MAX_ROWS - 1, c2: MAX_COLS - 1 };
-    let n = 0;
+    // the table's own rows too, when it is not the filter's (a list an Advanced Filter hid rows of in place)
+    const T = s.filter && t ? { ...t.data, r1: t.header ?? t.data.r1 } : null;
+    // (a row in both blocks is counted once)
+    const was = [...s.hiddenRows.keys()].filter((r) => (r >= R.r1 && r <= R.r2) || (T !== null && r >= T.r1 && r <= T.r2)).length;
+    const conditions = s.filter ? Object.keys(s.filter.conditions).length : 0;
     this.host.edit('Clear filter', (sh) => {
       if (sh.filter) for (const c of Object.keys(sh.filter.conditions)) sh.setCondition(Number(c), null);
-      n = showAllRows(sh, R);
+      showAllRows(sh, R);
+      if (T) showAllRows(sh, T);
     });
-    this.host.flash(n ? `${n} hidden row${n === 1 ? '' : 's'} show again.` : 'No rows are hidden here.');
+    this.host.flash(was ? `${was} hidden row${was === 1 ? '' : 's'} show again.` : conditions ? 'The filter is cleared.' : 'No rows are hidden here.');
   }
 
   // ---------------------------------------------------------------- freeze panes and split

@@ -100,7 +100,7 @@ export class SheetSparklines {
         // a cell holds one sparkline: the new one replaces any there
         const kept = home.sparklines.map((x) => ({ ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) })).filter((x) => x.items.length);
         home.setSparklines([...kept, g]);
-      }, this.view.place());
+      }, { sheet: home, sel: p.range });
       const at = wb.sheets.indexOf(home);
       if (at >= 0 && at !== wb.active) this.view.goSheet(at);
       this.view.refresh();
@@ -273,7 +273,7 @@ export class SheetSparklines {
         s.setSparklines(s.sparklines
           .map((x) => (x.id === g.id ? { ...g, items: made.items } : { ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) }))
           .filter((x) => x.items.length));
-      }, this.view.place());
+      }, { sheet: s, sel: p.range });
       this.view.refresh();
       return undefined;
     });
