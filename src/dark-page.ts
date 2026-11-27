@@ -80,11 +80,13 @@ const FILTER_ID = 'dark-page-filter';
  * "the picked palette's own" (`base`), so a palette picked and named is a copy of that palette.
  */
 export function readingPaletteToKeep(got: { paper: string; ink: string; name: string }, cur: DarkPalette, base: DarkPalette): DarkPalette | null {
-  const untouched = got.paper === cur.paper && got.ink === cur.ink;
-  const changed = !untouched && (got.paper !== base.paper || got.ink !== base.ink);
+  // (each color on its own: paper changed and ink left as it showed is the picked palette's ink)
+  const paper = got.paper === cur.paper ? base.paper : got.paper || base.paper;
+  const ink = got.ink === cur.ink ? base.ink : got.ink || base.ink;
+  const changed = paper !== base.paper || ink !== base.ink;
   const name = got.name.trim();
   if (!changed && !name) return null;
-  return { name: name || `${base.name} (changed)`, paper: untouched ? base.paper : got.paper || base.paper, ink: untouched ? base.ink : got.ink || base.ink };
+  return { name: name || `${base.name} (changed)`, paper, ink };
 }
 
 /** Show the page dark in `p`, or as it is (null). Only the page canvases change; the rest of the window keeps its look. */

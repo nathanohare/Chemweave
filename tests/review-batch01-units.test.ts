@@ -16,6 +16,10 @@ import { renamedFavorite, type FormatFavorite } from '../src/favorites';
 import { readingPaletteToKeep, type DarkPalette } from '../src/dark-page';
 import { freeBatchName } from '../src/io/batch-convert';
 import { OutlineView } from '../src/ui/outline-view';
+import { fileDropAction, filesTaken, markFilesTaken, mayBePicture, pasteTarget } from '../src/ui/window-drop';
+import { StylePanel, type ReactionHooks } from '../src/ui/style-panel';
+import { joinLoose, units } from '../src/editor/arrange';
+import type { Selection } from '../src/editor/editor';
 
 window.requestAnimationFrame = () => 0;
 
@@ -67,7 +71,9 @@ describe('F339: Reading Mode, a palette picked and named', () => {
     expect(readingPaletteToKeep({ paper: A.paper, ink: A.ink, name: 'Mine' }, A, B)).toEqual({ name: 'Mine', paper: B.paper, ink: B.ink });
   });
   it('colors changed are kept; nothing changed and no name is the palette as it is', () => {
-    expect(readingPaletteToKeep({ paper: '#000000', ink: A.ink, name: '' }, A, B)).toEqual({ name: 'B (changed)', paper: '#000000', ink: A.ink });
+    // (paper changed, ink left as it showed: the ink is the picked palette's, each color on its own)
+    expect(readingPaletteToKeep({ paper: '#000000', ink: A.ink, name: '' }, A, B)).toEqual({ name: 'B (changed)', paper: '#000000', ink: B.ink });
+    expect(readingPaletteToKeep({ paper: A.paper, ink: '#ffffff', name: 'Mine' }, A, B)).toEqual({ name: 'Mine', paper: B.paper, ink: '#ffffff' });
     expect(readingPaletteToKeep({ paper: A.paper, ink: A.ink, name: '' }, A, B)).toBeNull();
   });
 });
@@ -159,5 +165,140 @@ describe('F029: Outline View after a change on one slide', () => {
     view.refresh(0);
     expect(rows()).toHaveLength(3);
     expect(rows()[1]).not.toBe(second);
+  });
+});
+
+describe('F018, F019: what the window does with a file dropped or a paste', () => {
+  it('a drop zone that used the files says so; a drop only cancelled by a part of the page does not count', () => {
+    const took = new Event('drop', { cancelable: true }), cancelled = new Event('drop', { cancelable: true });
+    took.preventDefault();
+    markFilesTaken(took);
+    cancelled.preventDefault();
+    expect(filesTaken(took)).toBe(true);
+    expect(filesTaken(cancelled)).toBe(false);
+  });
+  it('on the SI Project, files that open in a tab still open; pictures and crystal files are not put on the hidden drawing', () => {
+    for (const name of ['scheme.cdxml', 'notes.docx', 'data.xlsx', 'deck.pptx', 'list.sdf']) {
+      expect(mayBePicture(name), name).toBe(false);
+      expect(fileDropAction(name, false, 'si'), name).toBe('open');
+    }
+    expect(fileDropAction('trace.png', true, 'si')).toBe('not-in-si');
+    expect(fileDropAction('cell.cif', false, 'si')).toBe('not-in-si');
+    expect(fileDropAction('project.chemsi', false, 'si')).toBe('open');
+  });
+  it('elsewhere as before: pictures placed, a crystal file in its window, not a picture in a cell', () => {
+    expect(fileDropAction('trace.png', true, 'drawing')).toBe('picture');
+    expect(fileDropAction('trace.png', true, 'document')).toBe('doc-picture');
+    expect(fileDropAction('trace.png', true, 'sheet')).toBe('no-cell-picture');
+    expect(fileDropAction('cell.cif', false, 'drawing')).toBe('crystal');
+    expect(fileDropAction('cell.cif', false, 'sheet')).toBe('open');
+  });
+  it('a paste an SI box took, or any paste while the SI Project shows, does not go to the drawing', () => {
+    const none = { typing: false, inDialog: false, taken: false, si: false, sheet: false, document: false };
+    expect(pasteTarget(none)).toBe('drawing');
+    expect(pasteTarget({ ...none, taken: true })).toBe('none');
+    expect(pasteTarget({ ...none, si: true })).toBe('none');
+    expect(pasteTarget({ ...none, sheet: true })).toBe('sheet');
+    expect(pasteTarget({ ...none, document: true })).toBe('document');
+    expect(pasteTarget({ ...none, typing: true })).toBe('none');
+  });
+});
+
+/** A short chain of n carbons, its left end at x, y. */
+function chain(doc: Doc, x: number, y: number, n = 2): number[] {
+  const L = doc.style.bondLength;
+  const ids: number[] = [];
+  for (let i = 0; i < n; i++) ids.push(doc.addAtom(x + i * L * 0.87, y + (i % 2 ? -L / 2 : 0), 6).id);
+  for (let i = 1; i < n; i++) doc.addBond(ids[i - 1], ids[i], 1);
+  return ids;
+}
+const arrowBase: Omit<Arrow, 'id'> = { tail: { x: 0, y: 0 }, head: { x: 60, y: 0 }, sweep: 0, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, headLength: 6, headWidth: 1.5 };
+function editorOn(doc: Doc): Editor {
+  const scene = document.createElement('canvas'), overlay = document.createElement('canvas'), el = document.createElement('div');
+  el.append(scene, overlay);
+  document.body.append(el);
+  const ed = new Editor(doc, new Renderer(scene, overlay), el);
+  ed.paused = true;
+  const m = plainMeasure(doc);
+  Object.assign(ed, { measure: () => m, fullMeasure: () => m });
+  return ed;
+}
+
+describe('F332: the Style panel\'s Show Text Guides on a plain reaction arrow and an equilibrium arrow', () => {
+  it('unticked hides them on both, ticked shows them on both', () => {
+    const doc = new Doc();
+    const ids = doc.edit('arrows', () => [doc.addArrow({ ...arrowBase }).id, doc.addArrow({ ...arrowBase, tail: { x: 0, y: 40 }, head: { x: 60, y: 40 }, equilibrium: true }).id]);
+    const ed = editorOn(doc);
+    const sel = (): Selection => ({ atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(ids), shapes: new Set() });
+    const section = document.createElement('section'), body = document.createElement('div');
+    const p = new StylePanel(section, body, doc, sel, () => p.refresh(true));
+    // (the hooks main.ts gives it: only what this check uses does anything)
+    p.reaction = new Proxy({ setGuides: (arrowIds: number[], on: boolean | null) => ed.setArrowGuides(arrowIds, on, plainReactionArrow) } as Partial<ReactionHooks>, {
+      get: (t, k) => (k in t ? t[k as keyof ReactionHooks] : () => null),
+    }) as ReactionHooks;
+    p.refresh(true);
+    const box = () => [...body.querySelectorAll<HTMLLabelElement>('label.style-row.check')].find((l) => l.textContent === 'Show text guides')!.querySelector('input')!;
+    const on = () => ids.map((id) => guidesOn(doc.arrows.get(id)!));
+    expect(on()).toEqual([true, false]);
+    expect(box().checked).toBe(false);
+    box().checked = true;
+    box().dispatchEvent(new Event('change'));
+    expect(on()).toEqual([true, true]);
+    p.refresh(true);
+    expect(box().checked).toBe(true);
+    box().checked = false;
+    box().dispatchEvent(new Event('change'));
+    expect(on()).toEqual([false, false]);
+  });
+});
+
+describe('F020: a pasted reaction wrapped onto rows at a fixed page edge', () => {
+  it('keeps each arrow and + sign with the structure before it', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const made = doc.edit('scheme', () => {
+      const a = chain(doc, 0, 0, 3), b = chain(doc, 4 * L, 0, 3), c = chain(doc, 10 * L, 0, 3);
+      const plus = doc.addCaption({ x: 3 * L, y: 0, runs: [{ text: '+' }], justify: 'left' }).id;
+      const arrow = doc.addArrow({ ...arrowBase, tail: { x: 7 * L, y: 0 }, head: { x: 9 * L, y: 0 } }).id;
+      return { a, b, c, plus, arrow };
+    });
+    const ed = editorOn(doc);
+    const sel: Selection = { atoms: new Set([...made.a, ...made.b, ...made.c]), bonds: new Set(), captions: new Set([made.plus]), arrows: new Set([made.arrow]), shapes: new Set() };
+    const before = units(doc, sel, ed.measure());
+    // (each its own piece before: five, so a wrap could put the arrow or + on a row alone)
+    expect(before).toHaveLength(5);
+    const got = joinLoose(before);
+    expect(got).toHaveLength(3);
+    const holding = (pred: (u: (typeof got)[number]) => boolean) => got.find(pred)!;
+    expect(holding((u) => u.captions.includes(made.plus)).atoms).toEqual(expect.arrayContaining(made.a));
+    expect(holding((u) => u.arrows.includes(made.arrow)).atoms).toEqual(expect.arrayContaining(made.b));
+    // its box takes in what joined it
+    const withArrow = holding((u) => u.arrows.includes(made.arrow));
+    expect(withArrow.box.x2).toBeGreaterThanOrEqual(9 * L);
+  });
+});
+
+describe('F321: Clean Up and Orient Reaction', () => {
+  it('turns and tidies in one undo step', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    const made = doc.edit('scheme', () => {
+      const a = chain(doc, 0, 0, 3), b = chain(doc, 5 * L, 6, 4);
+      doc.addArrow({ ...arrowBase, tail: { x: 2.4 * L, y: 4 }, head: { x: 4.2 * L, y: 4 } });
+      return { a, b };
+    });
+    const ed = editorOn(doc);
+    const where = () => JSON.stringify([...doc.atoms.values()].map((x) => [x.id, +x.x.toFixed(3), +x.y.toFixed(3)]));
+    const start = where();
+    let cx = 0, cy = 0;
+    for (const id of made.b) { const p = doc.atoms.get(id)!; cx += p.x / made.b.length; cy += p.y / made.b.length; }
+    const turn = [{ atoms: new Set(made.b), f: (p: { x: number; y: number }) => ({ x: cx - (p.y - cy), y: cy + (p.x - cx) }), mirror: false }];
+    const steps = doc.canUndo() ? 1 : 0;
+    ed.cleanUpAndOrient(turn);
+    expect(where()).not.toBe(start);
+    expect(doc.undoLabel).toBe('Clean Up and Orient Reaction');
+    doc.undo();
+    expect(where()).toBe(start);
+    expect(doc.undoLabel).toBe(steps ? 'scheme' : '');
   });
 });

@@ -36,7 +36,7 @@ import { Renderer, measureText, forgetTextWidths, WARN_LOOKS, type WarnLook } fr
 import { Editor, TOOLS, ringsWereFilled, setMarkTint, type HighlightToggle, type Selection } from './editor/editor';
 import { LENGTH_UNITS, setAidTint } from './editor/cursor-aids';
 import { BUILT_IN_LOOKS, type HighlightLookPreset } from './ui/highlight-looks';
-import { selectionBox, atomsBox, POINTS, type Align, units, moveUnit } from './editor/arrange';
+import { selectionBox, atomsBox, POINTS, type Align, units, moveUnit, joinLoose } from './editor/arrange';
 import { defaultColumns } from './editor/grid-arrange';
 import { askGridLayout, type GridPick } from './ui/grid-picker';
 import { groupSelection, selectedGroups } from './editor/groups';
@@ -57,6 +57,7 @@ import { NMR_SOLVENTS, NmrPanel, solventLabel } from './ui/nmr-panel';
 import { paintCanRun, clearCanRun, cantRun, menuAsksLazily } from './ui/can-run';
 import { whyNot, WHY, NEEDS, type Picked } from './editor/can-run';
 import { scaleFactor } from './editor/scale-factor';
+import { fileDropAction, filesTaken, mayBePicture, pasteTarget, type DropPlace } from './ui/window-drop';
 import { StepCache } from './chem/step-cache';
 import { toolboxPreview, type ToolCells } from './ui/toolbox-preview';
 import { compareMode, nmrQuality, nmrSpectrumMhz, sampleSpectrumData, setCompareMode, setNmrQuality, setNmrSpectrumMhz, spectrumSvg, type CompareMode } from './ui/nmr-spectrum';
@@ -1262,25 +1263,30 @@ window.addEventListener('dragover', (e) => {
 window.addEventListener('dragleave', (e) => { if (!e.relatedTarget) host.classList.remove('drop'); });
 window.addEventListener('drop', (e) => {
   if (!hasFiles(e)) return;
-  // a drop zone on the page took it already (the SI Project's report boxes, manuscript and
-  // attachments), or the SI Project is showing, which places its own drops (review F018)
-  if (e.defaultPrevented || siActive()) { host.classList.remove('drop'); return; }
+  // (always cancelled: a file drop left to the webview opens the file in place of the app)
   e.preventDefault();
   host.classList.remove('drop');
+  // a drop zone on the page used the files already (the SI Project's report boxes, manuscript
+  // and attachments): not opened or placed a second time (review F018)
+  if (filesTaken(e)) return;
   void dropFiles([...(e.dataTransfer?.files ?? [])], { x: e.clientX, y: e.clientY });
 });
 
 async function dropFiles(files: File[], at: { x: number; y: number }): Promise<void> {
   const r = host.getBoundingClientRect();
   const inside = at.x >= r.left && at.x <= r.right && at.y >= r.top && at.y <= r.bottom;
+  const where: DropPlace = sheetActive() ? 'sheet' : docActive() ? 'document' : siActive() ? 'si' : 'drawing';
   for (const f of files) {
     const bytes = new Uint8Array(await f.arrayBuffer());
+    const mime = mayBePicture(f.name) ? pictureMime(f.name, bytes) : null;
+    const act = fileDropAction(f.name, !!mime, where);
     // a crystal structure: into the crystal structure window, to turn and place
-    if (/\.cif$/i.test(f.name) && !sheetActive() && !docActive()) { await plateFigure('crystal', null, { name: f.name, text: new TextDecoder().decode(bytes) }); continue; }
-    const mime = /\.(cdxml|cdx|cds|mol|mdl|rxn|mrv|ket|cml|json|pptx|xlsx|xlsm|xls|ods|docx|csv|tsv|txt|sdf?)$/i.test(f.name) ? null : pictureMime(f.name, bytes);
-    if (mime && sheetActive()) flash('Pictures can\'t go in a cell yet. Drop sheet files (.xlsx, .csv, .sdf) to open them.');
-    else if (mime && docActive()) docMode.dropPicture(bytes, mime);
-    else if (mime) placePicture(bytes, mime, inside ? renderer.toDoc(at.x - r.left, at.y - r.top) : null);
+    if (act === 'crystal') await plateFigure('crystal', null, { name: f.name, text: new TextDecoder().decode(bytes) });
+    else if (act === 'no-cell-picture') flash('Pictures can\'t go in a cell yet. Drop sheet files (.xlsx, .csv, .sdf) to open them.');
+    // (not onto the drawing hidden behind the SI Project)
+    else if (act === 'not-in-si') flash('Drop pictures and spectra on a compound’s report box, the manuscript or an attachment.', 6000);
+    else if (act === 'doc-picture') docMode.dropPicture(bytes, mime!);
+    else if (act === 'picture') placePicture(bytes, mime!, inside ? renderer.toDoc(at.x - r.left, at.y - r.top) : null);
     else await ws.openBytes(bytes, f.name);
   }
 }
@@ -1330,13 +1336,13 @@ function paste(): void {
 
 // In a browser, Ctrl+V arrives as a paste event, which carries the clipboard's text.
 window.addEventListener('paste', (e) => {
-  if (isTyping(e.target) || (e.target as HTMLElement | null)?.closest?.('dialog')) return;
-  // pasted already by the part of the page it went to, or the SI Project, which pastes for itself:
-  // not into the drawing hidden behind it as well (review F019)
-  if (e.defaultPrevented || siActive()) return;
+  // (pasted already by the part of the page it went to, or the SI Project, which pastes for
+  // itself: not into the drawing hidden behind it as well, review F019)
+  const to = pasteTarget({ typing: isTyping(e.target), inDialog: !!(e.target as HTMLElement | null)?.closest?.('dialog'), taken: e.defaultPrevented, si: siActive(), sheet: sheetActive(), document: docActive() });
+  if (to === 'none') return;
   e.preventDefault();
-  if (sheetActive()) { void sheetMode.paste(nativeClipboard ? null : e); return; }
-  if (docActive()) { void docMode.paste(nativeClipboard ? null : e); return; }
+  if (to === 'sheet') { void sheetMode.paste(nativeClipboard ? null : e); return; }
+  if (to === 'document') { void docMode.paste(nativeClipboard ? null : e); return; }
   if (nativeClipboard) paste();
   else void pasteFrom(() => readPasteEvent(e));
 });
@@ -2304,7 +2310,6 @@ async function editEquationShape(id: number): Promise<void> {
 }
 editor.onEquation = (id) => void editEquationShape(id);
 
-/** Select just these (new) atoms and their bonds. */
 /** Select a pasted reaction: its structures with their bonds, its + signs and its arrows. */
 function selectPastedReaction(atoms: number[], captions: number[], arrows: number[]): void {
   editor.sel = { atoms: new Set(atoms.filter((id) => doc.atoms.has(id))), bonds: new Set(), captions: new Set(captions.filter((id) => doc.captions.has(id))), arrows: new Set(arrows.filter((id) => doc.arrows.has(id))), shapes: new Set() };
@@ -2312,6 +2317,7 @@ function selectPastedReaction(atoms: number[], captions: number[], arrows: numbe
   editor.changed();
 }
 
+/** Select just these (new) atoms and their bonds. */
 function selectNewAtoms(ids: number[]): void {
   editor.sel = { atoms: new Set(ids), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() };
   for (const id of ids) for (const b of doc.adj.get(id) ?? []) editor.sel.bonds.add(b);
@@ -2489,7 +2495,7 @@ async function show3dModel(): Promise<void> {
   if (ex.generic.length) { flash('A structure with R groups or labels that can\'t be read has no 3-D shape. Replace them with atoms first.'); return; }
   // the window stays open while other drawings show: Place on Page works only on the drawing and
   // the structure the model was built from (review F306)
-  const here = sameDrawing('The 3-D view', 'placed');
+  const here = sameDrawing('The 3-D view', 'placed', true);
   const key = compoundKey(ids);
   if (!viewer3d) viewer3d = new (await import('./ui/viewer3d')).Viewer3d((m) => flash(m));
   viewer3d.showBusy('3-D Model');
@@ -2503,13 +2509,14 @@ async function show3dModel(): Promise<void> {
       let unshown = 0;
       doc.edit('3-D Rotation', () => ({ unshown } = placeView(doc, ex.map, v.view)));
       editor.changed();
-      const placed = doc.version;
+      // (the rotation's own undo step: changes that join it later, a linked projection worked out again, don't count)
+      const placed = doc.topStep, history = deckNow()?.historyLength;
       // the drawing must still mean the same compound: a view where a wedge can't read right is taken back
       // (an engine that stopped leaves the placed view as it is: nothing to compare it with)
       const after = await chem.molToSmiles(toMolfile(doc, doc.fragmentOf(root), '').molblock).catch(() => null);
       if (unshown || (before && after && after !== before)) {
         // only while the rotation is still the last change: never an edit made during the check (review F307)
-        if (!here.left() && doc.version === placed) {
+        if (!here.left() && doc.topStep === placed && deckNow()?.historyLength === history) {
           editor.undo();
           flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Rotate the model slightly and place it again.', 7000);
         } else flash('A stereocenter can\'t be drawn clearly from this angle (a bond points straight at you). Undo the 3-D Rotation, rotate the model slightly and place it again.', 7000);
@@ -3866,7 +3873,7 @@ async function numberCompounds(): Promise<void> {
   Object.assign(numbering, { style, prefix: got.prefix, suffix: got.suffix, same: got.same === 'true', align: got.align === 'true' });
   let keyOf: ((atoms: number[]) => string | undefined) | undefined;
   if (numbering.same) {
-    const here = sameDrawing('The numbers', 'added');
+    const here = sameDrawing('Numbering the compounds', 'done');
     const keys = await structureKeys();
     if (here.left()) return; // (review F313)
     keyOf = (atoms) => keys.get(atoms[0]);
@@ -4163,7 +4170,7 @@ async function deleteNickname(): Promise<void> {
  */
 async function expandLabel(full = false): Promise<void> {
   // the labels are expanded in the drawing they were picked in, never one shown while the engine works (review F313)
-  const here = sameDrawing('The expanded structure');
+  const here = sameDrawing('Expanding the labels', 'done');
   if (full) await loadFullLigands();
   if (here.left()) return;
   let list = editor.expandableLabels();
@@ -4269,7 +4276,7 @@ async function builtInNamesFor(smiles: string): Promise<string[]> {
 async function contractLabel(): Promise<void> {
   const g = selectedGroup(doc, editor.sel.atoms);
   if ('error' in g) { flash(g.error, 6000); return; }
-  const here = sameDrawing('The label');
+  const here = sameDrawing('Contracting the label', 'done');
   // when the selection is a group the program already has a name for (Ph, TBS, Boc), offer that name
   const same = await builtInNamesFor(g.smiles);
   if (here.left()) return; // (review F319)
@@ -4649,13 +4656,14 @@ function align(how: Align): void {
  * in the wrong drawing, and the user is told once. `what` names the result ("The structure"), and
  * `done` what would have happened to it ("added", "applied").
  */
-function sameDrawing(what = 'The result', done = 'added'): { left: () => boolean } {
+function sameDrawing(what = 'The result', done = 'added', everyTime = false): { left: () => boolean } {
   const key = doc.contentsKey;
   let told = false;
   return {
     left: () => {
       if (doc.contentsKey === key) return false;
-      if (!told) { told = true; flash(`${what} was not ${done}: another drawing is showing now. Go back to it and try again.`, 6000); }
+      // (said once for a command; `everyTime` for a window whose button can be pressed again and again)
+      if (!told || everyTime) { told = true; flash(`${what} was not ${done}: another drawing is showing now. Go back to it and try again.`, 6000); }
       return true;
     },
   };
@@ -6241,6 +6249,9 @@ function flushNotes(): void {
   if (i >= 0) f.deck.setNotes(notesBox.value, i, notesLookOf(notesBox.value, notesBox.charLooks));
 }
 
+/** A structure turned (and maybe turned over) by Orient Like First. */
+type OrientMove = { atoms: Set<number>; f: (p: Vec) => Vec; mirror: boolean };
+
 /**
  * Chemistry > Orient Like First: each selected structure (or, with `scheme`, each structure in
  * the drawing) is turned, and turned over if need be, so the part it shares with the first
@@ -6249,7 +6260,6 @@ function flushNotes(): void {
  * nothing to compare, 'failed' when the structures could not be compared (it says so) or 'left'
  * when another drawing came up while they were compared.
  */
-type OrientMove = { atoms: Set<number>; f: (p: Vec) => Vec; mirror: boolean };
 async function orientLikeFirst(scheme = false): Promise<OrientMove[] | null | 'failed' | 'left'> {
   if (!chem.ready) { flash('The chemistry engine is still loading; try again in a moment.'); return 'failed'; }
   const picked = editor.sel.atoms;
@@ -6339,8 +6349,9 @@ function flipped(r: boolean | 'stereo'): void {
   if (!r) flash(WHY.flip);
   else if (r === 'stereo') {
     // the button undoes the flip only while it is still the last change (review F322)
-    const key = doc.contentsKey, version = doc.version, edits = deckNow()?.edits;
-    const still = () => doc.contentsKey === key && doc.version === version && deckNow()?.edits === edits;
+    // (the flip's own undo step still the newest; changes joining it later don't count)
+    const key = doc.contentsKey, step = doc.topStep, history = deckNow()?.historyLength;
+    const still = () => doc.contentsKey === key && doc.topStep === step && deckNow()?.historyLength === history;
     flash('Flipped: the stereocenters are now inverted (the enantiomer). To keep the configuration, undo and use Flip, Preserve Stereochemistry.', 7000, {
       label: 'Undo',
       run: () => { if (still()) undo(); else flash('Not undone: something else has changed since the flip. Use Undo until the flip is taken back.', 6000); },
@@ -8619,8 +8630,9 @@ async function batchConvert(): Promise<void> {
   // into a folder: never over a file already there (the files converted among them), review F026
   const sep = folder?.includes('\\') ? '\\' : '/';
   const inFolder = (name: string) => folder!.replace(/[\\/]$/, '') + sep + name;
-  const taken = (name: string) => pathExists(inFolder(name)).catch(() => false);
-  const out: Record<string, Uint8Array> = {};
+  // (a folder that can't be checked stops the save, with why, rather than risk writing over a file)
+  const taken = (name: string) => pathExists(inFolder(name));
+  const out: { stem: string; bytes: Uint8Array }[] = [];
   const lines: string[] = [];
   let failed = 0, empty = 0, done = 0, smiName = 'converted.smi';
   const enc = new TextEncoder();
@@ -8638,7 +8650,7 @@ async function batchConvert(): Promise<void> {
       let data: Uint8Array | string | null;
       try { data = await writeBatchItem(it, format, Math.max(30, Math.min(2400, Number(v.dpi) || 300))); } catch { failed++; continue; }
       if (data === null) { empty++; continue; }
-      out[folder ? await freeBatchName(it.name, format, used, taken) : uniqueName(it.name, format, used)] = typeof data === 'string' ? enc.encode(data) : data;
+      out.push({ stem: it.name, bytes: typeof data === 'string' ? enc.encode(data) : data });
       done++;
     }
   }
@@ -8648,8 +8660,12 @@ async function batchConvert(): Promise<void> {
       if (folder) { smiName = await freeBatchName('converted', 'smi', used, taken); await writeFile({ kind: 'path', path: inFolder(smiName) }, smiName, text, { description: 'SMILES list', extension: 'smi', mime: 'text/plain' }); }
       else await writeFile(zipTarget!.ref, zipTarget!.name, text, { description: 'SMILES list', extension: 'smi', mime: 'text/plain' });
     } else if (folder) {
-      for (const [name, bytes] of Object.entries(out)) await writeFile({ kind: 'path', path: inFolder(name) }, name, bytes, ZIP_TYPE);
-    } else await writeFile(zipTarget!.ref, zipTarget!.name, zipSync(out), ZIP_TYPE);
+      for (const o of out) { const name = await freeBatchName(o.stem, format, used, taken); await writeFile({ kind: 'path', path: inFolder(name) }, name, o.bytes, ZIP_TYPE); }
+    } else {
+      const zip: Record<string, Uint8Array> = {};
+      for (const o of out) zip[uniqueName(o.stem, format, used)] = o.bytes;
+      await writeFile(zipTarget!.ref, zipTarget!.name, zipSync(zip), ZIP_TYPE);
+    }
   } catch (e) {
     await showError(`Could not save the converted files: ${e instanceof Error ? e.message : String(e)}`);
     return;
@@ -11761,13 +11777,9 @@ const COMMANDS: Record<string, () => unknown> = {
     const moves = Array.isArray(m) ? m : [];
     const turned = moves.length > 0;
     // turned and tidied in one undo step (review F321)
-    let tidied: ReturnType<typeof editor.cleanUpReaction> = false;
-    doc.edit('Clean Up and Orient Reaction', () => {
-      if (turned) editor.reorient(moves);
-      tidied = editor.cleanUpReaction();
-    });
-    editor.changed();
+    const tidied = editor.cleanUpAndOrient(moves);
     if (!tidied && !turned && m !== 'failed') flash('Nothing to clean up: draw starting materials, an arrow and products, or the scheme is already tidy.', 6000);
+    else if (tidied === 'fitted') flash('Each arrow fitted to its own text. Clean Up Reaction again to make them all the same length.', 4000);
   },
   'clean-up-reaction': () => {
     const r = editor.cleanUpReaction();
@@ -14838,11 +14850,15 @@ function chosenStructures(): Set<number>[] {
 
 /** A structure's formula and masses from the chemistry engine (null when it can't be worked out). */
 async function weigh(atoms: Set<number>): Promise<FragmentResult | null> {
-  if (!chem.ready || !atoms.size) return null;
+  return (await weighed(atoms)).r;
+}
+/** As weigh, and whether the engine answered that it can't weigh it (not: not loaded yet, or it stopped). */
+async function weighed(atoms: Set<number>): Promise<{ r: FragmentResult | null; refused: boolean }> {
+  if (!chem.ready || !atoms.size) return { r: null, refused: false };
   const ex = toMolfile(doc, atoms);
   const res = await chem.analyze([{ molblock: ex.molblock, map: ex.map }]).catch(() => null);
   const r = res?.results[0];
-  return r && !r.error ? r : null;
+  return r && !r.error ? { r, refused: false } : { r: null, refused: !!r };
 }
 
 /** A structure's checked systematic name for its descriptors (the namer starts if need be), or null when it has none. */
@@ -14906,12 +14922,14 @@ async function refreshDescriptors(): Promise<void> {
         const drawing = doc.contentsKey;
         if (descriptorFailed.get(drawing)?.get(c.id) === sig) continue;
         const version = doc.version;
-        const r = await weigh(atoms);
+        const { r, refused } = await weighed(atoms);
         const name = (a.show ?? newDescriptors()).includes('name') ? await descriptorName(atoms, r) : null;
         // something else changed meanwhile: look again from the start
         if (doc.version !== version) { descriptorAgain = true; break; }
         const now = doc.captions.get(c.id);
         if (!r) {
+          // (only an answer from the engine is remembered: one not loaded yet, or stopped, is asked again)
+          if (!refused) continue;
           const tried = descriptorFailed.get(drawing) ?? new Map<number, string>();
           tried.set(c.id, sig);
           descriptorFailed.set(drawing, tried);
@@ -14999,8 +15017,10 @@ async function runAnalysis(force: boolean): Promise<void> {
   analysisKey = key;
   const panel = $('#analysis-body');
   if (!frags.length) {
-    // (a run still waiting on the engine must not fill the panel in after this: review F028)
+    // (a run still waiting on the engine must not fill the panel in after this, and the Lab
+    // Calculator no longer takes the structure that was selected: review F028)
     analysisSeq++;
+    lastAnalysis = null;
     panel.innerHTML = '<p class="muted" title="Or select text read as chemistry, such as BF₄⁻ or DMAP, or draw a structure.">Select a structure to see its formula and masses.</p>';
     analysisBox.set(null);
     $('#si-section').hidden = true;
@@ -15440,8 +15460,13 @@ function checkArrows(): void {
 }
 
 function checkStructure(): void {
-  // the problems the Warnings panel lists, text boxes too (review F338)
-  const list = drawingProblems();
+  // the problems the Warnings panel lists, text boxes too (review F338); a text box with two
+  // problems is one stop, so a press always moves on
+  const list: ReturnType<typeof drawingProblems> = [];
+  for (const w of drawingProblems()) {
+    const same = list.find((x) => x.kind === w.kind && x.id === w.id);
+    if (same) same.text = [...same.text, ...w.text]; else list.push({ ...w, text: [...w.text] });
+  }
   if (!list.length) {
     flash(ignoredProblems() ? 'No problems found (apart from the ones you chose to ignore).' : 'No problems found.');
     return;
@@ -16133,8 +16158,8 @@ async function darkColours(): Promise<void> {
     { name: 'name', label: 'Save as Custom…', value: '', placeholder: 'leave empty to use the palette as it is' },
   ], { ok: 'Use', preview: { title: 'On screen', draw: (v) => {
     const base = darkPaletteNamed(v.palette, dark.own);
-    const untouched = v.paper === cur.paper && v.ink === cur.ink;
-    return readingPreview(untouched ? base : { name: '', paper: v.paper || base.paper, ink: v.ink || base.ink }, doc.style);
+    // (shown as it will be kept: each color left as it showed is the picked palette's)
+    return readingPreview(readingPaletteToKeep({ paper: v.paper, ink: v.ink, name: 'preview' }, cur, base) ?? base, doc.style);
   } }, note: 'Affects the screen only: files, printing, copying and exports stay black on white. Edit the colors and name the palette to save a custom one.' });
   if (!got) return;
   const base = darkPaletteNamed(got.palette, dark.own);
@@ -17493,7 +17518,7 @@ stylePanel.reaction = {
   sideText: (id) => editor.arrowSideText(id),
   setSideText: (id, side, text) => editor.setArrowSideText(id, side, text),
   setTextAlign: (id, side, how) => editor.setArrowTextAlign(id, side, how),
-  setGuides: (ids, on) => editor.setArrowGuides(ids, on),
+  setGuides: (ids, on) => editor.setArrowGuides(ids, on, plainReactionArrow),
 };
 stylePanel.tables = {
   part: () => editor.tablePart,
@@ -17702,7 +17727,8 @@ async function keepPasteInside(): Promise<void> {
   if (here.left()) return;
   const sel = editor.sel;
   doc.amend('Paste', () => {
-    const pieces = units(doc, sel, editor.measure());
+    // (an arrow or + sign wraps with the structure before it, not on a row of its own)
+    const pieces = joinLoose(units(doc, sel, editor.measure()));
     if (how === 'wrap' && pieces.length > 1) {
       // between the fixed edges, or the grid's edges on an open side
       const grid = extentRect(p, pageExtent(p, doc.bounds()));

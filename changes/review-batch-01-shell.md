@@ -1,5 +1,5 @@
-Fixed: SI Project: a file dropped or pasted on a compound's report box, the manuscript or the attachments is added once, instead of also landing on the hidden drawing or opening in a new tab.
-Fixed: Copy and paste: a pasted reaction stays selected whole, so its arrow and + signs move with it and are kept inside a page's fixed edge.
+Fixed: SI Project: a file dropped or pasted on a compound's report box, the manuscript or the attachments is added once, instead of also landing on the hidden drawing or opening in a new tab. A picture dropped elsewhere on the SI Project says where it can go; drawings, documents and other files dropped there still open in a tab.
+Fixed: Copy and paste: a pasted reaction stays selected whole, so its arrow and + signs move with it and are kept inside a page's fixed edge, and wrap onto new rows beside its structures.
 Fixed: Copy and paste: Cut deletes what it copied, even when something else is clicked or another slide or tab comes up while the copy is made.
 Fixed: Copy and paste: CDXML text on the clipboard that can't be read is pasted as text in a document or a spreadsheet, instead of nothing happening.
 Fixed: Copy and paste: Copy as Molfile Text on an empty drawing says there is nothing to copy instead of copying an empty molfile.
@@ -11,7 +11,7 @@ Fixed: Slides: Lock Structures says it works on slides when used elsewhere, inst
 Fixed: Slides: Insert ▸ Action Settings is grayed out for the frames of TLC plates, Smart Schemes, Newman projections and torsion charts, which it can't change.
 Fixed: Slides: Export Picture works on a canvas slide whose selected keyframe was deleted.
 Fixed: Settings: choosing the style that is already the default for new files in File ▸ Drawing Style, with its box left alone, no longer changes that default.
-Fixed: Files: Batch Convert to a SMILES list offers a .smi file name instead of .zip, and converting into a folder never writes over a file already there (the new file gets a " (2)" name).
+Fixed: Files: Batch Convert to a SMILES list offers a .smi file name instead of .zip, and converting into a folder never writes over a file already there (the new file gets a " (2)" name; a folder that can't be checked stops the save and says why).
 Fixed: Canvas: Picture Style shows at once and marks the file as changed.
 Fixed: Canvas: the Analysis panel stays cleared when the selection is cleared while a structure is still being analyzed.
 Fixed: Canvas: Place on Page in the 3-D Model window works only on the drawing and structure the model was made from, and its check of the stereocenters never undoes an edit made meanwhile.

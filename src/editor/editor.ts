@@ -5885,6 +5885,21 @@ export class Editor {
     this.changed();
   }
 
+  /**
+   * Clean Up and Orient Reaction: the structures turned as Orient Like First worked out (`moves`)
+   * and the scheme tidied as Clean Up Reaction does, in one undo step. What Clean Up Reaction
+   * returned (false: nothing to tidy).
+   */
+  cleanUpAndOrient(moves: { atoms: Iterable<number>; f: (p: Vec) => Vec; mirror: boolean }[]): false | 'matched' | 'fitted' {
+    let tidied = false as false | 'matched' | 'fitted';
+    this.doc.edit('Clean Up and Orient Reaction', () => {
+      if (moves.length) this.reorient(moves);
+      tidied = this.cleanUpReaction();
+    });
+    this.changed();
+    return tidied;
+  }
+
   /** Turn the selection about its centre; positive is clockwise. */
   rotateBy(deg: number): boolean {
     const b = this.selBox();

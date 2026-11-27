@@ -35,15 +35,27 @@ function runnable<T>(src: string, name: string, deps: Record<string, unknown>): 
 }
 
 describe('F018, F019: drops and pastes the SI Project took are not done again on the drawing behind it', () => {
-  it('the window drop listener stops for a drop taken already, or while the SI Project shows', () => {
+  // (what the window does with each file and each paste is tested in review-batch01-units.test.ts)
+  it('the window drop listener always cancels a file drop, and leaves files a drop zone took', () => {
     const b = block("window.addEventListener('drop', (e) => {");
-    expect(b).toMatch(/if \(e\.defaultPrevented \|\| siActive\(\)\)/);
-    expect(b.indexOf('e.defaultPrevented')).toBeLessThan(b.indexOf('dropFiles('));
+    expect(b.indexOf('e.preventDefault()')).toBeLessThan(b.indexOf('if (filesTaken(e)) return;'));
+    expect(b.indexOf('if (filesTaken(e)) return;')).toBeLessThan(b.indexOf('dropFiles('));
+    expect(body('dropFiles', 'async function dropFiles(')).toContain('fileDropAction(f.name, !!mime, where)');
   });
-  it('the window paste listener stops for a paste taken already, or while the SI Project shows', () => {
+  it('every SI Project drop zone that uses the files says so', () => {
+    for (const f of ['src/ui/si-mode.ts', 'src/ui/si-manuscript.ts', 'src/ui/si-attachment.ts']) {
+      const src = readFileSync(join(__dirname, '..', f), 'utf8');
+      const uses = src.split("addEventListener('drop'").length - 1;
+      const files = src.split('dataTransfer?.files').length - 1;
+      expect(src.split('markFilesTaken(e);').length - 1, f).toBe(files);
+      expect(uses, f).toBeGreaterThanOrEqual(files);
+    }
+  });
+  it('the window paste listener asks pasteTarget', () => {
     const b = block("window.addEventListener('paste', (e) => {");
-    expect(b).toMatch(/if \(e\.defaultPrevented \|\| siActive\(\)\) return;/);
-    expect(b.indexOf('e.defaultPrevented')).toBeLessThan(b.indexOf('e.preventDefault()'));
+    expect(b).toContain('const to = pasteTarget({ typing: isTyping(e.target)');
+    expect(b).toContain('taken: e.defaultPrevented, si: siActive()');
+    expect(b.indexOf("if (to === 'none') return;")).toBeLessThan(b.indexOf('e.preventDefault()'));
   });
 });
 
@@ -94,8 +106,8 @@ describe('F025, F026: Batch Convert', () => {
     expect(b).not.toContain("withExtension(files[0].name, 'zip') : 'converted.zip', format === 'smi'");
   });
   it('into a folder, never writes over a file already there', () => {
-    expect(b).toContain('pathExists(inFolder(name))');
-    expect(b).toContain('await freeBatchName(it.name, format, used, taken)');
+    expect(b).toContain('const taken = (name: string) => pathExists(inFolder(name));');
+    expect(b).toContain('const name = await freeBatchName(o.stem, format, used, taken);');
     expect(b).toContain("await freeBatchName('converted', 'smi', used, taken)");
     expect(b).not.toContain('`${folder}/converted.smi`');
   });
@@ -145,9 +157,9 @@ describe('F306, F307: the 3-D Model\'s Place on Page', () => {
   });
   it('takes back the rotation only while it is still the last change', () => {
     const place = b.slice(b.indexOf("doc.edit('3-D Rotation'"));
-    expect(place).toContain('const placed = doc.version;');
+    expect(place).toContain('const placed = doc.topStep, history = deckNow()?.historyLength;');
     const undo = place.indexOf('editor.undo()');
-    expect(place.slice(0, undo)).toContain('if (!here.left() && doc.version === placed) {');
+    expect(place.slice(0, undo)).toContain('if (!here.left() && doc.topStep === placed && deckNow()?.historyLength === history) {');
   });
   it('compares what the structure is, not its wedges or places, so a placed view can be placed again', () => {
     // a key built the way compoundKey builds it, on a drawing made here
@@ -284,7 +296,9 @@ describe('F320, F321: Orient Like First', () => {
   it('the turns are made by the caller: Clean Up and Orient Reaction turns and tidies in one undo step', () => {
     expect(body('orientLikeFirst', 'async function orientLikeFirst(')).not.toContain('editor.reorient(');
     const c = command('clean-up-reaction-orient');
-    expect(c).toMatch(/doc\.edit\('Clean Up and Orient Reaction', \(\) => \{\n\s*if \(turned\) editor\.reorient\(moves\);\n\s*tidied = editor\.cleanUpReaction\(\);\n\s*\}\);/);
+    // (Editor.cleanUpAndOrient, one undo step: review-batch01-units.test.ts)
+    expect(c).toContain('const tidied = editor.cleanUpAndOrient(moves);');
+    expect(c).toContain("else if (tidied === 'fitted') flash(");
     // (turned but nothing else to tidy is not "nothing to clean up")
     expect(c).toContain('if (!tidied && !turned');
   });
@@ -293,7 +307,7 @@ describe('F320, F321: Orient Like First', () => {
 describe('F322: the Undo button after a stereo-inverting flip undoes only the flip', () => {
   it('undoes only while nothing has changed since the flip', () => {
     const b = body('flipped');
-    expect(b).toContain('const still = () => doc.contentsKey === key && doc.version === version && deckNow()?.edits === edits;');
+    expect(b).toContain('const still = () => doc.contentsKey === key && doc.topStep === step && deckNow()?.historyLength === history;');
     expect(b).toContain('run: () => { if (still()) undo(); else flash(');
   });
 });
@@ -392,14 +406,18 @@ describe('F335: changing Outline the Rest of a Group redraws', () => {
 describe('F336: a descriptor text box whose structure can\'t be weighed is not sent again and again', () => {
   it('the structure tried is remembered and skipped until it changes', () => {
     const b = body('refreshDescriptors', 'async function refreshDescriptors(');
-    expect(b.indexOf('if (descriptorFailed.get(drawing)?.get(c.id) === sig) continue;')).toBeLessThan(b.indexOf('await weigh(atoms)'));
-    expect(b).toMatch(/if \(!r\) \{\n\s*const tried = descriptorFailed\.get\(drawing\)/);
+    expect(b.indexOf('if (descriptorFailed.get(drawing)?.get(c.id) === sig) continue;')).toBeLessThan(b.indexOf('await weighed(atoms)'));
+    // (only what the engine answered it can't weigh: not loaded yet, or stopped, is asked again)
+    expect(b).toMatch(/if \(!r\) \{\n.*\n\s*if \(!refused\) continue;\n\s*const tried = descriptorFailed\.get\(drawing\)/);
+    const w = body('weighed', 'async function weighed(');
+    expect(w).toContain("if (!chem.ready || !atoms.size) return { r: null, refused: false };");
+    expect(w).toContain('{ r: null, refused: !!r }');
   });
 });
 
 describe('F338: Check Structure steps through the problems the Warnings box lists', () => {
   it('both read one list, text boxes included', () => {
-    expect(body('checkStructure')).toContain('const list = drawingProblems();');
+    expect(body('checkStructure')).toContain('for (const w of drawingProblems()) {');
     expect(body('updateWarnings')).toContain('const list = drawingProblems();');
     const p = body('drawingProblems');
     expect(p).toContain('labelWarnings');
@@ -418,6 +436,20 @@ describe('F338: Check Structure steps through the problems the Warnings box list
     runnable<() => void>(body('checkStructure'), 'checkStructure', deps)();
     expect(revealed).toEqual([['caption', 7]]);
     expect(flashed[0]).toMatch(/^1 of 1: BF4/);
+  });
+  it('a text box with two problems is one stop, so pressing again moves on to the next problem', () => {
+    const revealed: [string, number][] = [];
+    const sel = { atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>() };
+    const deps = {
+      drawingProblems: () => [{ kind: 'atom', id: 1, text: ['Too many bonds.'] }, { kind: 'caption', id: 7, text: ['Two structures share this number.'] }, { kind: 'caption', id: 7, text: ['Give the ion its charge.'] }],
+      ignoredProblems: () => 0,
+      flash: () => {},
+      // (reveal selects what it shows, as the editor's does)
+      editor: { sel, reveal: (k: string, id: number) => { revealed.push([k, id]); sel.atoms.clear(); sel.captions.clear(); (k === 'atom' ? sel.atoms : sel.captions).add(id); } },
+    };
+    const check = runnable<() => void>(body('checkStructure'), 'checkStructure', deps);
+    check(); check(); check();
+    expect(revealed).toEqual([['atom', 1], ['caption', 7], ['atom', 1]]);
   });
 });
 
