@@ -1397,7 +1397,6 @@ class DocxWriter {
     return `<w:r>${r}<mc:AlternateContent><mc:Choice Requires="wpg">${drawing}</mc:Choice><mc:Fallback>${vml}</mc:Fallback></mc:AlternateContent></w:r>`;
   }
 
-  /** A text box: Word's text box shape, with its paragraphs inside it (Word fits its height to them). */
   /**
    * The Word lists of a text of its own (a text box's, a header's): a new one where its numbers
    * start again (at its start number), one on the same levels for an item with its own number, as
@@ -1416,6 +1415,7 @@ class DocxWriter {
     });
   }
 
+  /** A text box: Word's text box shape, with its paragraphs inside it (Word fits its height to them). */
   private async textBox(main: string, id: number, o: Extract<DocObject, { kind: 'textbox' }>, rPr: string): Promise<string> {
     const n = paraCount(rt.plainText(o.runs));
     const paras = fitParas(o.paras, n);
@@ -2641,12 +2641,10 @@ const WM_MEASURE = documentMeasure((s, size, _f, style) => arialWidth(s, size, /
 
 /**
  * A text watermark as Word makes one: a WordArt shape (VML's text path) in the header, in the
- * middle of the margins, behind the text, turned 315° when diagonal, filled half see-through.
- */
-/**
- * A watermark's VML shape, its shape type (_x0000_t136) with it: each header part that holds one
- * defines the type itself, as Word writes them, since a shape's type="#..." is found in its own part.
- * `n` (counted through the file) keeps the shapes' ids apart.
+ * middle of the margins, behind the text, turned 315° when diagonal, filled half see-through. Its
+ * shape type (_x0000_t136) goes with it: each header part that holds one defines the type itself,
+ * as Word writes them, since a shape's type="#..." is found in its own part. `n` (counted through
+ * the file) keeps the shapes' ids apart.
  */
 export function watermarkXml(w: Watermark, pg: PageSetup, n: number): string {
   const at = watermarkPlace(w, { x: 0, top: 0, w: pg.w, h: pg.h, setup: pg }, WM_MEASURE);

@@ -4869,7 +4869,7 @@ const ws: Workspace = new Workspace(doc, {
   },
   documents: {
     read: async (bytes, name) => (await import('./io/doc-files')).readDocumentFile(bytes, name, docRead),
-    write: async (d, name) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles),
+    write: async (d, name, notes) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles, notes),
   },
   newStyle: (mode) => { const n = mode === 'si' ? null : modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
   newPage: () => (defaultPage ? { ...defaultPage } : null),

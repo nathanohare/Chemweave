@@ -194,7 +194,7 @@ class OdtReader {
     return out;
   }
 
-  private blocks(els: Element[], ctx: { list: { kind: 'bullet' | 'number'; level: number } | null }, into?: { runs: TextRun[]; paras: ParaStyle[] }): void {
+  private blocks(els: Element[], ctx: { list: { kind: 'bullet' | 'number'; level: number; cont?: boolean } | null }, into?: { runs: TextRun[]; paras: ParaStyle[] }): void {
     for (const el of els) {
       switch (el.localName) {
         case 'p': case 'h': this.paragraph(el, ctx, into); break;
@@ -202,7 +202,15 @@ class OdtReader {
           const style = attr(el, 'text', 'style-name');
           const kind: 'bullet' | 'number' = (style ? this.listKinds.get(style) : undefined) ?? ctx.list?.kind ?? 'bullet';
           const level = ctx.list ? ctx.list.level + 1 : 0;
-          for (const item of kids(el)) if (item.localName === 'list-item' || item.localName === 'list-header') this.blocks(kids(item), { list: { kind, level } }, into);
+          for (const item of kids(el)) {
+            if (item.localName !== 'list-item' && item.localName !== 'list-header') continue;
+            // (a paragraph after the item's first goes on in the item: no number or bullet of its own, OpenDocument 1.3 part 3, 5.3.3)
+            let cont = false;
+            for (const k of kids(item)) {
+              this.blocks([k], { list: { kind, level, ...(cont ? { cont: true } : {}) } }, into);
+              if (k.localName === 'p' || k.localName === 'h') cont = true;
+            }
+          }
           break;
         }
         case 'table': if (!into) this.table(el); else this.warnings.add('Tables inside table cells were left out.'); break;
@@ -214,7 +222,7 @@ class OdtReader {
     }
   }
 
-  private paragraph(el: Element, ctx: { list: { kind: 'bullet' | 'number'; level: number } | null }, into?: { runs: TextRun[]; paras: ParaStyle[] }): void {
+  private paragraph(el: Element, ctx: { list: { kind: 'bullet' | 'number'; level: number; cont?: boolean } | null }, into?: { runs: TextRun[]; paras: ParaStyle[] }): void {
     const look = this.resolved(attr(el, 'text', 'style-name'));
     const level = el.localName === 'h' ? Number(attr(el, 'text', 'outline-level') ?? '1') : 0;
     const style = level ? headingId(level) : look.heading;
@@ -222,7 +230,7 @@ class OdtReader {
     const ps: ParaStyle = {
       ...(style ? { style } : {}), align: p.align === 'left' ? undefined : p.align, spaceBefore: p.spaceBefore, spaceAfter: p.spaceAfter, indent: p.indent || undefined, firstLine: p.firstLine || undefined,
       indentRight: p.indentRight || undefined, line: p.line, linePt: p.linePt, lineRule: p.lineRule, pageBreak: p.pageBreak, keepNext: p.keepNext,
-      ...(ctx.list ? { list: ctx.list.kind, ...(ctx.list.level ? { level: ctx.list.level } : {}), indent: undefined, firstLine: undefined } : {}),
+      ...(ctx.list ? { list: ctx.list.kind, ...(ctx.list.level ? { level: ctx.list.level } : {}), ...(ctx.list.cont ? { cont: true } : {}), indent: undefined, firstLine: undefined } : {}),
     };
     const base = { ...this.b.styleLook(ps), ...cleanText(look.text) };
     const runs: TextRun[] = [];
@@ -230,7 +238,8 @@ class OdtReader {
     // a line break (text:line-break) starts the paragraph's next line: a soft paragraph of its own
     const breaks = runs.filter((r) => r.text === '\n' && r.obj === undefined).length;
     const { pageBreak: _pb, ...rest } = ps;
-    const softPs: ParaStyle = { ...rest, soft: true };
+    // (in a list, the next line is in the same item: no number or bullet of its own)
+    const softPs: ParaStyle = { ...rest, soft: true, ...(ps.list ? { cont: true } : {}) };
     if (into) {
       // (a paragraph after the first is after a line break, even when the first was empty)
       if (into.paras.length) into.runs.push({ ...base, text: '\n' });
@@ -546,7 +555,8 @@ class OdtWriter {
         closeTo(depth);
         // a list of another kind at this level starts a new list there
         if (open.length === depth && open[depth - 1] !== ps.list) closeTo(depth - 1);
-        if (open.length === depth) out += '</text:list-item><text:list-item>';
+        // a line that goes on in the item above (cont) stays in that item
+        if (open.length === depth && !ps.cont) out += '</text:list-item><text:list-item>';
         while (open.length < depth) {
           const k = open.length === depth - 1 ? ps.list : open[open.length - 1] ?? ps.list;
           out += `<text:list text:style-name="${styleName(k)}"><text:list-item>`;

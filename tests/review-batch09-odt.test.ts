@@ -11,6 +11,7 @@ import { unzipSync, strFromU8, strToU8 } from 'fflate';
 import { newDocument, type DocText } from '../src/document/document';
 import { readOdt, writeOdt, zipFiles } from '../src/io/odt';
 import * as rt from '../src/richtext';
+import { listMarkers } from '../src/text/paragraphs';
 import type { ParaStyle, TextRun } from '../src/model';
 
 const NS = 'xmlns:office="urn:oasis:names:tc:opendocument:xmlns:office:1.0" xmlns:style="urn:oasis:names:tc:opendocument:xmlns:style:1.0" xmlns:text="urn:oasis:names:tc:opendocument:xmlns:text:1.0" xmlns:table="urn:oasis:names:tc:opendocument:xmlns:table:1.0" xmlns:fo="urn:oasis:names:tc:opendocument:xmlns:xsl-fo-compatible:1.0"';
@@ -75,6 +76,26 @@ describe('ODT lists (F123)', () => {
 });
 
 describe('ODT line breaks (F582)', () => {
+  it('keeps a list item\'s next line (text:line-break) in the item, with no bullet of its own', () => {
+    const body = '<text:list><text:list-item><text:p>One<text:line-break/>more</text:p></text:list-item><text:list-item><text:p>Two</text:p></text:list-item></text:list>';
+    const { doc: d } = readOdt(odt('', body));
+    expect(rt.plainText(d.runs)).toBe('One\nmore\nTwo');
+    expect(d.paras[1]).toMatchObject({ list: 'bullet', soft: true, cont: true });
+    expect(listMarkers(d.paras).map((m) => m !== null)).toEqual([true, false, true]);
+  });
+
+  it('saves a line that goes on in a list item inside that item, and reads it back so', async () => {
+    const t = doc([{ text: 'one\nmore\ntwo' }], [{ list: 'number' }, { list: 'number', cont: true }, { list: 'number' }]);
+    const content = await contentOf(t);
+    const body = content.slice(content.indexOf('<office:text>'));
+    // two items: the second paragraph in the first item (OpenDocument 1.3 part 3, 5.3.3)
+    expect(body.match(/<text:list-item>/g)).toHaveLength(2);
+    expect(body).toMatch(/<text:list-item><text:p[^>]*>one<\/text:p><text:p[^>]*>more<\/text:p><\/text:list-item>/);
+    const back = readOdt(await writeOdt(t)).doc;
+    expect(back.paras.map((p) => [p.list, !!p.cont])).toEqual([['number', false], ['number', true], ['number', false]]);
+    expect(listMarkers(back.paras)).toEqual(['1.', null, '2.']);
+  });
+
   it('opens a text:line-break as the paragraph\'s next line', () => {
     const auto = '<style:style style:name="P1" style:family="paragraph"><style:paragraph-properties fo:text-align="center"/></style:style>';
     const { doc: d } = readOdt(odt(auto, '<text:p text:style-name="P1">Line one<text:line-break/>Line two</text:p>'));

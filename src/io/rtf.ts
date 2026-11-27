@@ -39,8 +39,9 @@ interface ParaState {
 const SKIP = new Set(['info', 'header', 'footer', 'headerl', 'headerr', 'headerf', 'footerl', 'footerr', 'footerf', 'xmlnstbl', 'listtable', 'listoverridetable', 'rsidtbl', 'generator', 'themedata', 'colorschememapping', 'latentstyles', 'datastore', 'mmathPr', 'pgdsctbl', 'revtbl', 'filetbl', 'object', 'shp', 'shpinst', 'nonshppict', 'bkmkstart', 'bkmkend', 'annotation', 'atnid', 'atnauthor', 'pntext', 'pntxta', 'pntxtb', 'listtext', 'wgrffmtfilter', 'docvar', 'userprops', 'fchars', 'lchars', 'falt', 'panose', 'template', 'operator']);
 
 /** The Windows code page of each font character set (\\fcharsetN, RTF 1.9.1's font table). */
+// (0, ANSI, is left out: it means the file's own \\ansicpgN, not always 1252)
 const CHARSET_CP: Record<number, number> = {
-  0: 1252, 128: 932, 129: 949, 130: 1361, 134: 936, 136: 950, 161: 1253, 162: 1254, 163: 1258, 177: 1255, 178: 1256, 186: 1257, 204: 1251, 222: 874, 238: 1250, 77: 10000,
+  128: 932, 129: 949, 130: 1361, 134: 936, 136: 950, 161: 1253, 162: 1254, 163: 1258, 177: 1255, 178: 1256, 186: 1257, 204: 1251, 222: 874, 238: 1250, 77: 10000,
 };
 
 /** TextDecoder's names (the WHATWG Encoding Standard) for the code pages RTF names with \\ansicpgN. */
@@ -115,6 +116,10 @@ class RtfReader {
   private rows: TableCell[][] = [];
   private cellx: number[] = [];
   private tableCols: number[] = [];
+  /** Each cell's merge (\\clmgf, \\clmrg, \\clvmgf, \\clvmrg) in the row being defined, and in each row read. */
+  private cellMerge: { across?: 'first' | 'more'; down?: 'first' | 'more' }[] = [];
+  private nextMerge: { across?: 'first' | 'more'; down?: 'first' | 'more' } = {};
+  private rowMerges: { across?: 'first' | 'more'; down?: 'first' | 'more' }[][] = [];
   private cell: { runs: TextRun[]; paras: ParaStyle[] } = { runs: [], paras: [] };
 
   constructor(private src: string) {}
@@ -232,8 +237,9 @@ class RtfReader {
     const style = named ?? (p.outline !== undefined && p.outline < 9 ? headingId(p.outline + 1) : undefined);
     return {
       ...(style ? { style } : {}), align: p.align, spaceBefore: p.spaceBefore, spaceAfter: p.spaceAfter, indent: p.indent, firstLine: p.firstLine, indentRight: p.indentRight,
-      line: p.line, linePt: p.linePt, lineRule: p.lineRule, keepNext: p.keepNext, list: p.list, pageBreak: p.pageBreak,
-      ...(this.soft ? { soft: true } : {}),
+      line: p.line, linePt: p.linePt, lineRule: p.lineRule, keepNext: p.keepNext, list: p.list,
+      // a soft line (after \\line) goes on the paragraph's page and, in a list, in its item (no number of its own)
+      ...(this.soft ? { soft: true, ...(p.list ? { cont: true } : {}) } : p.pageBreak ? { pageBreak: true } : {}),
     };
   }
 
@@ -342,8 +348,12 @@ class RtfReader {
       case 'pnlvlblt': this.ps.list = 'bullet'; return;
       case 'pnlvlbody': case 'pndec': this.ps.list ??= 'number'; return;
       case 'intbl': this.ps.intbl = true; return;
-      case 'trowd': this.cellx = []; return;
-      case 'cellx': this.cellx.push((n ?? 0) / TWIP); return;
+      case 'trowd': this.cellx = []; this.cellMerge = []; this.nextMerge = {}; return;
+      case 'cellx': this.cellx.push((n ?? 0) / TWIP); this.cellMerge.push(this.nextMerge); this.nextMerge = {}; return;
+      case 'clmgf': this.nextMerge.across = 'first'; return;
+      case 'clmrg': this.nextMerge.across = 'more'; return;
+      case 'clvmgf': this.nextMerge.down = 'first'; return;
+      case 'clvmrg': this.nextMerge.down = 'more'; return;
       case 'cell': this.endCell(); return;
       case 'row': this.endRow(); return;
       case 'paperw': this.page.w = (n ?? 12240) / TWIP; return;
@@ -438,6 +448,7 @@ class RtfReader {
     const cols = xs.map((x, i) => Math.max(12, x - (i ? xs[i - 1] : 0)));
     if (cols.length > this.tableCols.length) this.tableCols = cols;
     this.rows.push(this.row);
+    this.rowMerges.push(this.cellMerge);
     this.row = [];
     this.ps.intbl = undefined;
   }
@@ -447,11 +458,35 @@ class RtfReader {
     const n = Math.max(maxOf(this.rows.map((r) => r.length)), this.tableCols.length);
     const cols = Array.from({ length: n }, (_, i) => this.tableCols[i] ?? 72);
     const rows = this.rows.map((r) => Array.from({ length: n }, (_, i) => r[i] ?? { runs: [{ text: '' }] }));
+    mergeCells(rows, this.rowMerges);
     const table: TableData = { cols, rows, head: 0, lines: 'grid' };
     this.rows = [];
+    this.rowMerges = [];
     this.tableCols = [];
     this.b.table({ kind: 'table', table });
   }
+}
+
+/**
+ * Merged cells as RTF marks them (RTF 1.9.1: \\clmgf starts cells merged across and \\clmrg goes on
+ * with it; \\clvmgf starts cells merged down and \\clvmrg goes on with it), as spans on the first cell.
+ */
+function mergeCells(rows: TableCell[][], merges: { across?: 'first' | 'more'; down?: 'first' | 'more' }[][]): void {
+  rows.forEach((row, r) => {
+    const m = merges[r] ?? [];
+    for (let c = 0; c < row.length; c++) {
+      if (m[c]?.across === 'first') {
+        let k = 1;
+        while (c + k < row.length && m[c + k]?.across === 'more') k++;
+        if (k > 1) row[c] = { ...row[c], span: k };
+      }
+      if (m[c]?.down === 'first') {
+        let k = 1;
+        while (r + k < rows.length && merges[r + k]?.[c]?.down === 'more') k++;
+        if (k > 1) row[c] = { ...row[c], rowSpan: k };
+      }
+    }
+  });
 }
 
 /** The value of each hex digit's character code (-1 for what isn't one). */
@@ -488,7 +523,12 @@ export interface RtfDeps {
   pictureToPng?(bytes: Uint8Array, mime: string): Promise<Uint8Array | null>;
   /** A PNG of an SVG picture (w × h pixels). */
   svgToPng?(svg: string, w: number, h: number): Promise<Uint8Array>;
+  /** Told what was left out of the file (each note once), to say so when it is saved. */
+  warn?(note: string): void;
 }
+
+/** Said when a picture can't be put in the RTF file. */
+export const RTF_PICTURE_NOTE = 'Some pictures in a format RTF can\'t hold were left out: save as .docx to keep them.';
 
 /** Text for RTF: its special characters escaped, characters past ASCII as cp1252 or \uN. */
 export function rtfText(t: string): string {
@@ -638,7 +678,7 @@ class RtfWriter {
   /** A picture: PNG and JPEG as they are, others (GIF, BMP, WebP, SVG) as PNG when they can be made one. */
   private async picture(src: string, w: number, h: number, px?: { w: number; h: number }): Promise<string> {
     let got: { mime: string; bytes: Uint8Array };
-    try { got = fromDataUrl(src); } catch { return ''; }
+    try { got = fromDataUrl(src); } catch { this.deps.warn?.(RTF_PICTURE_NOTE); return ''; }
     const mime = got.mime.toLowerCase();
     if (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg') return this.pictureBytes(got.bytes, mime === 'image/png' ? 'png' : 'jpeg', w, h, px);
     let png: Uint8Array | null = null;
@@ -651,7 +691,8 @@ class RtfWriter {
     } catch {
       png = null;
     }
-    return png ? this.pictureBytes(png, 'png', w, h, px) : '';
+    if (!png) { this.deps.warn?.(RTF_PICTURE_NOTE); return ''; }
+    return this.pictureBytes(png, 'png', w, h, px);
   }
 
   private pictureBytes(bytes: Uint8Array, kind: 'png' | 'jpeg', w: number, h: number, px?: { w: number; h: number }): string {
@@ -675,9 +716,10 @@ class RtfWriter {
   }
 
   /** Text above or below a table (its title, its footnotes), as paragraphs of their own. */
-  private async tableText(runs: TextRun[], k = 1): Promise<string> {
+  private async tableText(runs: TextRun[], k = 1, base = 12): Promise<string> {
     let out = '';
-    for (const rs of splitParagraphs(runs)) out += `\\pard\\plain\\ql ${await this.runs(k === 1 ? rs : rs.map((r) => (r.size ? { ...r, size: r.size * k } : r)))}\\par\n`;
+    // (a run with no size of its own is at RTF's default, 12 pt: \\fsN is 24 when not given, RTF 1.9.1)
+    for (const rs of splitParagraphs(runs)) out += `\\pard\\plain\\ql ${await this.runs(k === 1 ? rs : rs.map((r) => ({ ...r, size: (r.size ?? base) * k })))}\\par\n`;
     return out;
   }
 
@@ -715,7 +757,7 @@ class RtfWriter {
       out += '\\row\n';
     }
     out += '\\pard\\plain ';
-    if (tb.notes?.some((r) => r.text)) out += '\n' + await this.tableText(tb.notes, 0.8);
+    if (tb.notes?.some((r) => r.text)) out += '\n' + await this.tableText(tb.notes, 0.8, tb.size ?? 12);
     return out;
   }
 

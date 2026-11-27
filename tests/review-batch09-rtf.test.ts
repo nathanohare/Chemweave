@@ -8,8 +8,9 @@
 
 import { describe, it, expect } from 'vitest';
 import { newDocument, type DocText } from '../src/document/document';
-import { readRtf, writeRtf } from '../src/io/rtf';
+import { readRtf, writeRtf, RTF_PICTURE_NOTE } from '../src/io/rtf';
 import * as rt from '../src/richtext';
+import { listMarkers } from '../src/text/paragraphs';
 import type { ParaStyle, TableData, TextRun } from '../src/model';
 
 const bytes = (s: string) => new TextEncoder().encode(s);
@@ -43,6 +44,22 @@ describe('RTF line breaks and sections (F128, F595)', () => {
     expect(rt.plainText(cell.runs)).toBe('a\nb\nc');
     expect(cell.paras?.map((p) => p.align)).toEqual(['center', 'center', 'right']);
     expect(cell.paras?.[1].soft).toBe(true);
+  });
+
+  it('keeps a list item\'s next line (\\line) in the item, with no number of its own', () => {
+    const src = String.raw`{\rtf1\ansi\pard{\*\pn\pnlvlbody\pndec}One\line more\par\pard{\*\pn\pnlvlbody\pndec}Two\par}`;
+    const { doc: d } = readRtf(bytes(src));
+    expect(rt.plainText(d.runs)).toBe('One\nmore\nTwo');
+    expect(d.paras[1]).toMatchObject({ list: 'number', soft: true, cont: true });
+    expect(listMarkers(d.paras)).toEqual(['1.', null, '2.']);
+  });
+
+  it('starts a new page before a \\pagebb paragraph only, not again at its next line', () => {
+    const src = String.raw`{\rtf1\ansi\pard Intro\par\pard\pagebb Title\line Sub\par}`;
+    const { doc: d } = readRtf(bytes(src));
+    expect(d.paras[1].pageBreak).toBe(true);
+    expect(d.paras[2]).toMatchObject({ soft: true });
+    expect(d.paras[2].pageBreak).toBeUndefined();
   });
 
   it('ends the paragraph at \\sect and starts a new page there', () => {
@@ -79,6 +96,12 @@ describe('RTF endnotes and code pages (F594, F593)', () => {
     expect(rt.plainText(readRtf(bytes(src)).doc.runs)).toBe('café При');
   });
 
+  it('reads \\fcharset0 (ANSI) in the file\'s own code page, not always Windows-1252', () => {
+    // RTF 1.9.1: \fcharset0 is ANSI, the code page \ansicpgN names (here 1251: Привет as in the test above)
+    const src = String.raw`{\rtf1\ansi\ansicpg1251\deff0{\fonttbl{\f0\fcharset0 Arial;}}\f0 \'cf\'f0\'e8\'e2\'e5\'f2\par}`;
+    expect(rt.plainText(readRtf(bytes(src)).doc.runs)).toBe('Привет');
+  });
+
   it('still reads cp1252 bytes from 0x80 to 0x9f as Windows-1252 (0x93 is a left double quote)', () => {
     // Windows-1252: 0x93 “, 0x94 ”, 0x80 €
     const src = String.raw`{\rtf1\ansi\pard \'93\'80\'94\par}`;
@@ -102,6 +125,14 @@ describe('RTF pictures (F129, F596, F597)', () => {
     const t = doc([{ obj: 1, text: '￼' }], [{}], { 1: { kind: 'picture', src: svg, w: 72, h: 72 } });
     const out = text(await writeRtf(t, { svgToPng: async () => PNG }));
     expect(out).toContain('\\pngblip');
+  });
+
+  it('says so when a picture can\'t be made PNG and is left out', async () => {
+    const t = doc([{ obj: 1, text: '￼' }], [{}], { 1: { kind: 'picture', src: GIF, w: 36, h: 36 } });
+    const notes: string[] = [];
+    const out = text(await writeRtf(t, { pictureToPng: async () => null, warn: (n) => notes.push(n) }));
+    expect(out).not.toContain('\\pict');
+    expect(notes).toEqual([RTF_PICTURE_NOTE]);
   });
 
   it('keeps every byte of a picture through save and open', async () => {
@@ -153,6 +184,25 @@ describe('RTF tables (F130, F598)', () => {
     expect(rows[2][0]).toContain('\\clvmrg');
     expect(rows[2][1]).not.toMatch(/\\clv?m(gf|rg)/);
   });
+
+  it('opens the merged cells it saved as merged again', async () => {
+    const t = doc([{ obj: 1, text: '￼' }], [{}], { 1: { kind: 'table', table: table() } });
+    const tb = Object.values(readRtf(await writeRtf(t)).doc.objects).find((o) => o.kind === 'table');
+    if (tb?.kind !== 'table') throw new Error('no table');
+    expect(tb.table.rows.map((r) => r.map((c) => [c.span ?? 1, c.rowSpan ?? 1]))).toEqual([
+      [[2, 1], [1, 1], [1, 1]],
+      [[1, 2], [1, 1], [1, 1]],
+      [[1, 1], [1, 1], [1, 1]],
+    ]);
+    expect(rt.plainText(tb.table.rows[0][0].runs)).toBe('Merged');
+  });
+
+  it('shrinks table notes with no size of their own too (12 pt × 0.8 = 9.6 pt, \\fs19)', async () => {
+    // RTF 1.9.1: \fsN in half points, 24 (12 pt) when not given; 9.6 pt is 19.2 half points, written 19
+    const tb = { ...table(), notes: [{ text: 'b Plain note.' }] };
+    const out = text(await writeRtf(doc([{ obj: 1, text: '￼' }], [{}], { 1: { kind: 'table', table: tb } })));
+    expect(out).toMatch(/\\fs19 b Plain note\./);
+  });
 });
 
 describe('RTF list numbers (F599)', () => {
@@ -162,9 +212,8 @@ describe('RTF list numbers (F599)', () => {
     const paras: ParaStyle[] = [{ list: 'number' }, { list: 'number', level: 1 }, { list: 'number' }];
     const out = text(await writeRtf(doc([{ text: 'one\nsub\ntwo' }], paras)));
     const got = listText(out);
-    expect(got[0]).toBe('1.');
-    expect(got[1]).not.toBe('2.');
-    expect(got[2]).toBe('2.');
+    // the default scheme, 1. a. i. (as Word's default multilevel list)
+    expect(got).toEqual(['1.', 'a.', '2.']);
   });
 
   it('starts a list at its Start At number', async () => {

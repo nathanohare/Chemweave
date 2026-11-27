@@ -94,6 +94,37 @@ describe('Word cross-references and notes (F112, F563)', () => {
     expect(note?.kind === 'note' && rt.plainText(note.runs)).toBe('see Figure 2');
   });
 
+  it('keeps the text Word showed for a cross-reference in a table cell', async () => {
+    const body = `<w:p><w:bookmarkStart w:id="0" w:name="_Ref3"/><w:r><w:t>Scheme 3. Route to the ketone</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>`
+      + `<w:tbl><w:tblGrid><w:gridCol w:w="2000"/></w:tblGrid><w:tr><w:tc><w:p><w:r><w:t xml:space="preserve">as in </w:t></w:r>${REF('_Ref3', 'Scheme 3')}</w:p></w:tc></w:tr></w:tbl>${P('after')}`;
+    const { doc } = await readDocx(wordFile(body));
+    const tb = Object.values(doc.objects).find((o) => o.kind === 'table');
+    expect(tb?.kind === 'table' && rt.plainText(tb.table.rows[0][0].runs)).toBe('as in Scheme 3');
+  });
+
+  it('keeps the text Word showed for a cross-reference in the first section\'s header when a later section has its own', async () => {
+    const hdr = (inner: string) => `<?xml version="1.0"?><w:hdr ${NSS}><w:p>${inner}</w:p></w:hdr>`;
+    const parts = [
+      { path: 'word/header1.xml', type: 'header', xml: hdr(`<w:r><w:t xml:space="preserve">see </w:t></w:r>${REF('_Ref4', 'Chapter One')}`) },
+      { path: 'word/header2.xml', type: 'header', xml: hdr('<w:r><w:t>Part two</w:t></w:r>') },
+    ];
+    const body = `<w:p><w:bookmarkStart w:id="0" w:name="_Ref4"/><w:r><w:t>Chapter One: Methods</w:t></w:r><w:bookmarkEnd w:id="0"/></w:p>`
+      + P('End of one', `<w:sectPr><w:headerReference w:type="default" r:id="${rid(parts, 'word/header1.xml')}"/></w:sectPr>`) + P('Two');
+    const { doc } = await readDocx(wordFile(body, parts, `<w:sectPr><w:headerReference w:type="default" r:id="${rid(parts, 'word/header2.xml')}"/></w:sectPr>`));
+    const shown = doc.hf.bodies?.header ? rt.plainText(doc.hf.bodies.header.runs) : doc.hf.header.join('');
+    expect(shown).toContain('see Chapter One');
+    // (the text Word showed, not a dangling object: the bookmark's paragraph says more than it)
+    expect(JSON.stringify(doc.hf)).not.toContain('"obj"');
+  });
+
+  it('names fields among what was left out of a footnote (a page number)', async () => {
+    const body = '<w:p><w:r><w:t>Text</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>';
+    const page = '<w:r><w:t xml:space="preserve">p. </w:t></w:r><w:r><w:fldChar w:fldCharType="begin"/></w:r><w:r><w:instrText xml:space="preserve"> PAGE </w:instrText></w:r><w:r><w:fldChar w:fldCharType="separate"/></w:r><w:r><w:t>3</w:t></w:r><w:r><w:fldChar w:fldCharType="end"/></w:r>';
+    const { warnings } = await readDocx(wordFile(body, [notes(page)]));
+    const w = warnings.find((x) => /footnotes and endnotes were left out/.test(x));
+    expect(w).toMatch(/page numbers/);
+  });
+
   it('says so when an equation in a footnote is left out', async () => {
     const body = '<w:p><w:r><w:t>Text</w:t></w:r><w:r><w:footnoteReference w:id="1"/></w:r></w:p>';
     const { warnings } = await readDocx(wordFile(body, [notes('<w:r><w:t xml:space="preserve">x is </w:t></w:r><m:oMath><m:r><m:t>x</m:t></m:r></m:oMath>')]));
@@ -123,6 +154,14 @@ describe('Word paragraphs, columns and pictures (F559, F562, F564, F566)', () =>
   it('reads w:dropCap="none" as no drop cap, so the frame\'s alignment stands', async () => {
     const { doc } = await readDocx(wordFile(P('Right', '<w:framePr w:dropCap="none" w:xAlign="right" w:wrap="around" w:vAnchor="text" w:hAnchor="margin"/>')));
     expect(doc.paras[0].align).toBe('right');
+  });
+
+  it('reads a frame with w:dropCap="none" as a frame of paragraphs, as one without it', async () => {
+    // a 3000-twip (150 pt) frame at the right of the margins, text round it (17.3.1.11 framePr)
+    const fr = (extra: string) => P('Boxed', `<w:framePr ${extra}w:w="3000" w:xAlign="right" w:wrap="around" w:vAnchor="text" w:hAnchor="margin"/>`);
+    const plain = (await readDocx(wordFile(fr('')))).doc.paras[0].frame;
+    expect(plain).toMatchObject({ w: 150, align: 'right' });
+    expect((await readDocx(wordFile(fr('w:dropCap="none" ')))).doc.paras[0].frame).toEqual(plain);
   });
 
   it('says so when a section has more than four columns', async () => {

@@ -282,13 +282,14 @@ class DocReader {
 
   /** A run's formatting: its paragraph style's, then its character style's, then its own. */
   private chpAt(c: Chp, para: Pap | undefined): Chp {
-    if (!this.styleChp.length) return overlay({}, c);
-    const istd = para?.istd ?? 0;
+    // (no style sheet: the run's own, worked out once all the same, under one key)
+    const plain = !this.styleChp.length;
+    const istd = plain ? -1 : para?.istd ?? 0;
     let byStyle = this.chpCache.get(c);
     if (!byStyle) { byStyle = new Map(); this.chpCache.set(c, byStyle); }
     let got = byStyle.get(istd);
     if (!got) {
-      got = overlay({ ...this.styleLook(istd), ...defined(this.styleLook(c.istd)) }, c);
+      got = plain ? overlay({}, c) : overlay({ ...this.styleLook(istd), ...defined(this.styleLook(c.istd)) }, c);
       byStyle.set(istd, got);
     }
     return got;

@@ -149,7 +149,7 @@ const WARN = {
   fields: 'Some fields were kept as the text they showed.',
   hidden: 'Hidden text is kept and saved back to Word, but isn\'t shown here.',
   hiddenCells: 'Hidden text in table cells and notes was left out.',
-  noteObjects: 'Pictures, structures, equations and caption numbers inside footnotes and endnotes were left out.',
+  noteObjects: 'Some pictures, structures, equations, fields (such as page numbers and caption numbers) and other objects inside footnotes and endnotes were left out.',
   manyColumns: 'Sections with more than four columns are shown as one column.',
   pictureKinds: 'Some pictures are in a format that can\'t be shown here, or their file is missing, and were left out.',
   moves: 'Text moved while changes were tracked, without a name for the move, shows as a deletion and an insertion.',
@@ -318,6 +318,8 @@ class DocxReader {
   private sects: Element[] = [];
   /** The header and footer of the section read last (a section without its own links to it). */
   private lastHf: HeaderFooter = defaultHeaderFooter();
+  /** The first section's header and footer (the document's own). */
+  private firstHf: HeaderFooter | null = null;
   /** The bibliography bookmark open, and the one met in the paragraph being read. */
   private bibOpen: string | null = null;
   private bibMet: string | null = null;
@@ -404,6 +406,7 @@ class DocxReader {
     this.docBorder = this.pageBorderOf(first);
     const hf = this.readHeaderFooter(first).hf;
     this.lastHf = hf;
+    this.firstHf = hf;
     this.blocks(kids(body));
     this.trackedOthers(root);
     this.resolveRefs();
@@ -506,7 +509,6 @@ class DocxReader {
     return v === null || !/^(0|false|off|none)$/i.test(v);
   }
 
-  /** A measure in twentieths of a point, in points. */
   /**
    * A cell's width (w:tcW) in points: twentieths of a point (dxa, or no type), or a share of the
    * text's width (pct: fiftieths of a percent, or "50%"; ECMA-376 part 1, 17.18.107 ST_TblWidth).
@@ -522,6 +524,7 @@ class DocxReader {
     return this.textW * (v.trim().endsWith('%') ? n / 100 : n / 5000);
   }
 
+  /** A measure in twentieths of a point, in points. */
   private tw(el: Element | null | undefined, name: string): number | undefined {
     const v = this.a(el, name);
     if (v === null) return undefined;
@@ -2699,6 +2702,7 @@ class DocxReader {
     };
     walk(this.objects);
     walk(this.out.map((p) => p.ps.section));
+    walk(this.firstHf);
     walk(this.lastHf);
   }
 
@@ -4264,21 +4268,22 @@ export function isClearPara(p: Element): boolean {
   return rk.length === 1 && rk[0].localName === 'br' && at(rk[0], 'type') === 'textWrapping' && at(rk[0], 'clear') === 'all';
 }
 
+/** Is a framePr's w:dropCap a drop cap (ST_DropCap: none, drop, margin)? */
+const isDropCap = (v: string | null | undefined): boolean => v === 'drop' || v === 'margin';
+
 /**
  * A text frame (w:framePr) read as a frame of paragraphs (ParaStyle.frame): one of a set width at
  * the left, center or right of the margins, its top at its paragraph, with the text round it or
  * above and below it. Others (drop caps, frames placed on the page or at a set place, of a set
  * height) are kept as Word had them (undefined).
  */
-/** Is a framePr's w:dropCap a drop cap (ST_DropCap: none, drop, margin)? */
-const isDropCap = (v: string | null | undefined): boolean => v === 'drop' || v === 'margin';
-
 export function frameOf(fr: Element | null | undefined, a: (name: string) => string | null): ParaStyle['frame'] {
   if (!fr) return undefined;
   // (only the properties written for one: any other is the file's own frame)
-  if (!Array.from(fr.attributes).every((x) => x.name.startsWith('xmlns') || FRAME_ATTRS.has(x.localName))) return undefined;
+  // (and w:dropCap="none", which is no drop cap: ST_DropCap, 17.18.20)
+  if (!Array.from(fr.attributes).every((x) => x.name.startsWith('xmlns') || FRAME_ATTRS.has(x.localName) || (x.localName === 'dropCap' && x.value === 'none'))) return undefined;
   const w = parseFloat(a('w') ?? ''), wrap = a('wrap'), align = a('xAlign'), y = a('y');
-  if (!(w > 0) || a('dropCap') || a('h') || a('yAlign') || (y && parseFloat(y) !== 0) || a('x')) return undefined;
+  if (!(w > 0) || isDropCap(a('dropCap')) || a('h') || a('yAlign') || (y && parseFloat(y) !== 0) || a('x')) return undefined;
   if (a('vAnchor') !== 'text' || a('hAnchor') !== 'margin') return undefined;
   if (wrap !== 'around' && wrap !== 'notBeside') return undefined;
   if (align !== 'left' && align !== 'center' && align !== 'right') return undefined;
@@ -4315,7 +4320,6 @@ function runChar(e: Element): string {
   }
 }
 
-/** The text of the runs inside an element (w:t, and the hyphens Word writes as elements of their own). */
 /** Is a character style (a run's cstyle) used anywhere in this (runs, comments, headers, objects' text)? */
 function hasCharStyle(v: unknown, id: string, seen = new WeakSet<object>()): boolean {
   if (!v || typeof v !== 'object' || seen.has(v)) return false;
@@ -4326,7 +4330,7 @@ function hasCharStyle(v: unknown, id: string, seen = new WeakSet<object>()): boo
   return false;
 }
 
-/** The text of the runs in an element; with `breaks` its tabs and line breaks too (a citation's shown text has none). */
+/** The text of the runs in an element (w:t, and the hyphens Word writes as elements of their own); with `breaks` its tabs and line breaks too (a citation's shown text has none). */
 function runsText(el: Element | null, breaks = false): string {
   if (!el) return '';
   return Array.from(el.getElementsByTagNameNS('*', '*')).filter((e) => breaks || (e.localName !== 'tab' && e.localName !== 'br')).map(runChar).join('');
