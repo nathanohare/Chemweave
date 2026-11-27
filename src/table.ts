@@ -222,8 +222,11 @@ export function tableRules(t: TableData, lay: TableLayout): { x1: number; y1: nu
   for (let r = 0; r < head; r++) {
     for (let c = 0; c < t.cols.length; c++) {
       const span = spanOf(t, r, c);
-      if (span < 2 || isCovered(t, r, c) || r + 1 === head) continue;
-      h(ys[r + 1], xs[c] + lay.padX, xs[c + span] - lay.padX);
+      if (span < 2 || isCovered(t, r, c)) continue;
+      // under the cell's last row (a heading merged down covers several), unless that is the rule under the headings
+      const bottom = r + rowSpanOf(t, r, c);
+      if (bottom >= head) continue;
+      h(ys[bottom], xs[c] + lay.padX, xs[c + span] - lay.padX);
     }
   }
   return out;
@@ -431,6 +434,11 @@ export function deleteRow(t: TableData, r: number): TableData {
   return { ...t, rows, head: r < t.head ? t.head - 1 : t.head, ...rowHeights(t, (h) => h.splice(r, 1)) };
 }
 
+/** Each column's alignment as drawn: the table's own, else the first column left and the others centred. */
+function defaultAligns(t: TableData): Justify[] {
+  return t.cols.map((_, k) => t.align?.[k] ?? (k === 0 ? 'left' : 'center'));
+}
+
 export function insertColumn(t: TableData, at: number, width = t.cols[Math.max(0, Math.min(at, t.cols.length - 1))] ?? 60): TableData {
   const cols = [...t.cols];
   cols.splice(at, 0, width);
@@ -444,8 +452,10 @@ export function insertColumn(t: TableData, at: number, width = t.cols[Math.max(0
     out.splice(at, 0, emptyCell());
     return out;
   });
-  const align = t.align ? [...t.align] : undefined;
-  align?.splice(at, 0, 'center');
+  // (column alignments not set yet are the defaults, the first column left and the rest centred: written out
+  // first, or the old first column would move to the second place and change from left to centred)
+  const align = defaultAligns(t);
+  align.splice(at, 0, 'center');
   return { ...t, cols, rows, align };
 }
 
@@ -463,7 +473,7 @@ export function deleteColumn(t: TableData, c: number): TableData {
     out.splice(c, 1);
     return out.map((cell) => (cell.span === undefined && cell.rowSpan === undefined ? cell : tidySpan(cell)));
   });
-  const align = t.align?.filter((_, k) => k !== c);
+  const align = defaultAligns(t).filter((_, k) => k !== c);
   return { ...t, cols: t.cols.filter((_, k) => k !== c), rows, align };
 }
 

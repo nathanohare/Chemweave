@@ -330,7 +330,13 @@ export function firstBend(r: Path): number {
 export function shapeOf(r: Path): ArrowShape | null {
   const b = r.bez;
   if (!b?.length) return 'single';
-  if (b.length === 2) return Math.sign(b[0].y) === Math.sign(b[1].y) ? 'u' : 's';
+  if (b.length === 2) {
+    // bending to both sides is an S (it takes other forms where it was bent round atoms); bending to one side is a U-turn
+    // only as made: with a handle dragged it is a path of its own
+    if (Math.sign(b[0].y) !== Math.sign(b[1].y)) return 's';
+    const u = shapeBez('u', b[0].y >= 0 ? 1 : -1);
+    return b.every((q, i) => dist(q, u[i]) < 1e-6) ? 'u' : null;
+  }
   // a loop as made, not reshaped since
   const loop = shapeBez('loop', b[0].y >= 0 ? 1 : -1);
   return b.length === loop.length && b.every((q, i) => dist(q, loop[i]) < 1e-6) ? 'loop' : null;

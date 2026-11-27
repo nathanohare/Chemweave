@@ -28,11 +28,21 @@ const MAX_UNPACKED: u64 = 64 << 30;
 /// Files that are compressed already are stored as they are: compressing them again only takes time.
 const STORED: &[&str] = &["pdf", "png", "jpg", "jpeg", "gif", "zip", "docx", "xlsx", "pptx", "7z", "gz", "mp4", "tif", "tiff", "webp", "chemsi", "cdx"];
 
-/// Where unpacked project files are worked on (the app's own data folder).
+/// Where unpacked project files are worked on: the "Chemweave Data" folder of a portable copy
+/// (the work, which can be unpublished, stays on the stick and not on the computer it is plugged
+/// into), otherwise the app's own data folder.
 fn working_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     use tauri::Manager;
+    if let Some(dir) = working_root_in(crate::portable::settings_folder(), None) {
+        return Ok(dir);
+    }
     let dir = app.path().app_local_data_dir().map_err(|e| format!("No data folder: {e}"))?;
-    Ok(dir.join("si-working"))
+    working_root_in(None, Some(&dir)).ok_or_else(|| "No data folder.".to_string())
+}
+
+/// The working root for a portable copy's data folder if it has one, else inside the app's data folder.
+fn working_root_in(portable: Option<&Path>, local: Option<&Path>) -> Option<PathBuf> {
+    portable.or(local).map(|d| d.join("si-working"))
 }
 
 /// Whether a path has no "." or ".." in it.
@@ -375,6 +385,15 @@ mod tests {
         let d = std::env::temp_dir().join(format!("ci-si-file-{tag}-{}", fresh_id()));
         std::fs::create_dir_all(&d).unwrap();
         d
+    }
+
+    #[test]
+    fn a_portable_copys_working_copies_stay_in_its_data_folder() {
+        let stick = Path::new("/media/stick/Chemweave Data");
+        let local = Path::new("/home/me/.local/share/app");
+        assert_eq!(working_root_in(Some(stick), Some(local)), Some(stick.join("si-working")));
+        assert_eq!(working_root_in(None, Some(local)), Some(local.join("si-working")));
+        assert_eq!(working_root_in(None, None), None);
     }
 
     #[test]

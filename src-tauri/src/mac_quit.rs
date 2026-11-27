@@ -28,12 +28,6 @@ extern "C-unwind" fn should_terminate(_delegate: &AnyObject, _sel: Sel, _app: &A
     let Some(window) = app.get_webview_window("main") else {
         return NOW;
     };
-    // (a slide show's audience window, or the app would stay open behind the main one)
-    for (label, other) in app.webview_windows() {
-        if label != "main" {
-            let _ = other.destroy();
-        }
-    }
     // (the question about unsaved work has to be seen)
     let _ = window.unminimize();
     let _ = window.show();
@@ -43,6 +37,17 @@ extern "C-unwind" fn should_terminate(_delegate: &AnyObject, _sel: Sel, _app: &A
     }
     WAITING.store(true, Ordering::SeqCst);
     LATER
+}
+
+/// A slide show's audience window, or the app would stay open behind the main one. Closed only
+/// once the quit is certain (the main window has gone): if the person cancels, the show goes on.
+fn close_other_windows() {
+    let Some(app) = APP.get() else { return };
+    for (label, other) in app.webview_windows() {
+        if label != "main" {
+            let _ = other.destroy();
+        }
+    }
 }
 
 /// Answer a waiting quit (on the main thread).
@@ -67,6 +72,9 @@ pub fn install(app: &AppHandle) {
     if let Some(window) = app.get_webview_window("main") {
         window.on_window_event(|event| {
             if matches!(event, WindowEvent::Destroyed) {
+                if WAITING.load(Ordering::SeqCst) {
+                    close_other_windows();
+                }
                 answer(true);
             }
         });

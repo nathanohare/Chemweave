@@ -41,8 +41,10 @@ fn selftest_report(app: tauri::AppHandle, report: String, ok: bool) {
     app.exit(if ok { 0 } else { 1 });
 }
 
-/// Read a file the user chose in an Open dialog.
-#[tauri::command]
+/// Read a file the user chose in an Open dialog. (The four file commands here run off the main
+/// thread, `async`: a big file, a slow or network disk or a sync program holding the file up
+/// would otherwise freeze the whole window until it is done.)
+#[tauri::command(async)]
 fn read_text_file(app: tauri::AppHandle, path: String) -> Result<String, String> {
     ai::guard_key_file(&app, &path)?;
     std::fs::read_to_string(&path).map_err(|e| format!("Could not read {path}: {e}"))
@@ -50,7 +52,7 @@ fn read_text_file(app: tauri::AppHandle, path: String) -> Result<String, String>
 
 /// Save a file the user chose. The text goes to a temporary file next to it first, so a
 /// failed save (full disk, lost network drive) never leaves a half-written drawing.
-#[tauri::command]
+#[tauri::command(async)]
 fn write_text_file(app: tauri::AppHandle, path: String, contents: String) -> Result<(), String> {
     ai::guard_key_file(&app, &path)?;
     write_bytes(&path, contents.as_bytes())
@@ -90,7 +92,7 @@ fn file_held(path: String) -> bool {
 }
 
 /// Read a file the user chose, as bytes (PowerPoint files, CDX drawings, pictures).
-#[tauri::command]
+#[tauri::command(async)]
 fn read_binary_file(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
     ai::guard_key_file(&app, &path)?;
     std::fs::read(&path)
@@ -100,7 +102,7 @@ fn read_binary_file(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::R
 
 /// Save bytes to a file the user chose. The page sends the bytes as they are, with the path
 /// in a "path" header (percent-encoded, since headers only carry plain ASCII).
-#[tauri::command]
+#[tauri::command(async)]
 fn write_binary_file(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected the file's bytes".into());
@@ -258,6 +260,9 @@ async fn portable_install_update(app: tauri::AppHandle, channel: Option<String>,
         .map_err(|e| e.to_string())?;
     let exe = std::env::current_exe().map_err(|e| format!("Could not find the running app: {e}"))?;
     portable::swap_in(&exe, &bytes)?;
+    // let go of the single-instance lock first: the new copy would otherwise find this one still
+    // holding it, hand its start over to it and quit, and this one then exits too
+    tauri_plugin_single_instance::destroy(&app);
     std::process::Command::new(&exe)
         .spawn()
         .map_err(|e| format!("The new version is in place but didn't start ({e}); open it again."))?;
@@ -371,13 +376,20 @@ fn keep_on_screen(w: &tauri::WebviewWindow) {
     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
+/// Whether a window's size changes are watched for being restored from maximised: only the main
+/// window, not the slide show's full screen audience window (which covers its whole screen).
+#[cfg(any(desktop, test))]
+fn watches_maximised(label: &str) -> bool {
+    label == "main"
+}
+
 /// Whether the main window was maximised when last resized (a restore is a resize from maximised).
 #[cfg(desktop)]
 static WAS_MAXIMISED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
 mod tests {
-    use super::{kept_inside, percent_decode};
+    use super::{kept_inside, percent_decode, watches_maximised};
 
     #[test]
     fn keeps_a_window_on_its_screen() {
@@ -390,6 +402,14 @@ mod tests {
         assert_eq!(kept_inside((-300, 200, 1000, 700), area, 16), Some((0, 120, 1000, 700)));
         // a screen that starts to the right of another
         assert_eq!(kept_inside((100, 100, 800, 600), (1920, 0, 1389, 820), 16), Some((1920, 100, 800, 600)));
+    }
+
+    #[test]
+    fn only_the_main_window_is_kept_on_screen_when_restored() {
+        assert!(watches_maximised("main"));
+        // the slide show's audience window is full screen, outside the work area by the taskbar's height
+        assert!(!watches_maximised("audience"));
+        assert!(!watches_maximised(""));
     }
 
     #[test]
@@ -519,6 +539,9 @@ pub fn run() {
             #[cfg(desktop)]
             if let tauri::WindowEvent::Resized(_) = _event {
                 use std::sync::atomic::Ordering;
+                if !watches_maximised(_window.label()) {
+                    return;
+                }
                 let Some(w) = tauri::Manager::get_webview_window(_window, _window.label()) else { return };
                 let max = w.is_maximized().unwrap_or(false);
                 let was = WAS_MAXIMISED.swap(max, Ordering::Relaxed);

@@ -74,6 +74,16 @@ fn command(exe: &str) -> Command {
     c
 }
 
+/// What is said when a run is stopped for taking too long: the conformer limit is spoken of as
+/// that, a shorter one (the check that the chosen program is xtb) is not.
+fn too_long(limit: Duration) -> String {
+    if limit >= LIMIT {
+        "xtb took more than 15 minutes on one conformer, so it was stopped.".to_string()
+    } else {
+        "That program didn't answer, so it was stopped.".to_string()
+    }
+}
+
 /// Runs a command to the end (or the time limit, or Stop), returning its standard output.
 fn run_to_end(mut c: Command, limit: Duration) -> Result<String, String> {
     let stop_at = STOP.load(Ordering::SeqCst);
@@ -114,7 +124,7 @@ fn run_to_end(mut c: Command, limit: Duration) -> Result<String, String> {
                 if start.elapsed() > limit {
                     let _ = child.kill();
                     let _ = child.wait();
-                    return Err("xtb took more than 15 minutes on one conformer, so it was stopped.".into());
+                    return Err(too_long(limit));
                 }
                 std::thread::sleep(Duration::from_millis(100));
             }
@@ -228,6 +238,19 @@ mod tests {
         xtb_stop();
         assert_eq!(t.join().unwrap(), Err("stopped".to_string()));
         assert!(start.elapsed() < Duration::from_secs(5));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_program_that_does_not_answer_the_version_check_is_not_blamed_on_a_conformer() {
+        let run = || {
+            let mut c = Command::new("sleep");
+            c.arg("30");
+            run_to_end(c, Duration::from_millis(300))
+        };
+        let got = match run() { Err(e) if e == "stopped" => run(), r => r };
+        assert_eq!(got, Err("That program didn't answer, so it was stopped.".to_string()));
+        assert!(too_long(LIMIT).contains("15 minutes"));
     }
 
     #[cfg(unix)]

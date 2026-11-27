@@ -158,6 +158,35 @@ pub fn file_types_defaults() -> Result<(), String> {
     }
 }
 
+/// What each registered type's "open" command is set to: this app, with the file.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn open_command(exe: &str) -> String {
+    format!("\"{exe}\" \"%1\"")
+}
+
+/// What `refresh` should write at start, or None to leave the computer's file types alone.
+/// A portable copy never touches them (it runs from a stick and its path would be left behind: the
+/// person checks the types in Settings if they want them). Otherwise the types registered now are
+/// written again only when one of them no longer points at this copy (`stale`), or when the own
+/// types are being registered for the first time (`own_done` false), so a start that changes
+/// nothing doesn't make Windows throw away its icon caches and repaint every folder window.
+/// Gives the types to write and whether the own types are being registered now.
+#[cfg_attr(not(any(windows, test)), allow(dead_code))]
+fn refresh_plan(portable: bool, own_done: bool, registered: &[String], stale: impl Fn(&str) -> bool) -> Option<(Vec<String>, bool)> {
+    if portable {
+        return None;
+    }
+    let mut types = registered.to_vec();
+    let first = !own_done;
+    if first && !types.iter().any(|t| t == "chemsi") {
+        types.push("chemsi".to_string());
+    }
+    if types.is_empty() || !(first || types.iter().any(|t| stale(t))) {
+        return None;
+    }
+    Some((types, first))
+}
+
 /// At start: point registered types at this copy of the app (it may have moved or been updated).
 /// SI project files (.chemsi) are Chemweave's own type, which no other program uses, so the first
 /// start of a version that knows them registers them and makes Chemweave open them on a
@@ -165,15 +194,9 @@ pub fn file_types_defaults() -> Result<(), String> {
 pub fn refresh() {
     #[cfg(windows)]
     {
-        let mut now = win::registered();
-        let mut changed = false;
-        if !win::exists(win::OWN_DONE, Some("chemsi")) {
-            if !now.iter().any(|t| t == "chemsi") {
-                now.push("chemsi".to_string());
-            }
-            changed = true;
-        }
-        if !now.is_empty() && win::set(&now).is_ok() && changed {
+        let own_done = win::exists(win::OWN_DONE, Some("chemsi"));
+        let Some((types, first)) = refresh_plan(crate::portable::get().is_some(), own_done, &win::registered(), win::is_stale) else { return };
+        if win::set(&types).is_ok() && first {
             let _ = win::set_string(win::OWN_DONE, Some("chemsi"), "1");
         }
     }
@@ -185,7 +208,7 @@ pub(crate) mod win {
     use std::ffi::c_void;
     use windows_sys::Win32::Foundation::ERROR_SUCCESS;
     use windows_sys::Win32::System::Registry::{
-        RegDeleteKeyValueW, RegDeleteTreeW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_ANY,
+        RegDeleteKeyValueW, RegDeleteTreeW, RegGetValueW, RegSetKeyValueW, HKEY_CURRENT_USER, REG_SZ, RRF_RT_ANY, RRF_RT_REG_SZ,
     };
     use windows_sys::Win32::UI::Shell::{SHChangeNotify, SHCNE_ASSOCCHANGED, SHCNF_IDLIST};
 
@@ -247,6 +270,26 @@ pub(crate) mod win {
         r == ERROR_SUCCESS
     }
 
+    /// A text value from the registry, if it is there.
+    pub(crate) fn read_string(key: &str, name: Option<&str>) -> Option<String> {
+        let k = wide(key);
+        let n = name.map(wide);
+        let np = n.as_ref().map_or(std::ptr::null(), |n| n.as_ptr());
+        let mut size: u32 = 0;
+        let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), np, RRF_RT_REG_SZ, std::ptr::null_mut(), std::ptr::null_mut(), &mut size) };
+        if r != ERROR_SUCCESS {
+            return None;
+        }
+        let mut buf = vec![0u16; size as usize / 2 + 1];
+        let mut size = (buf.len() * 2) as u32;
+        let r = unsafe { RegGetValueW(HKEY_CURRENT_USER, k.as_ptr(), np, RRF_RT_REG_SZ, std::ptr::null_mut(), buf.as_mut_ptr() as *mut c_void, &mut size) };
+        if r != ERROR_SUCCESS {
+            return None;
+        }
+        let end = buf.iter().position(|&c| c == 0).unwrap_or(buf.len());
+        Some(String::from_utf16_lossy(&buf[..end]))
+    }
+
     pub(crate) fn delete_tree(key: &str) {
         let k = wide(key);
         unsafe { RegDeleteTreeW(HKEY_CURRENT_USER, k.as_ptr()) };
@@ -266,6 +309,15 @@ pub(crate) mod win {
             .collect()
     }
 
+    /// A type's open command or icon in the registry is not what this copy would write now.
+    pub fn is_stale(ext: &str) -> bool {
+        let Ok(exe_path) = std::env::current_exe() else { return true };
+        let class = format!(r"Software\Classes\{}", prog_id(ext));
+        let icon = super::default_icon(ext, &exe_path, super::icon_folder().as_deref());
+        read_string(&format!(r"{class}\shell\open\command"), None).as_deref() != Some(super::open_command(&exe_path.to_string_lossy()).as_str())
+            || read_string(&format!(r"{class}\DefaultIcon"), None).as_deref() != Some(icon.as_str())
+    }
+
     pub fn set(types: &[String]) -> Result<(), String> {
         let exe_path = std::env::current_exe().map_err(|e| format!("Could not find the app: {e}"))?;
         let exe = exe_path.to_string_lossy();
@@ -278,7 +330,7 @@ pub(crate) mod win {
                 any = true;
                 set_string(&class, None, what)?;
                 set_string(&format!(r"{class}\DefaultIcon"), None, &super::default_icon(ext, &exe_path, icons.as_deref()))?;
-                set_string(&format!(r"{class}\shell\open\command"), None, &format!("\"{exe}\" \"%1\""))?;
+                set_string(&format!(r"{class}\shell\open\command"), None, &super::open_command(&exe))?;
                 set_string(&format!(r"Software\Classes\.{ext}\OpenWithProgids"), Some(&id), "")?;
                 set_string(&format!(r"{CAPABILITIES}\FileAssociations"), Some(&format!(".{ext}")), &id)?;
                 if OWN.contains(ext) {
@@ -317,7 +369,36 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_icon, files_in, OWN_ICONS};
+    use super::{default_icon, files_in, open_command, refresh_plan, OWN_ICONS};
+
+    fn v(types: &[&str]) -> Vec<String> {
+        types.iter().map(|t| t.to_string()).collect()
+    }
+
+    #[test]
+    fn a_portable_copy_leaves_the_computers_file_types_alone() {
+        // first start, chemsi not yet registered, one type registered and stale: still nothing
+        assert_eq!(refresh_plan(true, false, &v(&["cdxml"]), |_| true), None);
+        assert_eq!(refresh_plan(true, true, &v(&["cdxml"]), |_| true), None);
+    }
+
+    #[test]
+    fn registered_types_are_written_again_only_when_something_changed() {
+        // nothing moved: no write (and so no association change broadcast)
+        assert_eq!(refresh_plan(false, true, &v(&["cdxml", "chemsi"]), |_| false), None);
+        // the app moved: every registered type is pointed at it again
+        assert_eq!(refresh_plan(false, true, &v(&["cdxml", "chemsi"]), |t| t == "cdxml"), Some((v(&["cdxml", "chemsi"]), false)));
+        // nothing registered and nothing to add: nothing to do
+        assert_eq!(refresh_plan(false, true, &[], |_| true), None);
+        // the first start that knows .chemsi registers it, once, along with what was registered
+        assert_eq!(refresh_plan(false, false, &v(&["docx"]), |_| false), Some((v(&["docx", "chemsi"]), true)));
+        assert_eq!(refresh_plan(false, false, &v(&["chemsi"]), |_| false), Some((v(&["chemsi"]), true)));
+    }
+
+    #[test]
+    fn the_open_command_quotes_the_app_and_the_file() {
+        assert_eq!(open_command(r"C:\Program Files\Chemweave\Chemweave.exe"), "\"C:\\Program Files\\Chemweave\\Chemweave.exe\" \"%1\"");
+    }
 
     #[test]
     fn a_type_with_its_own_icon_gets_it_written_out() {

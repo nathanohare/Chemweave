@@ -68,6 +68,21 @@ export function enlargeText(doc: Doc, issue: PreflightIssue, ctx: FixContext): b
   return changed;
 }
 
+/**
+ * Whether an arrow's or shape's own line (width `w`, in `box`) is among the thin places, marking
+ * each as its own in `used`: every one of its width that it covers, not only the first (any left
+ * unmarked would be taken for bonds and thicken the drawing's line width), and none of another
+ * width (bonds under a shape drawn round a structure). Where none is of its width, the first it
+ * covers.
+ */
+function claimThin(where: Rect[], sizes: number[], want: number, box: Rect, w: number, used: Set<number>): boolean {
+  const thin = where.map((_, i) => i).filter((i) => overlaps(where[i], box) && sizes[i] < want);
+  if (!thin.length) return false;
+  const own = thin.filter((i) => Math.abs(sizes[i] - w) <= 0.02);
+  for (const i of own.length ? own : thin.slice(0, 1)) used.add(i);
+  return true;
+}
+
 /** Thicken the lines a finding found too thin. True when anything changed. */
 export function thickenLines(doc: Doc, issue: PreflightIssue, ctx: FixContext): boolean {
   const where = issue.where ?? [], sizes = issue.sizes ?? [], want = issue.want ?? 0;
@@ -79,15 +94,16 @@ export function thickenLines(doc: Doc, issue: PreflightIssue, ctx: FixContext): 
       const pts = [a.tail, a.head];
       const box = grow({ x1: Math.min(...pts.map((p) => p.x)), y1: Math.min(...pts.map((p) => p.y)), x2: Math.max(...pts.map((p) => p.x)), y2: Math.max(...pts.map((p) => p.y)) }, a.headWidth + 2);
       const w = a.lineWidth ?? doc.style.lineWidth;
-      const hit = where.some((r, i) => { const h = overlaps(r, box) && sizes[i] < want; if (h) used.add(i); return h; });
-      if (hit && w < want) { doc.updateArrow(a.id, { lineWidth: round2(want) }); changed = true; }
+      // (an arrow already thick enough owns none of the thin places: they are bonds under it)
+      if (w >= want) continue;
+      if (claimThin(where, sizes, want, box, w, used)) { doc.updateArrow(a.id, { lineWidth: round2(want) }); changed = true; }
     }
     for (const s of [...doc.shapes.values()]) {
       if (s.hidden || s.locked || s.lineWidth === 0) continue;
       const box = grow(ctx.shapeBox(s.id), 1);
-      const hit = where.some((r, i) => { const h = overlaps(r, box) && sizes[i] < want; if (h) used.add(i); return h; });
       const w = s.lineWidth ?? doc.style.lineWidth;
-      if (hit && w < want) { doc.updateShape(s.id, { lineWidth: round2(want) }); changed = true; }
+      if (w >= want) continue;
+      if (claimThin(where, sizes, want, box, w, used)) { doc.updateShape(s.id, { lineWidth: round2(want) }); changed = true; }
     }
     // the rest are the structures' bonds: the drawing's line width grows
     let f = 1;

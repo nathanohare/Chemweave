@@ -64,6 +64,12 @@ function firstWords(s: string, max = 60): string {
   return `${(sp > 30 ? cut.slice(0, sp) : cut).trimEnd()}…`;
 }
 
+/** The first `n` characters of `s`, without a half of a surrogate pair at the end (encodeURIComponent throws on one). */
+function cutAt(s: string, n: number): string {
+  const t = s.slice(0, n);
+  return /[\uD800-\uDBFF]$/.test(t) ? t.slice(0, -1) : t;
+}
+
 /**
  * The address of GitHub's New Issue page with the title and text filled in. Browsers and GitHub
  * refuse very long addresses, so text past `maxLength` characters is cut, with a note saying so
@@ -80,11 +86,10 @@ export function issueUrl(issue: Issue, maxLength = 7000): { url: string; cut: bo
   let lo = 0, hi = body.length;
   while (lo < hi) {
     const mid = Math.ceil((lo + hi) / 2);
-    if (encodeURIComponent(body.slice(0, mid)).length <= room) lo = mid; else hi = mid - 1;
+    if (encodeURIComponent(cutAt(body, mid)).length <= room) lo = mid; else hi = mid - 1;
   }
-  body = body.slice(0, lo);
-  // don't split a surrogate pair
-  if (/[\uD800-\uDBFF]$/.test(body)) body = body.slice(0, -1);
+  // (never between the two halves of a surrogate pair)
+  body = cutAt(body, lo);
   return { url: base + encodeURIComponent(body + note), cut: true };
 }
 
@@ -147,6 +152,7 @@ export async function sendReport(report: RelayReport, relay = RELAY_URL, fetcher
   const stop = new AbortController();
   const timer = setTimeout(() => stop.abort(), timeoutMs);
   let res: Response;
+  let out: Partial<Sent> & { error?: string } = {};
   try {
     res = await fetcher(`${relay.replace(/\/$/, '')}/feedback`, {
       method: 'POST',
@@ -154,12 +160,13 @@ export async function sendReport(report: RelayReport, relay = RELAY_URL, fetcher
       body: JSON.stringify(report),
       signal: stop.signal,
     });
+    // (the time limit covers the answer's text too: one that stalls after its first bytes ends here)
+    try { out = await res.json() as typeof out; } catch { if (stop.signal.aborted) throw new Error('timed out'); }
   } catch {
     throw new Error('Couldn’t send (no internet connection?). Your text is kept: try again, or Copy Text to send it another way.');
   } finally {
     clearTimeout(timer);
   }
-  const out = await res.json().catch(() => ({})) as Partial<Sent> & { error?: string };
   if (!res.ok || typeof out.number !== 'number') throw new Error(out.error || `Couldn’t send (the feedback service answered ${res.status}). Your text is kept: try again later, or Copy Text.`);
   return { number: out.number, visibility: out.visibility === 'public' ? 'public' : 'private', url: out.url };
 }
@@ -169,7 +176,7 @@ export function mailUrl(issue: Issue, to = FEEDBACK_EMAIL, maxLength = 1800): st
   const text = feedbackText(issue).split('\n').slice(2).join('\n');
   const base = `mailto:${encodeURIComponent(to).replace(/%40/g, '@')}?subject=${encodeURIComponent(issue.title)}&body=`;
   let body = text;
-  while (body && (base + encodeURIComponent(body)).length > maxLength) body = body.slice(0, Math.floor(body.length * 0.9));
+  while (body && (base + encodeURIComponent(body)).length > maxLength) body = cutAt(body, Math.floor(body.length * 0.9));
   if (body.length < text.length) body = `${body.trimEnd()}\n\n(cut short: use Copy Text in Chemweave for the rest)`;
   return base + encodeURIComponent(body);
 }
