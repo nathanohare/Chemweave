@@ -267,17 +267,17 @@ export function buildTextBar(bar: HTMLElement, ops: TextBarOps, opts: TextBarOpt
   button(g, 'number', svg('<text x="0" y="5" font-size="5.5" font-family="Arial">1</text><text x="0" y="10" font-size="5.5" font-family="Arial">2</text><text x="0" y="15" font-size="5.5" font-family="Arial">3</text><rect x="6" y="2" width="9" height="1.6"/><rect x="6" y="7" width="9" height="1.6"/><rect x="6" y="12" width="9" height="1.6"/>'),
     'Numbering', () => run({ kind: 'list', list: 'number' }));
   button(g, 'outdent', svg('<rect x="1" y="2" width="14" height="1.6"/><rect x="7" y="6" width="8" height="1.6"/><rect x="7" y="10" width="8" height="1.6"/><rect x="1" y="14" width="14" height="1.6"/><path d="M5 6.5v4.5L1.5 8.75z"/>'),
-    'Less indent (Shift+Tab)', () => run({ kind: 'indent', by: -1 }));
+    'Decrease Indent (Shift+Tab)', () => run({ kind: 'indent', by: -1 }));
   button(g, 'indent', svg('<rect x="1" y="2" width="14" height="1.6"/><rect x="7" y="6" width="8" height="1.6"/><rect x="7" y="10" width="8" height="1.6"/><rect x="1" y="14" width="14" height="1.6"/><path d="M1.5 6.5v4.5L5 8.75z"/>'),
-    'More indent (Tab)', () => run({ kind: 'indent', by: 1 }));
+    'Increase Indent (Tab)', () => run({ kind: 'indent', by: 1 }));
   button(g, 'spacing', svg('<rect x="7" y="2" width="8" height="1.6"/><rect x="7" y="7.2" width="8" height="1.6"/><rect x="7" y="12.4" width="8" height="1.6"/><path d="M3 1l2.5 3h-5zM3 15l2.5-3h-5z"/><rect x="2.4" y="3.5" width="1.2" height="9"/>'),
-    'Line and paragraph spacing, text box width', panel(spacing, symbols, 'spacing'));
+    'Line and Paragraph Spacing, Text Box Width', panel(spacing, symbols, 'spacing'));
 
   if (prows) into = prows[1];
   g = group();
   button(g, 'link', svg('<path d="M6.6 9.4a.8.8 0 0 1 0-1.1l1.7-1.7a.8.8 0 1 1 1.1 1.1L7.7 9.4a.8.8 0 0 1-1.1 0z"/><path d="M8.9 3.2a3 3 0 0 1 4.2 4.2l-1.6 1.6a.8.8 0 1 1-1.1-1.1L12 6.3a1.4 1.4 0 0 0-2-2L8.4 5.9a.8.8 0 1 1-1.1-1.1zM4 9.7l1.6-1.6a.8.8 0 1 1 1.1 1.1L5.1 10.8a1.4 1.4 0 0 0 2 2l1.6-1.6a.8.8 0 1 1 1.1 1.1l-1.6 1.6a3 3 0 0 1-4.2-4.2z"/>'),
     'Link to a web page, DOI, file or slide (Ctrl+K)', () => ops.link());
-  button(g, 'symbols', '<span aria-hidden="true">αΩ</span>', 'Greek letters and symbols', panel(symbols, spacing, 'symbols'));
+  button(g, 'symbols', '<span aria-hidden="true">αΩ</span>', 'Symbol', panel(symbols, spacing, 'symbols'));
   for (const row of TEXT_SYMBOL_ROWS) {
     const r = d.createElement('div');
     r.className = 'cs-row';

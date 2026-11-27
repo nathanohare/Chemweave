@@ -10,7 +10,7 @@
 // justification), the tag keeps a print of what it was written beside, and on reading the value
 // is used only while the file still shows that: a file changed in ChemDraw keeps ChemDraw's.
 
-import type { Arrow, Atom, Bond, Caption, Frame, MadeLabel, Pin, Shape, TextRun } from '../model';
+import type { Arrow, Atom, Bond, Caption, Frame, MadeLabel, Pin, Shape, StereoLabel, TextRun } from '../model';
 
 /** The tag's name. */
 export const MORE_TAG = 'Chem Illustrator settings';
@@ -74,7 +74,7 @@ export function atomMore(a: Atom, seen: string | null, look: LabelLook, stereo: 
     if (a.supDigits !== undefined && a.supDigits !== look.supDigits) l.supDigits = a.supDigits;
     if (Object.keys(l).length) v.label = { ...l, seen };
   }
-  if (a.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(a.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
+  if (a.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(a.stereoLabel.fromFile ? { fromFile: true } : {}), ...typedOverOut(a.stereoLabel), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
 
@@ -111,7 +111,7 @@ export function zPrint(e: Element, bond: (id: string) => Element | null): string
 export function bondMore(b: Bond, stereo: string | null, fileZ: number | undefined, zAt: string | null, packed = false): Record<string, unknown> | null {
   const v: Record<string, unknown> = {};
   if (!packed && b.z !== undefined && num(b.z) && b.z !== fileZ) { v.z = b.z; v.zAt = zAt; }
-  if (b.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(b.stereoLabel.fromFile ? { fromFile: true } : {}), seen: stereo };
+  if (b.stereoLabel?.manual && stereo !== null) v.stereo = { manual: true, ...(b.stereoLabel.fromFile ? { fromFile: true } : {}), ...typedOverOut(b.stereoLabel), seen: stereo };
   return Object.keys(v).length ? v : null;
 }
 
@@ -227,10 +227,18 @@ export function fragMoreIn(v: Record<string, unknown>, f: Element, atomOf: (n: E
 
 /** A stereo label typed by hand stays typed by hand while ChemDraw shows the text it was given. */
 function stereoIn(o: Atom | Bond, s: unknown): void {
-  const st = s as { manual?: unknown; fromFile?: unknown; seen?: unknown } | undefined;
+  const st = s as { manual?: unknown; fromFile?: unknown; seen?: unknown; typedOver?: unknown } | undefined;
   if (!st || st.manual !== true || !o.stereoLabel || o.stereoLabel.text !== st.seen) return;
-  const { fromFile: _f, ...rest } = o.stereoLabel;
-  o.stereoLabel = { ...rest, manual: true, ...(st.fromFile === true ? { fromFile: true } : {}) };
+  const { fromFile: _f, typedOver: _t, ...rest } = o.stereoLabel;
+  // (the text it was typed over, which comes back when the typed text is cleared: review F057)
+  const t = st.typedOver as { text?: unknown; fromFile?: unknown } | undefined;
+  const typedOver = t && typeof t === 'object' && typeof t.text === 'string' ? { typedOver: { text: t.text, ...(t.fromFile === true ? { fromFile: true } : {}) } } : {};
+  o.stereoLabel = { ...rest, manual: true, ...(st.fromFile === true ? { fromFile: true } : {}), ...typedOver };
+}
+
+/** A typed stereo label's typedOver, for its tag. */
+function typedOverOut(l: StereoLabel): Record<string, unknown> {
+  return l.typedOver ? { typedOver: { text: l.typedOver.text, ...(l.typedOver.fromFile ? { fromFile: true } : {}) } } : {};
 }
 
 /**

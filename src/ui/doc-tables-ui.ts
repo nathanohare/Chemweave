@@ -2,6 +2,7 @@
 // the borders (line kind, width, colour, the Borders menu and the Border Painter), cell
 // margins, and turning text into a table and back.
 
+import { dismissPopupMenu } from './popup-menu';
 import type { BorderLine, CellMargins, TableData, TableLook } from '../model';
 import * as rt from '../richtext';
 import { coveringCell } from '../table';
@@ -62,7 +63,7 @@ export class DocTablesUI {
   styleGallery(x: number, y: number): void {
     const tg = this.host.target();
     if (!tg) { this.host.flash('Click in a table first.'); return; }
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu table-gallery doc-table-gallery';
     m.setAttribute('role', 'menu');

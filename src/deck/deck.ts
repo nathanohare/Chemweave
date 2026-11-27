@@ -214,7 +214,7 @@ export interface Master {
   /** The master's and layouts' items are on every slide as its own, to change there (Slide Master ▸ Lock Layout Items unticked); new slides get them too. */
   itemsUnlocked?: boolean;
   /** The rest of each kind of placeholder's look on the master (italic, paragraph spacing, bullets; see masterFmt). */
-  phFmt?: Partial<Record<Placeholder, Pick<PlaceholderFmt, 'italic' | 'lineSpacing' | 'spaceBefore' | 'spaceAfter' | 'bullet'>>>;
+  phFmt?: Partial<Record<Placeholder, Pick<PlaceholderFmt, 'bold' | 'italic' | 'lineSpacing' | 'spaceBefore' | 'spaceAfter' | 'bullet'>>>;
   /** Where the master's own title and text boxes are (Slide Master view); layouts whose boxes are there follow them. Title and Content's when not set. */
   phBoxes?: PlaceholderBox[];
   /** What is drawn on the master itself (Slide Master view): on every slide, behind its layout's things. */
@@ -528,7 +528,7 @@ export function masterFmt(m: Master, ph: Placeholder, layout?: LayoutId): Placeh
   const own = m.phFmt?.[ph] ?? {};
   const text: PlaceholderFmt = ph === 'title'
     ? { font: m.titleFont, size: m.titleSize, color: c.titleColor, bold: m.titleBold }
-    : { font: m.bodyFont, size: ph === 'subtitle' ? m.subtitleSize : m.bodySize, color: c.textColor, bold: false };
+    : { font: m.bodyFont, size: ph === 'subtitle' ? m.subtitleSize : m.bodySize, color: c.textColor, bold: !!own.bold };
   return { ...text, italic: !!own.italic, lineSpacing: own.lineSpacing ?? 1, spaceBefore: own.spaceBefore ?? 0, spaceAfter: own.spaceAfter ?? 0, bullet: own.bullet ?? usualBullet(ph) };
 }
 
@@ -1149,6 +1149,11 @@ export class Deck {
     return d;
   }
 
+  /** `ownItems` for a new slide of this layout: its master's and layout's items were copied onto its drawing (newSlideDoc), so they are not drawn behind it as well. */
+  private ownItemsFor(layout: LayoutId): { ownItems?: true } {
+    return this.master.itemsUnlocked && hasItems(this.master, layout) ? { ownItems: true } : {};
+  }
+
   /** Give a slide's drawing the master's drawing style and text styles (a title slide's in its own colours), and its background's colour. */
   private styleDoc(d: Doc, layout: LayoutId, own?: Background): void {
     styleWith(d, this.master, layout, own);
@@ -1273,6 +1278,25 @@ export class Deck {
     this.onChange();
   }
 
+  /**
+   * Make changes to the deck as one step of the history (Accept All in Compare): Undo takes them all
+   * back, Redo does them all again. Steps of a slide's own drawing are left as they are.
+   */
+  group(label: string, fn: () => void): void {
+    const start = this.undoList.length;
+    fn();
+    const made = this.undoList.slice(start);
+    if (made.length < 2 || made.some((e) => e.kind !== 'deck')) return;
+    const steps = made as Extract<HistoryEntry, { kind: 'deck' }>[];
+    this.undoList.splice(start, made.length, {
+      kind: 'deck', label,
+      undo: () => { for (let k = steps.length - 1; k >= 0; k--) steps[k].undo(); },
+      redo: () => { for (const e of steps) e.redo(); },
+      slide: steps[steps.length - 1].slide,
+    });
+    this.edits -= made.length - 1;
+  }
+
   /** How many steps Undo can take back now (to join the steps a command made after this, with joinSince). */
   get historyLength(): number { return this.undoList.length; }
 
@@ -1318,7 +1342,12 @@ export class Deck {
       if (i < 0) return this.undo(); // the slide has gone (should not happen: its removal is undone first)
       this.go(i);
       // the drawing turns it down while a step is still being made (a drag): the step stays
-      if (!this.host.undo()) { this.undoList.push(e); return false; }
+      if (!this.host.undo()) {
+        // a slide keeps fewer steps of its own than the deck lists (500 against 2000): one the slide has let go is dropped, so Undo goes on to the older steps (F853)
+        if (!this.host.inStep && !this.host.canUndo()) return this.undo();
+        this.undoList.push(e);
+        return false;
+      }
     } else {
       this.showSlide(e.slide);
       e.undo();
@@ -1372,6 +1401,7 @@ export class Deck {
       useRefs(refs);
       this.detachKeep(() => this.slides.splice(at, 0, ...slides));
       also?.redo();
+      this.refreshCites();
       this.goFresh(at);
     };
     const undoIt = () => {
@@ -1379,6 +1409,7 @@ export class Deck {
       also?.undo();
       if (master) useMaster(beforeMaster);
       useRefs(beforeRefs);
+      this.refreshCites();
       this.goFresh(beforeIndex);
     };
     doIt();
@@ -1412,14 +1443,14 @@ export class Deck {
     // as in PowerPoint, a new slide after the title slide gets Title and Content, otherwise the current layout
     const cur = this.current?.layout;
     const lay = layout ?? (!cur || cur === 'title' ? 'title-content' : cur);
-    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '', ...(this.master.itemsUnlocked && hasItems(this.master, lay) ? { ownItems: true } : {}) };
-    this.insert(this.index + 1, [s], 'New slide');
+    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '', ...this.ownItemsFor(lay) };
+    this.insert(this.index + 1, [s], 'New Slide');
   }
 
   /** A new canvas slide after the current one: a blank slide with no edge and one keyframe where the slide would be. */
   addCanvasSlide(): void {
-    const s: Slide = { id: this.nextSlideId++, layout: 'blank', doc: this.newSlideDoc('blank'), notes: '', canvas: newCanvas() };
-    this.insert(this.index + 1, [s], 'New canvas slide');
+    const s: Slide = { id: this.nextSlideId++, layout: 'blank', doc: this.newSlideDoc('blank'), notes: '', canvas: newCanvas(), ...this.ownItemsFor('blank') };
+    this.insert(this.index + 1, [s], 'New Canvas Slide');
   }
 
   /**
@@ -1475,10 +1506,10 @@ export class Deck {
    * A new slide of a layout at place `at` (0 is first), filled in by `fill` (Insert > Summary
    * Zoom), as one step of the history.
    */
-  insertSlide(at: number, layout: LayoutId, fill: (doc: Doc) => void, label = 'New slide'): Slide {
+  insertSlide(at: number, layout: LayoutId, fill: (doc: Doc) => void, label = 'New Slide'): Slide {
     const doc = this.newSlideDoc(layout);
     doc.bulk(() => fill(doc));
-    const s: Slide = { id: this.nextSlideId++, layout, doc, notes: '' };
+    const s: Slide = { id: this.nextSlideId++, layout, doc, notes: '', ...this.ownItemsFor(layout) };
     this.insert(Math.max(0, Math.min(this.slides.length, at)), [s], label);
     return s;
   }
@@ -1538,7 +1569,7 @@ export class Deck {
     const sorted = [...new Set(indices)].filter((i) => i >= 0 && i < this.slides.length).sort((a, b) => a - b);
     if (!sorted.length) return;
     const copies = sorted.map((i) => this.makeSlide(this.slides[i].layout, this.docOf(i).contents(), this.slides[i].notes, this.slides[i]));
-    this.insert(sorted[sorted.length - 1] + 1, copies, sorted.length > 1 ? 'Duplicate slides' : 'Duplicate slide');
+    this.insert(sorted[sorted.length - 1] + 1, copies, sorted.length > 1 ? 'Duplicate Slides' : 'Duplicate Slide');
   }
 
   /**
@@ -1564,10 +1595,11 @@ export class Deck {
     const gone = new Set(sorted.map((i) => this.slides[i]));
     const after = before.filter((s) => !gone.has(s));
     const afterIndex = Math.min(sorted[0], after.length - 1);
-    const doIt = () => { this.detachKeep(() => { this.slides = after.slice(); }); this.goFresh(afterIndex); };
-    const undoIt = () => { this.detachKeep(() => { this.slides = before.slice(); }); this.goFresh(beforeIndex); };
+    // (with the references numbered through the presentation, the slides after the gap have new numbers)
+    const doIt = () => { this.detachKeep(() => { this.slides = after.slice(); }); this.refreshCites(); this.goFresh(afterIndex); };
+    const undoIt = () => { this.detachKeep(() => { this.slides = before.slice(); }); this.refreshCites(); this.goFresh(beforeIndex); };
     doIt();
-    this.record(sorted.length > 1 ? 'Delete slides' : 'Delete slide', undoIt, doIt);
+    this.record(sorted.length > 1 ? 'Delete Slides' : 'Delete Slide', undoIt, doIt);
     return true;
   }
 
@@ -1599,7 +1631,7 @@ export class Deck {
       this.refreshCites();
     };
     put(after, secsAfter);
-    this.record(moving.length > 1 ? 'Move slides' : 'Move slide', () => put(before, secsBefore), () => put(after, secsAfter));
+    this.record(moving.length > 1 ? 'Move Slides' : 'Move Slide', () => put(before, secsBefore), () => put(after, secsAfter));
   }
 
   /** The slides with those in `secs` given new sections, ordered by section (keeping their order within each). */
@@ -1654,6 +1686,7 @@ export class Deck {
         this.slides.forEach((s, k) => { if (st.of[k] === undefined) delete s.section; else s.section = st.of[k]; });
         this.folded = new Set(st.folded);
       });
+      this.refreshCites();
       this.goFresh(Math.max(0, this.slides.indexOf(cur)));
     };
     put(after);
@@ -1668,7 +1701,7 @@ export class Deck {
   addSection(at = this.index, name = 'Untitled Section'): number {
     at = Math.max(0, Math.min(this.slides.length - 1, at));
     const id = this.nextSectionId++;
-    this.sectionEdit('Add section', (secs, of) => {
+    this.sectionEdit('Add Section', (secs, of) => {
       const sec = { id, name };
       if (!secs.length) {
         if (at > 0) {
@@ -1692,7 +1725,7 @@ export class Deck {
 
   renameSection(id: number, name: string): void {
     name = name.trim() || 'Untitled Section';
-    this.sectionEdit('Rename section', (secs) => { const x = secs.find((y) => y.id === id); if (x) x.name = name; });
+    this.sectionEdit('Rename Section', (secs) => { const x = secs.find((y) => y.id === id); if (x) x.name = name; });
   }
 
   /**
@@ -1704,7 +1737,7 @@ export class Deck {
     const span = this.sectionSpans().find((x) => x.section.id === id);
     if (!span) return false;
     if (slides && span.count >= this.slides.length) return false;
-    this.sectionEdit(slides ? 'Remove section and slides' : 'Remove section', (secs, of) => {
+    this.sectionEdit(slides ? 'Remove Section and Slides' : 'Remove Section', (secs, of) => {
       const k = secs.findIndex((x) => x.id === id);
       secs.splice(k, 1);
       const into = secs[k - 1] ?? secs[k];
@@ -1717,12 +1750,12 @@ export class Deck {
   }
 
   removeAllSections(): void {
-    this.sectionEdit('Remove all sections', (secs, of) => { secs.length = 0; for (const s of this.slides) of.set(s, undefined); });
+    this.sectionEdit('Remove All Sections', (secs, of) => { secs.length = 0; for (const s of this.slides) of.set(s, undefined); });
   }
 
   /** Move a section, with all its slides, up or down past its neighbours (or to place `to` among the sections). */
   moveSection(id: number, to: number): void {
-    this.sectionEdit('Move section', (secs) => {
+    this.sectionEdit('Move Section', (secs) => {
       const k = secs.findIndex((x) => x.id === id);
       if (k < 0) return;
       const [x] = secs.splice(k, 1);
@@ -1750,7 +1783,7 @@ export class Deck {
     const slide = this.slides[i];
     if (!slide || slide.layout === layout) return;
     const old = slide.layout;
-    this.contentEdit('Change layout', [i], () => {
+    this.contentEdit('Change Layout', [i], () => {
       slide.layout = layout;
       const d = this.docOf(i);
       this.styleDoc(d, layout, slide.background);
@@ -1793,7 +1826,7 @@ export class Deck {
    * with a changed layout have their placeholders moved to its places, and slides whose layout
    * was deleted get Title and Content. One undo step.
    */
-  setLayouts(layouts: LayoutDef[], label = 'Edit slide layouts'): void {
+  setLayouts(layouts: LayoutDef[], label = 'Edit Slide Layouts'): void {
     this.applyMaster({ ...this.master, layouts }, label);
   }
 
@@ -1803,7 +1836,7 @@ export class Deck {
    * and given its look where they had the old one; slides whose layout was deleted get Title and
    * Content. A new drawing style redraws the structures on every slide. One undo step.
    */
-  applyMaster(next: Master, label = 'Edit slide master'): void {
+  applyMaster(next: Master, label = 'Edit Slide Master'): void {
     const before = this.master;
     // built-in layouts left as they come are not kept as edits (however their fields were set in
     // order: one read back from Slide Master view's page is the same layout)
@@ -1866,7 +1899,7 @@ export class Deck {
       // Slide Master view: the master's settings beside its pages (fonts and the rest of the text's look are on its page)
       const put = (x: Master) => { this.master = x; this.syncView(); this.onSwitch(); };
       put(m);
-      this.record('Change slide master', () => put(before), () => put(m));
+      this.record('Change Slide Master', () => put(before), () => put(m));
       return;
     }
     const apply = (x: Master) => {
@@ -1876,7 +1909,7 @@ export class Deck {
     };
     if (sameStyle(before.drawing, m.drawing)) {
       apply(m);
-      this.record('Change slide master', () => apply(before), () => apply(m));
+      this.record('Change Slide Master', () => apply(before), () => apply(m));
       return;
     }
     // a new drawing style (Structures: bond length, fonts) redraws the structures already on the
@@ -1886,7 +1919,7 @@ export class Deck {
       this.restyleAll();
     };
     const all = this.slides.map((_, i) => i);
-    this.contentEdit('Change slide master', all, () => {
+    this.contentEdit('Change Slide Master', all, () => {
       for (const i of all) {
         const d = this.docOf(i);
         d.bulk(() => applyStyle(d, m.drawing, 'restyle'));
@@ -1906,7 +1939,7 @@ export class Deck {
       this.restyleAll();
     };
     const all = this.slides.map((_, i) => i);
-    this.contentEdit('Change drawing style', all, () => {
+    this.contentEdit('Change Drawing Style', all, () => {
       for (const i of all) {
         const d = this.docOf(i);
         d.bulk(() => applyStyle(d, next, how));
@@ -1969,8 +2002,26 @@ export class Deck {
     const keysBefore = canvases.map((s) => copyCanvas(s.canvas!));
     const keysAfter = keysBefore.map((c) => ({ ...c, keys: c.keys.map((x) => scaleKeyframe(x, old, size, k)) }));
     const putKeys = (cs: CanvasData[]) => canvases.forEach((s, j) => { s.canvas = copyCanvas(cs[j]); });
-    this.contentEdit('Change slide size', all, () => {
+    // what the master and its layouts draw (their items) and the guides go where the slides' own things go (F193)
+    const moved = (c: Contents | undefined): Contents | undefined => {
+      if (!c) return c;
+      const t = new Doc();
+      t.restoreContents(c);
+      t.bulk(() => scaleContents(t, old, size, k));
+      return t.contents();
+    };
+    const masterBefore = this.master;
+    const masterAfter: Master = { ...masterBefore };
+    if (masterBefore.items) masterAfter.items = moved(masterBefore.items);
+    if (masterBefore.layouts?.some((l) => l.items)) masterAfter.layouts = masterBefore.layouts.map((l) => (l.items ? { ...l, items: moved(l.items) } : l));
+    const viewBefore = this.settings.view;
+    const mapX = (x: number) => size.w / 2 + (x - old.w / 2) * k, mapY = (y: number) => size.h / 2 + (y - old.h / 2) * k;
+    const viewAfter = viewBefore ? { ...viewBefore, guides: { x: viewBefore.guides.x.map(mapX), y: viewBefore.guides.y.map(mapY) } } : undefined;
+    const putView = (v: typeof viewBefore) => { if (v) this.settings.view = v; else delete this.settings.view; };
+    this.contentEdit('Change Slide Size', all, () => {
       putKeys(keysAfter);
+      this.master = masterAfter;
+      putView(viewAfter);
       this.size = { ...size };
       for (const i of all) {
         const d = this.docOf(i);
@@ -1979,7 +2030,7 @@ export class Deck {
           this.fitPlaceholders(d, this.slides[i].layout);
         });
       }
-    }, () => { this.size = old; putKeys(keysBefore); }, () => { this.size = { ...size }; putKeys(keysAfter); });
+    }, () => { this.size = old; this.master = masterBefore; putView(viewBefore); putKeys(keysBefore); }, () => { this.size = { ...size }; this.master = masterAfter; putView(viewAfter); putKeys(keysAfter); });
   }
 
   /**
@@ -2003,7 +2054,7 @@ export class Deck {
       this.onSwitch();
     };
     put(after);
-    this.record(bg ? 'Format background' : 'Reset background', () => put(before), () => put(after), slides.length === 1 ? slides[0] : undefined);
+    this.record(bg ? 'Format Background' : 'Reset Background', () => put(before), () => put(after), slides.length === 1 ? slides[0] : undefined);
   }
 
   /**
@@ -2036,7 +2087,7 @@ export class Deck {
       this.onSwitch();
     };
     put(master, after);
-    this.record('Apply background to all', () => put(beforeMaster, before), () => put(master, after));
+    this.record('Apply Background to All', () => put(beforeMaster, before), () => put(master, after));
   }
 
   /**
@@ -2052,7 +2103,7 @@ export class Deck {
       this.onChange();
     };
     put(hidden);
-    this.record(hidden ? 'Hide slide' : 'Show slide', () => put(!hidden), () => put(hidden), slides.length === 1 ? slides[0] : undefined);
+    this.record(hidden ? 'Hide Slide' : 'Show Slide', () => put(!hidden), () => put(hidden), slides.length === 1 ? slides[0] : undefined);
   }
 
   /** The next slide the show plays after slide i (hidden slides are skipped), or -1 at the end. */
@@ -2101,7 +2152,7 @@ export class Deck {
     if (!from.slides.length) return 0;
     const { slides, master } = this.adopt(from, keep);
     const at = Math.max(0, Math.min(this.slides.length, after + 1));
-    this.insert(at, slides, slides.length > 1 ? 'Paste slides' : 'Paste slide', master, this.adoptRefs(from, slides));
+    this.insert(at, slides, slides.length > 1 ? 'Paste Slides' : 'Paste Slide', master, this.adoptRefs(from, slides));
     return slides.length;
   }
 
@@ -2109,10 +2160,12 @@ export class Deck {
    * Put a copy of a slide from another deck in place of slide i (Compare's Accept on a changed
    * slide), as pasteSlides would make it, keeping slide i's section. One undo step.
    */
-  replaceSlide(i: number, from: SlideSource, label = 'Accept change'): boolean {
+  replaceSlide(i: number, from: SlideSource, label = 'Accept Change'): boolean {
     const old = this.slides[i];
     if (!old || from.slides.length !== 1) return false;
     const { slides: [made], master } = this.adopt(from, false);
+    // it keeps the old slide's number: custom shows and links to the slide name it by that (F855)
+    made.id = old.id;
     if (old.section !== undefined) made.section = old.section;
     const beforeMaster = this.master;
     const beforeIndex = this.index;
@@ -2120,6 +2173,9 @@ export class Deck {
     const put = (s: Slide, m: Master, go: number) => {
       this.detachKeep(() => { const k = this.slides.indexOf(s === made ? old : made); if (k >= 0) this.slides[k] = s; });
       useMaster(m);
+      this.refreshCites();
+      // (the slide keeps its number, so nothing else tells the slide list that its picture is of another drawing now)
+      this.looks++;
       this.goFresh(go);
     };
     const doIt = () => put(made, master ?? beforeMaster, i);
@@ -2197,11 +2253,11 @@ export class Deck {
       this.onSwitch();
     };
     put(master, after);
-    this.record(picked ? 'Header and footer' : 'Header and footer on every slide', () => put(beforeMaster, before), () => put(master, after));
+    this.record(picked ? 'Header and Footer' : 'Header and Footer on Every Slide', () => put(beforeMaster, before), () => put(master, after));
   }
 
   /** Change the deck's own settings (Set Up Show, custom shows). One undo step. */
-  setSettings(next: DeckSettings, label = 'Set up show'): void {
+  setSettings(next: DeckSettings, label = 'Set Up Show'): void {
     const before = copySettings(this.settings), after = copySettings(next);
     if (JSON.stringify(before) === JSON.stringify(after)) return;
     const put = (v: DeckSettings) => { this.settings = copySettings(v); this.onChange(); };
@@ -2219,7 +2275,7 @@ export class Deck {
     const before = s.notes;
     const put = (t: string, l: NotesLook | undefined) => { s.notes = t; if (l) s.notesLook = structuredClone(l); else delete s.notesLook; };
     put(text, now);
-    this.record('Edit notes', () => { put(before, was); this.onSwitch(); }, () => { put(text, now); this.onSwitch(); }, s);
+    this.record('Edit Notes', () => { put(before, was); this.onSwitch(); }, () => { put(text, now); this.onSwitch(); }, s);
   }
 
   /** Change the transition of some slides (the current one by default). One undo step. */
@@ -2241,7 +2297,7 @@ export class Deck {
    * Rehearse Timings: each slide in `times` (by its place) goes on by itself after that many
    * seconds, keeping its transition. One undo step.
    */
-  setTimings(times: Map<number, number>, label = 'Rehearse timings'): void {
+  setTimings(times: Map<number, number>, label = 'Rehearse Timings'): void {
     const slides = [...times.keys()].map((i) => this.slides[i]).filter(Boolean);
     if (!slides.length) return;
     const before = slides.map((s) => (s.transition ? { ...s.transition } : undefined));
@@ -2255,7 +2311,7 @@ export class Deck {
   }
 
   /** Take the rehearsed times off these slides (Slide Show > Clear > Timings): they go on with a click again. One undo step. */
-  clearTimings(indices: number[], label = 'Clear timings'): boolean {
+  clearTimings(indices: number[], label = 'Clear Timings'): boolean {
     const slides = [...new Set(indices)].map((i) => this.slides[i]).filter((s) => s?.transition?.advanceAfter !== undefined);
     if (!slides.length) return false;
     const before = slides.map((s) => ({ ...s.transition! }));
@@ -2335,7 +2391,7 @@ export class Deck {
    * `look` is given, their own look for the lines (null: the deck's look again). `deckLook`
    * (Apply to All) is the look every slide takes: no slide keeps its own. One undo step.
    */
-  setSlideRefs(indices: number[], ids: string[], look?: Partial<RefLook> | null, deckLook?: Partial<RefLook>, label = 'References on slide'): void {
+  setSlideRefs(indices: number[], ids: string[], look?: Partial<RefLook> | null, deckLook?: Partial<RefLook>, label = 'References on Slide'): void {
     const picked = new Set([...new Set(indices)].map((i) => this.slides[i]).filter(Boolean));
     if (!picked.size) return;
     const slides = this.slides.slice();
@@ -2370,7 +2426,7 @@ export class Deck {
   insertRefsSlide(at: number, spec: RefListSpec, title = 'References'): Slide {
     const s = this.insertSlide(at, 'title-only', (doc) => {
       for (const c of [...doc.captions.values()]) if (c.ph === 'title') doc.updateCaption(c.id, { runs: applyBase([{ text: title }], textStyles(this.master, 'title-only').title) });
-    }, 'Insert References slide');
+    }, 'Insert References Slide');
     s.refList = { ...spec };
     this.looks++;
     this.onSwitch();
@@ -2458,7 +2514,7 @@ export class Deck {
     if (!have) cur.list.push(structuredClone(ref));
     const refs = on ? (s.refs?.includes(id) ? [...s.refs] : [...(s.refs ?? []), id]) : (s.refs ?? []).filter((x) => x !== id);
     const look = numbered && refLook(cur, s.refLook).numbering === 'none' ? { ...(s.refLook ?? {}), numbering: 'slide' as const } : s.refLook;
-    this.setRefState(cur, new Map([[s.id, { refs, refLook: look, refList: s.refList, zotero: s.zotero }]]), on ? 'Show reference on slide' : 'Take reference off slide');
+    this.setRefState(cur, new Map([[s.id, { refs, refLook: look, refList: s.refList, zotero: s.zotero }]]), on ? 'Show Reference on Slide' : 'Take Reference off Slide');
     return id;
   }
 
@@ -2477,7 +2533,7 @@ export class Deck {
     if (JSON.stringify(before) === JSON.stringify(spec)) return;
     const put = (v: RefListSpec | undefined) => { if (v) s.refList = { ...v }; else delete s.refList; this.looks++; this.onSwitch(); };
     put(spec);
-    this.record(spec ? 'References slide' : 'Stop listing references', () => put(before), () => put(spec), s);
+    this.record(spec ? 'References Slide' : 'Stop Listing References', () => put(before), () => put(spec), s);
   }
 
   /**
@@ -2485,7 +2541,7 @@ export class Deck {
    * slides' own, to move, change or delete), or lock them again (off: the copies still where the
    * layout has them go, and the layout's show again). One undo step.
    */
-  setOwnItems(indices: number[], on: boolean, label = on ? 'Unlock layout items' : 'Lock layout items'): number {
+  setOwnItems(indices: number[], on: boolean, label = on ? 'Unlock Layout Items' : 'Lock Layout Items'): number {
     const slides = indices.map((i) => this.slides[i]).filter((s) => s && !!s.ownItems !== on && hasItems(this.master, s.layout));
     if (!slides.length) return 0;
     const idx = slides.map((s) => this.slides.indexOf(s));
@@ -2510,7 +2566,7 @@ export class Deck {
     const next: Master = { ...this.master };
     if (locked) delete next.itemsUnlocked; else next.itemsUnlocked = true;
     if (this.view) this.setMaster(next);
-    else this.applyMaster(next, locked ? 'Lock layout items' : 'Unlock layout items');
+    else this.applyMaster(next, locked ? 'Lock Layout Items' : 'Unlock Layout Items');
   }
 
   // ---------------------------------------------------------------- Slide Master view
@@ -2588,7 +2644,7 @@ export class Deck {
     this.sections = v.real.sections;
     this.master = v.real.master;
     if (was) this.attach();
-    this.applyMaster(next, 'Slide master');
+    this.applyMaster(next, 'Slide Master');
     this.onSwitch();
     this.onChange();
   }

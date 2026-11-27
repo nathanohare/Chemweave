@@ -218,7 +218,8 @@ export function hatchLines(polys: Vec[][], angle: number, gap: number): [Vec, Ve
   let lo = Infinity, hi = -Infinity;
   for (const p of polys) for (const v of p) { const k = v.x * n.x + v.y * n.y; lo = Math.min(lo, k); hi = Math.max(hi, k); }
   const out: [Vec, Vec][] = [];
-  if (hi - lo > gap * 4000) return out;
+  // at most 4,000 lines: on a very big shape (or with a very small spacing) the lines spread out to that, rather than none being drawn
+  if (hi - lo > gap * 4000) gap = (hi - lo) / 4000;
   for (let k = Math.ceil(lo / gap) * gap; k <= hi; k += gap) {
     // where the line n·p = k crosses each edge, as a distance along d
     const ts: number[] = [];
@@ -258,8 +259,10 @@ export function dotCentres(polys: Vec[][], gap: number): Vec[] {
   if (!polys.length || gap <= 0) return [];
   const b = bounds(polys);
   const out: Vec[] = [];
+  // at most about 200,000 dots: on a very big shape they spread out to that, rather than none being drawn
+  const cells = ((b.x2 - b.x1) * (b.y2 - b.y1)) / (gap * gap * 0.866);
+  if (cells > 200000) gap *= Math.sqrt(cells / 200000);
   const rowGap = gap * 0.866;
-  if ((b.x2 - b.x1) * (b.y2 - b.y1) / (gap * rowGap) > 200000) return out;
   for (let row = Math.ceil(b.y1 / rowGap); row * rowGap <= b.y2; row++) {
     const y = row * rowGap;
     const shift = (row & 1) * gap / 2;

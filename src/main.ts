@@ -95,6 +95,7 @@ import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink
 import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, pathExists, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
+import { GLOW_TRANSPARENCY } from './render/shape-fx';
 import { Workspace, Tab, type SaveHow } from './workspace';
 import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
@@ -3500,6 +3501,7 @@ const assistantBar = madeLater(async (): Promise<AssistantBar> => new (await imp
   apply: applyAssistantAction,
   markStep: markAssistantStep,
   undo: () => { command('undo'); },
+  position: () => ws.active.mode === 'document' ? [docMode?.undoMark()] : [doc.topStep, deckNow()?.historyLength],
   openSettings: aiSettings,
   area: () => document.getElementById('work')?.getBoundingClientRect() ?? null,
   tab: () => ws.active,
@@ -4409,12 +4411,13 @@ async function clearAtomMapCommand(): Promise<void> {
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
   editor.changed();
 }
-const nameDialog = new NameDialog(async (name) => {
+const nameDialog = new NameDialog(async (name, closed) => {
   // a SMILES string (or molfile) is drawn as it is; anything else is read as a name
   const here = sameDrawing('The structure');
   const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)).catch(() => null) : null;
   const got = mb ? { mb, attach: [], warnings: [] } : await nameToMolfile(name);
-  if (here.left()) return null;
+  // (and not when the window was cancelled while the name was being read)
+  if (here.left() || closed()) return null;
   if ('error' in got) return got;
   const c = pasteCentre();
   try {
@@ -5593,6 +5596,7 @@ layers = new LayersPanel($('#layers-section'), {
   edit: (label, f) => { finishTyping(); doc.edit(label, f); editor.changed(); },
   pick: (w) => { finishTyping(); editor.selectThese({ atoms: new Set(w.atoms), bonds: new Set(), captions: new Set(w.captions), arrows: new Set(w.arrows), shapes: new Set(w.shapes) }); },
   picked: () => ({ shapes: [...editor.sel.shapes], captions: [...editor.sel.captions], atoms: [...editor.sel.atoms], arrows: [...editor.sel.arrows] }),
+  dragging: () => editor.dragging,
 });
 layers.onClose = () => { selectionPane = false; showLayers(); };
 const lib = (designLib = new DesignLibrary($('#design-lib'), (id) => { finishTyping(); editor.setTool(`geo:${id}`); }));
@@ -5699,7 +5703,7 @@ function startGuideDrag(d: Deck, view: SlideView, which: { axis: 'x' | 'y'; i: n
     const off = v < 0 || v > (which.axis === 'x' ? d.size.w : d.size.h);
     if (off) view.guides[which.axis].splice(which.i, 1);
     d.settings.view = before;
-    d.setSettings({ ...d.settings, view }, off ? 'Remove guide' : label);
+    d.setSettings({ ...d.settings, view }, off ? 'Remove Guide' : label);
     renderer.repaintAll();
     editor.requestScene();
   };
@@ -5756,7 +5760,7 @@ function toggleGuides(): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
   const v = slideViewOf(d);
-  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide guides' : 'Show guides');
+  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide Guides' : 'Show Guides');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5771,7 +5775,7 @@ async function gridSettings(): Promise<void> {
   slideLook.grid = got.grid;
   guidesOn.slides = got.smart;
   Object.assign(rulerPrefs, got.prefs);
-  d.setSettings({ ...d.settings, view: got.view }, 'Grid and guides');
+  d.setSettings({ ...d.settings, view: got.view }, 'Grid and Guides');
   showGuides();
   showRulers();
   storeSettings();
@@ -8456,7 +8460,7 @@ function clearShowTimings(which: 'slide' | 'all'): void {
   const d = deckNow();
   if (!d) return;
   const ix = clearTargets(d, which);
-  if (!d.clearTimings(ix, which === 'all' ? 'Clear timings on all slides' : 'Clear timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
+  if (!d.clearTimings(ix, which === 'all' ? 'Clear Timings on All Slides' : 'Clear Timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
   flash(which === 'all' ? 'Timings cleared: all slides advance on click.' : 'Timing cleared: the slide advances on click.');
 }
 
@@ -8466,7 +8470,7 @@ function clearNarration(which: 'slide' | 'all'): void {
   if (!d) return;
   const ix = clearTargets(d, which).filter((i) => d.narrated(i));
   if (!ix.length) { flash(which === 'all' ? 'No slide has narration to clear.' : 'This slide has no narration to clear.'); return; }
-  d.editSlides(which === 'all' ? 'Clear narration on all slides' : 'Clear narration', ix, (sd) => {
+  d.editSlides(which === 'all' ? 'Clear Narration on All Slides' : 'Clear Narration', ix, (sd) => {
     for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
   });
   flash(`Narration cleared from ${ix.length} slide${ix.length > 1 ? 's' : ''}. Their times stay (Clear ▸ Timings takes those off).`);
@@ -8512,7 +8516,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
         const ix = [...sounds.keys()].filter((i) => i >= 0 && i < d.slides.length);
         if (ix.length) {
           const poster = speakerPng(), s = 24;
-          d.editSlides('Record narration', ix, (sd, i) => {
+          d.editSlides('Record Narration', ix, (sd, i) => {
             // a new recording takes the place of the slide's old one
             for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
             const n = sounds.get(i)!;
@@ -8523,9 +8527,9 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
           });
         } else flash('Nothing was recorded (the microphone gave no sound).');
       }
-      d.setTimings(r.times, r.recordings.size ? 'Record slide show timings' : 'Rehearse timings');
+      d.setTimings(r.times, r.recordings.size ? 'Record Slide Show Timings' : 'Rehearse Timings');
       // narration and timings: one step to undo (review F326)
-      if (r.recordings.size) d.joinSince(history, 'Record slide show timings');
+      if (r.recordings.size) d.joinSince(history, 'Record Slide Show Timings');
       // the whole show, with the times of slides not played this time (rehearsing from one slide)
       const whole = d.slides.reduce((n, s) => n + (s.hidden ? 0 : s.transition?.advanceAfter ?? 0), 0);
       flash(`Kept: the show takes ${clockText(Math.max(whole, r.total))}${r.recordings.size ? ', with narration on the slides' : ''}. Set Up Show ▸ Advance slides can turn the times off.`, 8000);
@@ -8570,7 +8574,7 @@ async function setUpShowCmd(): Promise<void> {
   if (!d || ws.active.mode !== 'slides') return;
   finishTyping();
   const got = await setUpShow(d.settings.show, d.settings.customShows ?? [], d.slides.length);
-  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set up show');
+  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set Up Show');
   showSlideState();
 }
 
@@ -8588,7 +8592,7 @@ async function customShowsCmd(): Promise<void> {
   if (!got || deckNow() !== d) return;
   const show = d.settings.show && d.settings.show.custom !== undefined && !got.shows.some((c) => c.id === d.settings.show!.custom) ? { ...d.settings.show, custom: undefined } : d.settings.show;
   if (show && show.custom === undefined) delete show.custom;
-  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom shows');
+  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom Shows');
   if (got.play !== undefined) present(false, false, { custom: got.play });
 }
 
@@ -11148,7 +11152,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
-    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: GLOW_TRANSPARENCY };
     const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },
@@ -11460,14 +11464,14 @@ const COMMANDS: Record<string, () => unknown> = {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use timings' : 'Advance manually');
+    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use Timings' : 'Advance Manually');
     showSlideState();
   },
   'play-narrations': () => {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play narrations' : 'Show without narration');
+    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play Narrations' : 'Show without Narration');
     showSlideState();
   },
   'header-footer': () => void headerFooter(),

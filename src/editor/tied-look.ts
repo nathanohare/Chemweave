@@ -13,7 +13,7 @@ export type LookRole = 'label' | 'caption';
 /** Which look a tie's role takes: descriptors look like captions. */
 export const lookRole = (role: Attachment['role']): LookRole => (role === 'label' ? 'label' : 'caption');
 
-/** A look with every field worked out (font and size undefined: the captions'; gap undefined: a third of a bond length). */
+/** A look with every field worked out (font and size undefined: the captions'; gap undefined: 30% of a bond length). */
 export interface FullLook {
   font?: string;
   size?: number;

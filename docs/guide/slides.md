@@ -156,7 +156,7 @@ Opened here again, the slides come back as the canvas slide. If they were change
 
 **Hide background graphics** leaves the template's shapes and the logo off the slide, as in PowerPoint. The preview at the top shows the slide as it will look.
 
-**Apply to this slide** changes the slides selected in the slide list (Shift or Ctrl+click to pick several). **Apply to All** gives every slide the background, title slides too, through the slide master, so new slides get it as well. **Reset Background** gives the selected slides the master's background again. Each is one step for Undo.
+**Apply to This Slide** changes the slides selected in the slide list (Shift or Ctrl+click to pick several). **Apply to All** gives every slide the background, title slides too, through the slide master, so new slides get it as well. **Reset Background** gives the selected slides the master's background again. Each is one step for Undo.
 
 Backgrounds are saved as PowerPoint's own, so PowerPoint (and LibreOffice) shows them and Format Background there can change them. Gradients, pictures and patterns from PowerPoint files come in as they were, including the background styles built into PowerPoint's themes and backgrounds set on a layout.
 
@@ -232,7 +232,7 @@ To put a canvas (or any other tab) beside your slides while you work, see Split 
 ## Pictures
 
 - **Add a picture:** **Insert** tab ▸ **Picture**, paste one, or drag a file onto the slide.
-- **Resize:** drag a corner. The **Style** panel on the right takes an exact width and height, with **Keep proportions** and **Original size**.
+- **Resize:** drag a corner. The **Style** panel on the right takes an exact width and height, with **Keep proportions** and **Original Size**.
 - **Crop:** **Insert** tab ▸ **Crop**, then drag the black handles and press Esc. The panel also takes exact crop amounts for each side, and **Uncrop** shows the whole picture again.
 - **Spectra:** in the Windows app, a spectrum copied from MestReNova pastes as lines and text, so it stays sharp when you zoom. A spectrum saved as an .emf file works the same way with **Picture** or by dropping the file.
 
@@ -256,7 +256,7 @@ Select a picture and click **Picture Format** (**Insert** tab, the **Style** pan
 
 - **Corrections:** brightness, contrast, and sharpen (above 0) or soften (below 0).
 - **Color:** recolor as grayscale, sepia, washout, black and white (with where black stops), or two colors of your own running dark to light. **See-through color** makes one color clear: click **Pick in the picture**, then click the color in the preview. **Transparency** makes the whole picture see-through.
-- **Remove background:** takes out the background joined to the picture's edges. **How near counts** says how close a color must be to go. If the subject loses parts, click **Mark to keep** and click them in the preview; if background is left, **Mark to remove** and click it.
+- **Remove Background:** takes out the background joined to the picture's edges. **How near counts** says how close a color must be to go. If the subject loses parts, click **Mark Areas to Keep** and click them in the preview; if background is left, **Mark Areas to Remove** and click it.
 - **Crop:** **Crop to shape** cuts the picture to an oval, triangle, star, heart and other shapes (a frame and shadow follow the shape). **Crop to proportions** crops to 1:1, 4:3, 16:9 and others, centered.
 
 The picture itself is never changed, so **Reset Picture** (or setting a value back to 0) takes any of it off again. Saved as PowerPoint's own picture settings, so PowerPoint can change them too.
@@ -286,7 +286,7 @@ A presentation keeps its own reference list, saved inside its PowerPoint file, a
    - **Numbers**: none, 1, 2, 3 on each slide, or numbered through the presentation so they match the References slide.
    - **Place**: bottom left, center or right, or top right. **Size** and an **Custom color** (the footer's color otherwise). Lines that would take too much of the slide get smaller.
    - **Apply** gives the slides selected this style; **Apply to All** uses it on every slide.
-4. **A References box on the layout** (Slide Master view ▸ **Insert Placeholder ▸ References**) is where slides with that layout list their references, in place of the corner. On a slide, click the box to open its tick list: tick the references it shows, find more in the presentation or your library (they join the presentation when ticked), pick the citation style, or **Add from Library…**, **Add with Zotero…** and **Look…**.
+4. **A References box on the layout** (Slide Master view ▸ **Insert Placeholder ▸ References**) is where slides with that layout list their references, in place of the corner. On a slide, click the box to open its tick list: tick the references it shows, find more in the presentation or your library (they join the presentation when ticked), pick the citation style, or **Add from Library…**, **Add with Zotero…** and **References on Slide…**.
 5. **Insert ▸ References ▾ ▸ Citation** while typing on a slide puts a reference's number in the text at the cursor, in the citation style (raised for ACS), and ticks the reference on the slide ("cited in text" in the tick list). The numbers follow the slide's lines and change when the references or their order change; the lines get numbers if they had none.
 6. **Insert ▸ References ▸ References Slide…** adds a slide at the end, titled References, listing the references shown on the slides in the order they first appear (or every reference in the presentation), in full. It keeps itself up to date.
 

@@ -43,7 +43,8 @@ export class Ruler {
   private canvas: HTMLCanvasElement;
   private kindBtn: HTMLButtonElement;
   private tabKind: TabStop['kind'] = 'left';
-  private drag: { grip: Grip; x: number; x0: number; moved: boolean; off: boolean; free: boolean } | null = null;
+  /** `fresh`: the tab stop was put on the ruler by this press (so a press without a move still keeps it). */
+  private drag: { grip: Grip; x: number; x0: number; moved: boolean; off: boolean; free: boolean; fresh: boolean } | null = null;
   private geo: RulerGeometry | null = null;
 
   constructor(readonly el: HTMLElement, private host: RulerHost) {
@@ -61,7 +62,8 @@ export class Ruler {
     this.canvas.addEventListener('pointerdown', (e) => this.down(e));
     this.canvas.addEventListener('pointermove', (e) => this.moveTo(e));
     this.canvas.addEventListener('pointerup', (e) => this.up(e));
-    this.canvas.addEventListener('pointercancel', () => { this.drag = null; this.paint(); });
+    // (the geometry is read again: a new tab stop that was never made is not left drawn)
+    this.canvas.addEventListener('pointercancel', () => { this.drag = null; this.update(); });
     this.canvas.addEventListener('mousemove', (e) => { if (!this.drag) this.canvas.title = this.tipAt(e.offsetX, e.offsetY); });
     new ResizeObserver(() => this.paint()).observe(el);
   }
@@ -155,6 +157,7 @@ export class Ruler {
     if (!this.geo) return;
     e.preventDefault();
     let grip = this.gripAt(e.offsetX, e.offsetY);
+    const fresh = !grip;
     if (!grip) {
       // a new tab stop where the ruler was clicked (inside the text's width)
       const pt = this.ptAt(e.offsetX, e.altKey);
@@ -164,7 +167,7 @@ export class Ruler {
       this.geo = { ...this.geo, para: { ...this.geo.para, tabs } };
       grip = { kind: 'tab', i: tabs.length - 1 };
     }
-    this.drag = { grip, x: e.offsetX, x0: e.offsetX, moved: false, off: false, free: e.altKey };
+    this.drag = { grip, x: e.offsetX, x0: e.offsetX, moved: false, off: false, free: e.altKey, fresh };
     this.canvas.setPointerCapture(e.pointerId);
     this.paint();
   }
@@ -182,9 +185,9 @@ export class Ruler {
   private up(e: PointerEvent): void {
     const d = this.drag;
     if (!d || !this.geo) return;
-    // (an indent grip clicked without moving: left as it is, not snapped to the ruler's steps; a click
-    // on the ruler itself still puts a tab stop there)
-    if (!d.moved && e.offsetX === d.x0 && d.grip.kind !== 'tab') { this.drag = null; this.paint(); return; }
+    // (an indent grip or a tab stop clicked without moving: left as it is, not snapped to the ruler's steps;
+    // a click on the ruler itself still puts a tab stop there)
+    if (!d.moved && e.offsetX === d.x0 && !d.fresh) { this.drag = null; this.paint(); return; }
     d.x = e.offsetX;
     const m = this.marks();
     this.drag = null;

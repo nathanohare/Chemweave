@@ -55,12 +55,16 @@ export class ToolWindow {
     });
     // the window can be moved by its title
     h.addEventListener('pointerdown', (e) => {
+      // (the main button only: a right-click on the title doesn't carry the window along)
+      if (e.button !== 0) return;
       const r = this.d.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       const move = (m: PointerEvent) => { this.d.style.left = `${Math.max(0, m.clientX - dx)}px`; this.d.style.top = `${Math.max(0, m.clientY - dy)}px`; this.d.style.right = 'auto'; };
-      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+      // (a pointer the system takes away, a touch gesture for one, ends the drag too)
+      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
       addEventListener('pointermove', move);
       addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
     });
   }
 

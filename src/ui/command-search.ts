@@ -155,6 +155,8 @@ export class CommandSearch {
     const d = this.d ?? this.build();
     this.items = this.gather();
     this.input.value = '';
+    // (the first row is the one highlighted, not the one that was last time)
+    this.at = 0;
     this.draw();
     if (!d.open) d.showModal();
     this.input.focus();

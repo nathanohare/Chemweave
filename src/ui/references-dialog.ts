@@ -341,7 +341,7 @@ export function editCiteStyle(style: string, options: Partial<CiteFormat>): Prom
     const reset = button('Reset', 'Put every detail back as the style has it', () => { f = citeFormat(cur, {}); show(); });
     const forNew = el('input', { type: 'checkbox' });
     d.append(
-      withInfo(el('h2', { textContent: 'Reference style' }), 'Change any detail below; the preview shows real references as they will print. Choosing another style starts from that style\'s own details.'),
+      withInfo(el('h2', { textContent: 'Reference Style' }), 'Change any detail below; the preview shows real references as they will print. Choosing another style starts from that style\'s own details.'),
       el('label', { className: 'ask-row refs-style' }, el('span', { textContent: 'Style' }), pick),
       source,
       el('div', { className: 'cite-groups' }, ...groups),
@@ -574,7 +574,7 @@ export class ReferencesDialog {
       el('div', { className: 'ask-row refs-style' }, el('label', { htmlFor: 'refs-style', textContent: 'Citation style' }), this.styleSel,
         button('Style Options…', 'Change any detail of the style: authors, "and", et al., title, year, volume, issue, article numbers, DOI…', () => void this.styleOptions())),
       el('p', { className: 'refs-style-note' }, el('span', { textContent: 'For ' }), this.groupLabel, el('span', { textContent: '. ' }), this.styleNote),
-      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are stored in the Word file: as Chem Illustrator fields, or as Zotero, Mendeley or EndNote fields so that program can keep managing them. Set automatically for files from those programs.' },
+      (this.managerRow = el('div', { className: 'ask-row refs-style', title: 'How citations are stored in the Word file: as Chemweave fields, or as Zotero, Mendeley or EndNote fields so that program can keep managing them. Set automatically for files from those programs.' },
         el('label', { htmlFor: 'refs-manager', textContent: 'Save citations for' }), this.managerSel)),
       this.extra,
       this.warning,

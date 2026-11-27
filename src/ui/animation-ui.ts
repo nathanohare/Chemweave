@@ -157,7 +157,7 @@ export class AnimationUI {
     ribbon.querySelector('[data-tr="apply-all"]')!.addEventListener('click', () => {
       const deck = hooks.deck();
       if (!deck) return;
-      deck.setTransition(this.transition(), deck.slides.map((_, i) => i), 'Apply transition to all slides');
+      deck.setTransition(this.transition(), deck.slides.map((_, i) => i), 'Apply Transition to All Slides');
       hooks.flash(`Every slide now has this slide's transition.`);
     });
     ribbon.querySelector('[data-tr="preview"]')!.addEventListener('click', () => this.preview());

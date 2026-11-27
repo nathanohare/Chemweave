@@ -91,7 +91,16 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
     form.addEventListener('submit', (e) => { e.preventDefault(); saveFigures(); done(); });
   } else {
     subhead('File Types', 'Checked file types list Chemweave under Open With in Explorer. Your default programs (ChemDraw, Word, PowerPoint, Excel) don\'t change.');
-    const now = new Set(await host.get().catch(() => [] as string[]));
+    // (a list that couldn't be read is not an empty one: the types are shown but left as they are, never saved as none)
+    let unread = false;
+    const now = new Set(await host.get().catch(() => { unread = true; return [] as string[]; }));
+    if (unread) {
+      const warn = document.createElement('p');
+      warn.className = 'ask-help error';
+      warn.setAttribute('role', 'alert');
+      warn.textContent = 'Could not read which file types Chemweave is listed for, so they are left as they are. Close this window and open it again to change them.';
+      form.append(warn);
+    }
     const boxes = new Map<string, HTMLInputElement>();
     for (const t of FILE_TYPES) {
       const row = document.createElement('label');
@@ -99,6 +108,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
       const box = document.createElement('input');
       box.type = 'checkbox';
       box.checked = now.has(t.ext);
+      box.disabled = unread;
       boxes.set(t.ext, box);
       const name = document.createElement('span');
       name.textContent = t.label;
@@ -146,7 +156,7 @@ export async function fileTypesPage(host: FileTypesHost): Promise<void> {
       try {
         if (objBox.checked !== objWas) await host.objects.set(objBox.checked);
         // (said only when the list changed)
-        if (types.length !== now.size || types.some((t) => !now.has(t))) {
+        if (!unread && (types.length !== now.size || types.some((t) => !now.has(t)))) {
           await host.set(types);
           host.flash(types.length ? `Chemweave is now under "Open with" for ${types.map((t) => `.${t}`).join(', ')}.` : 'Chemweave was removed from every "Open with" list.');
         }

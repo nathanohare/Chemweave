@@ -101,11 +101,11 @@ describe('the toolbox: the same bar as above text being typed', () => {
   });
   it('sends every kind of change, and links and symbols', () => {
     const { body, done, typed, links, backs } = make();
-    for (const t of ['Formula', 'Stereodescriptors', 'Center', 'Numbering', 'More indent', 'Link']) btn(body, t).click();
-    btn(body, 'Greek').click();
+    for (const t of ['Formula', 'Stereodescriptors', 'Center', 'Numbering', 'Increase Indent', 'Link']) btn(body, t).click();
+    btn(body, 'Symbol').click();
     expect(body.querySelector<HTMLElement>('.caption-symbols')!.hidden).toBe(false);
     [...body.querySelectorAll<HTMLButtonElement>('.cs-row button')].find((b) => b.textContent === '‡')!.click();
-    btn(body, 'Line and paragraph').click();
+    btn(body, 'Line and Paragraph').click();
     expect(body.querySelector<HTMLElement>('.caption-symbols')!.hidden).toBe(true);
     const field = (label: string, v: string) => { const i = body.querySelector<HTMLInputElement>(`input[aria-label^="${label}"]`)!; i.value = v; i.dispatchEvent(new Event('change')); };
     field('Line spacing', '2');

@@ -253,7 +253,7 @@ describe('F257: Fit Height and Fit Width for several rows or columns', () => {
     wb.edit('t', () => { for (let r = 0; r < 20; r++) { s.setInput(r, 0, 'x'); s.setRowHeight(r, 60); } for (let c = 0; c < 5; c++) s.setColWidth(c, 200); });
     const before = wb.undoLabel;
     mode.view.autoFitLines('row', 0, 19);
-    expect(wb.undoLabel).toBe('Row height');
+    expect(wb.undoLabel).toBe('Row Height');
     expect(s.rowHeights.size).toBe(0);
     wb.undo();
     expect(wb.undoLabel).toBe(before);

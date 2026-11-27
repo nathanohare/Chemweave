@@ -54,7 +54,7 @@ import { type DataTable, seenDataTableId } from '../sheet/what-if';
 import { type PivotTable, seenPivotId } from '../sheet/pivot';
 import { Persons, isGuid, notesParts, readNotes, shownNotes, validationsXml, readValidations, NOTES_CT, NOTES_REL } from './xlsx-notes';
 import { textRotation, readTextRotation, sheetViewAttrs, readSheetViewOpts, outlinePrXml, outlineLevelAttrs, outlineAttrs, collapsedSummary, sparklinesExt, readSparklines, customWorkbookViewsXml, customSheetViewsXml, readCustomViews, themeXml, readWorkbookTheme } from './xlsx-view';
-import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, withDxfs } from './xlsx-view';
+import { readSheetKept, readBookKept, sheetProtectionXml, cellProtectionXml, paneKey, keptPanes, keptViewTopLeft, withDxfs } from './xlsx-view';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders } from '../sheet/cell-styles';
 import type { WorkbookTheme } from '../sheet/themes';
 import { themeOf } from '../sheet/themes';
@@ -853,15 +853,18 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
           const r2 = m?.r2 ?? r, c2 = m?.c2 ?? c;
           const x = cols.start(c), y = rows.start(r);
           const w = cols.start(c2 + 1) - x, h = rows.start(r2 + 1) - y;
-          // the object at the structure's own shape, fitted in the cell (or merged block) and centred
-          const k = Math.min(1, (w - 2) / Math.max(1, asObject.w / 0.75), (h - 2) / Math.max(1, asObject.h / 0.75));
-          const ow = (asObject.w / 0.75) * k, oh = (asObject.h / 0.75) * k;
-          const ox = x + (w - ow) / 2, oy = y + (h - oh) / 2;
-          const f = cols.at(ox, c), fr = rows.at(oy, r), t = cols.at(ox + ow, c), tr = rows.at(oy + oh, r);
-          const prog = chemdrawProg();
-          made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }, [[OLE_CELL_STREAM, new TextEncoder().encode(cellName(r, c))]]), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
-            { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
-          if (entry) entry.cdx = bytesHash(asObject.cdx);
+          // (none in a hidden or very small cell, as for a picture: its size would come out below zero)
+          if (w > 2 && h > 2) {
+            // the object at the structure's own shape, fitted in the cell (or merged block) and centred
+            const k = Math.min(1, (w - 2) / Math.max(1, asObject.w / 0.75), (h - 2) / Math.max(1, asObject.h / 0.75));
+            const ow = (asObject.w / 0.75) * k, oh = (asObject.h / 0.75) * k;
+            const ox = x + (w - ow) / 2, oy = y + (h - oh) / 2;
+            const f = cols.at(ox, c), fr = rows.at(oy, r), t = cols.at(ox + ow, c), tr = rows.at(oy + oh, r);
+            const prog = chemdrawProg();
+            made.push(structureOle(cellName(r, c), prog, chemdrawObject(asObject.cdx, prog, { emf: asObject.emf, w: asObject.w, h: asObject.h }, [[OLE_CELL_STREAM, new TextEncoder().encode(cellName(r, c))]]), { bytes: asObject.emf, ext: 'emf', type: 'image/x-emf' },
+              { col: f.i, colOff: f.off, row: fr.i, rowOff: fr.off }, { col: t.i, colOff: t.off, row: tr.i, rowOff: tr.off }, { w: ow * 0.75, h: oh * 0.75 }));
+            if (entry) entry.cdx = bytesHash(asObject.cdx);
+          }
         } else if (cell?.structure && !s.ole?.some((o) => o.over && o.at?.[0] === c && o.at?.[1] === r)) {
           // the structure's picture, over the cell (or merged block); not under its own object kept
           // there, changed in ChemDraw from Excel (review F2-R05, F2b-R06)
@@ -1070,12 +1073,13 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
     }
     const dvXml = standIn ? '' : validationsXml(s.validations, (f) => excelFunctionNames(f, book.excelPrefixes), longList, book.date1904 ? DAYS_1900_TO_1904 : 0);
     // links (Insert > Link): a place in the workbook as Excel's location, anything else through a relationship
+    // (a block of cells with the same link is one hyperlink with a range: Excel holds at most 65,530
+    // hyperlinks in a worksheet, "Excel specifications and limits", support.microsoft.com)
     const linkXml: string[] = [];
-    for (const [k, c] of s.cells) {
-      if (!c.link) continue;
-      const ref = cellName(rowOf(k), colOf(k));
-      if (c.link.startsWith('#')) linkXml.push(`<hyperlink ref="${ref}" location="${xmlAttr(c.link.slice(1))}" display="${xmlAttr(s.shownText(rowOf(k), colOf(k)))}"/>`);
-      else linkXml.push(`<hyperlink ref="${ref}" r:id="${pkg.relate(path, REL.hyperlink, officeTarget(c.link), true)}"/>`);
+    for (const B of linkBlocks(s)) {
+      const ref = B.r1 === B.r2 && B.c1 === B.c2 ? cellName(B.r1, B.c1) : `${cellName(B.r1, B.c1)}:${cellName(B.r2, B.c2)}`;
+      if (B.link.startsWith('#')) linkXml.push(`<hyperlink ref="${ref}" location="${xmlAttr(B.link.slice(1))}" display="${xmlAttr(s.shownText(B.r1, B.c1))}"/>`);
+      else linkXml.push(`<hyperlink ref="${ref}" r:id="${pkg.relate(path, REL.hyperlink, officeTarget(B.link), true)}"/>`);
     }
     const hyperlinks = linkXml.length ? `<hyperlinks>${linkXml.join('')}</hyperlinks>` : '';
     // printing: page setup, and the print area and titles as the workbook's names
@@ -1088,12 +1092,13 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
       ? `<sheetPr${code}${s.filter && !filterTable ? ' filterMode="1"' : ''}>${tabColor}${outlinePr}${page.fitToPage ? '<pageSetUpPr fitToPage="1"/>' : ''}</sheetPr>`
       : '';
     // where the sheet was scrolled to and what was selected, and the like, as the file had them
-    const view = keptPanes(own.excel, fr || fc ? paneKey(fr, fc, true) : paneKey(sp?.rows ?? 0, sp?.cols ?? 0), pane);
+    const viewKey = fr || fc ? paneKey(fr, fc, true) : paneKey(sp?.rows ?? 0, sp?.cols ?? 0);
+    const view = keptPanes(own.excel, viewKey, pane);
     const sparkExt = standIn ? '' : sparklinesExt(s.sparklines, s.name);
     pkg.add(path,
       `${HEAD}<worksheet xmlns="${MAIN}" xmlns:r="${RNS}">` +
       `${sheetPr}<dimension ref="${used}"/>` +
-      `<sheetViews><sheetView${sheetViewAttrs(own.viewOpts)}${own.excel?.viewAttrs ?? ''}${si === book.active ? ' tabSelected="1"' : ''} workbookViewId="0">${view}</sheetView></sheetViews>` +
+      `<sheetViews><sheetView${sheetViewAttrs(own.viewOpts)}${own.excel?.viewAttrs ?? ''}${keptViewTopLeft(own.excel, viewKey)}${si === book.active ? ' tabSelected="1"' : ''} workbookViewId="0">${view}</sheetView></sheetViews>` +
       `<sheetFormatPr defaultRowHeight="${own.fileRowHeight?.pt ?? ptFromPx(DEFAULT_ROW_H)}"${own.fileRowHeight ? (own.fileRowHeight.custom ? ' customHeight="1"' : '') : ' customHeight="1"'}${own.fileRowHeight?.zero ? ' zeroHeight="1"' : ''}${outlineLevelAttrs(s)}/>` +
       (colXml.length ? `<cols>${colXml.join('')}</cols>` : '') +
       `<sheetData>${rowXml.join('')}</sheetData>${sheetProtectionXml(own.excel)}${filterXml}${withDxfs(own.excel?.sortState, own.excel?.sortDxfs, (d) => styles.keptDxf(d))}${standIn ? '' : customSheetViewsXml(book, own)}${merges}${cfXml}${dvXml}${hyperlinks}` +
@@ -1214,7 +1219,8 @@ function filterColumnXml(colId: number, cond: Condition): string {
       return `<filterColumn colId="${colId}"><customFilters${cond.join === 'and' && two ? ' and="1"' : ''}>${one(cond.op, cond.value)}${two}</customFilters></filterColumn>`;
     }
     case 'contains':
-      return `<filterColumn colId="${colId}"><customFilters><customFilter val="*${val(cond.text)}*"/></customFilters></filterColumn>`;
+      // (* ? and ~ in the text are Excel's wildcards and escape: ~ before each makes it the character itself)
+      return `<filterColumn colId="${colId}"><customFilters><customFilter val="*${val(cond.text.replace(/[*?~]/g, '~$&'))}*"/></customFilters></filterColumn>`;
     default:
       return '';
   }
@@ -1668,7 +1674,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
   }
 
   const filters: { s: Sheet; f: Filter }[] = [];
-  const sheetDocs: { name: string; ws: Element | null }[] = [];
+  const sheetDocs: { name: string; ws: Element | null; sheetId?: number }[] = [];
   let unknownFormulas = 0;
   /** Formulas reading other workbooks ([1]Sheet1!A1): kept for Excel, not worked out here. */
   let linkedFormulas = 0;
@@ -1695,7 +1701,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const s = book.sheets[si];
       const path = rels.get(rAttr(el, 'id') ?? '')?.target;
       const doc = path ? pkg.xml(path) : null;
-      sheetDocs.push({ name: s.name, ws: doc?.documentElement ?? null });
+      const fileSheetId = Number(el.getAttribute('sheetId'));
+      sheetDocs.push({ name: s.name, ws: doc?.documentElement ?? null, ...(Number.isInteger(fileSheetId) && el.hasAttribute('sheetId') ? { sheetId: fileSheetId } : {}) });
       if (!doc) return;
       const ws = doc.documentElement;
       const raw = new Map<number, Wrote>();
@@ -1752,7 +1759,14 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       // cells
       const sharedF = new Map<string, { r: number; c: number; text: string }>();
       // blocks filled by array formulas: their other cells hold only what the array put there
-      const arrays: { R: Range; r: number; c: number }[] = [];
+      // (by the 16-row bands they cover, so a cell is checked against the blocks near it only)
+      const arrays = new Map<number, { R: Range; r: number; c: number }[]>();
+      const addArray = (a: { R: Range; r: number; c: number }) => {
+        for (let b = Math.floor(a.R.r1 / 16); b <= Math.floor(a.R.r2 / 16); b++) {
+          const list = arrays.get(b);
+          if (list) list.push(a); else arrays.set(b, [a]);
+        }
+      };
       const dataTables: DataTable[] = [];
       let rowNo = -1;
       let maxCol = -1;
@@ -1768,6 +1782,8 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           if (Number.isFinite(ht) && ht >= 0 && !rowPts.has(pxFromPt(ht))) rowPts.set(pxFromPt(ht), ht);
         }
         listed.add(r);
+        // a whole row's own format (s with customFormat, 18.3.1.73): not held here, so said
+        if (isOn(row.getAttribute('customFormat')) && Number(row.getAttribute('s') ?? 0) > 0) notKept.add('formatting of whole rows (the cells in them that hold something keep theirs)');
         if (isOn(row.getAttribute('hidden'))) s.setRowHidden(r, true);
         const lv = Number(row.getAttribute('outlineLevel') ?? 0);
         if (lv > 0) s.setRowLevel(r, lv);
@@ -1801,7 +1817,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           } else if (t === 'str') value = excelUnescape(v ?? '');
           else if (t === 'e') value = v ?? '';
           else if (t === 'b') value = isOn(v);
-          else if (t === 'd' && v) value = Date.parse(v) / 86400000 + 25569;
+          else if (t === 'd' && v) value = isoSerial(v);
           else if (v !== null && v !== '') value = Number(v);
           raw.set(keyOf(r, col), value);
           // a rich value's cell (a picture placed in it): its pointer, kept with the cell
@@ -1818,7 +1834,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           const dt = f ? readDataTable(f) : null;
           if (dt) {
             dataTables.push(dt);
-            arrays.push({ R: dt.ref, r: -1, c: -1 });
+            addArray({ R: dt.ref, r: -1, c: -1 });
             if (style) s.setCell(r, col, { style });
             continue;
           }
@@ -1838,7 +1854,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
               // a formula from before arrays spilled keeps working out one value (Excel shows it with @)
               input = normalizeFormula(isArray ? readFileFormula(text) : legacyFormula(readFileFormula(text)), nameCase);
               const R = isArray ? parseRange(f.getAttribute('ref') ?? '') : null;
-              if (R && (R.r2 > R.r1 || R.c2 > R.c1)) arrays.push({ R, r, c: col });
+              if (R && (R.r2 > R.r1 || R.c2 > R.c1)) addArray({ R, r, c: col });
               // an array formula not marked as dynamic (cm, Excel 365's cell metadata) is a legacy one: it fills its block and no more
               if (isArray && !c.hasAttribute('cm')) legacyArray = R && R.r1 === r && R.c1 === col ? { rows: R.r2 - R.r1 + 1, cols: R.c2 - R.c1 + 1 } : { rows: 1, cols: 1 };
               if (v !== null && value !== null) {
@@ -1847,7 +1863,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
                 list.set(keyOf(r, col), { v: value, ...(t === 'e' ? { error: true } : {}) });
               } else unvalued++;
             }
-          } else if (arrays.some((a) => inRange(a.R, r, col) && !(a.r === r && a.c === col))) {
+          } else if (arrays.get(Math.floor(r / 16))?.some((a) => inRange(a.R, r, col) && !(a.r === r && a.c === col))) {
             // spilled there: the formula fills it again (the file's value is kept for one this program can't work out)
             if (v !== null && value !== null) {
               let list = formulaValues.get(s);
@@ -1926,7 +1942,9 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const fileIndex = allSheetEls.indexOf(el);
         const gridName = definedNames.find((d) => d.getAttribute('name') === GRID_NAME && Number(d.getAttribute('localSheetId')) === fileIndex);
         const mover = ms.grid ? readGridName(gridName?.textContent, ms.grid) : STILL;
-        const got = restoreSheet(s, ms, raw, mover, dr ? structurePictures(dr) : new Map(), sameWrote, HIDDEN);
+        const sizeCol = (c: number) => (s.hiddenCols.has(c) ? 0 : s.colWidths.get(c) ?? DEFAULT_COL_W);
+        const sizeRow = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? s.fittedRows.get(r) ?? DEFAULT_ROW_H);
+        const got = restoreSheet(s, ms, raw, mover, dr ? structurePictures(dr, sizeCol, sizeRow) : new Map(), sameWrote, HIDDEN);
         restored.structures += got.structures;
         restored.changed += got.changed;
         const mine = ms.filter ? moveFilter(ms.filter, mover) : null;
@@ -2006,11 +2024,18 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const rowPx = (r: number) => (s.hiddenRows.has(r) ? 0 : s.rowHeights.get(r) ?? s.fittedRows.get(r) ?? DEFAULT_ROW_H);
         // pictures, shapes and text boxes (not our structures' pictures, which are their cells)
         const drawRels = pkg.rels(drawingPath!);
+        // the cells our structures' pictures were saved over, by name (found once, not per picture)
+        const ownPictures = new Set(ms ? ms.cells.filter((x) => x.structure).map((x) => cellName(x.r, x.c)) : []);
         const got = readObjects(dr, (rid) => {
           const t = drawRels.get(rid)?.target;
           const bytes = t ? pkg.bytes(t) : null;
           return bytes ? bytesDataUrl(bytes, t!) : null;
-        }, (a) => anchorPlace(a, colPx, rowPx), theme, (name) => !!ms && name.startsWith('Structure '));
+        }, (a) => anchorPlace(a, colPx, rowPx), theme, (name, el) => {
+          // (only a structure's own picture, named for its cell as saved here: another object called
+          // "Structure ..." is read like any other)
+          const m = ms && el.localName === 'pic' ? /^Structure ([A-Z]{1,3}\d{1,7})$/.exec(name) : null;
+          return !!m && ownPictures.has(m[1]);
+        });
         foreignPictures += got.skipped;
         if (got.objects.length) { for (const o of got.objects) seenObjectId(o.id); s.setObjects(got.objects); }
         // charts: Excel's, or ours (our own copy where the data it charts is unchanged)
@@ -2022,10 +2047,12 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           const target = cref ? pkg.rels(drawingPath!).get(rAttr(cref, 'id') ?? '')?.target : undefined;
           const cdoc = target ? pkg.xml(target) : null;
           const from = kid(anchor, 'from'), to = kid(anchor, 'to');
-          if (!cdoc || !from) { foreignPictures++; continue; }
-          const a = anchorPos(from);
+          // (an absoluteAnchor has a place on the sheet and a size instead of cells)
+          const abs = anchor?.localName === 'absoluteAnchor' ? anchorPlace(anchor, colPx, rowPx) : null;
+          if (!cdoc || (!from && !abs)) { foreignPictures++; continue; }
+          const a = abs ? abs.from : anchorPos(from);
           let w = 480, h = 290;
-          if (to) {
+          if (abs) { w = abs.w; h = abs.h; } else if (to) {
             const b = anchorPos(to);
             w = b.colOff - a.colOff; for (let c = a.col; c < b.col; c++) w += colPx(c);
             h = b.rowOff - a.rowOff; for (let r = a.row; r < b.row; r++) h += rowPx(r);
@@ -2047,7 +2074,9 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
           // the file's own chart part, kept to write back while the chart isn't changed here (not a PivotChart's, which follows its PivotTable)
           const tree = cref?.namespaceURI === C_NS && !kid(cdoc.documentElement, 'pivotSource') ? readTree(pkg, target!) : null;
           const withFile = (c: Chart): Chart => (tree ? { ...c, file: { print: keptChartPrint(c), path: target!, ...tree } } : c);
-          if (mine && sameChartData(mine, got.chart)) { seenChartId(mine.id); const { alt: _was, placement: _had, ...kept } = mine; charts.push(withFile({ ...kept, at, ...placement, ...alt })); continue; }
+          // (where it is and its size as the file has them: moved or resized in Excel)
+          for (const l of got.lost ?? []) notKept.add(l);
+          if (mine && sameChartData(mine, got.chart)) { seenChartId(mine.id); const { alt: _was, placement: _had, ...kept } = mine; charts.push(withFile({ ...kept, at, w: got.chart.w, h: got.chart.h, ...placement, ...alt })); continue; }
           if (got.partial) notKept.add('parts of combined charts');
           charts.push(withFile({ ...got.chart, ...alt, ...placement }));
         }
@@ -2108,7 +2137,7 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       if (dv.length) s.setValidations(dv);
       const sparks = readSparklines(ws, s.name, colourOf);
       if (sparks.length) { for (const g of sparks) seenSparkId(g.id); s.setSparklines(sparks); }
-      const ps = readPageSetup(ws, definedNames, s.name, si);
+      const ps = readPageSetup(ws, definedNames, s.name, allSheetEls.indexOf(el));
       if (ps) s.setPageSetup(ps);
       // links: Excel's own (a cell range takes its link on each of its cells)
       const linkRels = pkg.rels(path!);
@@ -2118,7 +2147,11 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
         const loc = h.getAttribute('location');
         const link = rel?.external ? linkFromTarget(rel.target) + (loc ? `#${loc}` : '') : loc ? `#${loc}` : null;
         if (!R || !link) continue;
-        for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 999); r++) for (let c = R.c1; c <= Math.min(R.c2, R.c1 + 99); c++) s.setLink(r, c, link);
+        // (every cell of it; one on a very big block, such as whole columns, stops past the last cell in use, and is said)
+        const all = (R.r2 - R.r1 + 1) * (R.c2 - R.c1 + 1) <= 250000;
+        const r2 = all ? R.r2 : Math.min(R.r2, Math.max(R.r1 + 999, s.lastRow)), c2 = all ? R.c2 : Math.min(R.c2, Math.max(R.c1 + 99, s.lastCol));
+        if (r2 < R.r2 || c2 < R.c2) notKept.add('links on cells past the last one in use');
+        for (let r = R.r1; r <= r2; r++) for (let c = R.c1; c <= c2; c++) s.setLink(r, c, link);
       }
     });
     // defined names (Excel's own, for print areas and filters, are its business)
@@ -2127,8 +2160,10 @@ export async function readXlsx(bytes: Uint8Array, _deps?: Partial<XlsxPictures>)
       const name = d.getAttribute('name') ?? '';
       const text = d.textContent ?? '';
       if (!name || isBuiltInName(name) || name === GRID_NAME || !text) continue;
+      // (localSheetId counts the file's sheets, the hidden list sheet among them)
       const local = d.getAttribute('localSheetId');
-      const sheet = local !== null ? book.sheets[Number(local)] : undefined;
+      const localEl = local !== null ? allSheetEls[Number(local)] : undefined;
+      const sheet = localEl ? book.sheets[sheetEls.indexOf(localEl)] : undefined;
       if (local !== null && !sheet) continue;
       countFormula(text);
       names.push({
@@ -2274,14 +2309,16 @@ function asSaved(book: Workbook, values: Map<Sheet, Map<number, FileValue>>): bo
 }
 
 /** The cell each structure's picture (named "Structure A2" by the cell it was saved over) is over now. */
-function structurePictures(dr: Document): Map<string, { r: number; c: number }> {
+export function structurePictures(dr: Document, colPx: (c: number) => number, rowPx: (r: number) => number): Map<string, { r: number; c: number }> {
   const out = new Map<string, { r: number; c: number }>();
   for (const anchor of Array.from(dr.documentElement.children)) {
     const name = anchor.getElementsByTagNameNS(XDR, 'cNvPr')[0]?.getAttribute('name') ?? '';
     const m = /^Structure ([A-Z]{1,3}\d{1,7})$/.exec(name);
+    if (!m || !anchor.getElementsByTagNameNS(XDR, 'pic').length) continue;
+    // (a picture Excel gave a fixed place, an absoluteAnchor, is over the cell at that place)
     const from = kid(anchor, 'from');
-    if (!m || !from || !anchor.getElementsByTagNameNS(XDR, 'pic').length) continue;
-    const a = anchorPos(from);
+    const a = from ? anchorPos(from) : anchor.localName === 'absoluteAnchor' ? anchorPlace(anchor, colPx, rowPx)?.from : undefined;
+    if (!a) continue;
     out.set(m[1], { r: a.row, c: a.col });
   }
   return out;
@@ -2330,6 +2367,64 @@ const sameRange = (a: Range, b: Range) => a.r1 === b.r1 && a.c1 === b.c1 && a.c2
 
 const OP_BACK: Record<string, CompareOp> = { lessThan: '<', lessThanOrEqual: '<=', greaterThan: '>', greaterThanOrEqual: '>=', equal: '=', notEqual: '<>' };
 
+/**
+ * A sheet's links as blocks of cells with the same link: runs along each row, joined with the
+ * same run in the rows below. In row and column order.
+ */
+function linkBlocks(s: Sheet): (Range & { link: string })[] {
+  const keys = [...s.cells].filter(([, c]) => c.link).map(([k]) => k).sort((a, b) => rowOf(a) - rowOf(b) || colOf(a) - colOf(b));
+  const out: (Range & { link: string })[] = [];
+  // the blocks still open at the row above, by their columns and link
+  let open = new Map<string, Range & { link: string }>();
+  let row = -1;
+  let next = new Map<string, Range & { link: string }>();
+  const runs: { r: number; c1: number; c2: number; link: string }[] = [];
+  for (const k of keys) {
+    const r = rowOf(k), c = colOf(k), link = s.cells.get(k)!.link!;
+    const last = runs[runs.length - 1];
+    if (last && last.r === r && last.c2 === c - 1 && last.link === link) last.c2 = c;
+    else runs.push({ r, c1: c, c2: c, link });
+  }
+  for (const run of runs) {
+    if (run.r !== row) { open = run.r === row + 1 ? next : new Map(); next = new Map(); row = run.r; }
+    const id = `${run.c1}:${run.c2}:${run.link}`;
+    const B = open.get(id);
+    if (B) { B.r2 = run.r; next.set(id, B); } else {
+      const nb = { r1: run.r, c1: run.c1, r2: run.r, c2: run.c2, link: run.link };
+      out.push(nb);
+      next.set(id, nb);
+    }
+  }
+  return out;
+}
+
+/**
+ * A date cell's ISO 8601 text (t="d", ECMA-376 Part 1, 18.17.4) as a day number. Without a time
+ * zone it is the date and time as written (a day number has none); with one (Z, +08:00) it is
+ * taken as that moment in UTC. NaN when it isn't a date.
+ */
+function isoSerial(v: string): number {
+  const m = /^(-?\d{4,})-(\d\d)-(\d\d)(?:T(\d\d):(\d\d)(?::(\d\d(?:\.\d+)?))?)?$/.exec(v.trim());
+  if (!m) return Date.parse(v) / 86400000 + 25569;
+  const ms = Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3]), Number(m[4] ?? 0), Number(m[5] ?? 0), 0) + Number(m[6] ?? 0) * 1000;
+  return ms / 86400000 + 25569;
+}
+
+/**
+ * A filter's text with Excel's ~ escapes taken off (~* ~? ~~ are the characters themselves), or
+ * null when it holds a wildcard (a * or ? on its own).
+ */
+function unescapeWildcards(t: string): string | null {
+  let out = '';
+  for (let i = 0; i < t.length; i++) {
+    const ch = t[i];
+    if (ch === '~' && i + 1 < t.length && '*?~'.includes(t[i + 1])) { out += t[++i]; continue; }
+    if (ch === '*' || ch === '?') return null;
+    out += ch;
+  }
+  return out;
+}
+
 /** A filter column as a condition (null for kinds not read yet: top 10, colours, dates). */
 function readFilterColumn(fc: Element): Condition | null {
   const filters = kid(fc, 'filters');
@@ -2345,7 +2440,8 @@ function readFilterColumn(fc: Element): Condition | null {
       const op = OP_BACK[el.getAttribute('operator') ?? 'equal'] ?? '=';
       const raw = el.getAttribute('val') ?? '';
       const m = /^\*(.*)\*$/.exec(raw);
-      if (m && op === '=' && !/[*?]/.test(m[1])) return { op, value: raw, contains: m[1] };
+      const plain = m && op === '=' ? unescapeWildcards(m[1]) : null;
+      if (plain !== null) return { op, value: raw, contains: plain };
       const n = Number(raw);
       return { op, value: raw !== '' && Number.isFinite(n) ? n : raw };
     };

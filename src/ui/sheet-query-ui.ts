@@ -674,6 +674,7 @@ export class SheetQueries {
       }
     }
     v.commitEdit();
+    const connectionOnly = target.kind === 'none';
     let errors = 0;
     let shownSheet: Sheet | null = null;
     wb.edit(fresh ? 'Get Data' : 'Edit Query', () => {
@@ -705,7 +706,8 @@ export class SheetQueries {
       if (i >= 0 && wb.sheets[wb.active] !== shownSheet) v.goSheet(i);
     }
     v.refresh();
-    this.host.flash(`${q.name}: ${t.rows.length} row${t.rows.length === 1 ? '' : 's'} loaded${errors ? `, ${errors} error${errors > 1 ? 's' : ''} (left blank)` : ''}.`, errors ? 8000 : 3000);
+    // a connection only writes nothing to the workbook, so no rows were loaded
+    this.host.flash(connectionOnly ? `${q.name} is a connection only.` : `${q.name}: ${t.rows.length} row${t.rows.length === 1 ? '' : 's'} loaded${errors ? `, ${errors} error${errors > 1 ? 's' : ''} (left blank)` : ''}.`, errors ? 8000 : 3000);
     if (this.paneWin && ToolWindow.open === this.paneWin) this.queriesPane();
     return null;
   }

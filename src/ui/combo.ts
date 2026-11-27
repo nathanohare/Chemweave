@@ -88,6 +88,8 @@ export function makeCombo(input: HTMLInputElement): void {
     const box = document.createElement('div');
     box.className = 'combo-list';
     box.setAttribute('role', 'listbox');
+    // a press on the list's own scrollbar, a group heading or its padding keeps the box focused too, or the list would close
+    box.addEventListener('mousedown', (e) => e.preventDefault());
     // inside the box's window, or it shows under the window (see popup-host)
     popupHost(input).append(box);
     const r = input.getBoundingClientRect();
@@ -111,7 +113,13 @@ export function makeCombo(input: HTMLInputElement): void {
   input.addEventListener('mousedown', () => { if (open?.input === input) close(); else setTimeout(show, 0); });
   input.addEventListener('focus', () => setTimeout(() => { if (document.activeElement === input) show(); }, 0));
   input.addEventListener('blur', () => close());
-  input.addEventListener('input', () => { filtering = true; active = -1; if (open?.input !== input) show(); render(); });
+  input.addEventListener('input', () => {
+    // (opening the list starts it unfiltered, so the filter is switched on after it opens: the first key already narrows it)
+    if (open?.input !== input) show();
+    filtering = true;
+    active = -1;
+    render();
+  });
   input.addEventListener('keydown', (e) => {
     const items = visible().filter((v) => { const g = groupOf.get(v); return !g?.folded || opened.has(g.group) || (filtering && !!input.value.trim()); });
     if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {

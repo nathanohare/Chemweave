@@ -29,10 +29,12 @@ function sampleBook(t: SheetTemplate): Promise<Workbook> {
   const key = `${t.id}|${unitPrefs.place}`;
   let got = samples.get(key);
   if (!got) {
+    // the structures couldn't all be drawn (the chemistry engine still loading): made again next time
+    let again = false;
     got = (async () => {
       const wb = withSample(t.id, t.make(unitPrefs.place));
       const draw = templateChem.toStructure;
-      if (!draw) { samples.delete(key); return wb; }
+      if (!draw) { again = true; return wb; }
       const sh = wb.sheets[0];
       const used = sh.usedRange();
       if (!used) return wb;
@@ -47,11 +49,12 @@ function sampleBook(t: SheetTemplate): Promise<Workbook> {
       }
       const drawn = await Promise.all(todo.map(async (x) => ({ ...x, contents: await draw(x.text, wb).catch(() => null) })));
       wb.build(() => { for (const d of drawn) if (d.contents) sh.setStructure(d.r, d.c, d.contents); });
-      // drawn again next time when some couldn't be (the chemistry engine still loading)
-      if (drawn.some((d) => !d.contents)) samples.delete(key);
+      if (drawn.some((d) => !d.contents)) again = true;
       return wb;
     })();
     samples.set(key, got);
+    // (after the set: forgetting it from inside the function above came before the set and did nothing)
+    void got.then(() => { if (again && samples.get(key) === got) samples.delete(key); }, () => { if (samples.get(key) === got) samples.delete(key); });
   }
   return got;
 }

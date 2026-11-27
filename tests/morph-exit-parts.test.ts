@@ -5,12 +5,15 @@
 import { describe, it, expect, vi } from 'vitest';
 
 const painted: { shapes: number[]; captions: number; x1?: number }[] = [];
+type Painted = { shapes: Map<number, { x1: number }>; captions: Map<number, unknown> };
+const note = (doc: Painted) => painted.push({ shapes: [...doc.shapes.keys()], captions: doc.captions.size, x1: [...doc.shapes.values()][0]?.x1 });
 vi.mock('../src/deck/slide-view', () => ({
-  paintSlide: (_c: unknown, _w: number, _h: number, _d: number, _page: unknown, doc: { shapes: Map<number, { x1: number }>; captions: Map<number, unknown> }) => {
-    painted.push({ shapes: [...doc.shapes.keys()], captions: doc.captions.size, x1: [...doc.shapes.values()][0]?.x1 });
+  paintSlide: (_c: unknown, _w: number, _h: number, _d: number, _page: unknown, doc: Painted) => {
+    note(doc);
     return { x: 0, y: 0, k: 1 };
   },
-  drawDrawing: () => undefined,
+  // (each part of a morph is drawn straight onto a canvas of its own size, not cut out of a screen painted for it)
+  drawDrawing: (_ctx: unknown, doc: Painted) => note(doc),
 }));
 
 import { Doc } from '../src/model';
