@@ -45,14 +45,15 @@ export function hasMacrocycle(g: Graph, limit = COORDGEN_RING_LIMIT): boolean {
   const dist = new Int32Array(n);
   for (const [a, b] of g.edges) {
     if (a === b || a < 0 || b < 0 || a >= n || b >= n) continue;
-    // breadth first from a to b, not using the bond a–b, no further than `limit` steps
+    // breadth first from a to b, not using the bond a–b, no further than `limit` − 1 steps (a way
+    // round of limit − 1 bonds and the bond a–b make a ring of `limit` atoms, the largest allowed)
     dist.fill(-1);
     dist[a] = 0;
     let frontier = [a], found = -1;
     while (frontier.length && found < 0) {
       const next: number[] = [];
       for (const v of frontier) {
-        if (dist[v] >= limit) continue;
+        if (dist[v] >= limit - 1) continue;
         for (const w of adj[v]) {
           if ((v === a && w === b) || dist[w] >= 0) continue;
           dist[w] = dist[v] + 1;

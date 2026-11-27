@@ -178,13 +178,13 @@ export class ModeColoursDialog {
       <h2 data-info="Each file type has its own color, so you can see at a glance whether you are working on a canvas, a presentation, a spreadsheet, a document or a design.">Mode Colors</h2>
       <fieldset class="mc-styles">
         <legend>Use the color for</legend>
-        <label class="hk-opt"><input type="radio" name="mc-style" value="accent" /><span>Buttons, highlights and tab icons (the window keeps its usual look)</span></label>
+        <label class="hk-opt"><input type="radio" name="mc-style" value="accent" /><span>Buttons, highlights and tab icons (the window keeps its usual style)</span></label>
         <label class="hk-opt"><input type="radio" name="mc-style" value="window" /><span>The whole window: the menu bar and tab strip too</span></label>
         <label class="hk-opt"><input type="radio" name="mc-style" value="off" /><span>Nothing: every mode uses the drawing color</span></label>
       </fieldset>
       <div class="mc-colours"></div>
       <div class="hk-foot">
-        <button type="button" data-act="reset">Use the standard colors</button>
+        <button type="button" data-act="reset">Reset Colors</button>
         <span class="hk-buttons"><button type="button" data-act="close" class="primary">Close</button></span>
       </div>`;
     const box = d.querySelector('.mc-colours')!;

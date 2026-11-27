@@ -7,7 +7,7 @@
 
 import { describe, it, expect, afterEach } from 'vitest';
 import { unzipSync, zipSync, strFromU8, strToU8 } from 'fflate';
-import { newDocument, paraFromStyle, runStyleOf, type DocObject, type DocText } from '../src/document/document';
+import { newDocument, objectRun, paraFromStyle, runStyleOf, type DocObject, type DocText } from '../src/document/document';
 import { DocLayouter } from '../src/document/doc-layout';
 import { documentMeasure } from '../src/text/font-measure';
 import { writeDocx, readDocx, type DocxDeps } from '../src/io/docx';
@@ -275,7 +275,8 @@ describe('Go To and Select', () => {
 describe('Word Count and the grammar checks', () => {
   it('counts words, characters, paragraphs; text boxes and notes when asked', () => {
     expect(countText('The yield was 85%.\n\nCH2Cl2 was used')).toEqual({ words: 7, chars: 28, charsWithSpaces: 33, paras: 2 });
-    const t = docOf(['two words'], { objects: { 1: { kind: 'note', runs: [{ text: 'a footnote here' }] } } });
+    // (the footnote's number in the text: one whose number was deleted isn't counted)
+    const t = docOf([{ text: 'two words', runs: [{ text: 'two words' }, objectRun(1, {})] }], { objects: { 1: { kind: 'note', runs: [{ text: 'a footnote here' }] } } });
     expect(countDocument(t, false).words).toBe(2);
     expect(countDocument(t, true).words).toBe(5);
     expect(countDocument(t, true, [0, 3]).words).toBe(1);

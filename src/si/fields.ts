@@ -112,8 +112,8 @@ export const CORE_FIELDS: readonly FieldDef[] = [
   ], filledParts: ['found'] },
   { key: 'spectra', label: 'Spectra', kind: 'attachments', subdir: 'spectra', itemParts: [
     { key: 'type', label: 'Type', kind: 'choice', choices: SPECTRUM_TYPES, choiceLabels: SPECTRUM_TYPE_LABELS },
-    text('title', 'Header in the SI (empty = automatic)', { placeholder: 'automatic, e.g. 3a — 1H NMR (400 MHz, CDCl3)' }),
-    text('struct_caption', 'Caption under the structure (empty = automatic)', { placeholder: 'automatic, e.g. 1H NMR (CDCl3, 400 MHz)' }),
+    text('title', 'Header in the SI (empty = automatic)', { placeholder: 'automatic, e.g. 3a — ¹H NMR (400 MHz, CDCl₃)' }),
+    text('struct_caption', 'Caption under the structure (empty = automatic)', { placeholder: 'automatic, e.g. ¹H NMR (CDCl₃, 400 MHz)' }),
   ], description: 'PDFs or images; placed in the spectra section' },
   { key: 'files', label: 'Additional files', kind: 'attachments', subdir: 'files', itemParts: FILE_ITEM_PARTS },
   { key: 'notes', label: 'Notes (private, never printed)', kind: 'notes', removable: false },
@@ -134,7 +134,7 @@ export const LIBRARY_FIELDS: readonly FieldDef[] = [
   { key: 'ir', label: 'IR', kind: 'parts', parts: [{ key: 'method', label: 'Method', kind: 'combo', choices: IR_METHODS, default: 'ATR' }, text('bands', 'Bands (cm⁻¹)', { placeholder: '2925, 1715, 1250' })], filledParts: ['bands'] },
   { key: 'rotation', label: 'Optical rotation [α]D', kind: 'parts', parts: [
     num('value', '[α]D', { placeholder: '+23.5' }), num('temperature', 'T', { placeholder: '20', suffix: '°C' }),
-    num('c', 'c', { placeholder: '1.0' }), text('solvent', 'Solvent', { placeholder: 'CHCl3' }),
+    num('c', 'c', { placeholder: '1.0' }), text('solvent', 'Solvent', { placeholder: 'CHCl₃' }),
   ], filledParts: ['value', 'c', 'solvent'] },
   { key: 'ee', label: 'Enantiomeric excess / ratio', kind: 'parts', parts: [
     text('value', 'ee or er', { placeholder: '94% ee  or  97:3 er' }),

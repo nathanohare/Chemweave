@@ -54,6 +54,8 @@ function writeOut(doc: Doc, id: number, style: MethylStyle): void {
  */
 export function toggleChainEndLabels(doc: Doc, ids: Iterable<number>, style: MethylStyle = 'CH3'): { count: number; shown: boolean } {
   const ends = terminalEnds(doc, ids);
+  // no chain ends among the atoms chosen: nothing to do (an empty list would mean every atom below)
+  if (!ends.length) return { count: 0, shown: false };
   const show = ends.some((id) => !isShown(doc, id));
   writeTerminalMethyls(doc, ends, show ? style : 'hidden');
   return { count: ends.length, shown: show };

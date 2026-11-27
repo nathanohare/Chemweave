@@ -44,6 +44,14 @@ export function outsideValence(b: Pick<Bond, 'display' | 'order'>): boolean {
 export function isWedge(d: BondDisplay): boolean {
   return d === 'wedge' || d === 'hashWedge' || d === 'hollowWedge' || d === 'wavyWedge';
 }
+/**
+ * A wedge turned over to point the other way, as a mirror image needs to keep its stereocentres:
+ * a wedge or a hollow wedge (read as a wedge, toward the viewer) becomes a hashed wedge, a hashed
+ * wedge a wedge. Other bonds, a wavy wedge among them, stay as they are.
+ */
+export function turnedOverWedge(d: BondDisplay): BondDisplay {
+  return d === 'wedge' || d === 'hollowWedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d;
+}
 export type DoublePos = 'auto' | 'left' | 'right' | 'center';
 
 /**
@@ -293,6 +301,8 @@ export interface StereoLabel {
   offset?: boolean;
   /** From ChemDraw's file: `text` stands until the structure changes, with a warning where the rules work out otherwise. */
   fromFile?: boolean;
+  /** A typed label's text before it was typed (a file's, or one saved with the drawing): it comes back when the typed text is cleared. */
+  typedOver?: { text: string; fromFile?: boolean };
 }
 
 /** R/S and E/Z labels worked out for a drawing: a descriptor, null for none, undefined while not known. */

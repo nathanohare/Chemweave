@@ -276,8 +276,9 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           ...(rows[i]?.[j]?.geom ? [['Use the File\'s Geometry', () => set(null), has] as [string, () => void, boolean]] : []),
           ...(rows[i]?.[j]?.geom?.length ? [['Geometry View…', () => void viewIt(), !has] as [string, () => void, boolean]] : []),
           null,
-          // named as Geometry View's button names it when the cell has a file's geometry
-          [rows[i]?.[j]?.geom?.length ? 'Remove Geometry' : 'Remove Structure', () => { read(); const cell = rows[i]?.[j]; if (cell) { delete cell.drawn; delete cell.geom; delete cell.flat; } draw(); redraw(); }, has || !!rows[i]?.[j]?.geom],
+          // each takes away only what its name says: a species with both a drawn structure and a file's geometry keeps the other (as Geometry View's Remove Geometry does)
+          ...(rows[i]?.[j]?.geom ? [['Remove Geometry', () => { read(); const cell = rows[i]?.[j]; if (cell) { delete cell.geom; delete cell.flat; delete cell.view; } draw(); redraw(); }, true] as [string, () => void, boolean]] : []),
+          ...(has ? [['Remove Structure', () => { read(); const cell = rows[i]?.[j]; if (cell) delete cell.drawn; draw(); redraw(); }, true] as [string, () => void, boolean]] : []),
         ]);
       });
       b.addEventListener('contextmenu', (e) => { e.preventDefault(); b.click(); });
@@ -358,7 +359,8 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           tr.insertCell().append(g);
           if (structure) tr.insertCell().append(structureCell(i, j));
         });
-        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: 'Remove this species' });
+        const del = Object.assign(document.createElement('button'), { type: 'button', textContent: '×', title: rows.length <= 2 ? 'A diagram needs at least two species' : 'Remove this species' });
+        del.disabled = rows.length <= 2;
         del.addEventListener('click', () => {
           read();
           if (rows.length <= 2) return;

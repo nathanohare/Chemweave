@@ -542,7 +542,16 @@ export function pasteSpecial(s: Sheet, at: { row: number; col: number }, block: 
       if (op && (o.what === 'formulas' || o.what === 'values')) style = old?.style;
       const keepStructure = from?.structure && !op ? from.structure : undefined;
       const link = o.what === 'all' || o.what === 'no-borders' ? from?.link : old?.link;
-      s.setCell(r, c, { input: keepStructure ? undefined : input || undefined, structure: keepStructure, style, link });
+      // Paste Special ▸ All keeps what a cell is: its rich text and Compound card when its text is
+      // pasted as it was, and a legacy array formula (not turned on its side)
+      const everything = (o.what === 'all' || o.what === 'no-borders') && !op;
+      const same = everything && !!from?.input && input === from.input;
+      const kept = {
+        ...(same && from?.runs ? { runs: from.runs } : {}),
+        ...(same && from?.compound ? { compound: from.compound } : {}),
+        ...(everything && !o.transpose && from?.array && input?.startsWith('=') ? { array: { ...from.array } } : {}),
+      };
+      s.setCell(r, c, { input: keepStructure ? undefined : input || undefined, structure: keepStructure, style, link, ...kept });
       const n = block.notes?.[si]?.[sj];
       if ((o.what === 'all' || o.what === 'no-borders') && n) s.setNote(r, c, copyNote(n));
     }

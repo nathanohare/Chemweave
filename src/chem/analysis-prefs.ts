@@ -145,7 +145,9 @@ export function parseAnalysisPrefs(v: unknown): AnalysisPrefs {
     for (const r of o.descriptors) {
       const x = r as Record<string, unknown>;
       if (!isDesc(x?.key, out.calcs) || list.some((y) => y.key === x.key)) continue;
-      list.push({ key: x.key, on: x.on === true, label: typeof x.label === 'string' ? x.label.slice(0, 40) : DESC_LABELS[x.key] ?? '', dp: x.dp === null ? null : dp(x.dp, 2) });
+      // a line saved without its decimal places takes the line's own default (4 for m/z), not 2
+      const def = DEFAULT_ANALYSIS.descriptors.find((d) => d.key === x.key)?.dp;
+      list.push({ key: x.key, on: x.on === true, label: typeof x.label === 'string' ? x.label.slice(0, 40) : DESC_LABELS[x.key] ?? '', dp: x.dp === null || (x.dp === undefined && def === null) ? null : dp(x.dp, def ?? 2) });
     }
     // lines added to the program since: after the default line before them
     DEFAULT_ANALYSIS.descriptors.forEach((d, i) => {
@@ -206,6 +208,7 @@ export function tempText(c: number, u: TempUnit): string {
 
 export function pressureText(kPa: number, u: PressureUnit): string {
   const v = u === 'kPa' ? kPa : u === 'mmHg' ? kPa / 0.133322 : u === 'Pa' ? kPa * 1000 : kPa / 100;
-  const s = v >= 100 ? String(Math.round(v)) : v >= 0.1 ? v.toPrecision(2) : v.toExponential(1).replace('e', ' × 10^');
+  // (from 99.5 two figures round up to 100, which toPrecision would write as 1.0e+2)
+  const s = v >= 99.5 ? String(Math.round(v)) : v >= 0.1 ? v.toPrecision(2) : v.toExponential(1).replace('e', ' × 10^');
   return `${s.replace(/\^([+−-]?\d+)$/, (_, e: string) => '^' + e.replace('+', ''))} ${u === 'mmHg' ? 'mmHg' : u}`;
 }

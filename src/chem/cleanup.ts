@@ -9,7 +9,7 @@
 // rings such as norbornane) keep their drawn shape, resized.
 
 import { Vec, add, sub, mul, dist, cross, angleOf, fromAngle, normAngle, distToSegment, DEG } from '../geom';
-import type { Bond, BondDisplay, Doc } from '../model';
+import { isWedge, turnedOverWedge as turnedOver, type Bond, type BondDisplay, type Doc } from '../model';
 import { bondLength } from './chemgeom';
 import { atomsOnBonds, countCrossings, CROSSING, inPolygon, segmentsCross, untangleSystem } from './untangle';
 
@@ -84,7 +84,7 @@ export function cleanUpWays(doc: Doc, f: Set<number>, seeds: Map<number, Vec>[] 
     const b = doc.bonds.get(bid)!;
     if (b.a1 !== id || !index.has(b.a2)) continue;
     bonds.push([index.get(b.a1)!, index.get(b.a2)!, b.order]);
-    if (b.display === 'wedge' || b.display === 'hashWedge') stereo.add(b.a1); // the stereocentre is at the narrow end
+    if (isWedge(b.display)) stereo.add(b.a1); // the stereocentre is at the narrow end (wedged, hashed, hollow or wavy)
   }
   const atoms = ids.map((id) => { const a = doc.atoms.get(id)!; return { x: a.x, y: a.y, keepOrder: stereo.has(id), labelled: a.z !== 6 || !!a.label }; });
   // the bond length the structure is drawn at (structures drawn smaller or larger keep their size)
@@ -176,7 +176,7 @@ export function turnOption(o: CleanUpOption, deg: number, mirror: boolean, label
     pos.set(id, add(c, { x: m.x * cs - m.y * sn, y: m.x * sn + m.y * cs }));
   }
   const displays = new Map(o.displays);
-  if (mirror) for (const [id, d] of displays) displays.set(id, d === 'wedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d);
+  if (mirror) for (const [id, d] of displays) displays.set(id, turnedOver(d));
   return { pos, displays, label };
 }
 
@@ -254,14 +254,24 @@ function keepStereo(doc: Doc, ids: number[], before: Vec[], after: Vec[]): [numb
   const out: [number, BondDisplay][] = [];
   for (const id of ids) {
     const c = index.get(id)!;
-    const wedges = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => b.a1 === id && index.has(b.a2) && (b.display === 'wedge' || b.display === 'hashWedge'));
+    const wedges = (doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => b.a1 === id && index.has(b.a2) && wedgeZ(b.display) !== 0);
     if (!wedges.length) continue;
     const was = handedness(doc, id, c, nbr[c], ids, before), now = handedness(doc, id, c, nbr[c], ids, after);
     if (!was || !now || was === now) continue;
-    for (const b of wedges) out.push([b.id, b.display === 'wedge' ? 'hashWedge' : 'wedge']);
+    for (const b of wedges) out.push([b.id, turnedOver(b.display)]);
   }
   return out;
 }
+
+/**
+ * Which way a wedge from a stereocentre points: +1 toward the viewer (a wedge, or a hollow wedge,
+ * which is read as a wedge), −1 away (a hashed wedge), 0 when it says nothing about which way (a
+ * wavy wedge, or any other bond).
+ */
+function wedgeZ(d: BondDisplay): number {
+  return d === 'wedge' || d === 'hollowWedge' ? 1 : d === 'hashWedge' ? -1 : 0;
+}
+
 
 /** Which way round a stereocentre's wedges make it (+1 / −1), or 0 when the drawing doesn't say. */
 function handedness(doc: Doc, id: number, c: number, around: number[], ids: number[], pos: Vec[]): number {
@@ -269,7 +279,7 @@ function handedness(doc: Doc, id: number, c: number, around: number[], ids: numb
   const zOf = (j: number) => {
     for (const bid of doc.adj.get(id) ?? []) {
       const b = doc.bonds.get(bid)!;
-      if (b.a1 === id && b.a2 === ids[j]) return b.display === 'wedge' ? 1 : b.display === 'hashWedge' ? -1 : 0;
+      if (b.a1 === id && b.a2 === ids[j]) return wedgeZ(b.display);
     }
     return 0;
   };

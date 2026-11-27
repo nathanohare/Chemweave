@@ -345,10 +345,12 @@ export function statusColorsBody(colors: Record<Status, string>): { el: HTMLElem
   const inputs = new Map<Status, { pick: HTMLInputElement; none: HTMLInputElement; ic: HTMLElement }>();
   const icons: Record<Status, string> = { ...STATE_ICONS, flagged: '⚑', warning: '⚠' };
   for (const k of STATUS_KEYS) {
-    const row = el('label', 'si-dash-color');
+    // (a row, not one label: a label would pass a click on "No color" to the first control in it, the color box)
+    const row = el('div', 'si-dash-color');
     const ic = el('span', 'si-dash-swatch', icons[k]);
     const pick = el('input');
     pick.type = 'color';
+    pick.setAttribute('aria-label', `${STATUS_NAMES[k]} color`);
     pick.value = colors[k] || DEFAULT_STATUS_COLORS[k] || '#ffffff';
     const none = el('input');
     none.type = 'checkbox';
@@ -356,7 +358,7 @@ export function statusColorsBody(colors: Record<Status, string>): { el: HTMLElem
     const show = (): void => { ic.style.background = none.checked ? '' : tint(pick.value, CELL_ALPHA[k]); pick.disabled = none.checked; };
     pick.addEventListener('input', show);
     none.addEventListener('change', show);
-    const noneLabel = el('span', 'si-dash-none');
+    const noneLabel = el('label', 'si-dash-none');
     noneLabel.append(none, document.createTextNode(' No color'));
     row.append(ic, el('span', 'si-dash-cname', STATUS_NAMES[k]), pick, noneLabel);
     box.append(row);

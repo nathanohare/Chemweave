@@ -109,7 +109,7 @@ export function vendorRawKind(name: string): string | null {
 }
 
 export const rawDataMessage = (name: string, kind: string): string =>
-  `${name} is ${kind}: the instrument's own format, which this program can't read. It is kept with the compound. To fill in the found m/z automatically, also add a report exported from the instrument software (PDF or CSV), or convert the data to mzML with ProteoWizard MSConvert (free) and add that.`;
+  `${name} is ${kind}: the instrument's own format, which Chemweave can't read. It is kept with the compound. To fill in the found m/z automatically, also add a report exported from the instrument software (PDF or CSV), or convert the data to mzML with ProteoWizard MSConvert (free) and add that.`;
 
 export const pictureMessage = (name: string): string => `${name} is a picture: it is kept (and can be printed), but numbers can't be read from pictures. Type the found m/z yourself.`;
 
@@ -163,7 +163,7 @@ export async function readReport(bytes: Uint8Array | null, name: string, pdfText
 /** What a failure to read a report says (as SI Assistant says it). */
 function failed(name: string, e: unknown): ReportData {
   if (e instanceof ReportReadError) return data(kindName(name), { name, readable: false, message: e.message });
-  return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant this program doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
+  return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant Chemweave doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
 }
 
 /**
@@ -480,7 +480,7 @@ export function readMzml(text: string): ReportData {
     const arrays: { mz?: number[]; i?: number[] } = {};
     for (const bda of elements(sp.inner, 'binaryDataArray')) {
       const accs = accessions(bda.inner);
-      if (NUMPRESS.some((a) => accs.has(a))) throw new ReportReadError("This mzML file is compressed with MS-Numpress, which this program can't read. Convert it again with MSConvert with Numpress switched off.");
+      if (NUMPRESS.some((a) => accs.has(a))) throw new ReportReadError("This mzML file is compressed with MS-Numpress, which Chemweave can't read. Convert it again with MSConvert with Numpress switched off.");
       const bin = /<(?:[\w.-]+:)?binary(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?binary>/.exec(bda.inner);
       let raw = base64Bytes(bin ? bin[1] : '');
       if (accs.has(MZML.zlib) && raw.length) raw = inflate(raw);
@@ -1174,7 +1174,7 @@ export function reportListing(bytes: Uint8Array, name: string, most = LISTING_LI
       // (the rows of each sheet past those read count too)
       total = lines.length + sheets.reduce((n, s, i) => n + Math.max(0, (counts[i] ?? s.length) - s.length), 0);
     } else {
-      if (bytes.length > MAX_FILE_BYTES) throw new ReportReadError('too large');
+      if (bytes.length > MAX_FILE_BYTES) throw new ReportReadError(`this file is too large to read here (${Math.round(bytes.length / 1e6)} MB): export a peak list or a PDF report and add that`);
       const text = decode(bytes);
       if (['.csv', '.tsv', '.tab'].includes(ext)) {
         lines = trimmed(aligned(splitRows(text)[0]));
@@ -1191,7 +1191,9 @@ export function reportListing(bytes: Uint8Array, name: string, most = LISTING_LI
       }
     }
     return [lines.slice(0, most).map((l) => (l.length <= width ? l : l.slice(0, width - 1) + '…')), Math.max(0, total - most)];
-  } catch {
+  } catch (e) {
+    // (a file that is simply too large says so; anything else is taken to be damaged)
+    if (e instanceof ReportReadError) return [[`(could not be read: ${e.message.replace(/^This/, 'this').replace(/\.$/, '')})`], 0];
     return [[`(could not be read: this ${ext === '.xlsx' || ext === '.xlsm' ? 'Excel file' : 'file'} may be damaged)`], 0];
   }
 }

@@ -42,7 +42,8 @@ export function densityFactor(g: DensityGroups): number {
 export function girolamiDensity(counts: Record<string, number>, mw: number, g: DensityGroups): number | null {
   let v = 0;
   for (const [el, n] of Object.entries(counts)) {
-    const z = SYMBOLS.indexOf(el) + 1;
+    // (deuterium and tritium, counted apart from hydrogen, take hydrogen's volume)
+    const z = el === 'D' || el === 'T' ? 1 : SYMBOLS.indexOf(el) + 1;
     const x = z ? volume(z) : undefined;
     if (x === undefined) return null;
     v += x * n;
