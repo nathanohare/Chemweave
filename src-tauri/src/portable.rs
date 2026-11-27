@@ -33,7 +33,18 @@ pub fn get() -> Option<&'static Portable> {
 
 /// Where the settings go in a portable copy that can write to its folder.
 pub fn settings_folder() -> Option<&'static Path> {
-    get().filter(|p| p.writable).map(|p| p.folder.as_path())
+    settings_folder_of(get())
+}
+
+/// The folder of a portable copy, when it can be written to.
+pub(crate) fn settings_folder_of(p: Option<&Portable>) -> Option<&Path> {
+    p.filter(|p| p.writable).map(|p| p.folder.as_path())
+}
+
+/// Whether this is a portable copy (a "Chemweave Data" folder beside the app).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn is_portable() -> bool {
+    get().is_some()
 }
 
 /// The folder the app sits in as the person sees it: the .exe's on Windows, the one holding the
@@ -53,7 +64,7 @@ fn home() -> Option<PathBuf> {
     Some(dir.to_path_buf())
 }
 
-fn find(home: &Path) -> Option<Portable> {
+pub(crate) fn find(home: &Path) -> Option<Portable> {
     let folder = [FOLDER, OLD_FOLDER].iter().map(|f| home.join(f)).find(|f| f.is_dir())?;
     let probe = folder.join(".write-test");
     let writable = std::fs::write(&probe, b"").is_ok();

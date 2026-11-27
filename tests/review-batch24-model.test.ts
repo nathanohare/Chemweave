@@ -9,6 +9,9 @@ import { thickenLines } from '../src/preflight-fix';
 import type { PreflightIssue } from '../src/preflight';
 import { checkDrawing, groupIssues, setStructureAlt, type Issue } from '../src/accessibility';
 import { shapeBez, shapeOf } from '../src/arrow-path';
+import { writeCdxml } from '../src/io/cdxml-write';
+import { readCdxml } from '../src/io/cdxml';
+import { cellFavoriteLook, favoriteCellLook } from '../src/favorites';
 import { presetLike, presetNamed, scaleStyle, sameLook, STYLE_PRESETS } from '../src/drawing-styles';
 
 const none = () => ({ atoms: new Set<number>(), bonds: new Set<number>(), captions: new Set<number>(), arrows: new Set<number>(), shapes: new Set<number>() });
@@ -96,6 +99,29 @@ describe('Thicken Lines marks every thin place an arrow or shape covers', () => 
   });
 });
 
+describe('Thicken Lines with things drawn at the drawing\'s own line width', () => {
+  it('a plain frame round thin bonds still thickens the bonds', () => {
+    const doc = new Doc();
+    doc.edit('draw', () => {
+      doc.setStyle({ ...doc.style, lineWidth: 0.4 });
+      const a = doc.addAtom(0, 0, 6).id, b = doc.addAtom(14, 0, 6).id, c = doc.addAtom(28, 0, 6).id;
+      doc.addBond(a, b, 1);
+      doc.addBond(b, c, 1);
+      doc.addShape({ kind: 'rect', x1: -10, y1: -10, x2: 40, y2: 10 });
+    });
+    const issue = {
+      rule: 'line-min', level: 'error', fix: 'lines', title: '', want: 0.51,
+      // the frame's stroke, then the two bonds, all drawn at the drawing's 0.4
+      where: [{ x1: -10, y1: -10, x2: 40, y2: 10 }, { x1: 0, y1: -1, x2: 14, y2: 1 }, { x1: 14, y1: -1, x2: 28, y2: 1 }], sizes: [0.4, 0.4, 0.4],
+    } as PreflightIssue;
+    const frame = [...doc.shapes.values()][0];
+    const ctx = { captionBox: () => ({ x1: 0, y1: 0, x2: 0, y2: 0 }), shapeBox: () => ({ x1: -10, y1: -10, x2: 40, y2: 10 }) };
+    expect(thickenLines(doc, issue, ctx)).toBe(true);
+    expect(doc.shapes.get(frame.id)!.lineWidth).toBe(0.51);
+    expect(doc.style.lineWidth).toBeGreaterThanOrEqual(0.51);
+  });
+});
+
 describe('the accessibility checker', () => {
   it('sees alt text kept on a point of attachment, the first atom made', () => {
     const doc = new Doc();
@@ -112,16 +138,18 @@ describe('the accessibility checker', () => {
     expect(checkDrawing(doc).filter((i) => i.rule === 'alt-smiles')).toHaveLength(0);
   });
 
-  it('groups many issues without copying a growing array each time', () => {
-    const list: Issue[] = [];
-    for (let i = 0; i < 50_000; i++) list.push({ rule: 'merged-cells', where: `Merged ${i}`, place: { kind: 'cell', sheet: 0, row: i, col: 0 } } as unknown as Issue);
-    const t = performance.now();
-    const groups = groupIssues(list);
-    const ms = performance.now() - t;
-    expect(groups).toHaveLength(1);
-    expect(groups[0].items).toHaveLength(50_000);
-    // (the old way copied about 1.25 billion slots: many seconds)
-    expect(ms).toBeLessThan(1500);
+  it('groups issues by rule, in the order they came, without copying the group for every issue', () => {
+    const list = Array.from({ length: 3000 }, (_, i) => ({ rule: i % 2 ? 'merged-cells' : 'contrast', where: `item ${i}`, place: { kind: 'cell', sheet: 0, row: i, col: 0 } }) as unknown as Issue);
+    // (copying a group with a spread walks it with the array iterator: once per issue before, a few times now)
+    const iterate = Array.prototype[Symbol.iterator];
+    let walks = 0;
+    Array.prototype[Symbol.iterator] = function (this: unknown[]) { walks++; return iterate.call(this); } as typeof iterate;
+    let groups: ReturnType<typeof groupIssues>;
+    try { groups = groupIssues(list); } finally { Array.prototype[Symbol.iterator] = iterate; }
+    expect(walks).toBeLessThan(100);
+    expect(groups.map((g) => g.rule).sort()).toEqual(['contrast', 'merged-cells']);
+    expect(groups.find((g) => g.rule === 'contrast')!.items.map((i) => i.where).slice(0, 3)).toEqual(['item 0', 'item 2', 'item 4']);
+    expect(groups.reduce((n, g) => n + g.items.length, 0)).toBe(3000);
   });
 });
 
@@ -137,6 +165,15 @@ describe('a one-curve arrow that is not a ready-made U-turn', () => {
     const bez = shapeBez('u', 1);
     bez[1] = { x: 0.8, y: 1.4 };
     expect(shapeOf({ ...ends, bez })).toBeNull();
+  });
+
+  it('a U-turn saved in a ChemDraw file and opened again is still a U-turn (the file keeps two decimals)', () => {
+    const doc = new Doc();
+    doc.edit('draw', () => { arrow(doc, { x: 0, y: 0 }, { x: 73.7, y: 11.3 }, { sweep: 0, bez: shapeBez('u', 1) }); });
+    const back = readCdxml(writeCdxml(doc)).doc;
+    const r = [...back.arrows.values()][0];
+    expect(r.bez?.length).toBe(2);
+    expect(shapeOf(r)).toBe('u');
   });
 
   it('an S stays an S where its bends differ from the ready-made ones', () => {
@@ -163,5 +200,22 @@ describe('journal styles', () => {
     // a style by another name that looks the same is the first that looks the same
     expect(presetLike({ ...elsevier, name: 'Mine' })!.style.name).toBe('Wiley (Angewandte, Chemistry Europe)');
     expect(presetLike({ ...elsevier, bondLength: 3 })).toBeUndefined();
+  });
+});
+
+describe('a favorite saved from a cell', () => {
+  it('says the shape has no outline when the cell has no borders, so a shape given it is not outlined', () => {
+    expect(cellFavoriteLook({ fill: '#ffd966' }).shape).toMatchObject({ filled: true, lineWidth: 0 });
+    expect(cellFavoriteLook({ borders: { top: { style: 'thin', color: '#c00000' } } }).shape).toMatchObject({ color: '#c00000', lineWidth: 1 });
+    expect(cellFavoriteLook({ borders: { top: { style: 'medium', color: '#c00000' } } }).shape).toMatchObject({ lineWidth: 2 });
+    // given to a shape with an outline, it takes the outline off; given to cells, no borders
+    const doc = new Doc();
+    let s = 0, sel = none();
+    doc.edit('draw', () => { s = doc.addShape({ kind: 'rect', x1: 0, y1: 0, x2: 10, y2: 10, lineWidth: 2, color: '#00aa00' }).id; });
+    sel.shapes.add(s);
+    doc.edit('Format Favorite', () => paintObjects(doc, sel, cellFavoriteLook({ fill: '#ffd966' })));
+    expect(doc.shapes.get(s)!.lineWidth).toBe(0);
+    expect(favoriteCellLook(cellFavoriteLook({ fill: '#ffd966' }))!.borders).toBeUndefined();
+    sel = none();
   });
 });

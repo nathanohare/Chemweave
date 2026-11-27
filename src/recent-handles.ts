@@ -76,9 +76,10 @@ export async function keepHandle(handle: FileHandle, list: readonly string[]): P
     if (old && (await old.isSameEntry?.(h).catch(() => false))) return entry;
   }
   const id = Math.random().toString(36).slice(2, 10);
-  await run('readwrite', (s) => s.put(h, id));
-  // (not pruned until the caller has had time to put its entry in the list)
+  // (spared by forgetHandles from now on, not only once stored: another file's forget can read the keys while this put is on its way,
+  // and not until the caller has had time to put its entry in the list)
   fresh.set(id, Date.now());
+  try { await run('readwrite', (s) => s.put(h, id)); } catch (e) { fresh.delete(id); throw e; }
   return `${PREFIX}${id}:${h.name}`;
 }
 
@@ -100,5 +101,9 @@ export async function forgetHandles(list: readonly string[]): Promise<void> {
     if (now - at < GRACE_MS) keep.add(id); else fresh.delete(id);
   }
   const keys = await run('readonly', (s) => s.getAllKeys());
-  for (const k of keys) if (!keep.has(String(k))) await run('readwrite', (s) => s.delete(k));
+  for (const k of keys) {
+    // (looked at again here: a file kept while the keys were being read is not forgotten)
+    const recent = fresh.get(String(k));
+    if (!keep.has(String(k)) && !(recent !== undefined && Date.now() - recent < GRACE_MS)) await run('readwrite', (s) => s.delete(k));
+  }
 }

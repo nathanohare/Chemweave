@@ -34,7 +34,7 @@ describe('cutting long feedback never splits an emoji', () => {
 });
 
 describe('the send time limit covers the answer\'s text', () => {
-  it('an answer that starts and then stalls ends with the plain message instead of waiting forever', async () => {
+  it('an answer that starts and then stalls ends with a message about the time, instead of waiting forever', async () => {
     const f = { kind: 'problem' as const, title: 'Wedge flips', details: 'x' };
     const stalls = (async (_url: string, init: RequestInit) => ({
       ok: true,
@@ -46,7 +46,8 @@ describe('the send time limit covers the answer\'s text', () => {
       sendReport(relayReport(f, 'private'), 'https://r.example', stalls, 50).then(() => 'sent', (e: Error) => e.message),
       new Promise<string>((r) => setTimeout(() => r('still waiting'), 2000)),
     ]);
-    expect(out).toMatch(/no internet connection/);
+    expect(out).toMatch(/didn’t answer in time/);
+    expect(out).not.toMatch(/internet/);
   });
 
   it('a good answer still comes back', async () => {
@@ -60,6 +61,14 @@ describe('hiding the person\'s name in paths', () => {
   it('hides all of a Windows account folder that has a space in its name', () => {
     expect(redact('Could not save C:\\Users\\Jane Doe\\Documents\\a.cdxml')).toBe('Could not save ~\\Documents\\a.cdxml');
     expect(redact('C:/Users/Jane Q Doe/AppData/x')).toBe('~/AppData/x');
+    expect(redact('C:\\Users\\Jane van der Berg\\Documents')).toBe('~\\Documents');
+  });
+
+  it('hides a name at the end of a path, where nothing shows where it stops', () => {
+    expect(redact('Could not open C:\\Users\\Jane Doe')).toBe('Could not open ~');
+    expect(redact('Could not open C:\\Users\\Jane Doe.')).toBe('Could not open ~.');
+    expect(redact('see C:\\Users\\Jane van der Berg and')).toBe('see ~ and');
+    expect(redact('/Users/Jane Doe')).toBe('~');
   });
 
   it('hides a Mac or Linux home folder with a space', () => {
@@ -71,6 +80,9 @@ describe('hiding the person\'s name in paths', () => {
     expect(redact('C:\\Users\\nate failed to open D:\\x')).toBe('~ failed to open D:\\x');
     expect(redact('/home/nate failed at /etc/x')).toBe('~ failed at /etc/x');
     expect(redact('C:\\Users\\nate: boom')).toBe('~: boom');
+    // (a "/" later in the sentence does not belong to a Windows path)
+    expect(redact('C:\\Users\\nate in src/main.ts')).toBe('~ in src/main.ts');
+    expect(redact('C:\\Users\\nate depends on it')).toBe('~ depends on it');
   });
 });
 

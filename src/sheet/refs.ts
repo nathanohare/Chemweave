@@ -114,5 +114,7 @@ export function fixSheetName(name: string, others: readonly string[] = []): stri
 
 /** A sheet name as a formula writes it: quoted when it has spaces or other characters. */
 export function quoteSheet(name: string): string {
-  return /^[A-Za-z_][A-Za-z0-9_.]*$/.test(name) && !parseCellRef(name) ? name : `'${name.replace(/'/g, "''")}'`;
+  // (a name Excel could read as a cell (S1, Q1, FY2024), as row and column (R1C1) or as TRUE or FALSE is quoted too)
+  const bare = /^[A-Za-z_][A-Za-z0-9_.]*$/.test(name) && !parseCellRef(name) && !/^R(\d+)?C(\d+)?$|^[RC]$/i.test(name) && !/^(true|false)$/i.test(name);
+  return bare ? name : `'${name.replace(/'/g, "''")}'`;
 }

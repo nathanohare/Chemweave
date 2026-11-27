@@ -55,16 +55,24 @@ pub fn icon_folder() -> Option<std::path::PathBuf> {
 /// be written, the app's icon is used.
 #[cfg_attr(not(windows), allow(dead_code))]
 pub fn default_icon(ext: &str, exe: &std::path::Path, folder: Option<&std::path::Path>) -> String {
+    default_icon_written(ext, exe, folder).0
+}
+
+/// As `default_icon`, and whether the icon file had to be written (it was missing or out of date).
+#[cfg_attr(not(windows), allow(dead_code))]
+pub fn default_icon_written(ext: &str, exe: &std::path::Path, folder: Option<&std::path::Path>) -> (String, bool) {
     let app = format!("\"{}\",0", exe.to_string_lossy());
     let (Some((_, file, bytes)), Some(folder)) = (OWN_ICONS.iter().find(|(e, _, _)| *e == ext), folder) else {
-        return app;
+        return (app, false);
     };
     let icon = folder.join(file);
     let current = std::fs::read(&icon).map(|b| b == *bytes).unwrap_or(false);
-    if current || (std::fs::create_dir_all(folder).is_ok() && std::fs::write(&icon, bytes).is_ok()) {
-        format!("\"{}\",0", icon.to_string_lossy())
+    if current {
+        (format!("\"{}\",0", icon.to_string_lossy()), false)
+    } else if std::fs::create_dir_all(folder).is_ok() && std::fs::write(&icon, bytes).is_ok() {
+        (format!("\"{}\",0", icon.to_string_lossy()), true)
     } else {
-        app
+        (app, false)
     }
 }
 
@@ -195,7 +203,7 @@ pub fn refresh() {
     #[cfg(windows)]
     {
         let own_done = win::exists(win::OWN_DONE, Some("chemsi"));
-        let Some((types, first)) = refresh_plan(crate::portable::get().is_some(), own_done, &win::registered(), win::is_stale) else { return };
+        let Some((types, first)) = refresh_plan(crate::portable::is_portable(), own_done, &win::registered(), win::is_stale) else { return };
         if win::set(&types).is_ok() && first {
             let _ = win::set_string(win::OWN_DONE, Some("chemsi"), "1");
         }
@@ -309,13 +317,18 @@ pub(crate) mod win {
             .collect()
     }
 
-    /// A type's open command or icon in the registry is not what this copy would write now.
+    /// A type's registration is not what this copy would write now: its open command, its icon (or the
+    /// icon file itself changed, which Explorer has to be told about), its name, or the app's name.
     pub fn is_stale(ext: &str) -> bool {
         let Ok(exe_path) = std::env::current_exe() else { return true };
         let class = format!(r"Software\Classes\{}", prog_id(ext));
-        let icon = super::default_icon(ext, &exe_path, super::icon_folder().as_deref());
-        read_string(&format!(r"{class}\shell\open\command"), None).as_deref() != Some(super::open_command(&exe_path.to_string_lossy()).as_str())
+        let (icon, rewritten) = super::default_icon_written(ext, &exe_path, super::icon_folder().as_deref());
+        let what = TYPES.iter().find(|(e, _)| *e == ext).map_or("", |(_, w)| *w);
+        rewritten
+            || read_string(&format!(r"{class}\shell\open\command"), None).as_deref() != Some(super::open_command(&exe_path.to_string_lossy()).as_str())
             || read_string(&format!(r"{class}\DefaultIcon"), None).as_deref() != Some(icon.as_str())
+            || read_string(&class, None).as_deref() != Some(what)
+            || read_string(CAPABILITIES, Some("ApplicationName")).as_deref() != Some(SHOWN_NAME)
     }
 
     pub fn set(types: &[String]) -> Result<(), String> {
@@ -369,7 +382,7 @@ pub(crate) mod win {
 
 #[cfg(test)]
 mod tests {
-    use super::{default_icon, files_in, open_command, refresh_plan, OWN_ICONS};
+    use super::{default_icon, default_icon_written, files_in, open_command, refresh_plan, OWN_ICONS};
 
     fn v(types: &[&str]) -> Vec<String> {
         types.iter().map(|t| t.to_string()).collect()
@@ -377,9 +390,20 @@ mod tests {
 
     #[test]
     fn a_portable_copy_leaves_the_computers_file_types_alone() {
-        // first start, chemsi not yet registered, one type registered and stale: still nothing
-        assert_eq!(refresh_plan(true, false, &v(&["cdxml"]), |_| true), None);
-        assert_eq!(refresh_plan(true, true, &v(&["cdxml"]), |_| true), None);
+        // a folder with a "Chemweave Data" folder beside the app is what makes it portable (portable.rs)
+        let dir = std::env::temp_dir().join(format!("ci-file-types-portable-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        assert!(crate::portable::find(&dir).is_none());
+        // not portable: first start, chemsi not yet registered, one type registered and stale: written
+        assert!(refresh_plan(crate::portable::find(&dir).is_some(), false, &v(&["cdxml"]), |_| true).is_some());
+        std::fs::create_dir(dir.join(crate::portable::FOLDER)).unwrap();
+        let portable = crate::portable::find(&dir).is_some();
+        assert!(portable);
+        // portable: still nothing, first start or not
+        assert_eq!(refresh_plan(portable, false, &v(&["cdxml"]), |_| true), None);
+        assert_eq!(refresh_plan(portable, true, &v(&["cdxml"]), |_| true), None);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -417,6 +441,23 @@ mod tests {
         // other types, or nowhere to write it: the app's icon
         assert_eq!(default_icon("cdxml", &exe, Some(&folder)), app);
         assert_eq!(default_icon("chemsi", &exe, None), app);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn says_when_the_icon_file_had_to_be_written() {
+        let dir = std::env::temp_dir().join(format!("ci-file-types-written-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let exe = dir.join("Chemweave.exe");
+        let folder = dir.join("data");
+        // first start: written; next start: there already (Explorer needs telling only the first time)
+        assert!(default_icon_written("chemsi", &exe, Some(&folder)).1);
+        assert!(!default_icon_written("chemsi", &exe, Some(&folder)).1);
+        // an older icon in its place (an update changed it): written again
+        std::fs::write(folder.join("chemsi.ico"), [1u8, 2, 3]).unwrap();
+        assert!(default_icon_written("chemsi", &exe, Some(&folder)).1);
+        // a type with no icon of its own never writes one
+        assert!(!default_icon_written("cdxml", &exe, Some(&folder)).1);
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

@@ -91,6 +91,20 @@ describe('the recent files store', () => {
     expect(fake.opens()).toBe(3);
   });
 
+  it('keeps both handles when two files are opened together and each is put in the list as it is kept', async () => {
+    vi.stubGlobal('indexedDB', fakeIndexedDB(0).indexedDB);
+    const { keepHandle, forgetHandles, handleFor } = await import('../src/recent-handles');
+    const list: string[] = [];
+    // as main.ts does: when a handle is kept, its entry goes in the list and the others no longer in it are forgotten
+    const remember = (entry: string) => { list.push(entry); return forgetHandles(list); };
+    const a = keepHandle(fileHandle('a.cdxml'), []).then(remember);
+    const b = keepHandle(fileHandle('b.cdxml'), []).then(remember);
+    await Promise.all([a, b]);
+    expect(list).toHaveLength(2);
+    expect(await handleFor(list[0])).toBeTruthy();
+    expect(await handleFor(list[1])).toBeTruthy();
+  });
+
   it('does not forget a handle just kept whose entry is not in the list yet', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.stubGlobal('indexedDB', fakeIndexedDB(0).indexedDB);
@@ -136,5 +150,59 @@ describe('the AI key on the desktop app', () => {
     const { hasAiKey } = await import('../src/ai/link');
     await hasAiKey({ provider: 'compatible', model: 'm', base: 'http://localhost:9999/v1/' });
     expect(calls).toEqual([['ai_key_has', { provider: 'compatible', base: 'http://localhost:9999/v1' }]]);
+  });
+});
+
+describe('the AI settings window when the address of Other is changed', () => {
+  afterEach(() => { vi.resetModules(); vi.doUnmock('../src/ui/ask'); vi.doUnmock('../src/ai/link'); });
+
+  it('does not say a key is saved for the new address: it asks first', async () => {
+    const shown: Array<{ fields: Array<{ name: string; placeholder?: string }>; note?: string }> = [];
+    const saved: unknown[] = [];
+    const answers = [
+      { provider: 'compatible', key: '', model: 'm', base: 'http://b.example/v1', localOnly: 'false', look: 'bar', sendDocument: 'false', forget: 'false', remember: 'false' },
+      null, // Cancel at the question: back to the window
+      null, // Cancel the window
+    ];
+    vi.doMock('../src/ui/ask', () => ({ ask: async (_t: string, fields: never[], opts: { note?: string }) => { shown.push({ fields, note: opts?.note }); return answers.shift(); } }));
+    vi.doMock('../src/ai/link', async (orig) => ({
+      ...(await orig<typeof import('../src/ai/link')>()),
+      // a key is saved for the first address only
+      hasAiKey: async (p: { base: string }) => p.base === 'http://a.example/v1',
+      setAiKey: async (...a: unknown[]) => { saved.push(a); },
+      rememberAiKey: async (...a: unknown[]) => { saved.push(a); },
+    }));
+    const { aiSettingsDialog } = await import('../src/ui/ai-settings');
+    await aiSettingsDialog({ provider: 'compatible', model: 'm', base: 'http://a.example/v1', localOnly: false, assistant: false }, (p) => saved.push(p));
+    expect(shown[0].fields.find((f) => f.name === 'key')!.placeholder).toMatch(/Saved/);
+    expect(shown[1].note).toMatch(/another address/);
+    // nothing was saved or tested; back in the window, the key box asks for a key
+    expect(saved).toEqual([]);
+    expect(shown[2].fields.find((f) => f.name === 'key')!.placeholder).toBe('Paste your key');
+  });
+});
+
+describe('sheet names written into formulas', () => {
+  it('quote a name that reads as a cell in a PivotChart series and in sparklines', async () => {
+    const { quoteSheet } = await import('../src/sheet/refs');
+    expect(quoteSheet('S1')).toBe("'S1'");
+    expect(quoteSheet('R1C1')).toBe("'R1C1'");
+    expect(quoteSheet('TRUE')).toBe("'TRUE'");
+    expect(quoteSheet('Data')).toBe('Data');
+    // a PivotChart's series on a sheet named S1
+    const { layoutPivot, sourceOf, newPivotId, pivotChartSeries } = await import('../src/sheet/pivot');
+    const src = sourceOf([['Catalyst', 'Yield'], ['Pd', 90], ['Ni', 72]]);
+    if (typeof src === 'string') throw new Error(src);
+    const pt = { id: newPivotId(), name: 'PivotTable1', source: '=S1!$A$1:$B$3', at: { row: 0, col: 4 }, rows: ['Catalyst'], cols: [], values: [{ field: 'Yield', fn: 'sum' as const }], filters: [], hidden: {}, layout: 'compact' as const, subtotals: true, grandRows: true, grandCols: true };
+    const rep = layoutPivot(pt, src);
+    if (typeof rep === 'string') throw new Error(rep);
+    for (const series of pivotChartSeries(rep, pt.at, 'S1', pt)) {
+      expect(series.x.startsWith("='S1'!")).toBe(true);
+      expect(series.y.startsWith("='S1'!")).toBe(true);
+    }
+    expect(pivotChartSeries(rep, pt.at, 'S1', pt).length).toBeGreaterThan(0);
+    const { makeSparklines } = await import('../src/sheet/sparklines');
+    const g = makeSparklines('line', { r1: 0, c1: 0, r2: 0, c2: 4 }, { r1: 1, c1: 0, r2: 1, c2: 0 }, 'Q1');
+    expect(JSON.stringify(g)).toContain("'Q1'!");
   });
 });

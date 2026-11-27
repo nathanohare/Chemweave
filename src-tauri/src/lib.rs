@@ -135,11 +135,13 @@ fn percent_decode(s: &str) -> Result<String, String> {
 }
 
 /// Write through a temporary file next to the target, so a failed save never leaves half a file.
+/// The temporary file's name is its own for each save (saves run on several threads now, and two to
+/// one path must not write the same file).
 fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
     let target = PathBuf::from(path);
-    let mut tmp = target.clone().into_os_string();
-    tmp.push(".saving");
-    let tmp = PathBuf::from(tmp);
+    let tmp = temp_beside(&target, NEXT.fetch_add(1, Ordering::Relaxed));
     // (a rename a sync program or antivirus holds up for a moment is tried again)
     std::fs::write(&tmp, bytes)
         .and_then(|_| folders::rename_retrying(&tmp, &target))
@@ -147,6 +149,13 @@ fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
             let _ = std::fs::remove_file(&tmp);
             format!("Could not save {path}: {e}")
         })
+}
+
+/// The temporary file a save writes first: next to the target, named for this run of the app and save.
+fn temp_beside(target: &std::path::Path, n: u32) -> PathBuf {
+    let mut tmp = target.as_os_str().to_owned();
+    tmp.push(format!(".{}-{n}.saving", std::process::id()));
+    PathBuf::from(tmp)
 }
 
 /// The person's settings file (key map and preferences): settings.json in the app's
@@ -261,8 +270,17 @@ async fn portable_install_update(app: tauri::AppHandle, channel: Option<String>,
     let exe = std::env::current_exe().map_err(|e| format!("Could not find the running app: {e}"))?;
     portable::swap_in(&exe, &bytes)?;
     // let go of the single-instance lock first: the new copy would otherwise find this one still
-    // holding it, hand its start over to it and quit, and this one then exits too
-    tauri_plugin_single_instance::destroy(&app);
+    // holding it, hand its start over to it and quit, and this one then exits too. (On the main
+    // thread, which made it: the lock's window and mutex belong to that thread.)
+    let (done, released) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        tauri_plugin_single_instance::destroy(&handle);
+        let _ = done.send(());
+    })
+    .map_err(|e| format!("The new version is in place but could not be started ({e}); open it again."))?;
+    let _ = released.recv_timeout(Duration::from_secs(5));
+    // (if it can't start, this copy goes on without the lock: a second copy opened by hand would not find it)
     std::process::Command::new(&exe)
         .spawn()
         .map_err(|e| format!("The new version is in place but didn't start ({e}); open it again."))?;
@@ -389,7 +407,7 @@ static WAS_MAXIMISED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicB
 
 #[cfg(test)]
 mod tests {
-    use super::{kept_inside, percent_decode, watches_maximised};
+    use super::{kept_inside, percent_decode, temp_beside, watches_maximised};
 
     #[test]
     fn keeps_a_window_on_its_screen() {
@@ -410,6 +428,32 @@ mod tests {
         // the slide show's audience window is full screen, outside the work area by the taskbar's height
         assert!(!watches_maximised("audience"));
         assert!(!watches_maximised(""));
+    }
+
+    #[test]
+    fn saves_to_one_file_use_their_own_temporary_files() {
+        let target = std::path::Path::new("/data/Scheme 1.cdxml");
+        let (a, b) = (temp_beside(target, 1), temp_beside(target, 2));
+        assert_ne!(a, b);
+        assert_eq!(a.parent(), target.parent());
+        assert!(a.to_string_lossy().ends_with(".saving"));
+        // two saves at once to one file both land, whole, and leave nothing behind
+        let dir = std::env::temp_dir().join(format!("ci-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.txt").to_string_lossy().into_owned();
+        let threads: Vec<_> = (0..8).map(|i| {
+            let path = path.clone();
+            std::thread::spawn(move || super::write_bytes(&path, format!("{i}").repeat(100_000).as_bytes()))
+        }).collect();
+        for t in threads {
+            t.join().unwrap().unwrap();
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.len(), 100_000);
+        assert!(text.chars().all(|c| c == text.chars().next().unwrap()));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]

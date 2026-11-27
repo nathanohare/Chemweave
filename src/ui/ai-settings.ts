@@ -54,6 +54,15 @@ export async function aiSettingsDialog(now: AiPrefs, save: (p: AiPrefs) => void)
       typed = { key: r.key, remember: r.remember === 'true' };
       continue;
     }
+    // a key is sent only to the address it was saved for: after the address was changed here, the one saved is not sent
+    if (provider === 'compatible' && had && !r.key.trim() && r.forget !== 'true' && !(await hasAiKey(next).catch(() => true))) {
+      const go = await ask('AI Model', [], { ok: 'Save Without Key', note: 'The key saved here was for another address, and a key is only sent to the address it was saved for, so none is sent to this one. Choose Cancel to paste a key for this address, or Save Without Key if this service needs none.' });
+      if (!go) {
+        cur = next;
+        typed = { key: '', remember: r.remember === 'true' };
+        continue;
+      }
+    }
     try {
       if (r.forget === 'true') await setAiKey(next, '');
       else if (r.key.trim()) await setAiKey(next, r.key.trim(), r.remember === 'true');

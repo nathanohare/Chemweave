@@ -22,6 +22,8 @@ describe('Arial widths of the symbols the text bar offers', () => {
     expect(em('→')).toBeCloseTo(1000, 0);
     expect(em('←')).toBeCloseTo(1000, 0);
     expect(em('↔')).toBeCloseTo(1000, 0);
+    expect(em('⇔')).toBeCloseTo(1000, 0);
+    expect(em('⇒')).toBeCloseTo(1000, 0); // (not in Arial: as wide as the other arrows)
     expect(em('↑')).toBeCloseTo(500, 0);
     expect(em('↓')).toBeCloseTo(500, 0);
     for (const ch of '≤≥≠≈÷') expect(em(ch)).toBeCloseTo(549, 0);

@@ -52,19 +52,27 @@ fn read_keys(app: &tauri::AppHandle) -> HashMap<String, Saved> {
         .unwrap_or_default()
 }
 
-/// The keys in a file for saving a change to them: none when there is no file yet. A file that is
-/// there but can't be read as keys is moved aside (ai-keys.json.damaged-<seconds>, which the page
-/// can't open either) instead of being written over, so the keys in it are never lost.
-fn keys_to_change(path: &std::path::Path) -> HashMap<String, Saved> {
-    let Ok(text) = std::fs::read_to_string(path) else { return HashMap::new() };
-    match serde_json::from_str(&text) {
-        Ok(keys) => keys,
-        Err(_) => {
+/// The keys in a file, for saving a change to them: none when there is no file yet. A file that is
+/// there but can't be read at all (another program holds it, no permission) is an error, and one
+/// that can't be read as keys is moved aside (ai-keys.json.damaged-<seconds>, which the page can't
+/// open either) and is an error too, saying so: neither is written over, so the keys in it are never lost.
+fn keys_to_change(path: &std::path::Path) -> Result<HashMap<String, Saved>, String> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(e) => return Err(format!("Could not read the saved keys, so nothing was changed ({e}). Try again in a moment.")),
+    };
+    match std::str::from_utf8(&bytes).ok().and_then(|t| serde_json::from_str(t).ok()) {
+        Some(keys) => Ok(keys),
+        None => {
             let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
             let mut aside = path.as_os_str().to_owned();
             aside.push(format!(".damaged-{secs}"));
-            let _ = std::fs::rename(path, PathBuf::from(aside));
-            HashMap::new()
+            let aside = PathBuf::from(aside);
+            match std::fs::rename(path, &aside) {
+                Ok(()) => Err(format!("The saved keys file could not be read, so it was kept as {} and the keys are gone from the app. Enter them again.", aside.display())),
+                Err(e) => Err(format!("The saved keys file could not be read and could not be moved aside ({e}), so nothing was changed.")),
+            }
         }
     }
 }
@@ -167,7 +175,7 @@ pub fn ai_key_set(app: tauri::AppHandle, provider: String, key: String, base: St
         return Err("The address must start with http:// or https://.".into());
     }
     let path = keys_file(&app)?;
-    let mut keys = keys_to_change(&path);
+    let mut keys = keys_to_change(&path)?;
     if key.trim().is_empty() {
         keys.remove(&provider);
     } else {
@@ -291,16 +299,32 @@ mod local_tests {
     fn a_damaged_keys_file_is_kept_not_written_over() {
         let dir = temp("damaged");
         let path = dir.join("ai-keys.json");
-        assert!(keys_to_change(&path).is_empty()); // no file yet
+        assert_eq!(keys_to_change(&path).map(|k| k.len()), Ok(0)); // no file yet
         std::fs::write(&path, r#"{"openai":{"key":"sk-1","base":"https://api.openai.com/v1"}}"#).unwrap();
-        assert_eq!(keys_to_change(&path).len(), 1);
+        assert_eq!(keys_to_change(&path).map(|k| k.len()), Ok(1));
         assert!(path.exists());
         std::fs::write(&path, "{\"openai\": {\"key\": \"sk-1\", ").unwrap(); // cut short
-        assert!(keys_to_change(&path).is_empty());
+        let said = keys_to_change(&path).err().unwrap();
+        assert!(said.contains("ai-keys.json.damaged-"), "{said}");
         assert!(!path.exists());
         let kept: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
         assert_eq!(kept.len(), 1);
         assert!(kept[0].starts_with("ai-keys.json.damaged-"), "{kept:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_keys_file_that_cannot_be_read_is_not_taken_for_none() {
+        // (a folder where the file should be: reading it fails, but it is not "not found")
+        let dir = temp("unreadable");
+        let path = dir.join("ai-keys.json");
+        std::fs::create_dir(&path).unwrap();
+        assert!(keys_to_change(&path).is_err());
+        assert!(path.is_dir());
+        // not UTF-8: unreadable as keys, kept aside
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+        assert!(keys_to_change(&path).is_err());
         std::fs::remove_dir_all(&dir).unwrap();
     }
 

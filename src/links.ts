@@ -14,6 +14,7 @@
 
 import type { TextRun } from './model';
 import * as rt from './richtext';
+import { quoteSheet } from './sheet/refs';
 import { caretPos, offsetAt, type TextLayout } from './text/layout';
 
 /** The colour Word, PowerPoint and Excel give links (their Hyperlink style). */
@@ -232,9 +233,7 @@ export function cellOfLink(link: string): { sheet: string | null; cell: string }
 
 /** A cell link written as Excel writes a place (Sheet1!A1, quoted when the name needs it). */
 export function cellLink(sheet: string, cell: string): string {
-  // (a name that reads as a cell (Q1, S1, FY2024), as a row and column (R1C1) or as TRUE or FALSE is quoted too: Excel can't resolve it bare)
-  const bare = /^[A-Za-z_][\w.]*$/.test(sheet) && !/^[A-Za-z]{1,3}\d+$/.test(sheet) && !/^R(\d+)?C(\d+)?$|^[RC]$/i.test(sheet) && !/^(true|false)$/i.test(sheet);
-  return `#${bare ? sheet : `'${sheet.replace(/'/g, "''")}'`}!${cell}`;
+  return `#${quoteSheet(sheet)}!${cell}`;
 }
 
 /** A bookmark name Word accepts: a letter first, then letters, digits and underscores, up to 40. */

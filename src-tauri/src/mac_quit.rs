@@ -32,10 +32,12 @@ extern "C-unwind" fn should_terminate(_delegate: &AnyObject, _sel: Sel, _app: &A
     let _ = window.unminimize();
     let _ = window.show();
     let _ = window.set_focus();
+    // (set before the close: the window's Destroyed handler reads it)
+    WAITING.store(true, Ordering::SeqCst);
     if window.close().is_err() {
+        WAITING.store(false, Ordering::SeqCst);
         return NOW;
     }
-    WAITING.store(true, Ordering::SeqCst);
     LATER
 }
 

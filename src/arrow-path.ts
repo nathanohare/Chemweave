@@ -326,6 +326,9 @@ export function firstBend(r: Path): number {
   return r.sweep > 0 ? -1 : 1;
 }
 
+/** How far (in the units of the line from tail to head) a path's points may be from a ready-made shape's: a file keeps them to two decimals. */
+const SHAPE_TOLERANCE = 5e-3;
+
 /** Which ready-made shape an arrow has (null: a path of its own). */
 export function shapeOf(r: Path): ArrowShape | null {
   const b = r.bez;
@@ -335,11 +338,11 @@ export function shapeOf(r: Path): ArrowShape | null {
     // only as made: with a handle dragged it is a path of its own
     if (Math.sign(b[0].y) !== Math.sign(b[1].y)) return 's';
     const u = shapeBez('u', b[0].y >= 0 ? 1 : -1);
-    return b.every((q, i) => dist(q, u[i]) < 1e-6) ? 'u' : null;
+    return b.every((q, i) => dist(q, u[i]) < SHAPE_TOLERANCE) ? 'u' : null;
   }
   // a loop as made, not reshaped since
   const loop = shapeBez('loop', b[0].y >= 0 ? 1 : -1);
-  return b.length === loop.length && b.every((q, i) => dist(q, loop[i]) < 1e-6) ? 'loop' : null;
+  return b.length === loop.length && b.every((q, i) => dist(q, loop[i]) < SHAPE_TOLERANCE) ? 'loop' : null;
 }
 
 /** A ready-made shape's control points in the frame of the line from tail to head, its first bend to `side`. */

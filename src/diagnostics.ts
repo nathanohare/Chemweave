@@ -46,12 +46,17 @@ const MAX_ENTRIES = 200;
 /** How much of the log file is kept from earlier sessions. */
 const MAX_LOG_CHARS = 200_000;
 
-/** File paths name the person (C:\Users\nate\…): shorten the home folder to ~. */
+/**
+ * File paths name the person (C:\Users\nate\…): shorten the home folder to ~. An account's folder can
+ * have spaces in its name (C:\Users\Jane van der Berg\…): the whole name goes when a folder follows it
+ * (on Windows the same kind of separator, so words and a "/" later in the sentence stay), or at most
+ * four words of the Unix form; a name at the end of a path, with nothing after it to show where it
+ * stops, goes as far as the words that look like part of a name (capitalized or van, de, von…).
+ */
 export function redact(s: string): string {
-  // (an account's folder can have spaces in its name, C:\Users\Jane Doe\…: up to three words, when a folder follows them)
   return s
-    .replace(/\b[A-Za-z]:[\\/]+Users[\\/]+(?:[^\\/:"<>|\s]+(?: [^\\/:"<>|\s]+){0,2}(?=[\\/])|[^\\/:\s"'<>|]+)/gi, '~')
-    .replace(/\/(?:Users|home)\/(?:[^/"<>:\s]+(?: [^/"<>:\s]+){0,2}(?=\/)|[^/\s"'<>:]+)/g, '~');
+    .replace(/\b[A-Za-z]:([\\/]+)(?:Users|users|USERS)\1(?:[^\\/:"<>|\r\n]+(?=\1)|[^\\/:\s"'<>|]+(?: (?:[A-Z][^\s\\/:"'<>|.,;!?)]*|(?:van|der|den|de|la|le|von|da|di|del|bin|al|el|ter|du|dos)(?![^\s\\/:"'<>|.,;!?)])))*)/g, '~')
+    .replace(/\/(?:Users|home)\/(?:[^/"<>:\s]+(?: [^/"<>:\s]+){0,3}(?=\/)|[^/\s"'<>:]+(?: (?:[A-Z][^\s/"'<>:.,;!?)]*|(?:van|der|den|de|la|le|von|da|di|del|bin|al|el|ter|du|dos)(?![^\s/"'<>:.,;!?)])))*)/g, '~');
 }
 
 /** The message and stack trace of anything thrown (an Error, a string, or something else). */

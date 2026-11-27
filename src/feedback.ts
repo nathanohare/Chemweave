@@ -163,7 +163,9 @@ export async function sendReport(report: RelayReport, relay = RELAY_URL, fetcher
     // (the time limit covers the answer's text too: one that stalls after its first bytes ends here)
     try { out = await res.json() as typeof out; } catch { if (stop.signal.aborted) throw new Error('timed out'); }
   } catch {
-    throw new Error('Couldn’t send (no internet connection?). Your text is kept: try again, or Copy Text to send it another way.');
+    throw new Error(stop.signal.aborted
+      ? 'Couldn’t send (the feedback service didn’t answer in time). Your text is kept: try again, or Copy Text to send it another way.'
+      : 'Couldn’t send (no internet connection?). Your text is kept: try again, or Copy Text to send it another way.');
   } finally {
     clearTimeout(timer);
   }

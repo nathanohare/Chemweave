@@ -40,6 +40,22 @@ fn working_root(app: &tauri::AppHandle) -> Result<PathBuf, String> {
     working_root_in(None, Some(&dir)).ok_or_else(|| "No data folder.".to_string())
 }
 
+/// Every place working copies may be: where new ones go, and, for a portable copy, the computer's
+/// own folder where an earlier version put them (crash copies left there can still be offered back
+/// and deleted).
+fn working_roots(app: &tauri::AppHandle) -> Result<Vec<PathBuf>, String> {
+    use tauri::Manager;
+    let mut roots = vec![working_root(app)?];
+    if let Ok(dir) = app.path().app_local_data_dir() {
+        if let Some(old) = working_root_in(None, Some(&dir)) {
+            if !roots.contains(&old) {
+                roots.push(old);
+            }
+        }
+    }
+    Ok(roots)
+}
+
 /// The working root for a portable copy's data folder if it has one, else inside the app's data folder.
 fn working_root_in(portable: Option<&Path>, local: Option<&Path>) -> Option<PathBuf> {
     portable.or(local).map(|d| d.join("si-working"))
@@ -333,9 +349,9 @@ pub async fn si_pack(root: String, file: String, skip: Option<Vec<String>>) -> R
 /// discarded). Only a folder directly inside Chemweave's own si-working folder is deleted here.
 #[tauri::command]
 pub async fn si_discard_working(app: tauri::AppHandle, working: String) -> Result<(), String> {
-    let root = working_root(&app)?;
+    let roots = working_roots(&app)?;
     let dir = PathBuf::from(&working);
-    if !is_working(&root, &dir) {
+    if !roots.iter().any(|root| is_working(root, &dir)) {
         return Err(format!("not an SI working folder: {working}"));
     }
     // (off the main thread: a large project takes a moment to delete)
@@ -358,21 +374,22 @@ fn made_by_me(name: &str) -> bool {
 /// now), and the project folder in it (the one with a project.json; "" when there is none).
 #[tauri::command]
 pub fn si_list_working(app: tauri::AppHandle) -> Result<serde_json::Value, String> {
-    let root = working_root(&app)?;
-    let Ok(entries) = std::fs::read_dir(&root) else { return Ok(serde_json::json!([])) };
     let mut out = Vec::new();
-    for e in entries.flatten() {
-        if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
-            continue;
+    for root in working_roots(&app)? {
+        let Ok(entries) = std::fs::read_dir(&root) else { continue };
+        for e in entries.flatten() {
+            if !e.file_type().map(|t| t.is_dir()).unwrap_or(false) {
+                continue;
+            }
+            let modified = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0);
+            let project = std::fs::read_dir(e.path())
+                .ok()
+                .and_then(|d| d.flatten().map(|x| x.path()).find(|p| p.is_dir() && p.join(PROJECT_FILE).is_file()))
+                .map(|p| p.to_string_lossy().into_owned())
+                .unwrap_or_default();
+            let mine = made_by_me(&e.file_name().to_string_lossy());
+            out.push(serde_json::json!({ "working": e.path().to_string_lossy(), "modified": modified, "mine": mine, "root": project }));
         }
-        let modified = e.metadata().ok().and_then(|m| m.modified().ok()).and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as u64).unwrap_or(0);
-        let project = std::fs::read_dir(e.path())
-            .ok()
-            .and_then(|d| d.flatten().map(|x| x.path()).find(|p| p.is_dir() && p.join(PROJECT_FILE).is_file()))
-            .map(|p| p.to_string_lossy().into_owned())
-            .unwrap_or_default();
-        let mine = made_by_me(&e.file_name().to_string_lossy());
-        out.push(serde_json::json!({ "working": e.path().to_string_lossy(), "modified": modified, "mine": mine, "root": project }));
     }
     Ok(serde_json::Value::Array(out))
 }
@@ -394,6 +411,13 @@ mod tests {
         assert_eq!(working_root_in(Some(stick), Some(local)), Some(stick.join("si-working")));
         assert_eq!(working_root_in(None, Some(local)), Some(local.join("si-working")));
         assert_eq!(working_root_in(None, None), None);
+        // the folder a portable copy is found by is what decides it
+        let dir = tmp("portable");
+        assert_eq!(working_root_in(crate::portable::settings_folder_of(crate::portable::find(&dir).as_ref()), Some(local)), Some(local.join("si-working")));
+        std::fs::create_dir(dir.join(crate::portable::FOLDER)).unwrap();
+        let found = crate::portable::find(&dir);
+        assert_eq!(working_root_in(crate::portable::settings_folder_of(found.as_ref()), Some(local)), Some(dir.join(crate::portable::FOLDER).join("si-working")));
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
