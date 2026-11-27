@@ -93,9 +93,11 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     input.className = 'gt-num';
     input.setAttribute('aria-label', `${label} tick spacing`);
     input.title = `${label} tick spacing, with its unit: 1" (inches), 2.5 cm, 30 mm or 12 pt`;
+    // (back to the spacing in use: refresh() leaves a box alone while it has the keyboard, so it can't do this)
+    const revert = () => { input.value = showGuideLength(now()[key], h.units()); };
     input.addEventListener('change', () => {
       const pt = parseGuideLength(input.value, h.units());
-      if (pt === null) { refresh(); return; }
+      if (pt === null) { revert(); refresh(); return; }
       const g = now();
       if (key === 'major') change({ major: pt, minor: Math.min(g.minor, pt) });
       else change({ minor: Math.min(pt, g.major) });
@@ -103,7 +105,7 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
     input.addEventListener('keydown', (e) => {
       e.stopPropagation();
       if (e.key === 'Enter') { e.preventDefault(); input.dispatchEvent(new Event('change')); }
-      if (e.key === 'Escape') { e.preventDefault(); refresh(); }
+      if (e.key === 'Escape') { e.preventDefault(); revert(); refresh(); }
     });
     l.append(s, input);
     ticks.append(l);

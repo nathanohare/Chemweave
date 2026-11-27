@@ -140,7 +140,8 @@ export function readSparklines(ws: Element, sheet: string, theme: (el: Element |
       return [{ row: Number(m[2]) - 1, col: c - 1, data: (own ? f.slice(bang + 1) : f).replace(/\$/g, '') }];
     });
     if (!items.length) continue;
-    const empty = at('displayEmptyCellsAs');
+    // (absent, it is zero: the schema's default, [MS-XLSX] 2.6.47 CT_SparklineGroup)
+    const empty = at('displayEmptyCellsAs') ?? 'zero';
     const weight = Number(at('lineWeight') ?? 0.75);
     out.push({
       id: newSparkId(), kind, items,
@@ -189,7 +190,7 @@ export function customSheetViewsXml(wb: Workbook, s: Sheet): string {
 }
 
 /** Custom views as Excel saved them: the workbook's list, and each sheet's part. */
-export function readCustomViews(root: Element, sheets: { name: string; ws: Element | null }[]): CustomView[] {
+export function readCustomViews(root: Element, sheets: { name: string; ws: Element | null; sheetId?: number }[]): CustomView[] {
   const out: CustomView[] = [];
   for (const el of kids(kid(root, 'customWorkbookViews'), 'customWorkbookView')) {
     const guid = el.getAttribute('guid') ?? '';
@@ -217,7 +218,9 @@ export function readCustomViews(root: Element, sheets: { name: string; ws: Eleme
       for (const ch of m?.[1] ?? 'A') c = c * 26 + ch.charCodeAt(0) - 64;
       parts.push({ sheet, hiddenRows: [], hiddenCols: [], view: Object.keys(o).length ? o : null, active: [Number(m?.[2] ?? 1) - 1, c - 1] });
     }
-    out.push({ name, guid, activeSheet: sheets[activeId - 1]?.name ?? sheets[0]?.name ?? '', printSettings: false, hiddenAndFilters: false, sheets: parts });
+    // (activeSheetId is the sheet's sheetId, 18.2.4, which needn't be its place once sheets were taken out or moved)
+    const active = sheets.find((x) => x.sheetId === activeId) ?? (sheets.some((x) => x.sheetId !== undefined) ? undefined : sheets[activeId - 1]);
+    out.push({ name, guid, activeSheet: active?.name ?? sheets[0]?.name ?? '', printSettings: false, hiddenAndFilters: false, sheets: parts });
   }
   return out;
 }
@@ -278,7 +281,7 @@ export interface ExcelSheetKept {
    * The panes the view had (see paneKey), the scroll position of its frozen or split pane, and
    * its selections (18.3.1.78): written back while the panes are the same.
    */
-  panes?: { key: string; topLeft?: string; selection: string };
+  panes?: { key: string; topLeft?: string; /** The sheet view's own topLeftCell: with frozen panes, the top-left pane's first cell. */ viewTopLeft?: string; selection: string };
   /** The sort Excel remembers for the sheet (18.3.1.92), and the error checks turned off for cells (18.3.1.51), as the elements. */
   sortState?: string;
   /** The differential formats (18.8.17) a sort by color in sortState names, as elements, by the dxfId it gives them (see keptWithDxfs). */
@@ -390,7 +393,10 @@ export function readSheetKept(ws: Element, dxfs: Element[] = []): ExcelSheetKept
     const split = (n: string) => Number(pane?.getAttribute(n) ?? 0) || 0;
     const key = !pane ? paneKey(0, 0) : /frozen/i.test(pane.getAttribute('state') ?? '') ? paneKey(split('ySplit'), split('xSplit'), true) : paneKey(split('ySplit'), split('xSplit'));
     const topLeft = pane?.getAttribute('topLeftCell');
-    if (selection || topLeft) out.panes = { key, ...(topLeft ? { topLeft } : {}), selection };
+    // (the view's own scroll position goes with its panes too: with panes frozen here it would be the
+    // frozen pane's first cell, 18.3.1.87)
+    const viewTopLeft = sv.getAttribute('topLeftCell');
+    if (selection || topLeft || viewTopLeft) out.panes = { key, ...(topLeft ? { topLeft } : {}), ...(viewTopLeft ? { viewTopLeft } : {}), selection };
   }
   const sort = kid(ws, 'sortState');
   const sortKept = sort ? keptWithDxfs(sort, dxfs) : undefined;
@@ -407,7 +413,7 @@ export function readSheetKept(ws: Element, dxfs: Element[] = []): ExcelSheetKept
  * A worksheet's sheetView attributes kept from the file: those this program doesn't write itself
  * (a chart sheet's view has others, which a worksheet's can't take).
  */
-const VIEW_KEPT = new Set(['windowProtection', 'showFormulas', 'rightToLeft', 'showRuler', 'defaultGridColor', 'showWhiteSpace', 'topLeftCell', 'colorId']);
+const VIEW_KEPT = new Set(['windowProtection', 'showFormulas', 'rightToLeft', 'showRuler', 'defaultGridColor', 'showWhiteSpace', 'colorId']);
 /** sheetProtection's attributes on a worksheet (18.3.1.85). */
 const SHEET_PROTECTION = new Set(['password', 'algorithmName', 'hashValue', 'saltValue', 'spinCount', 'sheet', 'objects', 'scenarios',
   'formatCells', 'formatColumns', 'formatRows', 'insertColumns', 'insertRows', 'insertHyperlinks', 'deleteColumns', 'deleteRows',
@@ -432,6 +438,12 @@ export function keptPanes(k: ExcelSheetKept | undefined, key: string, pane: stri
   if (!p || p.key !== key) return pane;
   const out = p.topLeft ? pane.replace(/(<pane [^>]*topLeftCell=")[^"]*"/, `$1${xmlAttr(p.topLeft)}"`) : pane;
   return p.selection ? out.replace(/<selection [^>]*\/>/g, '') + p.selection : out;
+}
+
+/** The sheet view's own topLeftCell attribute from the file, while the panes are the same (`key`). */
+export function keptViewTopLeft(k: ExcelSheetKept | undefined, key: string): string {
+  const p = k?.panes;
+  return p && p.key === key && p.viewTopLeft ? ` topLeftCell="${xmlAttr(p.viewTopLeft)}"` : '';
 }
 
 /** A workbook's settings that only Excel uses (undefined when it has none). */

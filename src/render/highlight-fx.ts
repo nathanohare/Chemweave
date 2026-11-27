@@ -17,7 +17,7 @@ import { clipHalf, dotCentres, hatchLines, mix, patternAngles } from './fills';
 export type Region = Vec[][];
 
 /** Part of a highlight filled in one colour (with its see-through amount, as rgba). */
-export interface FxPaint { region: Region; colour: string }
+export interface FxPaint { region: Region; colour: string; /** A soft edge's ring: how much of the fill shows in it (0 to 1), for a picture fill faded the same way. */ share?: number }
 
 /** A gradient across a highlight: its direction in degrees and two colours. */
 export interface FxGradient { angle: number; from: string; to: string }

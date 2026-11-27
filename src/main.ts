@@ -95,6 +95,7 @@ import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink
 import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, pathExists, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
+import { GLOW_TRANSPARENCY } from './render/shape-fx';
 import { Workspace, Tab, type SaveHow } from './workspace';
 import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
@@ -3500,6 +3501,7 @@ const assistantBar = madeLater(async (): Promise<AssistantBar> => new (await imp
   apply: applyAssistantAction,
   markStep: markAssistantStep,
   undo: () => { command('undo'); },
+  position: () => ws.active.mode === 'document' ? [docMode?.undoMark()] : [doc.topStep, deckNow()?.historyLength],
   openSettings: aiSettings,
   area: () => document.getElementById('work')?.getBoundingClientRect() ?? null,
   tab: () => ws.active,
@@ -4409,12 +4411,13 @@ async function clearAtomMapCommand(): Promise<void> {
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
   editor.changed();
 }
-const nameDialog = new NameDialog(async (name) => {
+const nameDialog = new NameDialog(async (name, closed) => {
   // a SMILES string (or molfile) is drawn as it is; anything else is read as a name
   const here = sameDrawing('The structure');
   const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)).catch(() => null) : null;
   const got = mb ? { mb, attach: [], warnings: [] } : await nameToMolfile(name);
-  if (here.left()) return null;
+  // (and not when the window was cancelled while the name was being read)
+  if (here.left() || closed()) return null;
   if ('error' in got) return got;
   const c = pasteCentre();
   try {
@@ -5593,6 +5596,7 @@ layers = new LayersPanel($('#layers-section'), {
   edit: (label, f) => { finishTyping(); doc.edit(label, f); editor.changed(); },
   pick: (w) => { finishTyping(); editor.selectThese({ atoms: new Set(w.atoms), bonds: new Set(), captions: new Set(w.captions), arrows: new Set(w.arrows), shapes: new Set(w.shapes) }); },
   picked: () => ({ shapes: [...editor.sel.shapes], captions: [...editor.sel.captions], atoms: [...editor.sel.atoms], arrows: [...editor.sel.arrows] }),
+  dragging: () => editor.dragging,
 });
 layers.onClose = () => { selectionPane = false; showLayers(); };
 const lib = (designLib = new DesignLibrary($('#design-lib'), (id) => { finishTyping(); editor.setTool(`geo:${id}`); }));
@@ -11158,7 +11162,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
-    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: GLOW_TRANSPARENCY };
     const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },

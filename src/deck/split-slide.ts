@@ -152,8 +152,8 @@ export function splitSlide(doc: Doc, measure: Measure = arialMeasure): SlidePart
       }
     }
   }
-  // top to bottom, then left to right, as people read (and as PowerPoint tabs through them)
-  const top = (s: Selection) => Math.min(...[...s.atoms].map((id) => doc.atoms.get(id)!.y), ...[...s.arrows].map((id) => doc.arrows.get(id)!.tail.y), ...[...s.shapes].map((id) => doc.shapes.get(id)!.y1));
+  // top to bottom, then left to right, as people read (and as PowerPoint tabs through them; a ChemDraw object that is only text has its text's place)
+  const top = (s: Selection) => Math.min(...[...s.atoms].map((id) => doc.atoms.get(id)!.y), ...[...s.arrows].map((id) => doc.arrows.get(id)!.tail.y), ...[...s.shapes].map((id) => doc.shapes.get(id)!.y1), ...[...s.captions].map((id) => doc.captions.get(id)!.y));
   drawings.sort((a, b) => top(a) - top(b));
   return { texts, pictures, shapes: shapeOrder([...shapes, ...geos]), tables, drawings, chemdraw, connectors, diagrams: dia.diagrams };
 }

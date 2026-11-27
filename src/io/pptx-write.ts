@@ -1248,10 +1248,12 @@ class Writer {
       const { keep, ...where } = s.part;
       part = { [TAG.canvasPart]: JSON.stringify({ ...where, print: slidePrintXml(`<p:spTree ${XMLNS}>${GROUP}${out.join('')}</p:spTree>`) }), ...(keep ? { [TAG.canvasKeep]: JSON.stringify(keep) } : {}) };
     }
+    // the animations that are written: their object and trigger were saved
+    const saved = (a: Anim) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined);
     const refTag = slideRefsTag(s);
     const stepTag = stepsTag(doc, drawings.map((d) => d.sel));
     const linksTag = slideLinks(doc);
-    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims) } : {}), ...turnTag(s.anims, (a) => !!spids.get(targetKey(a.target))?.length && (!a.trigger || spids.get(targetKey(a.trigger))?.[0] !== undefined)), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...(s.hf?.footer !== undefined && !m.footer.trim() ? { [TAG.slideFooter]: s.hf.footer ? '1' : '0' } : {}), ...part });
+    const tags = this.addTags(path, { [TAG.layout]: s.layout, ...(s.ownItems ? { [TAG.ownItems]: '1' } : {}), ...(s.id !== undefined ? { [TAG.slideId]: String(s.id) } : {}), ...(refTag ? { [TAG.slideRefs]: refTag } : {}), ...(s.canvas ? { [TAG.canvas]: canvasTag(s.canvas, s.anims, saved) } : {}), ...turnTag(s.anims, saved), ...(stepTag ? { [TAG.steps]: stepTag } : {}), ...(linksTag ? { [TAG.links]: linksTag } : {}), ...(s.hf?.footer !== undefined && !m.footer.trim() ? { [TAG.slideFooter]: s.hf.footer ? '1' : '0' } : {}), ...part });
     const bg = s.background ? await this.background(path, s.background) : '';
     return `${HEAD}<p:sld ${XMLNS}${s.hideGraphics ? ' showMasterSp="0"' : ''}${s.hidden ? ' show="0"' : ''}><p:cSld>${bg}<p:spTree>${GROUP}${out.join('')}</p:spTree><p:custDataLst><p:tags r:id="${tags}"/></p:custDataLst></p:cSld>` +
       `<p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr>${transitionXml(s.transition)}${timingXml(expandParas(s.anims ?? [], (cid) => { const c = doc.captions.get(cid); return c ? plainText(c.runs).split('\n') : null; }), (a) => spids.get(targetKey(a.target)) ?? [], videos, (t) => spids.get(targetKey(t))?.[0])}` +
@@ -2320,7 +2322,7 @@ function bodyLevels(m: Master): string {
     // (the master's bullets and spacing, from Slide Master view; bullets on every level as they come)
     out.push(`<a:lvl${l + 1}pPr marL="${emu(textLeft)}" indent="${emu(markLeft - textLeft)}" algn="l" defTabSz="914400" rtl="0" eaLnBrk="1" latinLnBrk="0" hangingPunct="1">` +
       `<a:lnSpc><a:spcPct val="${Math.round((f.lineSpacing ?? 1) * 100000)}"/></a:lnSpc>${spacingXml(f.spaceBefore, f.spaceAfter, false)}${levelBulletXml(f.bullet ?? 'bullet', l)}` +
-      `<a:defRPr sz="${Math.round(em * 100)}"${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
+      `<a:defRPr sz="${Math.round(em * 100)}"${f.bold ? ' b="1"' : ''}${f.italic ? ' i="1"' : ''} kern="1200"><a:solidFill><a:srgbClr val="${hex6(m.textColor)}"/></a:solidFill><a:latin typeface="+mn-lt"/><a:ea typeface="+mn-ea"/><a:cs typeface="+mn-cs"/></a:defRPr></a:lvl${l + 1}pPr>`);
   }
   return out.join('');
 }

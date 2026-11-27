@@ -1,6 +1,7 @@
 // Sheet mode's pictures, shapes and text boxes: Insert > Pictures, Shapes and Text Box, typing
 // in a shape, the right-click menu, Format Shape, and the panel shown while one is picked.
 
+import { dismissPopupMenu } from './popup-menu';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import { askAltText } from './accessibility-pane';
@@ -80,7 +81,7 @@ export class SheetObjects {
   }
 
   shapesMenu(x: number, y: number): void {
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu shape-gallery';
     m.setAttribute('role', 'menu');

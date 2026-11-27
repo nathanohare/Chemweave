@@ -6,7 +6,7 @@
 
 import type { BackgroundRemoval, PictureFx, Recolor } from '../model';
 import { geoDef, moveSteps, traceSteps } from '../design/geo';
-import { dataUrl, imageFor, loadImage } from './images';
+import { dataUrl, imageFor, loadImage, paintTurn } from './images';
 
 type Px = Uint8ClampedArray | Uint8Array;
 
@@ -117,38 +117,49 @@ export function clearColour(d: Px, hex: string, tol = 10): number {
   return n;
 }
 
-/** Each colour channel averaged over a 3 × 3 square (edges repeat), into a new array. */
-function blur3(d: Px, w: number, h: number): Float32Array {
-  const tmp = new Float32Array(d.length), out = new Float32Array(d.length);
-  for (let y = 0; y < h; y++) {
+/**
+ * Each colour channel averaged over a 3 × 3 square (edges repeat), handed over a row at a time
+ * (`each(y, row)`, the row's RGBA with the blurred colours) so only three rows are held, not two
+ * copies of the whole picture. `each` may change rows of `d` up to and including `y`: the rows
+ * still to be read are below it.
+ */
+function blurRows(d: Px, w: number, h: number, each: (y: number, row: Float32Array) => void): void {
+  const stride = w * 4;
+  const across = (y: number, into: Float32Array) => {
+    const o = y * stride;
     for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4, l = (y * w + Math.max(0, x - 1)) * 4, r = (y * w + Math.min(w - 1, x + 1)) * 4;
-      for (let k = 0; k < 3; k++) tmp[i + k] = (d[l + k] + d[i + k] + d[r + k]) / 3;
+      const i = o + x * 4, l = o + Math.max(0, x - 1) * 4, r = o + Math.min(w - 1, x + 1) * 4;
+      for (let k = 0; k < 3; k++) into[x * 4 + k] = (d[l + k] + d[i + k] + d[r + k]) / 3;
     }
-  }
+  };
+  // the rows above, at and below the one being worked out, blurred across
+  let up = new Float32Array(stride), mid = new Float32Array(stride), down = new Float32Array(stride);
+  const out = new Float32Array(stride);
+  across(0, mid);
+  up.set(mid);
   for (let y = 0; y < h; y++) {
-    const u = Math.max(0, y - 1), v = Math.min(h - 1, y + 1);
-    for (let x = 0; x < w; x++) {
-      const i = (y * w + x) * 4, a = (u * w + x) * 4, b = (v * w + x) * 4;
-      for (let k = 0; k < 3; k++) out[i + k] = (tmp[a + k] + tmp[i + k] + tmp[b + k]) / 3;
-    }
+    if (y + 1 < h) across(y + 1, down); else down.set(mid);
+    for (let x = 0; x < w; x++) for (let k = 0; k < 3; k++) { const i = x * 4 + k; out[i] = (up[i] + mid[i] + down[i]) / 3; }
+    each(y, out);
+    const t = up; up = mid; mid = down; down = t;
   }
-  return out;
 }
 
 /** Sharper (amount up to 1, an unsharp mask) or softer (down to -1, blurred), in place. */
 export function sharpen(d: Px, w: number, h: number, amount: number): void {
   if (!amount || w < 2 || h < 2) return;
-  let b = blur3(d, w, h);
-  if (amount < 0) {
-    // softening goes further than one pass of the small blur
-    const t = new Uint8ClampedArray(b);
-    b = blur3(t, w, h);
-  }
   const k = amount > 0 ? amount * 2 : amount;
-  for (let i = 0; i < d.length; i += 4) {
-    for (let c = 0; c < 3; c++) d[i + c] = clamp255(d[i + c] + k * (d[i + c] - b[i + c]));
-  }
+  const apply = (y: number, b: Float32Array) => {
+    const o = y * w * 4;
+    for (let x = 0; x < w; x++) {
+      for (let c = 0; c < 3; c++) { const i = o + x * 4 + c; d[i] = clamp255(d[i] + k * (d[i] - b[x * 4 + c])); }
+    }
+  };
+  if (amount > 0) { blurRows(d, w, h, apply); return; }
+  // softening goes further than one pass of the small blur: blurred once (in whole steps), then again
+  const once = new Uint8ClampedArray(d.length);
+  blurRows(d, w, h, (y, row) => once.set(row, y * w * 4));
+  blurRows(once, w, h, apply);
 }
 
 /** A part of the picture in pixels: x0, y0 inclusive, x1, y1 exclusive. */
@@ -175,23 +186,30 @@ export function removeBackground(d: Px, w: number, h: number, bg: BackgroundRemo
     return y * w + x;
   };
   const n = w * h;
-  // flood from seeds through pixels near each seed's own colour; `mark` says which flood got a pixel
+  // flood from seeds through pixels near each seed's own colour; `mark` says which flood got a pixel.
+  // `ref` is the seed each pixel was reached from, or CLEAR for a see-through seed: that flood
+  // only goes through see-through pixels, never into the picture's own colours (a transparent
+  // pixel's colour is usually black, which would eat black ink next to it). One buffer serves
+  // both floods: a flood only reads what it wrote itself.
+  const CLEAR = -2;
+  const ref = new Int32Array(n);
+  const stack: number[] = [];
   const flood = (mark: Uint8Array, seeds: number[], stop: Uint8Array | null) => {
-    const ref = new Int32Array(n).fill(-1);
-    const stack: number[] = [];
-    for (const s of seeds) if (!mark[s] && !(stop && stop[s])) { mark[s] = 1; ref[s] = s; stack.push(s); }
+    for (const s of seeds) if (!mark[s] && !(stop && stop[s])) { mark[s] = 1; ref[s] = d[s * 4 + 3] < 8 ? CLEAR : s; stack.push(s); }
     while (stack.length) {
       const i = stack.pop()!;
-      const o = ref[i] * 4, r = d[o], g = d[o + 1], b = d[o + 2];
+      const from = ref[i], clear = from === CLEAR;
+      const o = clear ? 0 : from * 4, r = d[o], g = d[o + 1], b = d[o + 2];
       const x = i % w, y = (i - x) / w;
-      const go = (j: number) => {
-        if (mark[j] || (stop && stop[j])) return;
-        if (d[j * 4 + 3] === 0 || near(j, r, g, b)) { mark[j] = 1; ref[j] = ref[i]; stack.push(j); }
-      };
-      if (x > x0) go(i - 1);
-      if (x < x1 - 1) go(i + 1);
-      if (y > y0) go(i - w);
-      if (y < y1 - 1) go(i + w);
+      for (let t = 0; t < 4; t++) {
+        let j: number;
+        if (t === 0) { if (x <= x0) continue; j = i - 1; }
+        else if (t === 1) { if (x >= x1 - 1) continue; j = i + 1; }
+        else if (t === 2) { if (y <= y0) continue; j = i - w; }
+        else { if (y >= y1 - 1) continue; j = i + w; }
+        if (mark[j] || (stop && stop[j])) continue;
+        if (d[j * 4 + 3] === 0 || (!clear && near(j, r, g, b))) { mark[j] = 1; ref[j] = from; stack.push(j); }
+      }
     }
   };
   const keep = new Uint8Array(n);
@@ -294,22 +312,46 @@ export function traceShape(ctx: Parameters<typeof traceSteps>[0], prst: string, 
 /** What a picture's showing depends on. */
 interface FxPicture { src?: string; fx?: PictureFx; crop?: { l: number; t: number; r: number; b: number }; px?: { w: number; h: number } }
 
-interface Made { canvas: HTMLCanvasElement; url?: string }
-/** Pictures worked out, by their data, then by their settings (most recently used last). */
+interface Made { canvas: HTMLCanvasElement; url?: string; /** The paint it was last used in (see `paintTurn`). */ used: number }
+/**
+ * Pictures worked out, by their data, then by their settings: both most recently used last, so
+ * the oldest go first. What they hold together is kept under a number of pixels, not a number of
+ * canvases (one large photo takes as much as many small pictures), and nothing used in the paint
+ * going on now is let go, so a page or slide strip with many pictures doesn't redo them all on
+ * every repaint.
+ */
 const made = new Map<string, Map<string, Made>>();
-let count = 0;
-const KEEP = 24;
+let held = 0;
+/** About 256 MB of canvases. */
+const KEEP_PIXELS = 64 * 1024 * 1024;
+/** Versions kept of one picture (a slider makes one per step). */
+const VERSIONS = 5;
 
-function keyOf(p: FxPicture, fx: PictureFx): string {
+const pixelsOf = (m: Made) => m.canvas.width * m.canvas.height;
+
+/** A version's key: the size it is worked at (not the size asked for: a small picture is the same for any), its settings and crop. */
+function keyOf(p: FxPicture, fx: PictureFx, size: { w: number; h: number }): string {
   const c = p.crop;
-  return `${JSON.stringify(fx)}|${c ? [c.l, c.t, c.r, c.b].join() : ''}`;
+  return `${size.w}x${size.h}|${JSON.stringify(fx)}|${c ? [c.l, c.t, c.r, c.b].join() : ''}`;
 }
 
 /** Biggest side a picture is worked on at (larger ones are shrunk first). */
 const MAX_SIDE = 4096;
+/** The sides a picture is worked at for what it is drawn at, so a zoom works it out again only now and then. */
+const SIDES = [512, 1024, 2048, MAX_SIDE];
 
-/** The picture worked out on a new canvas from its loaded image. */
-export function makeFxCanvas(img: HTMLImageElement | HTMLCanvasElement | ImageBitmap, p: FxPicture, fx: PictureFx, only?: 'baked' | 'live'): HTMLCanvasElement {
+/**
+ * How many pixels a side of a picture's whole image must have where it is drawn `w` × `h` (the
+ * part its crop leaves) at `scale` pixels to the unit: the larger of its width and height there.
+ */
+export function fxSideFor(w: number, h: number, scale: number, crop?: { l: number; t: number; r: number; b: number }): number {
+  const c = crop ?? { l: 0, t: 0, r: 0, b: 0 };
+  const fw = Math.max(1e-3, 1 - c.l - c.r), fh = Math.max(1e-3, 1 - c.t - c.b);
+  return Math.max((Math.abs(w) * scale) / fw, (Math.abs(h) * scale) / fh);
+}
+
+/** The size a picture is worked on at, in pixels. */
+function workSize(img: HTMLImageElement | HTMLCanvasElement | ImageBitmap, p: FxPicture, side: number): { w: number; h: number } {
   let iw = (img as HTMLImageElement).naturalWidth || img.width || p.px?.w || 1;
   let ih = (img as HTMLImageElement).naturalHeight || img.height || p.px?.h || 1;
   // a vector picture (SVG) is drawn at its saved pixel size, or twice its own
@@ -317,8 +359,18 @@ export function makeFxCanvas(img: HTMLImageElement | HTMLCanvasElement | ImageBi
     const k = Math.max(1, (p.px?.w ?? iw * 2) / iw);
     iw *= k; ih *= k;
   }
-  const k = Math.min(1, MAX_SIDE / Math.max(iw, ih));
-  const w = Math.max(1, Math.round(iw * k)), h = Math.max(1, Math.round(ih * k));
+  const k = Math.min(1, side / Math.max(iw, ih));
+  return { w: Math.max(1, Math.round(iw * k)), h: Math.max(1, Math.round(ih * k)) };
+}
+
+/** The picture worked out on a new canvas from its loaded image (at most `side` pixels a side). */
+export function makeFxCanvas(img: HTMLImageElement | HTMLCanvasElement | ImageBitmap, p: FxPicture, fx: PictureFx, only?: 'baked' | 'live', side = MAX_SIDE): HTMLCanvasElement {
+  const { w, h } = workSize(img, p, side);
+  return workOn(img, w, h, p, fx, only);
+}
+
+/** `img` drawn at w × h on a new canvas with the settings `only` says worked in. */
+function workOn(img: CanvasImageSource, w: number, h: number, p: FxPicture, fx: PictureFx, only?: 'baked' | 'live'): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width = w;
   c.height = h;
@@ -326,9 +378,12 @@ export function makeFxCanvas(img: HTMLImageElement | HTMLCanvasElement | ImageBi
   g.drawImage(img, 0, 0, w, h);
   const cr = p.crop ?? { l: 0, t: 0, r: 0, b: 0 };
   const area = { x0: cr.l * w, y0: cr.t * h, x1: (1 - cr.r) * w, y1: (1 - cr.b) * h };
-  const data = g.getImageData(0, 0, w, h);
-  applyFx(data.data, w, h, fx, area, only);
-  g.putImageData(data, 0, 0);
+  const live = only === 'live' || (only === undefined && !bakedPart(fx));
+  if (only === 'baked' || !live || fx.clear || fx.bright || fx.contrast || fx.recolor || fx.alpha) {
+    const data = g.getImageData(0, 0, w, h);
+    applyFx(data.data, w, h, fx, area, only);
+    g.putImageData(data, 0, 0);
+  }
   if (only !== 'baked' && fx.shape && shapeDef(fx.shape)) {
     // cut to the shape: only what is inside its outline (filling the part shown) stays
     g.globalCompositeOperation = 'destination-in';
@@ -340,49 +395,100 @@ export function makeFxCanvas(img: HTMLImageElement | HTMLCanvasElement | ImageBi
   return c;
 }
 
-function find(p: FxPicture, fx: PictureFx): Made | null {
-  if (typeof document === 'undefined' || !p.src) return null;
-  const key = keyOf(p, fx);
-  let mine = made.get(p.src);
-  const got = mine?.get(key);
+/** Keep `m` as the newest version of `key` of the picture `mine` holds. */
+function remember(mine: Map<string, Made>, key: string, m: Made): void {
+  const old = mine.get(key);
+  if (old) { held -= pixelsOf(old); mine.delete(key); }
+  mine.set(key, m);
+  held += pixelsOf(m);
+}
+
+/** Let the oldest versions go: past VERSIONS of one picture, then past KEEP_PIXELS in all (never one used in this paint). */
+function forget(mine: Map<string, Made>, now: number): void {
+  for (const [key, m] of mine) {
+    if (mine.size <= VERSIONS) break;
+    if (m.used === now) continue;
+    mine.delete(key);
+    held -= pixelsOf(m);
+  }
+  for (const [src, list] of made) {
+    if (held <= KEEP_PIXELS) break;
+    for (const [key, m] of list) {
+      if (held <= KEEP_PIXELS) break;
+      if (m.used === now) continue;
+      list.delete(key);
+      held -= pixelsOf(m);
+    }
+    if (!list.size) made.delete(src);
+  }
+}
+
+/** A version of the picture, kept or worked out now; `make` works it out. */
+function version(mine: Map<string, Made>, key: string, now: number, make: () => HTMLCanvasElement): Made {
+  const got = mine.get(key);
   if (got) {
     // used now: last to be forgotten
-    made.delete(p.src);
-    made.set(p.src, mine!);
+    mine.delete(key);
+    mine.set(key, got);
+    got.used = now;
     return got;
   }
-  const img = imageFor(p.src);
-  if (!img) return null;
-  let m: Made;
-  try {
-    m = { canvas: makeFxCanvas(img, p, fx) };
-  } catch {
-    return null;
-  }
-  if (!mine) made.set(p.src, (mine = new Map()));
-  mine.set(key, m);
-  count++;
-  // forget the oldest pictures' versions once there are many (a slider makes one per step)
-  if (mine.size > 4) { mine.delete(mine.keys().next().value!); count--; }
-  for (const [src, list] of made) {
-    if (count <= KEEP || list === mine) break;
-    count -= list.size;
-    made.delete(src);
-  }
+  const m: Made = { canvas: make(), used: now };
+  remember(mine, key, m);
   return m;
 }
 
-/** The picture as shown (a canvas the same size as its image), or null when it is shown as it is or hasn't loaded. */
-export function fxCanvas(p: FxPicture): HTMLCanvasElement | null {
+function find(p: FxPicture, fx: PictureFx, side: number): Made | null {
+  if (typeof document === 'undefined' || !p.src) return null;
+  const now = paintTurn();
+  const img = imageFor(p.src);
+  if (!img) return null;
+  let mine = made.get(p.src);
+  // used now, hit or miss: this picture is the last to be forgotten
+  if (mine) made.delete(p.src);
+  made.set(p.src, (mine ??= new Map()));
+  const size = workSize(img, p, side);
+  const key = keyOf(p, fx, size);
+  if (mine.has(key)) return version(mine, key, now, () => mine.get(key)!.canvas);
+  let m: Made;
+  try {
+    const baked = bakedPart(fx);
+    if (baked) {
+      // Remove Background and sharpening, worked out once and kept, with the quick settings
+      // (brightness, contrast, colours, see-through, the shape) worked on a copy of it each time
+      const b = version(mine, `baked|${keyOf(p, baked, size)}`, now, () => makeFxCanvas(img, p, baked, 'baked', side));
+      // (with nothing else set, the kept one is the picture as shown)
+      const more = Object.keys(fx).some((k) => k !== 'sharpen' && k !== 'bg');
+      m = more ? version(mine, key, now, () => workOn(b.canvas, b.canvas.width, b.canvas.height, p, fx, 'live')) : b;
+    } else m = version(mine, key, now, () => makeFxCanvas(img, p, fx, undefined, side));
+  } catch {
+    if (!mine.size) made.delete(p.src);
+    return null;
+  }
+  forget(mine, now);
+  return m;
+}
+
+/**
+ * The picture as shown (a canvas the size it is worked at), or null when it is shown as it is or
+ * hasn't loaded. `need` is how many pixels a side of the whole image is drawn at (see fxSideFor):
+ * it is worked at the next of 512, 1024, 2048 or 4096 pixels a side, no larger than its own
+ * image, so a picture shown small is quick and one shown large, exported or presented is sharp.
+ * Left out, the largest.
+ */
+export function fxCanvas(p: FxPicture, need?: number): HTMLCanvasElement | null {
   const fx = tidyFx(p.fx);
-  return fx ? find(p, fx)?.canvas ?? null : null;
+  if (!fx) return null;
+  const side = need && Number.isFinite(need) ? SIDES.find((s) => s >= need) ?? MAX_SIDE : MAX_SIDE;
+  return find(p, fx, side)?.canvas ?? null;
 }
 
 /** The picture as shown, as a PNG data URL (its own data when unchanged or not loaded yet). */
 export function fxSrc(p: FxPicture): string | undefined {
   const fx = tidyFx(p.fx);
   if (!fx || !p.src) return p.src;
-  const m = find(p, fx);
+  // for pictures in files and copies: at full size
+  const m = find(p, fx, MAX_SIDE);
   if (!m) return p.src;
   m.url ??= m.canvas.toDataURL('image/png');
   return m.url;

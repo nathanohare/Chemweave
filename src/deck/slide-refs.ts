@@ -104,6 +104,23 @@ export function lookChanges(l: Partial<RefLook>): Partial<RefLook> {
   return Object.fromEntries(Object.entries(cleanLook(l)).filter(([k, v]) => k in l && d[k] !== v)) as Partial<RefLook>;
 }
 
+/**
+ * A slide's own look read from a file: every value it names that is of the right kind, kept even
+ * when it is the default (the slide's look is its differences from the presentation's, and the
+ * presentation's may not be the default). `color: ''` is the slide saying "no color" over the
+ * presentation's (written by slideRefsTag, as a missing value does not survive a file).
+ */
+export function slideLookChanges(l: Partial<Record<keyof RefLook, unknown>>): Partial<RefLook> {
+  const clean = cleanLook(l) as unknown as Record<string, unknown>;
+  const out: Record<string, unknown> = {};
+  for (const k of ['form', 'numbering', 'place', 'size', 'color'] as const) {
+    if (!(k in l)) continue;
+    if (k === 'color') { if (l.color === '' || l.color === null || l.color === undefined) out.color = undefined; else if (clean.color === l.color) out.color = l.color; continue; }
+    if (clean[k] === (k === 'size' ? Number(l[k]) : l[k])) out[k] = clean[k];
+  }
+  return out as Partial<RefLook>;
+}
+
 /** A deck's references read from a file: every reference tidied, ids made unique. */
 export function cleanDeckRefs(raw: unknown): DeckRefs | undefined {
   if (!raw || typeof raw !== 'object') return undefined;
@@ -157,7 +174,7 @@ export function cleanSlideRefs(raw: unknown): SlideRefs {
   const ids = Array.isArray(r.refs) ? [...new Set(r.refs.filter((x): x is string => typeof x === 'string'))] : [];
   if (ids.length) out.refs = ids;
   if (r.refLook && typeof r.refLook === 'object') {
-    const look = lookChanges(r.refLook as Partial<RefLook>);
+    const look = slideLookChanges(r.refLook as Partial<RefLook>);
     if (Object.keys(look).length) out.refLook = look;
   }
   if (r.refList && typeof r.refList === 'object') {
@@ -174,7 +191,8 @@ export function cleanSlideRefs(raw: unknown): SlideRefs {
 export function slideRefsTag(s: SlideRefs): string | null {
   const out: SlideRefs = {};
   if (s.refs?.length) out.refs = s.refs;
-  if (s.refLook && Object.keys(s.refLook).length) out.refLook = s.refLook;
+  // (no color of its own over the presentation's color is written as an empty one: nothing survives as a missing value)
+  if (s.refLook && Object.keys(s.refLook).length) out.refLook = 'color' in s.refLook && !s.refLook.color ? { ...s.refLook, color: '' } : s.refLook;
   if (s.refList) out.refList = { which: s.refList.which, ...(s.refList.zotero ? { zotero: s.refList.zotero } : {}) };
   if (s.zotero && Object.keys(s.zotero).length) out.zotero = s.zotero;
   return Object.keys(out).length ? JSON.stringify(out) : null;
