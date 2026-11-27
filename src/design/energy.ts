@@ -217,7 +217,7 @@ export const ENERGY_PRESETS: EnergyPreset[] = [
     data: {
       quantity: 'ΔG', unit: 'kcal/mol', paths: [
         { name: 'uncatalyzed', color: '#c00000', points: pts([['SM', 0], ['', null], ['TS‡', 32], ['', null], ['P', -10]]) },
-        { name: 'catalysed', color: '#000000', points: pts([['SM', 0], ['TS1‡', 17], ['Int', 4], ['TS2‡', 14], ['P', -10]]) },
+        { name: 'catalyzed', color: '#000000', points: pts([['SM', 0], ['TS1‡', 17], ['Int', 4], ['TS2‡', 14], ['P', -10]]) },
       ],
     },
   },

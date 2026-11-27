@@ -70,7 +70,7 @@ export class SheetViews {
       show.disabled = del.disabled = !wb.customViews.length;
     };
     w.body.append(list);
-    w.note('A view saves the visible sheet and view mode (Normal, Page Layout, Page Break Preview), and optionally hidden rows and columns, filters and print settings.');
+    w.info('A view saves the visible sheet and view mode (Normal, Page Layout, Page Break Preview), and optionally hidden rows and columns, filters and print settings.');
     const show = w.button('Show', () => {
       const v = wb.customViews[list.selectedIndex];
       if (!v) return;

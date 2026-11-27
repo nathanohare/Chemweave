@@ -54,6 +54,8 @@ export class SheetObjects {
       const png = mime === 'image/webp' ? await webpToPng(bytes) : await toPng(bytes, mime);
       if (!png) { this.host.flash(`${pic.name} can't be put on a sheet (Excel shows PNG, JPEG and GIF pictures).`, 6000); return; }
       bytes = png; mime = 'image/png';
+      // (the sheet may have changed while it was converted: the picture was picked for the one it was asked on)
+      if (this.view.sheet !== s) { this.host.flash('The picture was not added: the sheet changed while it was being made. Choose it again on the sheet you want.', 6000); return; }
     }
     const size = imageSize(bytes, mime) ?? { w: 320, h: 240 };
     // as large as it is, up to about half a screen of cells

@@ -66,6 +66,9 @@ export function showGuideLength(pt: number, unit: 'in' | 'cm'): string {
   return unit === 'in' ? `${v}"` : `${v} cm`;
 }
 
+/** The most guides a drawing keeps (the Guides toolbox adds no more, and a file is read up to as many). */
+export const MAX_GUIDES = 1000;
+
 export const DEFAULT_GUIDES: CanvasGuides = { list: [], grid: false, major: 72, minor: 18, snap: 'both', shown: true };
 
 const num = (v: unknown, lo: number, hi: number): number | null => (typeof v === 'number' && Number.isFinite(v) && v >= lo && v <= hi ? v : null);
@@ -78,7 +81,7 @@ export function parseGuides(raw: unknown): CanvasGuides | null {
   const o = v as Record<string, unknown>;
   const list: Guide[] = [];
   if (Array.isArray(o.list)) {
-    for (const g of o.list.slice(0, 200)) {
+    for (const g of o.list.slice(0, MAX_GUIDES)) {
       if (!g || typeof g !== 'object') continue;
       const r = g as Record<string, unknown>;
       const kind = r.kind === 'h' || r.kind === 'v' || r.kind === 'cross' ? r.kind : null;

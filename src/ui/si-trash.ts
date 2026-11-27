@@ -101,22 +101,30 @@ export async function openTrash(p: SiProject, changed: (message: string) => void
       if (!RESTORABLE.has(e.kind)) { r.classList.add('si-trash-elsewhere'); r.title = 'Can’t be put back here: move it back by hand from the project’s trash folder'; }
       r.append(kind, name, more);
       r.addEventListener('click', () => { picked = e.id; say.textContent = ''; update(); });
-      r.addEventListener('dblclick', () => { picked = e.id; void doRestore(); });
+      r.addEventListener('dblclick', () => { if (inFlight) return; picked = e.id; void doRestore(); });
       list.append(r);
     }
     update();
   };
   // (each thing done here is one step of Undo, named as its button; `sure` asks first, before the step begins, so nothing saved while the question is open joins it)
+  // (one at a time: a double-click or a held Enter on a row doesn't start a second Restore of what the first is putting back)
+  let inFlight = false;
   const busy = async (f: () => Promise<void>, label: string, sure?: () => Promise<boolean>): Promise<void> => {
-    for (const b of [restore, del, empty]) b.disabled = true;
-    const j = journalOf(p.folder);
+    if (inFlight) return;
+    inFlight = true;
     try {
-      if (sure && !(await sure())) { update(); return; }
-      await (j ? j.step(label, f) : f());
-    } catch (err) {
-      say.textContent = err instanceof Error ? err.message : String(err);
+      for (const b of [restore, del, empty]) b.disabled = true;
+      const j = journalOf(p.folder);
+      try {
+        if (sure && !(await sure())) { update(); return; }
+        await (j ? j.step(label, f) : f());
+      } catch (err) {
+        say.textContent = err instanceof Error ? err.message : String(err);
+      }
+      await draw();
+    } finally {
+      inFlight = false;
     }
-    await draw();
   };
   const doRestore = (): Promise<void> => busy(async () => {
     const e = entries.find((x) => x.id === picked);

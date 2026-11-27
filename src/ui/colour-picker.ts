@@ -87,7 +87,7 @@ function openPalette(btn: HTMLElement, doc: Doc, value: string | undefined, on: 
   inp.dataset.systemPicker = '';
   inp.value = value ?? '#000000';
   inp.addEventListener('change', () => pick(inp.value.toLowerCase()));
-  more.append(document.createTextNode('More colors…'), inp);
+  more.append(document.createTextNode('More Colors…'), inp);
 
   pop.append(autoBtn, grid, paletteRows(value, pick, closePalette), more);
   // a modal dialog sits above the page, so a menu opened from inside one must live in that dialog to be seen

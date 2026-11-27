@@ -8,6 +8,7 @@ import type { SheetView } from './sheet-view';
 import { popupMenu } from './sheet-view';
 import { ToolWindow, absText } from './tool-window';
 import { ask } from './ask';
+import { addInfo } from './info-tip';
 import type { Sheet, Workbook } from '../sheet/workbook';
 import { valueInput } from '../sheet/workbook';
 import { rangeName } from '../sheet/refs';
@@ -320,12 +321,15 @@ export class SheetPivots {
     layout.addEventListener('change', () => this.change('Report layout', (p) => ({ ...p, layout: layout.value as PivotLayout })));
     const sub = w.check('Subtotals', pt.subtotals, g);
     sub.addEventListener('change', () => this.change('Subtotals', (p) => ({ ...p, subtotals: sub.checked })));
-    const gr = w.check('Grand totals for rows (a Grand Total row at the bottom)', pt.grandRows, g);
+    const gr = w.check('Grand Totals for Rows', pt.grandRows, g);
+    addInfo(gr.nextElementSibling, 'A Grand Total row at the bottom.');
     gr.addEventListener('change', () => this.change('Grand totals', (p) => ({ ...p, grandRows: gr.checked })));
-    const gc = w.check('Grand totals for columns (a Grand Total column at the right)', pt.grandCols, g);
+    const gc = w.check('Grand Totals for Columns', pt.grandCols, g);
+    addInfo(gc.nextElementSibling, 'A Grand Total column at the right.');
     gc.addEventListener('change', () => this.change('Grand totals', (p) => ({ ...p, grandCols: gc.checked })));
     if (pt.values.length > 1) {
-      const vr = w.check('Σ Values down the rows (not across the columns)', !!pt.valuesOnRows, g);
+      const vr = w.check('Σ Values on Rows', !!pt.valuesOnRows, g);
+      addInfo(vr.nextElementSibling, 'Σ Values go down the rows instead of across the columns.');
       vr.addEventListener('change', () => this.change('Σ Values', (p) => ({ ...p, valuesOnRows: vr.checked || undefined })));
     }
     const empty = w.text('For empty cells show', pt.emptyText ?? '', g);

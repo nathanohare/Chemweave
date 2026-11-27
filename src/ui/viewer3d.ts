@@ -137,7 +137,7 @@ export class Viewer3d {
     const spin = document.createElement('button');
     spin.type = 'button';
     spin.textContent = 'Spin';
-    spin.title = 'Turn the model slowly around and around';
+    spin.title = 'Rotate the model slowly around and around';
     spin.setAttribute('aria-pressed', 'false');
     spin.addEventListener('click', () => { this.spinning = !this.spinning; spin.setAttribute('aria-pressed', String(this.spinning)); if (this.spinning) this.tick(); });
     const fog = check('Depth', 'Depth shading: the back of the model fades, as Format ▸ Rotate and Flip ▸ Depth Shading fades structures on the page', this.fog, (v) => (this.fog = v));
@@ -407,7 +407,7 @@ export class Viewer3d {
       this.flash('From this angle atoms would land on top of each other, so the model was rotated to its cleanest view first.');
     } else if (near.deg) {
       this.rot = near.rot;
-      this.flash(`Turned the model ${near.deg}° first, so no atoms land on top of each other.`);
+      this.flash(`Rotated the model ${near.deg}° first, so no atoms land on top of each other.`);
     }
     this.draw();
     this.onPlace({ view: this.viewCoords() });
@@ -441,7 +441,7 @@ export class Viewer3d {
       this.draw();
     }, { passive: false });
     c.addEventListener('dblclick', () => { this.reset(); this.draw(); });
-    c.title = 'Drag to turn, Shift+drag to move, wheel to zoom, double-click to go back to the drawing\'s view';
+    c.title = 'Drag to rotate, Shift+drag to move, wheel to zoom, double-click to go back to the drawing\'s view';
     c.addEventListener('keydown', (e) => {
       const step = 18;
       if (e.key === 'ArrowLeft') this.turn(-step, 0);

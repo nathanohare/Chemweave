@@ -105,7 +105,7 @@ const shapeName = (key: string) => (key.startsWith('chart:') ? 'Chart' : key.sta
  * Take out what both lists have (by key), and say what is left: added, removed, or (paired in
  * order) changed; things in both that moved are counted.
  */
-function diffLists<T extends { key: string; x: number; y: number }>(a: T[], b: T[], name: (t: T) => string, changed: (x: T, y: T) => string): { lines: string[]; moved: number } {
+function diffLists<T extends { key: string; x: number; y: number }>(a: T[], b: T[], name: (t: T) => string, changed: (x: T, y: T) => string, worded?: (t: T, how: 'added' | 'removed') => string): { lines: string[]; moved: number } {
   const left = [...b];
   const gone: T[] = [];
   let moved = 0;
@@ -118,8 +118,9 @@ function diffLists<T extends { key: string; x: number; y: number }>(a: T[], b: T
   const lines: string[] = [];
   const both = Math.min(gone.length, left.length);
   for (let k = 0; k < both; k++) lines.push(changed(gone[k], left[k]));
-  for (const x of gone.slice(both)) lines.push(`${name(x)} removed`);
-  for (const y of left.slice(both)) lines.push(`${name(y)} added`);
+  // `worded` makes the whole line (so no wording is found again by pattern in the text itself)
+  for (const x of gone.slice(both)) lines.push(worded ? worded(x, 'removed') : `${name(x)} removed`);
+  for (const y of left.slice(both)) lines.push(worded ? worded(y, 'added') : `${name(y)} added`);
   return { lines, moved };
 }
 
@@ -132,8 +133,8 @@ export function slideDifferences(a: SlideView, b: SlideView): string[] {
   // text (other than the title), and how it looks
   const texts = (c: Contents) => c.captions.filter((x) => x.ph !== 'title' && plain(x)).map((x) => ({ key: plain(x), x: x.x, y: x.y, look: JSON.stringify(x.runs.map(({ text: _t, ...r }) => r)) }));
   const ca = texts(a.contents), cb = texts(b.contents);
-  const t = diffLists(ca, cb, (x) => `Text ${quote(x.key)}`, (x, y) => `Text changed: ${quote(x.key)} → ${quote(y.key)}`);
-  out.push(...t.lines.map((l) => l.replace(/^(Text "[^"]*"|Text "[^"]*…") (added|removed)$/, (_, w, how) => `${w.replace(/^Text /, `Text ${how}: `)}`)));
+  const t = diffLists(ca, cb, (x) => `Text ${quote(x.key)}`, (x, y) => `Text changed: ${quote(x.key)} → ${quote(y.key)}`, (x, how) => `Text ${how}: ${quote(x.key)}`);
+  out.push(...t.lines);
   const restyled = ca.filter((x) => cb.some((y) => y.key === x.key && y.look !== x.look)).length;
   if (restyled) out.push(`Text formatting changed (${restyled} text box${restyled > 1 ? 'es' : ''})`);
   // structures

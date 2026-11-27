@@ -8,6 +8,7 @@
 
 import { itemKey, parseRibbons, type RibbonInfo, type RibbonPrefs, type RibbonsPrefs } from './ribbon-custom';
 import type { Pickable } from './toolboxes';
+import { addInfo } from './info-tip';
 
 export interface RibbonLiveHooks {
   ribbons(): RibbonInfo[];
@@ -85,7 +86,8 @@ export class RibbonLive {
     bar.setAttribute('aria-label', 'Editing the ribbon');
     const say = document.createElement('span');
     say.className = 'rb-live-say';
-    say.textContent = 'Drag groups or buttons to move them (onto a tab name to move to that tab). Drag a button off the ribbon, or click a group\'s ×, to remove it.';
+    say.textContent = 'Customize the Ribbon';
+    addInfo(say, 'Drag groups or buttons to move them (onto a tab name to move to that tab). Drag a button off the ribbon, or click a group\'s ×, to remove it.');
     const btn = (label: string, title: string, f: () => void, primary = false) => {
       const b = document.createElement('button');
       b.type = 'button';

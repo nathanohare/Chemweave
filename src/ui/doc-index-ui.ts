@@ -202,7 +202,7 @@ export class DocIndexUI {
       { name: 'see', label: 'Cross-reference', value: 'See ', help: 'Shown in place of the page number, for Cross-reference' },
       { name: 'bold', label: 'Page number in bold', type: 'checkbox', value: 'false' },
       { name: 'italic', label: 'Page number in italic', type: 'checkbox', value: 'false' },
-      { name: 'all', label: 'Mark All: every paragraph where the main entry\'s text appears', type: 'checkbox', value: 'false' },
+      { name: 'all', label: 'Mark All: every paragraph with the selected text (the word at the cursor, when nothing is selected)', type: 'checkbox', value: 'false' },
       ...(here.length ? [{ name: 'remove', label: 'Remove this paragraph\'s entries instead', type: 'checkbox' as const, value: 'false', help: `Marked here: ${here.map((x) => x.sub ? `${x.main}: ${x.sub}` : x.main).join('; ')}` }] : []),
     ], { ok: 'Mark', note: 'The entry stays with its paragraph. References ▸ Insert Index lists entries A to Z with page numbers and updates automatically.' });
     this.host.focus();
@@ -358,7 +358,8 @@ export class DocIndexUI {
     if (!out.count && t === f.t) { this.host.flash('This paragraph has that citation marked already.'); return; }
     f.ed.update(out.t, 'Mark citation');
     const listed = Object.values(f.t.objects).some((o) => o.kind === 'toa');
-    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs` : 'Marked'} under ${categoryName(cat)}.${listed ? '' : ' Insert the table with References ▸ Insert Table of Authorities.'}`, 6000);
+    // nothing newly marked: only the citation's long form or category was changed
+    this.host.flash(`${out.count > 1 ? `Marked in ${out.count} paragraphs under` : out.count ? 'Marked under' : 'Updated the citation under'} ${categoryName(cat)}.${listed ? '' : ' Insert the table with References ▸ Insert Table of Authorities.'}`, 6000);
   }
 
   private async askToa(now: Extract<DocObject, { kind: 'toa' }>, ok: string): Promise<Extract<DocObject, { kind: 'toa' }> | null> {

@@ -640,7 +640,8 @@ export class SheetData {
     none.addEventListener('click', () => boxes.forEach((b) => { b.checked = false; }));
     const btns = el('div', 'cp-buttons');
     btns.append(selAll, none);
-    w.form.append(el('p', 'muted small', `In ${rangeName(all)}: rows whose checked columns match an earlier row (ignoring capitals; structures by their SMILES) are removed.`), btns, header.row, list);
+    addInfo(w.form.querySelector('h2'), `In ${rangeName(all)}: rows whose checked columns match an earlier row (ignoring capitals; structures by their SMILES) are removed.`);
+    w.form.append(btns, header.row, list);
     w.onOk(() => {
       const cols = boxes.filter((b) => b.checked).map((b) => Number(b.value));
       if (!cols.length) return 'Select at least one column.';
@@ -786,7 +787,7 @@ export class SheetData {
       const byCols = across.box.checked;
       // the header row (or, left to right, nothing: Excel's headers are only for top to bottom)
       const R: Range = byCols ? all : { ...all, r1: header.box.checked ? all.r1 + 1 : all.r1 };
-      if (byCols ? R.c2 <= R.c1 : R.r2 <= R.r1) return 'There is only one row to sort.';
+      if (byCols ? R.c2 <= R.c1 : R.r2 <= R.r1) return byCols ? 'There is only one column to sort.' : 'There is only one row to sort.';
       this.host.edit('Sort', (sh) => sh.sort(R, keys, { caseSensitive: caseBox.box.checked, byColumns: byCols }));
       this.host.flash(`Sorted ${byCols ? `${R.c2 - R.c1 + 1} columns` : `${R.r2 - R.r1 + 1} rows`} by ${keys.length} level${keys.length === 1 ? '' : 's'}.`);
       return undefined;

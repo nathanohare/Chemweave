@@ -186,7 +186,8 @@ export async function structureForCas(cas: string, deps: CasDeps): Promise<CasSt
   const kept = deps.memory.byCas(cas);
   if (kept) return { smiles: kept.smiles, note: `Found CAS RN ${cas}${kept.name ? `: ${kept.name}` : ''} (looked up on ${kept.source} on ${day(kept.found)}). Check it is the compound you meant.` };
   if (!deps.online) return { error: `CAS RN ${cas} isn't in your Compound Library. CAS RNs are looked up on PubChem, which is turned off in Edit ▸ Settings ▸ Online.` };
-  let problem = '';
+  // what went wrong at each service (empty: it answered, with or without a match)
+  let pubchemProblem = '';
   try {
     const pc = await pubchemByCas(cas, deps.fetchFn);
     if (pc) {
@@ -196,20 +197,25 @@ export async function structureForCas(cas: string, deps: CasDeps): Promise<CasSt
     }
   } catch (e) {
     if (!(e instanceof PubChemError)) throw e;
-    problem = e.message;
+    pubchemProblem = e.message;
   }
+  let cactusProblem = '';
   try {
     const smiles = await cactusSmiles(cas, deps.fetchFn);
     if (smiles) {
       deps.memory.remember([{ cas, smiles, key: (await deps.canonical(smiles).catch(() => null)) ?? undefined, source: 'NCI CACTUS', found: new Date().toISOString() }]);
-      return { smiles, note: `Found CAS RN ${cas} on NCI CACTUS${problem ? '' : ' (PubChem doesn\'t list it)'}. CACTUS sometimes leaves out stereochemistry: check the structure.` };
+      return { smiles, note: `Found CAS RN ${cas} on NCI CACTUS${pubchemProblem ? '' : ' (PubChem doesn\'t list it)'}. CACTUS sometimes leaves out stereochemistry: check the structure.` };
     }
   } catch (e) {
     if (!(e instanceof CactusError)) throw e;
-    if (problem) return { error: `${problem} (CAS RN ${cas} isn't in your Compound Library or among the numbers looked up before.)` };
-    problem = e.message;
+    if (pubchemProblem) return { error: `${pubchemProblem} (CAS RN ${cas} isn't in your Compound Library or among the numbers looked up before.)` };
+    cactusProblem = e.message;
   }
-  return { error: problem ? `PubChem doesn't list CAS RN ${cas}, and ${problem[0].toLowerCase()}${problem.slice(1)}` : `Neither PubChem nor NCI CACTUS knows CAS RN ${cas}. Check the number, or draw the structure.` };
+  // PubChem couldn't be asked, and CACTUS doesn't know the number
+  if (pubchemProblem) return { error: `${pubchemProblem} NCI CACTUS doesn't know CAS RN ${cas}.` };
+  // (a message starting with a name, NCI CACTUS, keeps its capitals; "Could not…" is lower-cased)
+  if (cactusProblem) return { error: `PubChem doesn't list CAS RN ${cas}, and ${/^[A-Z][a-z]/.test(cactusProblem) ? cactusProblem[0].toLowerCase() + cactusProblem.slice(1) : cactusProblem}` };
+  return { error: `Neither PubChem nor NCI CACTUS knows CAS RN ${cas}. Check the number, or draw the structure.` };
 }
 
 /** A drawn structure's CAS RNs (main one first), or why there are none. */

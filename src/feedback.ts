@@ -173,3 +173,15 @@ export function mailUrl(issue: Issue, to = FEEDBACK_EMAIL, maxLength = 1800): st
   if (body.length < text.length) body = `${body.trimEnd()}\n\n(cut short: use Copy Text in Chemweave for the rest)`;
   return base + encodeURIComponent(body);
 }
+
+/** The largest side, in pixels, of the page picture a report can carry. */
+export const PAGE_PICTURE_SIDE = 2000;
+
+/**
+ * The resolution to make the page picture at, for a drawing whose larger side is `side` points:
+ * up to 144 dpi, and never more than PAGE_PICTURE_SIDE pixels a side, however big the drawing.
+ */
+export function pagePictureDpi(side: number): number {
+  // (a pixel short, so rounding the canvas size up never passes the limit)
+  return side > 0 ? Math.min(144, ((PAGE_PICTURE_SIDE - 1) / side) * 72) : 96;
+}

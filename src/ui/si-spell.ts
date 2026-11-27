@@ -36,6 +36,8 @@ export interface SiDictionary {
 const ignored = new Set<string>();
 let speller: Speller | null = null;
 let asked = false;
+/** The speller could not be loaded: the browser's own check stays on for the boxes. */
+let spellerFailed = false;
 let project: SiDictionary | null = null;
 let projectWords = new Set<string>();
 let personalSeen = '';
@@ -121,7 +123,8 @@ function paint(): void {
 /** Check a box's text again (spelling once the speller has loaded, the first time). */
 export function checkSpelling(box: HTMLElement): void {
   if (!supported()) { box.spellcheck = typingPrefs.spelling; return; }
-  box.spellcheck = false;
+  // (Chemweave's own check draws the lines: the browser's is off, unless the speller could not be loaded)
+  box.spellcheck = spellerFailed && typingPrefs.spelling;
   // (the word being typed is not underlined until the caret leaves it)
   const sel = getSelection();
   const caret = sel && sel.rangeCount && sel.isCollapsed && box.contains(sel.anchorNode) ? sel.getRangeAt(0) : null;
@@ -143,7 +146,7 @@ export function checkSpelling(box: HTMLElement): void {
       asked = true;
       void loadSpeller().then((got) => {
         speller = got;
-        if (!got) { for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = true; return; }
+        if (!got) { spellerFailed = true; for (const b of document.querySelectorAll<HTMLElement>('.si-rich')) b.spellcheck = typingPrefs.spelling; return; }
         recheckAll();
       });
     }

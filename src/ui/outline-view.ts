@@ -84,14 +84,41 @@ export class OutlineView {
     if (el instanceof HTMLElement && this.el.contains(el)) el.dispatchEvent(new Event('change'));
   }
 
+  /** The slides the outline was last built from (to tell a change to one slide from a change to the list). */
+  private built: readonly object[] = [];
+
   /** The outline again from the slides (not while typing in it). */
   rebuild(): void {
     const d = this.hooks.deck();
     if (!this.shown || !d) return;
     if (this.el.contains(document.activeElement)) { this.mark(d.index); return; }
     const scroll = this.el.scrollTop;
-    this.el.replaceChildren();
-    d.slides.forEach((s, i) => {
+    this.built = d.slides.slice();
+    this.el.replaceChildren(...d.slides.map((_s, i) => this.row(d, i)));
+    this.mark(d.index);
+    this.el.scrollTop = scroll;
+  }
+
+  /**
+   * After a change on slide i alone (typing on it, a drag there): only its row is made again, so
+   * a long deck's outline is not rebuilt for each change. A change to the slides themselves (one
+   * added, deleted or moved) rebuilds it all.
+   */
+  refresh(i: number): void {
+    const d = this.hooks.deck();
+    if (!this.shown || !d) return;
+    if (d.slides.length !== this.built.length || d.slides.some((s, k) => s !== this.built[k])) { this.rebuild(); return; }
+    if (this.el.contains(document.activeElement)) { this.mark(d.index); return; }
+    const old = this.el.children[i];
+    if (!old || !d.slides[i]) { this.rebuild(); return; }
+    old.replaceWith(this.row(d, i));
+    this.mark(d.index);
+  }
+
+  /** Slide i's row of the outline: its number, title and body text. */
+  private row(d: Deck, i: number): HTMLDivElement {
+    const s = d.slides[i];
+    {
       const o = slideOutline(d.docOf(i));
       const row = document.createElement('div');
       row.className = 'ol-slide';
@@ -138,10 +165,8 @@ export class OutlineView {
       body.addEventListener('keydown', (e) => this.bodyKey(e, i, title, body));
       col.append(title.el, body.el);
       row.append(num, col);
-      this.el.append(row);
-    });
-    this.mark(d.index);
-    this.el.scrollTop = scroll;
+      return row;
+    }
   }
 
   /** Show which slide is being edited. */
@@ -159,13 +184,13 @@ export class OutlineView {
     const looks = { title: title.lookList(), body: bodyLooks(body.value, body.lookList()) };
     const now = outlineLooks(d.docOf(i));
     if (t === o.title && outlineText(b ?? []) === outlineText(o.body ?? []) && JSON.stringify(looks.title) === JSON.stringify(now.title ?? []) && JSON.stringify(looks.body) === JSON.stringify(now.body ?? [])) return;
-    d.editSlides('Edit outline', [i], (doc) => { applyOutline(doc, t, b, looks); });
+    d.editSlides('Edit Outline', [i], (doc) => { applyOutline(doc, t, b, looks); });
   }
 
   private addAfter(i: number): void {
     const d = this.hooks.deck();
     if (!d) return;
-    d.insertSlide(i + 1, 'title-content', () => {}, 'New slide');
+    d.insertSlide(i + 1, 'title-content', () => {}, 'New Slide');
     this.rebuild();
     this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
   }
@@ -192,7 +217,7 @@ export class OutlineView {
       const d = this.hooks.deck();
       if (!d) return;
       const rest = parseOutline(after);
-      d.insertSlide(i + 1, 'title-content', (doc) => { applyOutline(doc, lines[0], rest, moved); }, 'New slide');
+      d.insertSlide(i + 1, 'title-content', (doc) => { applyOutline(doc, lines[0], rest, moved); }, 'New Slide');
       this.rebuild();
       this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
       return;

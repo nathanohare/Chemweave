@@ -90,6 +90,11 @@ export class SiPictures {
   async fromClipboard(): Promise<string | null> {
     let p: Pasted;
     try { p = await this.host.readClipboard(); } catch (e) { this.host.flash(`The clipboard could not be read: ${e instanceof Error ? e.message : String(e)}`); return null; }
+    return this.fromRead(p);
+  }
+
+  /** What a Paste button read from the clipboard: its picture, or null with a message (also when it holds only text). */
+  async fromRead(p: Pasted): Promise<string | null> {
     const got = await this.fromPasted(p);
     if (!got && p.kind !== 'picture') this.host.flash('The clipboard has no picture or drawing. Copy a structure in ChemDraw or Chemweave, or a picture, first.');
     return got;

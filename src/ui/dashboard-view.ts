@@ -230,7 +230,7 @@ export class DashboardView {
     if (part?.drill) {
       const to = part.drill;
       const { path: _from, ...closed } = t.chart;
-      const label = t.chart.kind === 'decomp' ? (to.length ? 'Expand tree' : 'Collapse tree') : to.length > (t.chart.path?.length ?? 0) ? 'Drill down' : 'Drill up';
+      const label = t.chart.kind === 'decomp' ? (to.length ? 'Expand Tree' : 'Collapse Tree') : to.length > (t.chart.path?.length ?? 0) ? 'Drill Down' : 'Drill Up';
       const pick = to.length ? to.map((value, level) => ({ level, value })) : undefined;
       this.update(t.id, { chart: to.length ? { ...closed, path: to } : closed, pick } as Partial<ChartTile>, label);
       return;
@@ -316,7 +316,7 @@ export class DashboardView {
       clear.className = 'dash-clear';
       clear.textContent = '✕';
       clear.title = 'Show everything again';
-      clear.addEventListener('click', (e) => { e.stopPropagation(); this.update(t.id, { selected: undefined }, 'Clear slicer'); });
+      clear.addEventListener('click', (e) => { e.stopPropagation(); this.update(t.id, { selected: undefined }, 'Clear Slicer'); });
       head.append(clear);
     }
     const box = document.createElement('div');

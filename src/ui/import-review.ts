@@ -3,6 +3,7 @@
 // Reading happens while the window is open, one picture after another; a structure can be read
 // again with the person's AI model (when linked), or its SMILES typed in.
 
+import { addInfo } from './info-tip';
 import type { ReadResult } from '../recognise/reader';
 import type { Checked } from '../recognise/check';
 import type { Pixels } from '../recognise/picture';
@@ -86,7 +87,9 @@ export function openReview(o: ReviewOptions): void {
     junkText.textContent = `Show ${n} ${n === 1 ? 'picture' : 'pictures'} that don't look like structures`;
   };
   showJunk.addEventListener('change', () => { for (const r of list.querySelectorAll<HTMLElement>('.import-row.junk')) r.hidden = !showJunk.checked; });
-  d.append(el('h2', { textContent: o.title }), el('p', { className: 'muted', textContent: o.note }), status, list, junkLabel,
+  const title = el('h2', { textContent: o.title });
+  addInfo(title, o.note);
+  d.append(title, status, list, junkLabel,
     el('p', { className: 'ask-buttons' }, all, none, ...(aiAll ? [aiAll] : []), el('span', { className: 'grow' }), cancel, place));
 
   let closed = false;

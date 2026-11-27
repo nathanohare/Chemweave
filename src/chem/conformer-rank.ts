@@ -92,7 +92,8 @@ export function fittedRmsd(p: number[], q: number[], idx: number[]): number {
  */
 export function mergeConformers(atoms: { z: number }[], found: Conformer[], extra: { xyz: number[]; energy: number }[], window = 8): Conformer[] {
   const heavy = atoms.map((x, i) => (x.z === 1 ? -1 : i)).filter((i) => i >= 0);
-  const all: Conformer[] = finiteEnergies(found.map((c) => ({ xyz: c.xyz, energy: c.energy })));
+  // each found conformer keeps how many equivalent forms it was found in (its degeneracy); its share is worked out again below
+  const all: Conformer[] = finiteEnergies(found.map((c) => ({ ...c, population: undefined })));
   for (const r of extra) {
     if (!Number.isFinite(r.energy)) continue;
     if (all.some((k) => k.energy !== null && Math.abs(k.energy - r.energy) < 0.1 && fittedRmsd(k.xyz, r.xyz, heavy) < 0.3)) continue;

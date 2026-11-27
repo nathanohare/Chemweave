@@ -202,7 +202,9 @@ export function sizeRanks(gs: NewmanGroup[]): (0 | 1 | 2)[] {
 export function torsion(xyz: number[], a: number, b: number, c: number, d: number): number {
   const b1 = sub3(at(xyz, b), at(xyz, a)), b2 = sub3(at(xyz, c), at(xyz, b)), b3 = sub3(at(xyz, d), at(xyz, c));
   const n1 = cross3(b1, b2), n2 = cross3(b2, b3);
-  const m1 = cross3(n1, norm3(b2));
+  // m1 = b2̂ × n1 (not n1 × b2̂, which gives the opposite sign): positive is clockwise from the
+  // front bond to the back bond, looking from b to c, as newmanView measures its angles
+  const m1 = cross3(norm3(b2), n1);
   return (Math.atan2(dot3(m1, n2), dot3(n1, n2)) * 180) / Math.PI;
 }
 

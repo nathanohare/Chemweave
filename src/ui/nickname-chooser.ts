@@ -14,7 +14,7 @@ export class NicknameChooser {
   constructor() {
     this.d = document.createElement('dialog');
     this.d.className = 'nicknames';
-    this.d.innerHTML = `<h2>Choose an abbreviation</h2>
+    this.d.innerHTML = `<h2>Choose an Abbreviation</h2>
       <input type="search" placeholder="Type to narrow the list (Boc, TBS, OTf…)" aria-label="Find an abbreviation" />
       <div class="nick-list" role="listbox" aria-label="Abbreviations"></div>
       <p class="ask-buttons"><button type="button" data-act="cancel">Cancel</button></p>`;

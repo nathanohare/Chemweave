@@ -17,7 +17,7 @@ import { drawLayout, drawMarks } from '../text/draw';
 import { drawMath } from '../document/math';
 import { selectionRects } from '../text/layout';
 import { imageFor, onImageReady } from '../render/images';
-import { fxCanvas, hasFx, traceShape } from '../render/picture-fx';
+import { fxCanvas, fxSideFor, hasFx, traceShape } from '../render/picture-fx';
 import { paintChartBox } from '../render/chart-box-paint';
 import { drawParaBorders, drawParaShading } from '../document/para-borders';
 
@@ -193,8 +193,19 @@ export class DocView {
       const r = this.scroller.getBoundingClientRect();
       this.setZoom(this.zoom * Math.exp(-e.deltaY * 0.0015), { x: e.clientX - r.left, y: e.clientY - r.top });
     }, { passive: false });
-    new ResizeObserver(() => this.resize()).observe(host);
-    onImageReady(() => { if (this.file) this.redraw(); });
+    this.resizer = new ResizeObserver(() => this.resize());
+    this.resizer.observe(host);
+    this.unwatchImages = onImageReady(() => { if (this.file) this.redraw(); });
+  }
+
+  private readonly resizer: ResizeObserver;
+  private readonly unwatchImages: () => void;
+
+  /** The view is taken away for good: it stops watching its host's size and pictures loading (nothing redraws it any more). */
+  destroy(): void {
+    this.resizer.disconnect();
+    this.unwatchImages();
+    this.file = null;
   }
 
   private get layout(): DocLayout | null {
@@ -206,6 +217,23 @@ export class DocView {
   /** The view the document is shown in (Print Layout unless another is chosen). */
   get kind(): DocViewKind {
     return this.file?.view.kind ?? 'print';
+  }
+
+  /**
+   * In the views without pages: the lines (and the document's y range) that are on the screen,
+   * with some room above and below (a tall line or a figure's edge).
+   */
+  private inView(lay: DocLayout, p: PageBox, oy: number): { first: number; end: number; top: number; bottom: number } {
+    const k = this.zoom, pos = this.place(p, lay), room = 80;
+    const top = (0 - oy) / k - pos.y + p.top - room, bottom = (this.h - oy) / k - pos.y + p.top + room;
+    let first = p.end, end = p.first;
+    for (let i = p.first; i < p.end; i++) {
+      const l = lay.text.lines[i];
+      if (l.y + l.descent < top || l.y - (l.above ?? l.ascent) > bottom) continue;
+      if (i < first) first = i;
+      end = i + 1;
+    }
+    return first < end ? { first, end, top, bottom } : { first: p.first, end: p.first, top, bottom };
   }
 
   /** One long sheet with no pages (Web Layout, Outline, Draft). */
@@ -590,9 +618,13 @@ export class DocView {
       return true;
     };
     if (!endless) for (const p of visible) { at(p); const c = band(p); this.paper(ctx, p, lay); if (c) ctx.restore(); }
-    for (const p of visible) {
-      at(p);
-      const clipped = band(p);
+    for (const page of visible) {
+      at(page);
+      const clipped = band(page);
+      // the views without pages are one page thousands of points tall: only what is on the screen is drawn (and searched for squiggles)
+      const win = endless ? this.inView(lay, page, oy) : null;
+      const p = win ? { ...page, first: win.first, end: win.end } : page;
+      const shows = (y1: number, y2: number) => !win || (y2 >= win.top && y1 <= win.bottom);
       if (!endless) { drawHeaderFooter(ctx, t, p); drawHfBodies(ctx, t, lay, p.index, (o) => this.object(ctx, t, o, lay)); drawLineNumbers(ctx, lay, p.index, '#555'); drawChangeBars(ctx, lay, p.index); }
       drawParaShading(ctx, lay.frames, p.index);
       // the found text and the selection, under the text
@@ -615,20 +647,20 @@ export class DocView {
         for (const r of rectsOn(lay, p, ...ov.selection)) ctx.fillRect(r.x1, r.y1, r.x2 - r.x1, r.y2 - r.y1);
       }
       // figures behind the text first, then the text, then the rest
-      for (const o of lay.objects) if (o.page === p.index && o.wrap === 'behind') this.object(ctx, t, o, lay);
+      for (const o of lay.objects) if (o.page === p.index && o.wrap === 'behind' && shows(o.y, o.y + o.h)) this.object(ctx, t, o, lay);
       drawLayout(ctx, lay.text, 0, 0, p.first, p.end);
       if (this.showMarks) drawMarks(ctx, lay.text, 0, 0, p.first, p.end);
       drawNoteRules(ctx, lay, p.index);
       drawParaBorders(ctx, lay.frames, p.index);
       // tables, then the figures (some of them in table cells)
       // (a table in a cell after the table holding it)
-      const tabs = lay.objects.filter((o) => o.page === p.index && t.objects[o.id]?.kind === 'table').sort((a, b) => (lay.tables.get(a.id)?.depth ?? 0) - (lay.tables.get(b.id)?.depth ?? 0));
+      const tabs = lay.objects.filter((o) => o.page === p.index && t.objects[o.id]?.kind === 'table' && shows(o.y, o.y + o.h)).sort((a, b) => (lay.tables.get(a.id)?.depth ?? 0) - (lay.tables.get(b.id)?.depth ?? 0));
       for (const o of tabs) {
         const obj = t.objects[o.id];
         const tb = lay.tables.get(o.id);
         if (obj?.kind === 'table' && tb) drawDocTable(ctx, obj.table, tb, p.index, { color: '#9fb4d8', px: 1 / k, always: this.gridlines }, t.tableStyles, this.showMarks);
       }
-      for (const o of lay.objects) if (o.page === p.index && o.wrap !== 'behind' && t.objects[o.id]?.kind !== 'table') this.object(ctx, t, o, lay);
+      for (const o of lay.objects) if (o.page === p.index && o.wrap !== 'behind' && t.objects[o.id]?.kind !== 'table' && shows(o.y, o.y + o.h)) this.object(ctx, t, o, lay);
       const px = 1 / k;
       // a structure drawn in place: over the page (faded, as it can't be changed meanwhile)
       const live = this.live;
@@ -643,7 +675,7 @@ export class DocView {
         ctx.lineWidth = 1.1 * px;
         for (const r of rectsOn(lay, p, s.start, s.end)) squiggle(ctx, r, px);
       }
-      if (ov.marks) drawMarksOn(ctx, lay, p, ov.marks, px);
+      if (ov.marks) drawMarksOn(ctx, lay, page, ov.marks, px);
       if (clipped) ctx.restore();
     }
     if (hiding) this.joins(ctx, visible, at);
@@ -1066,7 +1098,8 @@ export class DocView {
       paintChartBox(ctx, obj.chart, o.x, o.y, o.w, o.h);
     } else if (obj.kind === 'picture') {
       // pictures (EMF spectra from MestReNova too) are decoded once, shared with the drawings
-      const img = fxCanvas(obj) ?? imageFor(obj.src);
+      const tm = ctx.getTransform();
+      const img = fxCanvas(obj, fxSideFor(o.w, o.h, Math.hypot(tm.a, tm.b), obj.crop)) ?? imageFor(obj.src);
       const look = obj.look;
       if (img) {
         ctx.save();

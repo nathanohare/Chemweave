@@ -87,7 +87,8 @@ function describe(m: Molecule): NewmanMol {
 function setTorsion(m: Molecule, t: [number, number, number, number], moving: number[], target: number): void {
   const [, b, c] = t;
   const xyz = coords(m);
-  const ang = ((torsion(xyz, ...t) - target) * Math.PI) / 180;
+  // turning the c side by +θ about b→c (right-handed) makes the torsion θ larger (IUPAC sign)
+  const ang = ((target - torsion(xyz, ...t)) * Math.PI) / 180;
   const pb = [m.getAtomX(b), m.getAtomY(b), m.getAtomZ(b)], pc = [m.getAtomX(c), m.getAtomY(c), m.getAtomZ(c)];
   let k = [pc[0] - pb[0], pc[1] - pb[1], pc[2] - pb[2]];
   const L = Math.hypot(k[0], k[1], k[2]) || 1;

@@ -24,8 +24,8 @@ const RULES: RegExp[] = [
   // tert-, sec-, cis-, trans-, o-, m-, p- (in lower case)
   guardedAt(/(?:tert|sec|cis|trans|o|m|p)(?=-)/g, startsPrefix),
 ];
-/** Brackets of stereodescriptors only: (E), (2E,4Z), (1R,2S), (R*,S*), (S,E). */
-const STEREO = /\((\d*[RSEZ]\*?(?:,\d*[RSEZ]\*?)*)\)/g;
+/** Brackets of stereodescriptors only: (E), (2E,4Z), (1R,2S), (R*,S*), (S,E), and locants with a letter or primes: (3aR,7aS), (1′R,2S). */
+const STEREO = /\(((?:\d+[a-z]?[′″']*)?[RSEZ]\*?(?:,(?:\d+[a-z]?[′″']*)?[RSEZ]\*?)*)\)/g;
 
 /** The parts of a name to print in italics, as [start, end) character ranges. */
 export function italicSpans(name: string): [number, number][] {
