@@ -4,7 +4,11 @@
 
 import type { ObjectPicture } from './object-picture';
 
-/** The first page at twice its size (sharp when printed), with its size in points; null when the file can't be drawn. */
+/**
+ * The first page at twice its size (sharp when printed), at most 2400 pixels on its longer side as
+ * pdfPages draws pages (a poster or banner PDF would make a canvas too big to draw), with its size
+ * in points; null when the file can't be drawn.
+ */
 export async function pdfFirstPage(bytes: Uint8Array): Promise<ObjectPicture | null> {
   const pdfjs = await import('pdfjs-dist/legacy/build/pdf.mjs');
   if (!pdfjs.GlobalWorkerOptions.workerSrc) {
@@ -15,7 +19,7 @@ export async function pdfFirstPage(bytes: Uint8Array): Promise<ObjectPicture | n
     const doc = await task.promise;
     const page = await doc.getPage(1);
     const own = page.getViewport({ scale: 1 });
-    const view = page.getViewport({ scale: 2 });
+    const view = page.getViewport({ scale: Math.min(2, 2400 / Math.max(own.width, own.height)) });
     const canvas = document.createElement('canvas');
     canvas.width = Math.ceil(view.width);
     canvas.height = Math.ceil(view.height);
@@ -56,7 +60,9 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
     const out: PdfPagePicture[] = [];
     const last = most && most > 0 ? Math.min(doc.numPages, most) : doc.numPages;
     for (let n = 1; n <= last; n++) {
-      const page = await doc.getPage(n);
+      // (a page that can't be drawn, a broken one in a long PDF, is left out; the others are kept)
+      let page: Awaited<ReturnType<typeof doc.getPage>>;
+      try { page = await doc.getPage(n); } catch { continue; }
       const own = page.getViewport({ scale: 1 });
       const scale = Math.min(150 / 72, 2400 / Math.max(own.width, own.height));
       const view = page.getViewport({ scale });
@@ -66,11 +72,13 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
       const px = { w: canvas.width, h: canvas.height };
       try {
         const ctx = canvas.getContext('2d');
-        if (!ctx) return null;
+        if (!ctx) continue;
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
         out.push({ src: canvas.toDataURL('image/png'), w: own.width, h: own.height, px, of: doc.numPages });
+      } catch {
+        // (this page only)
       } finally {
         // (its memory freed now, not when the canvas is collected)
         canvas.width = 0;
@@ -78,7 +86,8 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
         page.cleanup();
       }
     }
-    return out;
+    // (no page at all could be drawn: as a file that can't be read)
+    return out.length || !last ? out : null;
   } catch {
     return null;
   } finally {
@@ -86,23 +95,43 @@ export async function pdfPages(bytes: Uint8Array, most?: number): Promise<PdfPag
   }
 }
 
-/** PDFs drawn lately (by their bytes): the live preview draws the same ones again after each change. */
-const drawnLately: { key: string; bytes: Uint8Array; most: number; pages: Promise<PdfPagePicture[] | null> }[] = [];
-const LATELY = 40;
+/**
+ * PDFs drawn lately (by their bytes): the live preview draws the same ones again after each
+ * change, every PDF of the project in turn, so the pictures are kept by how much memory they
+ * take, not by how many there are (an SI with hundreds of spectra keeps them all while they
+ * fit). `cost`: the file's bytes and its pictures' (once drawn).
+ */
+const drawnLately: { key: string; bytes: Uint8Array; most: number; pages: Promise<PdfPagePicture[] | null>; cost: number }[] = [];
+/** At most this much kept, in bytes (files and their pages' pictures), and never more than this many PDFs. */
+const LATELY_BYTES = 400e6;
+const LATELY_MOST = 2000;
+/** Each set of bytes' key, worked out once (the preview hands the same bytes over at every compile). */
+const keys = new WeakMap<Uint8Array, string>();
 
-/** As pdfPages, the last few PDFs drawn kept (for the live preview, which compiles often). */
-export function pdfPagesKept(bytes: Uint8Array, most = 1): Promise<PdfPagePicture[] | null> {
-  const key = `${bytes.length}:${fingerprint(bytes)}`;
+/** As pdfPages, the PDFs drawn lately kept (for the live preview, which compiles often). */
+export function pdfPagesKept(bytes: Uint8Array, most = 1, draw: (bytes: Uint8Array, most?: number) => Promise<PdfPagePicture[] | null> = pdfPages): Promise<PdfPagePicture[] | null> {
+  let key = keys.get(bytes);
+  if (!key) { key = `${bytes.length}:${fingerprint(bytes)}`; keys.set(bytes, key); }
   const at = drawnLately.findIndex((d) => d.key === key && d.most === most && sameBytes(d.bytes, bytes));
   if (at >= 0) {
     const [hit] = drawnLately.splice(at, 1);
     drawnLately.push(hit);
     return hit.pages;
   }
-  const pages = pdfPages(bytes, most);
-  drawnLately.push({ key, bytes, most, pages });
-  if (drawnLately.length > LATELY) drawnLately.shift();
+  const pages = draw(bytes, most);
+  const entry = { key, bytes, most, pages, cost: bytes.length };
+  drawnLately.push(entry);
+  const forget = () => { const i = drawnLately.indexOf(entry); if (i >= 0) drawnLately.splice(i, 1); };
+  // (a failure, the PDF reader not loading for one, is tried again next time)
+  pages.then((got) => { entry.cost += (got ?? []).reduce((n, p) => n + p.src.length, 0); trim(); }, forget);
+  trim();
   return pages;
+}
+
+/** The PDFs used longest ago forgotten until what is kept fits. */
+function trim(): void {
+  let total = drawnLately.reduce((n, d) => n + d.cost, 0);
+  while (drawnLately.length > 1 && (total > LATELY_BYTES || drawnLately.length > LATELY_MOST)) total -= drawnLately.shift()!.cost;
 }
 
 /** A quick fingerprint of some bytes (FNV-1a), to tell files apart. */
@@ -199,10 +228,17 @@ async function picturePixels(src: string): Promise<{ data: Uint8ClampedArray; w:
  * and each spectrum shown again on its page, asks again.
  */
 let lastPixels: { src: string; got: Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> } | null = null;
-function pixelsOnce(src: string): Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> {
-  if (lastPixels?.src !== src) lastPixels = { src, got: picturePixels(src) };
+function pixelsOnce(src: string, read: typeof picturePixels = picturePixels): Promise<{ data: Uint8ClampedArray; w: number; h: number } | null> {
+  if (lastPixels?.src !== src) {
+    const got = read(src);
+    lastPixels = { src, got };
+    // (a failure isn't kept: kept() tries again, and so must this)
+    got.catch(() => { if (lastPixels?.got === got) lastPixels = null; });
+  }
   return lastPixels.got;
 }
+/** For tests: pixelsOnce with its own reader. */
+export const pixelsOnceFor = (src: string, read: (src: string) => Promise<{ data: Uint8ClampedArray; w: number; h: number } | null>) => pixelsOnce(src, read);
 const KEPT_ANSWERS = 64;
 function kept<T>(memo: Map<string, Promise<T>>, src: string, work: () => Promise<T>): Promise<T> {
   const hit = memo.get(src);
@@ -257,11 +293,12 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfPageReader | null> 
     count: doc.numPages,
     async size(n) { const v = (await doc.getPage(n)).getViewport({ scale: 1 }); return { w: v.width, h: v.height }; },
     async picture(n) {
+      let page: Awaited<ReturnType<typeof doc.getPage>>;
+      try { page = await doc.getPage(n); } catch { return null; }
+      const canvas = document.createElement('canvas');
       try {
-        const page = await doc.getPage(n);
         const own = page.getViewport({ scale: 1 });
         const view = page.getViewport({ scale: Math.min(150 / 72, 2400 / Math.max(own.width, own.height)) });
-        const canvas = document.createElement('canvas');
         canvas.width = Math.ceil(view.width);
         canvas.height = Math.ceil(view.height);
         const ctx = canvas.getContext('2d');
@@ -269,10 +306,14 @@ export async function openPdf(bytes: Uint8Array): Promise<PdfPageReader | null> 
         ctx.fillStyle = '#fff';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
         await page.render({ canvas, canvasContext: ctx, viewport: view }).promise;
-        page.cleanup();
         return await new Promise<Blob | null>((ok) => canvas.toBlob(ok, 'image/png'));
       } catch {
         return null;
+      } finally {
+        // (its memory freed now, as pdfPages does, and the page's whether or not it drew)
+        canvas.width = 0;
+        canvas.height = 0;
+        page.cleanup();
       }
     },
     close() { void task.destroy(); },

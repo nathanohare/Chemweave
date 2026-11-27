@@ -6,7 +6,7 @@
 // (ChemDraw's 14.4 pt bonds come out 14.4 pt long in Word).
 
 import { deflateSync, inflateSync } from 'fflate';
-import { Item, Seg, outlineOfPrevious, parseColor } from './vector';
+import { Item, Seg, ImageItem, outlineOfPrevious, parseColor } from './vector';
 
 const UNIT = 100; // logical units per point
 const DEVICE_MM = 300; // reference device: 300 mm square at 0.1 mm per pixel
@@ -18,7 +18,7 @@ const EMR = {
   EOF: 14, SETMAPMODE: 17, SETBKMODE: 18, SETPOLYFILLMODE: 19, SETTEXTALIGN: 22, SETTEXTCOLOR: 24, MOVETOEX: 27,
   SELECTOBJECT: 37, CREATEBRUSHINDIRECT: 39, DELETEOBJECT: 40, LINETO: 54, BEGINPATH: 59, ENDPATH: 60,
   CLOSEFIGURE: 61, FILLPATH: 62, STROKEPATH: 64, EXTCREATEFONTINDIRECTW: 82, EXTTEXTOUTW: 84, EXTCREATEPEN: 95,
-  INTERSECTCLIPRECT: 30, EXTSELECTCLIPRGN: 75,
+  INTERSECTCLIPRECT: 30, EXTSELECTCLIPRGN: 75, ALPHABLEND: 114,
 } as const;
 const NULL_BRUSH = 0x80000005;
 const NULL_PEN = 0x80000008;
@@ -47,14 +47,22 @@ class Bytes {
   setI32(at: number, v: number): void { this.view.setInt32(at, Math.round(v), true); }
   /** UTF-16 text padded with zeros to `chars` characters. */
   utf16(s: string, chars: number): void { for (let i = 0; i < chars; i++) this.u16(i < s.length ? s.charCodeAt(i) : 0); }
+  raw(b: Uint8Array): void { this.room(b.length); this.buf.set(b, this.length); this.length += b.length; }
   pad4(): void { while (this.length % 4) this.u8(0); }
   bytes(): Uint8Array { return this.buf.slice(0, this.length); }
 }
 
 export interface EmfBox { x1: number; y1: number; x2: number; y2: number }
 
-/** Turn recorded drawing items into an EMF file. `box` is the picture area in points. */
-export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
+/** A picture's pixels: red, green, blue and alpha (not premultiplied), top row first. */
+export interface EmfPixels { w: number; h: number; rgba: Uint8Array | Uint8ClampedArray }
+
+/**
+ * Turn recorded drawing items into an EMF file. `box` is the picture area in points. Pictures
+ * are drawn from `pictures` (their pixels, by their src); without it they are left out, for
+ * the clipboard, where a PNG copy goes with the EMF.
+ */
+export function itemsToEmf(items: Item[], box: EmfBox, pictures?: ReadonlyMap<string, EmfPixels | null>): Uint8Array {
   const out = new Bytes();
   const W = Math.max(1, box.x2 - box.x1), H = Math.max(1, box.y2 - box.y1);
   const X = (x: number) => (x - box.x1) * UNIT;
@@ -151,9 +159,56 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
     clipKey = key;
   };
 
+  const pen = (c: number, w: number, cap: number, join: number) => use('pen', `p${c}/${w}/${cap}/${join}`, (slot) => {
+    begin(EMR.EXTCREATEPEN);
+    out.u32(slot); out.u32(0); out.u32(0); out.u32(0); out.u32(0); // no bitmap
+    out.u32(0x00010000 | cap | join); // geometric solid pen
+    out.u32(w);
+    out.u32(0); out.u32(c); out.u32(0); // solid brush of this colour
+    out.u32(0); // no dash pattern (dashes are already cut into pieces)
+    end();
+  });
+
+  // a picture as a 32-bit bitmap with its see-through parts, drawn by EMR_ALPHABLEND ([MS-EMF]
+  // 2.3.1.1: AlphaFormat AC_SRC_ALPHA, so the colours are premultiplied by their alpha)
+  const image = (it: ImageItem, px: EmfPixels) => {
+    const pic = placed(it, px);
+    if (!pic) return;
+    const { w, h, rgba } = pic.pixels;
+    const bmiSize = 40, bitsSize = w * h * 4, fixed = 108;
+    const dx = X(pic.x), dy = Y(pic.y), dw = Math.max(1, Math.round(pic.w * UNIT)), dh = Math.max(1, Math.round(pic.h * UNIT));
+    begin(EMR.ALPHABLEND);
+    out.i32(dx); out.i32(dy); out.i32(dx + dw); out.i32(dy + dh); // bounds
+    out.i32(dx); out.i32(dy); out.i32(dw); out.i32(dh); // destination
+    out.u8(0); out.u8(0); out.u8(255); out.u8(1); // BLENDFUNCTION: AC_SRC_OVER, no flags, opaque as a whole, AC_SRC_ALPHA
+    out.i32(0); out.i32(0); // source corner
+    out.f32(1); out.f32(0); out.f32(0); out.f32(1); out.f32(0); out.f32(0); // source transform: none
+    out.u32(0); // background colour
+    out.u32(0); // DIB_RGB_COLORS
+    out.u32(fixed); out.u32(bmiSize); out.u32(fixed + bmiSize); out.u32(bitsSize);
+    out.i32(w); out.i32(h); // source size
+    // BITMAPINFOHEADER: bottom row first (a positive height), 32 bits a pixel, BI_RGB
+    out.u32(40); out.i32(w); out.i32(h); out.u16(1); out.u16(32); out.u32(0); out.u32(bitsSize); out.i32(0); out.i32(0); out.u32(0); out.u32(0);
+    const bits = new Uint8Array(bitsSize);
+    for (let y = 0, p = 0; y < h; y++) {
+      for (let x = 0; x < w; x++, p += 4) {
+        const o = ((h - 1 - y) * w + x) * 4, a = rgba[o + 3];
+        bits[p] = Math.round((rgba[o + 2] * a) / 255); bits[p + 1] = Math.round((rgba[o + 1] * a) / 255); bits[p + 2] = Math.round((rgba[o] * a) / 255); bits[p + 3] = a;
+      }
+    }
+    out.raw(bits);
+    end();
+  };
+
   for (const [idx, it] of items.entries()) {
-    // pictures go with the PNG copy on the clipboard, not in the EMF
-    if (it.kind === 'image') continue;
+    if (it.kind === 'image') {
+      // (the clipboard's copy: the pictures go with the PNG copy beside it)
+      const px = pictures?.get(it.src);
+      if (!px) continue;
+      clipTo(it.clip);
+      image(it, px);
+      continue;
+    }
     clipTo(it.clip);
     if (it.kind === 'path') {
       if (!it.segs.some((s) => s.k !== 'M')) continue;
@@ -170,15 +225,7 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
         const w = Math.max(1, Math.round(it.stroke.width * UNIT));
         const cap = it.stroke.cap === 'round' ? 0 : it.stroke.cap === 'square' ? 0x100 : 0x200;
         const join = it.stroke.join === 'round' ? 0 : it.stroke.join === 'bevel' ? 0x1000 : 0x2000;
-        use('pen', `p${c}/${w}/${cap}/${join}`, (slot) => {
-          begin(EMR.EXTCREATEPEN);
-          out.u32(slot); out.u32(0); out.u32(0); out.u32(0); out.u32(0); // no bitmap
-          out.u32(0x00010000 | cap | join); // geometric solid pen
-          out.u32(w);
-          out.u32(0); out.u32(c); out.u32(0); // solid brush of this colour
-          out.u32(0); // no dash pattern (dashes are already cut into pieces)
-          end();
-        });
+        pen(c, w, cap, join);
         stock('brush', NULL_BRUSH);
         path(it.segs);
         begin(EMR.STROKEPATH); bounds(); end();
@@ -187,6 +234,10 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
       const c = colorRef(it.color);
       // (an outline drawn over its own letters: EMF's text has none, so the letters alone)
       if (c === null || !it.text || outlineOfPrevious(items, idx)) continue;
+      // letters with only an outline (No fill): their outlines made a path and stroked, as GDI
+      // does with text drawn inside a path bracket (BeginPath lists ExtTextOut among the
+      // drawing functions that add to the path)
+      const hollow = !!it.stroke;
       const height = Math.round(it.size * UNIT);
       use('font', `${it.family}/${height}/${it.bold}/${it.italic}/${it.angle ?? 0}`, (slot) => {
         begin(EMR.EXTCREATEFONTINDIRECTW);
@@ -206,7 +257,7 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
         for (let i = 0; i < 12; i++) out.u8(0);
         end();
       });
-      if (c !== textColor) { rec(EMR.SETTEXTCOLOR, c); textColor = c; }
+      if (!hollow && c !== textColor) { rec(EMR.SETTEXTCOLOR, c); textColor = c; }
       const chars = [...it.text];
       const units: string[] = [];
       const dx: number[] = [];
@@ -217,6 +268,7 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
       // advances are rounded so they add up to the full width without drift
       let acc = 0, prev = 0;
       const dxUnits = dx.map((w) => { acc += w * UNIT; const r = Math.round(acc) - prev; prev += r; return r; });
+      if (hollow) rec(EMR.BEGINPATH);
       begin(EMR.EXTTEXTOUTW);
       const x = X(it.x), y = Y(it.y), tw = dx.reduce((a, b) => a + b, 0) * UNIT;
       out.i32(x); out.i32(y - it.size * UNIT); out.i32(x + tw); out.i32(y + it.size * 0.3 * UNIT); // bounds
@@ -234,6 +286,12 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
       out.pad4();
       for (const d of dxUnits) out.i32(d);
       end();
+      if (hollow) {
+        rec(EMR.ENDPATH);
+        pen(c, Math.max(1, Math.round((it.stroke ?? 0) * UNIT)), 0, 0); // round caps and joins, as the screen's outline
+        stock('brush', NULL_BRUSH);
+        begin(EMR.STROKEPATH); bounds(); end();
+      }
     }
   }
 
@@ -250,6 +308,57 @@ export function itemsToEmf(items: Item[], box: EmfBox): Uint8Array {
   out.setU32(bytesAt, out.length);
   out.setU32(recordsAt, records);
   return out.bytes();
+}
+
+/** A picture's pixels async-read first, then the EMF with them (File ▸ Export ▸ Export Picture). */
+export async function itemsToEmfWithPictures(items: Item[], box: EmfBox, pixels: (src: string) => Promise<EmfPixels | null>): Promise<Uint8Array> {
+  const got = new Map<string, EmfPixels | null>();
+  for (const it of items) if (it.kind === 'image' && !got.has(it.src)) got.set(it.src, await pixels(it.src).catch(() => null));
+  return itemsToEmf(items, box, got);
+}
+
+/** At most this many pixels in a picture made for the EMF (a turned, flipped or rounded one). */
+const MOST_PIXELS = 16e6;
+
+/**
+ * The pixels to draw for a picture, and where (in points): as they are when the picture shows
+ * them whole, else made again for its box (cropped, flipped, rounded and turned as the screen
+ * shows it, see-through outside), so every EMF reader draws it the same with a plain bitmap.
+ */
+export function placed(it: ImageItem, px: EmfPixels): { pixels: EmfPixels; x: number; y: number; w: number; h: number } | null {
+  if (!(px.w > 0 && px.h > 0) || px.rgba.length < px.w * px.h * 4) return null;
+  const c = it.crop ?? { l: 0, t: 0, r: 0, b: 0 };
+  const plain = !(c.l || c.t || c.r || c.b) && !it.rot && !it.flipH && !it.flipV && !it.radius;
+  if (plain) return { pixels: px, x: it.x, y: it.y, w: it.w, h: it.h };
+  const fw = Math.max(0.01, 1 - c.l - c.r), fh = Math.max(0.01, 1 - c.t - c.b);
+  // the turned box, and pixels as close together as the picture's own
+  const a = ((it.rot ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
+  const bw = Math.abs(it.w * cos) + Math.abs(it.h * sin), bh = Math.abs(it.w * sin) + Math.abs(it.h * cos);
+  let k = Math.max((px.w * fw) / Math.max(1e-6, it.w), (px.h * fh) / Math.max(1e-6, it.h));
+  k = Math.min(k, Math.sqrt(MOST_PIXELS / Math.max(1e-6, bw * bh)));
+  const W = Math.max(1, Math.round(bw * k)), H = Math.max(1, Math.round(bh * k));
+  const rgba = new Uint8Array(W * H * 4);
+  const r = Math.min(it.radius ?? 0, it.w / 2, it.h / 2);
+  for (let y = 0; y < H; y++) {
+    for (let x = 0; x < W; x++) {
+      // this pixel's middle, from the picture's middle, turned back and flipped back
+      const ox = (x + 0.5) / k - bw / 2, oy = (y + 0.5) / k - bh / 2;
+      let lx = ox * cos + oy * sin, ly = -ox * sin + oy * cos;
+      if (it.flipH) lx = -lx;
+      if (it.flipV) ly = -ly;
+      const u = lx + it.w / 2, v = ly + it.h / 2;
+      if (u < 0 || v < 0 || u >= it.w || v >= it.h) continue;
+      if (r > 0) {
+        // outside a rounded corner
+        const qx = Math.max(0, Math.abs(lx) - (it.w / 2 - r)), qy = Math.max(0, Math.abs(ly) - (it.h / 2 - r));
+        if (qx * qx + qy * qy > r * r) continue;
+      }
+      const sx = Math.min(px.w - 1, Math.floor((c.l + (u / it.w) * fw) * px.w)), sy = Math.min(px.h - 1, Math.floor((c.t + (v / it.h) * fh) * px.h));
+      const from = (sy * px.w + sx) * 4, to = (y * W + x) * 4;
+      rgba[to] = px.rgba[from]; rgba[to + 1] = px.rgba[from + 1]; rgba[to + 2] = px.rgba[from + 2]; rgba[to + 3] = px.rgba[from + 3];
+    }
+  }
+  return { pixels: { w: W, h: H, rgba }, x: it.x + it.w / 2 - bw / 2, y: it.y + it.h / 2 - bh / 2, w: bw, h: bh };
 }
 
 /** Windows colour (0x00BBGGRR); null for fully transparent. Partly transparent colours are mixed with white. */

@@ -181,7 +181,7 @@ import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng
 import { newChartBox, sizedBox } from './sheet/chart-box';
 import { chartBoxPng } from './render/chart-box-paint';
 import { itemsToSvg } from './render/svg';
-import { itemsToEmf, type EmfBox } from './render/emf';
+import { itemsToEmfWithPictures, type EmfBox, type EmfPixels } from './render/emf';
 import type { Item } from './render/vector';
 import { PAPERS, defaultPaper, orient, placeIn, inside, placeSvg, pageSvg } from './print-layout';
 import { printPages } from './ui/print';
@@ -8950,7 +8950,7 @@ async function exportPicture(preset: { format?: string; dpi?: number; note?: str
   let note = '';
   try {
     if (type === SVG) await writeFile(target.ref, target.name, svg(), SVG);
-    else if (type === EMF) { const p = items(); await writeFile(target.ref, target.name, itemsToEmf(p.items, p.box), EMF); }
+    else if (type === EMF) { const p = items(); await writeFile(target.ref, target.name, await itemsToEmfWithPictures(p.items, p.box, imagePixels), EMF); }
     else if (type === EPS) { const p = items(); await writeFile(target.ref, target.name, await itemsToEps(p.items, p.box, pdfImage, tab.name.replace(/\.[^.]+$/, '')), EPS); }
     else {
       const k = bitmapScale(w, h, dpi, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS);
@@ -8980,6 +8980,22 @@ async function pdfImage(src: string): Promise<PdfImage | null> {
     const info = jpegInfo(bytes);
     if (info) return { kind: 'jpeg', bytes, ...info };
   }
+  const px = await imagePixels(src);
+  if (!px) return null;
+  const { w, h, rgba } = px;
+  const rgb = new Uint8Array(w * h * 3), alpha = new Uint8Array(w * h);
+  let clear = false;
+  for (let i = 0, j = 0; i < w * h; i++, j += 4) {
+    rgb[i * 3] = rgba[j]; rgb[i * 3 + 1] = rgba[j + 1]; rgb[i * 3 + 2] = rgba[j + 2];
+    alpha[i] = rgba[j + 3];
+    if (rgba[j + 3] < 255) clear = true;
+  }
+  return { kind: 'raw', w, h, rgb, alpha: clear ? alpha : null };
+}
+
+/** A picture's pixels read through the browser, at most 16 million of them (for a PDF, an EPS or an EMF); null when it can't be read. */
+async function imagePixels(src: string): Promise<EmfPixels | null> {
+  const { mime } = fromDataUrl(src);
   if (mime === 'image/x-wmf' || mime === 'image/tiff') return null;
   let img: HTMLImageElement;
   try {
@@ -8998,15 +9014,9 @@ async function pdfImage(src: string): Promise<PdfImage | null> {
   c.height = h;
   const g = c.getContext('2d')!;
   g.drawImage(img, 0, 0, w, h);
-  const px = g.getImageData(0, 0, w, h).data;
-  const rgb = new Uint8Array(w * h * 3), alpha = new Uint8Array(w * h);
-  let clear = false;
-  for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    rgb[i * 3] = px[j]; rgb[i * 3 + 1] = px[j + 1]; rgb[i * 3 + 2] = px[j + 2];
-    alpha[i] = px[j + 3];
-    if (px[j + 3] < 255) clear = true;
-  }
-  return { kind: 'raw', w, h, rgb, alpha: clear ? alpha : null };
+  const rgba = g.getImageData(0, 0, w, h).data;
+  c.width = c.height = 0;   // (its memory freed now)
+  return { w, h, rgba };
 }
 
 // ---------------------------------------------------------------- sheets: the grid, and structures drawn for cells

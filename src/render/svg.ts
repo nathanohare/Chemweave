@@ -23,6 +23,9 @@ function paint(attr: 'fill' | 'stroke', colour: string): string {
   return `${attr}="${hex}"${a < 1 ? ` ${attr}-opacity="${n(Math.max(0, a))}"` : ''}`;
 }
 
+/** Text for inside a quoted CSS string (a font name with an apostrophe, O'Brien Sans): CSS 2.1 §4.3.7 and §4.1.3: a quote or backslash goes in after a backslash. */
+const cssString = (t: string): string => t.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
+
 let clipCount = 0;
 
 /** A picture, cropped by drawing it larger inside a clip (SVG's way of showing part of an image). */
@@ -57,11 +60,14 @@ export function itemsToSvg(items: Item[], box: EmfBox): string {
         out.push(`<path d="${pathData(it.segs)}" fill="none" ${paint('stroke', st.color)} stroke-width="${n(st.width)}" stroke-linecap="${st.cap}" stroke-linejoin="${st.join}"/>`);
       }
     } else if (it.kind === 'image') {
-      out.push(it.rot ? `<g transform="rotate(${n(it.rot)} ${n(it.x + it.w / 2)} ${n(it.y + it.h / 2)})">${svgImage(it)}</g>` : svgImage(it));
+      // turned about its middle, and flipped about it (Arrange ▸ Flip) before turning, as the PDF has it
+      const cx = n(it.x + it.w / 2), cy = n(it.y + it.h / 2);
+      const turn = [it.rot ? `rotate(${n(it.rot)} ${cx} ${cy})` : '', it.flipH || it.flipV ? `translate(${cx} ${cy}) scale(${it.flipH ? -1 : 1} ${it.flipV ? -1 : 1}) translate(${n(-(it.x + it.w / 2))} ${n(-(it.y + it.h / 2))})` : ''].filter(Boolean).join(' ');
+      out.push(turn ? `<g transform="${turn}">${svgImage(it)}</g>` : svgImage(it));
     } else {
       const family = /^(sans-serif|system-ui|helvetica)$/i.test(it.family) ? 'Arial' : it.family;
       out.push(
-        `<text x="${n(it.x)}" y="${n(it.y)}" font-family="'${esc(family)}', Arial, Helvetica, sans-serif" font-size="${n(it.size)}"` +
+        `<text x="${n(it.x)}" y="${n(it.y)}" font-family="'${esc(cssString(family))}', Arial, Helvetica, sans-serif" font-size="${n(it.size)}"` +
           `${it.bold ? ' font-weight="bold"' : ''}${it.italic ? ' font-style="italic"' : ''} ${it.stroke ? `fill="none" ${paint('stroke', it.color)} stroke-width="${n(it.stroke)}" stroke-linejoin="round"` : paint('fill', it.color)}${it.angle ? ` transform="rotate(${n(-it.angle)} ${n(it.x)} ${n(it.y)})"` : ''} xml:space="preserve">${esc(it.text)}</text>`,
       );
     }
