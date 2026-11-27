@@ -790,7 +790,7 @@ export class KnowledgeBaseWindow {
         bar!.style.top = `${Math.max(head.top, box.top)}px`;
         bar!.style.height = `${Math.max(0, Math.min(table.bottom, box.bottom) - Math.max(head.top, box.top))}px`;
       };
-      const up = () => {
+      const up = (ev?: Event) => {
         window.removeEventListener('pointermove', move);
         window.removeEventListener('pointerup', up);
         window.removeEventListener('pointercancel', up);
@@ -798,6 +798,8 @@ export class KnowledgeBaseWindow {
         ghost.remove();
         bar?.remove();
         th.classList.remove('kb-col-moving');
+        // (a drag the system cancelled moves nothing)
+        if (ev?.type === 'pointercancel') return;
         // the click this release makes doesn't sort
         this.moved = true;
         setTimeout(() => { this.moved = false; });

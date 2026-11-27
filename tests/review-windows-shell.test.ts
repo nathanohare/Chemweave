@@ -97,7 +97,7 @@ describe('the Assistant bar, with another tab chosen', () => {
     const applied: AssistantAction[] = [];
     const host: AssistantHost = {
       prefs: () => prefs, savePrefs: (p) => { prefs = p; }, mode: () => 'drawing', items: async () => [],
-      apply: async (a) => { applied.push(a); return 'Drew the structure.'; }, markStep: () => true, undo: vi.fn(),
+      apply: async (a) => { applied.push(a); return 'Drew the structure.'; }, markStep: () => true, undo: vi.fn(), position: () => [],
       openSettings: async () => {}, area: () => new DOMRect(0, 0, 1000, 700), tab: () => tab,
     };
     const bar = new AssistantBar(host);

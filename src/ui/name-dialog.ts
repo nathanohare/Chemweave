@@ -9,8 +9,12 @@ export interface NameProblem { error: string; bad?: string; details?: string }
 export class NameDialog {
   private last = '';
 
-  /** `convert` inserts the structure for a name and returns null, or returns why it could not. */
-  constructor(private convert: (name: string) => Promise<NameProblem | null>, private starting: () => boolean) {}
+  /**
+   * `convert` inserts the structure for a name and returns null, or returns why it could not. It is
+   * told, once the name has been read, whether the window was closed meanwhile (Cancel), and then
+   * inserts nothing.
+   */
+  constructor(private convert: (name: string, closed: () => boolean) => Promise<NameProblem | null>, private starting: () => boolean) {}
 
   open(initial?: string): void {
     const d = document.createElement('dialog');
@@ -48,7 +52,8 @@ export class NameDialog {
     d.append(form);
 
     let busy = false;
-    const close = () => { if (d.open) d.close(); d.remove(); };
+    let gone = false;
+    const close = () => { gone = true; if (d.open) d.close(); d.remove(); };
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       if (busy) return;
@@ -58,7 +63,7 @@ export class NameDialog {
       ok.disabled = true;
       status.classList.remove('error');
       status.textContent = this.starting() ? 'Starting the name reader (only the first time)…' : 'Reading the name…';
-      const err = await this.convert(name);
+      const err = await this.convert(name, () => gone);
       busy = false;
       ok.disabled = false;
       this.last = name;
@@ -68,7 +73,7 @@ export class NameDialog {
       input.focus();
     });
     cancel.addEventListener('click', close);
-    d.addEventListener('close', () => d.remove());
+    d.addEventListener('close', () => { gone = true; d.remove(); });
     input.addEventListener('input', () => { status.textContent = ''; status.classList.remove('error'); });
     document.body.append(d);
     d.showModal();

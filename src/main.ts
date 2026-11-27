@@ -3501,6 +3501,7 @@ const assistantBar = madeLater(async (): Promise<AssistantBar> => new (await imp
   apply: applyAssistantAction,
   markStep: markAssistantStep,
   undo: () => { command('undo'); },
+  position: () => ws.active.mode === 'document' ? [docMode?.undoMark()] : [doc.topStep, deckNow()?.historyLength],
   openSettings: aiSettings,
   area: () => document.getElementById('work')?.getBoundingClientRect() ?? null,
   tab: () => ws.active,
@@ -4410,12 +4411,13 @@ async function clearAtomMapCommand(): Promise<void> {
   doc.edit('Clear Atom Map', () => { clearAtomMap(doc, scope); });
   editor.changed();
 }
-const nameDialog = new NameDialog(async (name) => {
+const nameDialog = new NameDialog(async (name, closed) => {
   // a SMILES string (or molfile) is drawn as it is; anything else is read as a name
   const here = sameDrawing('The structure');
   const mb = chem.ready ? await molfileOrSmiles(name, (s) => chem.smilesToMol(s)).catch(() => null) : null;
   const got = mb ? { mb, attach: [], warnings: [] } : await nameToMolfile(name);
-  if (here.left()) return null;
+  // (and not when the window was cancelled while the name was being read)
+  if (here.left() || closed()) return null;
   if ('error' in got) return got;
   const c = pasteCentre();
   try {
@@ -5594,6 +5596,7 @@ layers = new LayersPanel($('#layers-section'), {
   edit: (label, f) => { finishTyping(); doc.edit(label, f); editor.changed(); },
   pick: (w) => { finishTyping(); editor.selectThese({ atoms: new Set(w.atoms), bonds: new Set(), captions: new Set(w.captions), arrows: new Set(w.arrows), shapes: new Set(w.shapes) }); },
   picked: () => ({ shapes: [...editor.sel.shapes], captions: [...editor.sel.captions], atoms: [...editor.sel.atoms], arrows: [...editor.sel.arrows] }),
+  dragging: () => editor.dragging,
 });
 layers.onClose = () => { selectionPane = false; showLayers(); };
 const lib = (designLib = new DesignLibrary($('#design-lib'), (id) => { finishTyping(); editor.setTool(`geo:${id}`); }));

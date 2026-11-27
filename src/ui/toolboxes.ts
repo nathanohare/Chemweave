@@ -871,13 +871,15 @@ export class Toolboxes {
       target = dropTarget(m.clientX, m.clientY, w, undefined, m.ctrlKey || m.metaKey);
       for (const [d, el] of Object.entries(this.docks)) el.classList.toggle('drop', d === target);
     };
-    const up = () => {
+    const up = (ev?: Event) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       for (const el of Object.values(this.docks)) el.classList.remove('drop');
       f.classList.remove('dragging');
       if (!moved) return;
+      // a drag the system cancelled: the toolbox goes back where it was
+      if (ev?.type === 'pointercancel') { this.render(); return; }
       const fr = f.getBoundingClientRect();
       this.place(id, target === 'float' ? { dock: 'float', x: Math.round(fr.left), y: Math.round(fr.top), corner: undefined } : { dock: target, corner: undefined });
     };

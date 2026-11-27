@@ -4,6 +4,7 @@
 // by a part of a structure drawn as a query. The panel on the right shows what the selected
 // cell holds and how its value was worked out.
 
+import { dismissPopupMenu } from './popup-menu';
 import { paletteRows } from './palette-ui';
 import { SheetView, popupMenu, selectionName, CELL_SIZE } from './sheet-view';
 import { ACTUAL_ICON, statusZoom, type StatusZoom } from './status-zoom';
@@ -1205,7 +1206,7 @@ export class SheetMode {
   }
 
   private colourMenu(x: number, y: number, which: 'color' | 'fill'): void {
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu colour-menu';
     m.setAttribute('role', 'menu');
@@ -1580,7 +1581,7 @@ export class SheetMode {
     const s = this.view.sheet!;
     const f = s.filter;
     if (!f) return;
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu filter-menu';
     m.setAttribute('role', 'dialog');
