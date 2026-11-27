@@ -181,7 +181,7 @@ function stripLeading(runs: Run[], chars: string): Run[] {
   const out = [...runs];
   while (out.length) {
     const t = lstrip(out[0].text, chars);
-    if (t) { out[0] = R(t, !!out[0].bold, !!out[0].italic, out[0].valign ?? 'normal'); break; }
+    if (t) { out[0] = R(t, !!out[0].bold, !!out[0].italic, out[0].valign ?? 'normal', !!out[0].underline); break; }
     out.shift();
   }
   return out;
@@ -443,7 +443,9 @@ export function parseMp(text: string): Values {
 }
 
 export function parseRotation(text: string): Values {
-  const m = search(rx('\\[\\s*[αa]\\s*\\]\\s*(?P<a>[^=:\\s(]*)\\s*(?P<b>[^=:\\s(]*)?\\s*[=:]?\\s*(?P<v>[+\\-−–]?\\s*\\d+(?:\\.\\d+)?)'), text);
+  // (the temperature and line, "D20", "20D", "^{20}_{D}" or "D 20", then "=", ":", a space or the
+  // sign before the value: "[α]D20 +12.3" is +12.3, not a temperature "D20 +12." and a value "3")
+  const m = search(rx('\\[\\s*[αa]\\s*\\]\\s*(?P<a>[^=:\\s(]*)(?:\\s+(?P<b>[^=:\\s(+\\-−–\\d][^=:\\s(]*|\\d{1,3}(?![\\d.,])))?(?:\\s*[=:]\\s*|\\s+|(?=[+\\-−–]))(?P<v>[+\\-−–]?\\s*\\d+(?:\\.\\d+)?)'), text);
   if (!m) return {};
   const value: Values = { value: m.group('v')!.replaceAll(' ', '').replaceAll('−', '-').replaceAll('–', '-') };
   const temp = /\d+/.exec((m.group('a') ?? '') + (m.group('b') ?? ''));
@@ -761,8 +763,9 @@ export function splitRuns(runs: Run[], index: number): [Run[], Run[]] {
     else if (pos >= rawCut) after.push(r);
     else {
       const k = rawCut - pos;
-      before.push(R(r.text.slice(0, k), !!r.bold, !!r.italic, r.valign ?? 'normal'));
-      after.push(R(r.text.slice(k), !!r.bold, !!r.italic, r.valign ?? 'normal'));
+      // (both halves keep the run's look, its underline too)
+      before.push(R(r.text.slice(0, k), !!r.bold, !!r.italic, r.valign ?? 'normal', !!r.underline));
+      after.push(R(r.text.slice(k), !!r.bold, !!r.italic, r.valign ?? 'normal', !!r.underline));
     }
     pos = end;
   }
@@ -1275,4 +1278,10 @@ function link(c: ImportedCompound, gp: ImportedGP, sentence: string, values: Rec
 
 /** A structure label: a compound ID (with its stereo prefix). */
 export const isIdLabel = (text: string): boolean => !!fullmatch(rx(STEREO + ID), strip(text));
+
+/** A structure label's compound ID without its stereo prefix ("(S)-3a" → "3a"), as a compound heading's ID is. */
+export const bareId = (text: string): string => {
+  const m = fullmatch(rx(STEREO + '(?P<id>' + ID + ')'), strip(text));
+  return m ? m.group('id')! : strip(text);
+};
 

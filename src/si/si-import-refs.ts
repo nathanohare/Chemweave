@@ -27,8 +27,9 @@ export interface ImportedReference {
 const MARKERS: [string, string, RegExp][] = [
   ['paren', '\\(\\s*{n}\\s*\\)', /^\(\s*(\d{1,3})\s*\)\s*\S/],
   ['bracket', '\\[\\s*{n}\\s*\\]', /^\[\s*(\d{1,3})\s*\]\s*\S/],
-  ['dot', '{n}\\.', /^(\d{1,3})\.\s+\S/],
-  ['plain', '{n}', /^(\d{1,3})\s+[A-ZÀ-ɏ]/],
+  // (a whole number, not the start of a longer one or of a decimal: "2" of "2010" or "2.5" is no entry's)
+  ['dot', '{n}\\.(?!\\d)', /^(\d{1,3})\.\s+\S/],
+  ['plain', '{n}(?![\\d.,])(?=\\s+[A-ZÀ-ɏ])', /^(\d{1,3})\s+[A-ZÀ-ɏ]/],
 ];
 
 /** [the numbering style of a list starting with `first`, its first number]. */
@@ -316,7 +317,13 @@ export function linkCitations(markup: string, numbers: Map<string, string[]>): s
     if (!before || isSpace(before.slice(-1)) || search(NOT_BEFORE, before) || (after && (isUpper(after) || isDigit(after)))) return m[0];   // (an isotope "^{13}C", a unit, R^{1}…)
     return cite(m.group(1)!) ?? m[0];
   }, markup);
-  out = sub(rx('\\s?\\[(\\d+[a-z]?(?:\\s*[,–—-]\\s*\\d+[a-z]?)*)\\]'), (m) => cite(m.group(1)!) ?? m[0], out);
+  // (not a ring locant or a name's bracket: "benzo[d][1,3]dioxole", "[3,3]-sigmatropic", "cucurbit[7]uril")
+  const text = out;
+  out = sub(rx('\\s?\\[(\\d+[a-z]?(?:\\s*[,–—-]\\s*\\d+[a-z]?)*)\\]'), (m) => {
+    const after = text.slice(m.end, m.end + 1);
+    if (/[\p{L}\p{N}\-‐‑]/u.test(after)) return m[0];
+    return cite(m.group(1)!) ?? m[0];
+  }, out);
   return out;
 }
 

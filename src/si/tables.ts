@@ -283,7 +283,11 @@ export function pasteCells(t: Json, r: number, c: number, cells: Json[][]): void
   while (colCount(t) < c + width) insertColumn(t, colCount(t));
   while (rows.length < r + cells.length) insertRow(t, rows.length);
   // (merged cells the paste lands on are split first, so nothing is left half covered)
-  for (let i = 0; i < cells.length; i++) for (let k = 0; k < width; k++) split(t, r + i, c + k);
+  // (found in one pass over the table, not once for each cell pasted: a large paste stays quick)
+  const last = { r: r + cells.length - 1, c: c + width - 1 };
+  for (const s of spans(t)) {
+    if ((s.rows > 1 || s.cols > 1) && s.r <= last.r && s.r + s.rows - 1 >= r && s.c <= last.c && s.c + s.cols - 1 >= c) split(t, s.r, s.c);
+  }
   cells.forEach((row, i) => {
     for (let k = 0; k < width; k++) {
       const v = row[k];

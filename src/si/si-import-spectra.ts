@@ -140,8 +140,9 @@ export function emfPeaks(data: Uint8Array): number[] {
  * of the spectrum's peaks the report explains.
  */
 export function matchScore(peaks: number[], report: string, kind: string): number {
-  const reported = reportPeaks(report);
-  if (peaks.length < 3 || !reported.length) return 0;
+  if (peaks.length < 3) return 0;
+  const reported = parsedReport(report);
+  if (!reported.length) return 0;
   const tol = kind === '13C' ? 0.06 : kind === '19F' ? 0.15 : 0.02;
   const spans = reported.map((p) => {
     const [lo, hi] = p.end !== null ? [p.shift, p.end] : [p.shift, p.shift];
@@ -156,6 +157,18 @@ const reportsOf = (c: ImportedCompound | undefined, kind: string): string[] =>
   ((c?.values.nmr ?? []) as { nucleus?: string; text?: string }[]).filter((r) => r.nucleus === kind).map((r) => r.text ?? '');
 
 /** [the compound whose report of this nucleus the peaks fit clearly best, its score]; ['', 0] when none fits well or two fit about as well. */
+/** Each report's peaks, read once (every spectrum of an import is matched against every report). */
+const parsedReports = new Map<string, ReturnType<typeof reportPeaks>>();
+function parsedReport(report: string): ReturnType<typeof reportPeaks> {
+  let got = parsedReports.get(report);
+  if (!got) {
+    if (parsedReports.size >= 5000) parsedReports.clear();
+    got = reportPeaks(report);
+    parsedReports.set(report, got);
+  }
+  return got;
+}
+
 export function bestByPeaks(peaks: number[], kind: string, compounds: ImportedCompound[]): [string, number] {
   const scored: [number, string][] = [];
   for (const c of compounds) {
@@ -361,14 +374,26 @@ const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 // STEREO (si-import.ts) without its "?", ending the text before the ID, itself not inside a word
 const STEREO_BEFORE = /(?:^|[^\w-])(?:\((?:[RSEZ](?:,\s*[RSEZ])*|rac|ent|±|[+−-])\)-|rac-|ent-|\(±\)-)$/;
 
+/** Each compound ID's pattern for findId, made once (it is asked for every short line of every spectrum page). */
+const idPatterns = new Map<string, RegExp>();
+function idPattern(cid: string): RegExp {
+  let re = idPatterns.get(cid);
+  if (!re) {
+    if (idPatterns.size >= 5000) idPatterns.clear();
+    // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
+    re = guardedAt(new RegExp(`${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g'),
+      (at, s) => at === 0 || !/[\w-]/.test(s[at - 1]) || STEREO_BEFORE.test(s.slice(Math.max(0, at - 40), at)));
+    idPatterns.set(cid, re);
+  }
+  return re;
+}
+
 /** The first compound ID in a header ("2a — 1H NMR…", "1H NMR of 2", "9a13C NMR"). */
 export function findId(text: string, ids: string[]): string {
   let best: [number, string] | null = null;
   for (const cid of ids) {
     if (!cid) continue;
-    // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
-    const re = guardedAt(new RegExp(`${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g'),
-      (at, s) => at === 0 || !/[\w-]/.test(s[at - 1]) || STEREO_BEFORE.test(s.slice(Math.max(0, at - 40), at)));
+    const re = idPattern(cid);
     for (const m of text.matchAll(re)) {
       const end = m.index + m[0].length;
       // not the nucleus itself ("1H", "13C": an ID "1" or "13" must not match there)
@@ -391,7 +416,8 @@ export async function pdfSpectra(pdf: PdfPages, plan: ImportPlan, pages: number[
     const [width, height] = size;
     const lines = toLines(spans);
     const headers = lines.filter((L) => { const t = linePlain(L); return HEADER.test(t) && t.length < 160; });
-    const pageIds = new Set(lines.map((L) => linePlain(L)).filter((t) => /^[\w′'\-\s()±+−,]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
+    // (each different short line once)
+    const pageIds = new Set([...new Set(lines.map((L) => linePlain(L)))].filter((t) => /^[\w′'\-\s()±+−,]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
     const left = spans.length ? Math.min(...spans.map((s) => s.x0)) : 36;
     const right = spans.length ? Math.max(...spans.map((s) => s.x1)) : 576;
     const bottomText = lines.filter((L) => L.base > 0.9 * height);    // (page numbers, footers)

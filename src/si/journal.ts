@@ -166,7 +166,12 @@ export class JournalFolder implements SiFolder {
 
   /** One Undo or Redo at a time: a second one asked for meanwhile (Ctrl+Z held down) takes the next step when the first is done. */
   private async go(redo: boolean): Promise<string | null> {
-    while (this.busy) await this.busy;
+    // (and for writes already begun: one finishing after the Undo would be written into the wrong step)
+    for (;;) {
+      while (this.busy) await this.busy;
+      if (!this.writing.size) break;
+      await Promise.allSettled([...this.writing]);
+    }
     if (this.depth > 0) throw new UndoError('Wait for the change being saved to finish, then try again.');
     let done!: () => void;
     this.busy = new Promise<void>((r) => { done = r; });
@@ -300,6 +305,20 @@ export class JournalFolder implements SiFolder {
     const path = norm(rel);
     if (UNRECORDED.test(path)) { await write(); return; }
     while (this.busy) await this.busy;
+    // (Undo and Redo wait for it, from reading what the file held to writing it down)
+    const job = this.wroteNow(path, bytes, write);
+    this.writing.add(job);
+    try {
+      await job;
+    } finally {
+      this.writing.delete(job);
+    }
+  }
+
+  /** Writes being made now (see wrote). */
+  private readonly writing = new Set<Promise<void>>();
+
+  private async wroteNow(path: string, bytes: Uint8Array, write: () => Promise<void>): Promise<void> {
     // (read every time: the step may end while the file is being written, and the next step then needs what the file held)
     const before = await this.inner.readBytes(path).catch(() => null);
     await write();

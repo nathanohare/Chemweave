@@ -171,6 +171,8 @@ function duplicateGpNames(p: SiProject): ProjectWarning[] {
 
 // (a CIF is read again only when it changes, as SI Assistant keeps it)
 const xrayCache = new Map<string, { cif: string; error: string }>();
+/** How many CIFs the check keeps the result of (the oldest goes first): more than a project has X-ray sections. */
+const XRAY_CACHE_SIZE = 64;
 
 /** Why an X-ray structure section can't be drawn ('' when it can). */
 export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
@@ -180,9 +182,10 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   const cif = await p.folder.readText(join(s.folder, file));
   if (cif === null) return `The CIF file ${name} is missing from the section's folder.`;
   const wanted = text(s.data.block);
-  const key = `${s.folder}/${file}\u0000${wanted}`;
+  const key = `${p.folder.where}\u0000${s.folder}/${file}\u0000${wanted}`;
   const hit = xrayCache.get(key);
-  if (hit && hit.cif === cif) return hit.error;
+  // (kept the most recently used: the oldest goes first)
+  if (hit && hit.cif === cif) { xrayCache.delete(key); xrayCache.set(key, hit); return hit.error; }
   let error = '';
   try {
     const blocks = readCif(cif).filter((b) => b.rows('_atom_site_label').length);
@@ -191,7 +194,8 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   } catch (e) {
     error = e instanceof CrystalError ? e.message : `${name} could not be read: ${e instanceof Error ? e.message : String(e)}`;
   }
-  if (xrayCache.size > 20) xrayCache.clear();
+  xrayCache.delete(key);
+  while (xrayCache.size >= XRAY_CACHE_SIZE) xrayCache.delete(xrayCache.keys().next().value!);
   xrayCache.set(key, { cif, error });
   return error;
 }
@@ -214,7 +218,7 @@ function authorsOf(r: Json): string[] {
 
 /** "Fulmer 2010", "Fulmer & Miller 2010", "Smith et al. 2020": how a reference is named in lists. */
 function shortLabel(r: Json): string {
-  const names = (Array.isArray(r.authors) ? r.authors : []).map((a) => surname(String(a ?? ''))).filter(Boolean);
+  const names = authorsOf(r).map(surname).filter(Boolean);
   const who = !names.length ? (text(r.title) || 'Untitled').slice(0, 30) : names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} & ${names[1]}` : `${names[0]} et al.`;
   return `${who} ${text(r.year).trim()}`.trim();
 }

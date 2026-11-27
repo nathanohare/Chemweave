@@ -283,14 +283,32 @@ const RESTORE: Record<string, Restore> = {
     for (let n = 2; await p.folder.exists(join(c.folder, def.subdir, pick)); n++) pick = `${stem} (${n})${ext}`;
     await p.folder.move(join(folder, item), join(c.folder, def.subdir, pick));
     const newStem = pick.slice(0, pick.length - ext.length);
+    // the companions (the original a spectrum was converted from) beside it, each under a name no
+    // file there has; the entry's "original" follows its new name
+    const renamed = new Map<string, string>();
+    const stuck: string[] = [];
     for (const other of names(e.info, 'companions')) {
+      if (!(await p.folder.exists(join(folder, other)))) continue;
       const oe = other.slice(other.lastIndexOf('.'));
-      if (await p.folder.exists(join(folder, other))) await p.folder.move(join(folder, other), join(c.folder, def.subdir, newStem + oe)).catch(() => {});
+      let to = newStem + oe;
+      for (let n = 2; await p.folder.exists(join(c.folder, def.subdir, to)); n++) to = `${newStem} (${n})${oe}`;
+      try {
+        await p.folder.move(join(folder, other), join(c.folder, def.subdir, to));
+        renamed.set(other, to);
+      } catch {
+        stuck.push(other);
+      }
     }
-    const kept = isObj(e.info.item_values) ? { ...e.info.item_values } : {};
+    const kept: Json = isObj(e.info.item_values) ? { ...e.info.item_values } : {};
+    if (typeof kept.original === 'string' && kept.original) {
+      const was = kept.original;
+      if (renamed.has(was)) kept.original = renamed.get(was)!;
+      else if (names(e.info, 'companions').includes(was)) delete kept.original;   // (not put back beside it)
+    }
     list.push({ ...kept, file: pick });
     await p.saveCompound(c);
-    return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.`;
+    const left = stuck.length ? ` ${stuck.join(', ')} could not be put back beside it; ${stuck.length === 1 ? 'it is' : 'they are'} still in the Trash.` : '';
+    return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.${left}`;
   },
 
   async manuscript_file(p, _e, folder, item) {

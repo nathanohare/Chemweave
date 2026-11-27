@@ -194,7 +194,7 @@ export const protonCount = (text: string): number => peaks(text).reduce((n, p) =
 const PROTON_SINGLETS: Record<string, [number, string][]> = {
   CDCl3: [[7.26, 'residual CHCl₃'], [1.56, 'water'], [2.17, 'acetone'], [2.10, 'acetonitrile or acetic acid'], [7.36, 'benzene'], [5.30, 'CH₂Cl₂'], [2.62, 'DMSO'], [3.71, '1,4-dioxane'], [2.05, 'ethyl acetate'], [3.49, 'methanol'], [2.36, 'toluene (CH₃)'], [8.02, 'DMF'], [2.96, 'DMF'], [2.88, 'DMF'], [0.07, 'silicone grease'], [1.28, 'tert-butanol'], [4.33, 'nitromethane']],
   'DMSO-d6': [[2.50, 'residual DMSO'], [3.33, 'water'], [2.09, 'acetone'], [2.07, 'acetonitrile'], [7.37, 'benzene'], [5.76, 'CH₂Cl₂'], [8.32, 'chloroform'], [1.99, 'ethyl acetate'], [3.16, 'methanol'], [2.30, 'toluene (CH₃)'], [7.95, 'DMF'], [2.89, 'DMF'], [2.73, 'DMF'], [3.57, '1,4-dioxane']],
-  CD3OD: [[3.31, 'residual CHD₂OD'], [4.87, 'water'], [2.15, 'acetone'], [2.03, 'acetonitrile'], [5.49, 'CH₂Cl₂'], [7.88, 'chloroform'], [2.01, 'ethyl acetate'], [3.34, 'methanol'], [2.32, 'toluene (CH₃)']],
+  CD3OD: [[3.31, 'residual CHD₂OD'], [4.87, 'water'], [2.15, 'acetone'], [2.03, 'acetonitrile'], [5.49, 'CH₂Cl₂'], [7.90, 'chloroform'], [2.01, 'ethyl acetate'], [3.34, 'methanol'], [2.32, 'toluene (CH₃)']],
   'acetone-d6': [[2.05, 'residual acetone-d₅'], [2.84, 'water'], [5.63, 'CH₂Cl₂'], [8.02, 'chloroform'], [1.97, 'ethyl acetate'], [3.31, 'methanol'], [2.32, 'toluene (CH₃)'], [2.52, 'DMSO']],
   C6D6: [[7.16, 'residual C₆HD₅'], [0.40, 'water'], [1.55, 'acetone'], [4.27, 'CH₂Cl₂'], [6.15, 'chloroform'], [1.65, 'ethyl acetate'], [3.07, 'methanol'], [2.11, 'toluene (CH₃)']],
   CD2Cl2: [[5.32, 'residual CHDCl₂'], [1.52, 'water'], [2.12, 'acetone'], [7.32, 'chloroform'], [2.00, 'ethyl acetate'], [3.42, 'methanol']],

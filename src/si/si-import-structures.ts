@@ -10,7 +10,7 @@
 
 import { cdxToCdxml } from '../io/cdx';
 import { hillFormula, mainSpecies, parseMFormulaAndCharge, sameFormula, type Counts, type MolFacts } from './chem';
-import { isIdLabel, type ImportPlan, type ImportedCompound } from './si-import';
+import { bareId, isIdLabel, type ImportPlan, type ImportedCompound } from './si-import';
 import type { DocObject } from './si-import-read';
 
 type Box = [number, number, number, number];   // left, top, right, bottom (pt, y down)
@@ -90,7 +90,8 @@ export function drawingStructures(cdxml: string, tools: Pick<StructureTools, 'mo
       structures.push({ molblock, frags: [el], box, label: '', charge, atoms: nodes.length });
     } else if (el.tagName === 't') {
       const text = textOf(el), box = boxOf(el);
-      if (text && box && isIdLabel(text)) labels.push({ text, box });
+      // (as a bare ID, as the compound headings give it: "(S)-3a" labels 3a)
+      if (text && box && isIdLabel(text)) labels.push({ text: bareId(text), box });
     }
   }
   // each label goes to the nearest structure under it (or beside it); a structure takes only one label
@@ -112,7 +113,7 @@ export function drawingStructures(cdxml: string, tools: Pick<StructureTools, 'mo
 export function drawingLabels(cdxml: string): string[] {
   const root = parseCdxml(cdxml);
   if (!root || root.tagName === 'parsererror') return [];
-  return topLevel(root).filter((el) => el.tagName === 't').map(textOf).filter((t) => t && isIdLabel(t));
+  return topLevel(root).filter((el) => el.tagName === 't').map(textOf).filter((t) => t && isIdLabel(t)).map(bareId);
 }
 
 /** Fragments of a drawing as one molfile. */
@@ -145,7 +146,9 @@ async function drawnStructures(objects: DocObject[], tools: StructureTools): Pro
     let cdxml: string;
     try { cdxml = cdxToCdxml(obj.cdx); } catch { return; }
     const structures = drawingStructures(cdxml, tools);
-    const ions = structures.filter((s) => s.charge && !s.label);
+    // (a charged structure without a label is a counter-ion when a structure of the opposite charge,
+    // labeled or larger, takes it: the larger ion of an unlabeled salt is the compound)
+    const ions = structures.filter((s) => s.charge && !s.label && structures.some((o) => o !== s && o.charge * s.charge < 0 && (!!o.label || o.atoms > s.atoms)));
     const used = new Set<Structure>();
     const mains: [string, string][] = [];
     for (const s of structures) {
