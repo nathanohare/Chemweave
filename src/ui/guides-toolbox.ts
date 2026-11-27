@@ -4,7 +4,7 @@
 // the drawing goes. Each drawing has its own guides.
 
 import { infoIcon } from './toolboxes';
-import { DEFAULT_GUIDES, GUIDE_COLOURS, parseGuideLength, showGuideLength, GUIDE_SNAPS, type CanvasGuides, type Guide, type GuideKind, type GuideSnap } from '../editor/guides';
+import { DEFAULT_GUIDES, MAX_GUIDES, GUIDE_COLOURS, parseGuideLength, showGuideLength, GUIDE_SNAPS, type CanvasGuides, type Guide, type GuideKind, type GuideSnap } from '../editor/guides';
 
 export interface GuidesToolboxHooks {
   get(): CanvasGuides | null;
@@ -64,6 +64,8 @@ export function buildGuidesToolbox(body: HTMLElement, vertical: boolean, h: Guid
       if (a.kind === 'grid') { change({ grid: !now().grid, shown: true }); return; }
       const c = h.centre();
       const g = now();
+      // (no more than a file keeps, so none is lost when it is opened again)
+      if (g.list.length >= MAX_GUIDES) return;
       // (a new guide lands on a tick, so what snaps to it lines up with the rest)
       const r = (v: number) => Math.round(v / g.minor) * g.minor;
       const guide: Guide = { kind: a.kind, x: r(c.x), y: r(c.y) };

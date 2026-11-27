@@ -10,7 +10,7 @@ import { layerByDepth } from '../chem/crossing';
 import { redrawWedges, wedgeCentres } from '../chem/place3d';
 import type { PoseResult, Pose } from '../chem/pose3d';
 import {
-  IDENT, apply, centroid, drawingFrame, facingNormal, fitToDrawing, fitTurn, modelScale, offPlane, turnAbout,
+  IDENT, apply, centroid, drawingFrame, facingNormal, fitToDrawing, fitTurn, keepsStereo, modelScale, neighbours, offPlane, turnAbout,
   type DepthCues, type M3, type V3,
 } from '../chem/perspective';
 
@@ -50,8 +50,43 @@ export function structureKey(doc: Doc, ids: Iterable<number>): string {
     if (a) parts.push(`${id}:${a.z}:${a.label ?? ''}:${a.charge}:${a.isotope}`);
   }
   const bonds = [...doc.bonds.values()].filter((b) => set.has(b.a1) && set.has(b.a2)).sort((p, q) => p.id - q.id);
-  for (const b of bonds) parts.push(`${b.a1}-${b.a2}:${b.order}:${SHOWN[b.display] ?? ''}`);
+  for (const b of bonds) parts.push(`${b.a1}-${b.a2}:${b.order}${b.order === 2 ? cisTrans(doc, set, b.a1, b.a2) : ''}:${SHOWN[b.display] ?? ''}`);
   return parts.join('|');
+}
+
+/**
+ * Which side of a double bond its first neighbours are on, from where its atoms are in 3-D (x, y
+ * and depth: a turn doesn't change it, dragging an end across does): 'c' together, 't' across,
+ * '' when it can't be told (an end with no other neighbour, or one in line with the bond).
+ */
+function cisTrans(doc: Doc, set: Set<number>, a1: number, a2: number): string {
+  const at = (id: number): V3 | null => { const a = doc.atoms.get(id); return a ? [a.x, a.y, a.depth ?? 0] : null; };
+  const other = (end: number, partner: number): number | undefined => {
+    let best: number | undefined;
+    for (const bid of doc.adj.get(end) ?? []) {
+      const b = doc.bonds.get(bid);
+      const o = b && (b.a1 === end ? b.a2 : b.a1);
+      if (o !== undefined && o !== partner && set.has(o) && (best === undefined || o < best)) best = o;
+    }
+    return best;
+  };
+  const n1 = other(a1, a2), n2 = other(a2, a1);
+  const p = at(a1), q = at(a2), r = n1 !== undefined ? at(n1) : null, t = n2 !== undefined ? at(n2) : null;
+  if (!p || !q || !r || !t) return '';
+  const axis: V3 = [q[0] - p[0], q[1] - p[1], q[2] - p[2]];
+  const ll = axis[0] ** 2 + axis[1] ** 2 + axis[2] ** 2;
+  if (!ll) return '';
+  // each neighbour's reach square to the bond
+  const off = (v: V3, from: V3): V3 => {
+    const d: V3 = [v[0] - from[0], v[1] - from[1], v[2] - from[2]];
+    const k = (d[0] * axis[0] + d[1] * axis[1] + d[2] * axis[2]) / ll;
+    return [d[0] - k * axis[0], d[1] - k * axis[1], d[2] - k * axis[2]];
+  };
+  const u = off(r, p), w = off(t, q);
+  const lu = Math.hypot(...u), lw = Math.hypot(...w);
+  if (!lu || !lw) return '';
+  const cos = (u[0] * w[0] + u[1] * w[1] + u[2] * w[2]) / (lu * lw);
+  return cos > 0.2 ? 'c' : cos < -0.2 ? 't' : '';
 }
 
 /** Shapes built (or being built), by document and structure: built once, used for every turn after. */
@@ -73,10 +108,20 @@ function poseFor(doc: Doc, ids: number[], host: PerspectiveHost): { ex: MolExpor
   if (!byKey) built.set(doc, (byKey = new Map()));
   const key = structureKey(doc, ids);
   const had = byKey.get(key);
-  if (had && had.map.length === ex.map.length && had.map.every((v, i) => v === ex.map[i])) { keep(byKey, key, had); return { ex, result: had.result }; }
-  const result: Promise<PoseResult> = ex.generic.length
+  const L = doc.style.bondLength || 14.4;
+  const build = (): Promise<PoseResult> => (ex.generic.length
     ? Promise.resolve({ problem: 'build', message: 'A structure with R groups, or labels that can\'t be read, has no 3-D shape.' })
-    : host.pose(ex.molblock, depthCues(doc, ex), doc.style.bondLength || 14.4).catch((e) => ({ problem: 'build' as const, message: String((e as Error)?.message ?? e) }));
+    : host.pose(ex.molblock, depthCues(doc, ex), L).catch((e) => ({ problem: 'build' as const, message: String((e as Error)?.message ?? e) })));
+  if (had && had.map.length === ex.map.length && had.map.every((v, i) => v === ex.map[i])) {
+    // the same atoms and bonds, but its wedges may now mean the other hand (a flip): a shape that
+    // no longer keeps them is built again
+    const cues = depthCues(doc, ex);
+    const result = cues.wedges.length ? had.result.then((r) => ('pose' in r && !keepsWedges(r.pose, cues, ex, L) ? build() : r)) : had.result;
+    const v = result === had.result ? had : { map: had.map, result };
+    keep(byKey, key, v);
+    return { ex, result };
+  }
+  const result: Promise<PoseResult> = build();
   keep(byKey, key, { map: ex.map, result });
   // a failure is tried again next time (the worker may have been busy starting)
   void result.then((r) => { if ('problem' in r && r.problem === 'build' && byKey!.get(key)?.result === result) byKey!.delete(key); });
@@ -102,6 +147,12 @@ export function structuresOf(doc: Doc, atomIds: Iterable<number>): number[][] {
     if (ids.length) out.push(ids);
   }
   return out;
+}
+
+/** Whether a shape built before still has each wedged stereocentre the way the drawing shows it now. */
+function keepsWedges(pose: Pose, cues: DepthCues, ex: MolExport, L: number): boolean {
+  const M = drawingFrame(pose.pts, modelScale(pose.pts, pose.bonds, L, (i) => i < ex.map.length && !!cues.xy[i]));
+  return keepsStereo(M, cues, neighbours(pose.pts.length, pose.bonds), L);
 }
 
 const posOf = (doc: Doc, id: number): V3 => { const a = doc.atoms.get(id)!; return [a.x, a.y, a.depth ?? 0]; };
@@ -154,6 +205,8 @@ function solidPiece(doc: Doc, ids: number[], pose: Pose, ex: MolExport): Piece |
   }
   const L = median(lens) || doc.style.bondLength || 14.4;
   const M = drawingFrame(pose.pts, modelScale(pose.pts, pose.bonds, L, (i) => isDrawn.has(i)));
+  // (a shape that doesn't have every atom drawn can't be laid over the drawing)
+  if (drawnAt.some((i) => !M[i])) return null;
   const now = pids.map((id) => posOf(doc, id));
   let place: (p: V3) => V3;
   let start: V3[];
@@ -173,7 +226,7 @@ function solidPiece(doc: Doc, ids: number[], pose: Pose, ex: MolExport): Piece |
     for (const [heavy, h] of [[a, b], [b, a]]) {
       if (pose.z[h] !== 1 || !isDrawn.has(heavy) || h < ex.map.length) continue;
       const id = ex.map[heavy];
-      if (!hs.has(id)) hs.set(id, place(M[h]));
+      if (!hs.has(id) && M[h]) hs.set(id, place(M[h]));
     }
   }
   return { ids: pids, start, solid: true, centres: wedgeCentres(doc, pids), hs, key: structureKey(doc, ids) };
@@ -245,12 +298,26 @@ export async function prepareTurn(doc: Doc, structures: number[][], real: boolea
   const pieces: Piece[] = [];
   const jobs = structures.map((ids) => (real && host ? poseFor(doc, ids, host) : null));
   for (let k = 0; k < structures.length; k++) {
-    const ids = structures[k].filter((id) => doc.atoms.has(id));
+    let job = jobs[k];
+    if (!job) {
+      const ids = structures[k].filter((id) => doc.atoms.has(id));
+      if (ids.length) pieces.push(flatPiece(doc, ids));
+      continue;
+    }
+    const key = structureKey(doc, structures[k]), version = doc.version;
+    let r = await job.result;
+    // the structure as it is now (it may have gained or lost atoms while the shape was building)
+    let ids = structuresOf(doc, structures[k].filter((id) => doc.atoms.has(id))).flat();
     if (!ids.length) continue;
-    const job = jobs[k];
-    if (!job) { pieces.push(flatPiece(doc, ids)); continue; }
-    const r = await job.result;
-    const piece = 'pose' in r ? solidPiece(doc, ids, r.pose, toMolfile(doc, ids)) : null;
+    if (doc.version !== version && (ids.length !== structures[k].length || structureKey(doc, ids) !== key)) {
+      // its shape no longer matches: built again for the structure as it is
+      job = poseFor(doc, ids, host!);
+      r = await job.result;
+      ids = ids.filter((id) => doc.atoms.has(id));
+      if (!ids.length) continue;
+    }
+    // (the shape's atoms are those of the molfile it was built from)
+    const piece = 'pose' in r ? solidPiece(doc, ids, r.pose, job.ex) : null;
     if (piece) pieces.push(piece);
     else {
       notes.push('problem' in r ? r.message : 'No 3-D shape could be placed over this drawing.');
