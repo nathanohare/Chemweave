@@ -28,13 +28,37 @@ export function paintChartBox(ctx: CanvasRenderingContext2D, b: ChartBox, x: num
   }
 }
 
-/** The chart as a PNG data URL `w` × `h` points, at `scale` pixels per pixel (for the picture other programs see). */
-export function chartBoxPng(b: ChartBox, w: number, h: number, scale = 3): string {
+/** A 1 × 1 picture, where there is no canvas to draw on (tests, and readers run without a page). */
+const BLANK_PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBApH3oiYAAAAASUVORK5CYII=';
+
+/** Can a 2D canvas be made here at all? */
+function canvasAvailable(): boolean {
   try {
-    const cw = Math.max(1, Math.round(w * PX_PER_PT)), ch = Math.max(1, Math.round(h * PX_PER_PT));
-    return chartCanvas({ ...b.chart, w: cw, h: ch }, chartBoxData(b), scale).toDataURL('image/png');
+    return typeof document !== 'undefined' && !!document.createElement('canvas').getContext('2d');
   } catch {
-    // (no canvas: tests)
-    return 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/w8AAgMBApH3oiYAAAAASUVORK5CYII=';
+    return false;
   }
+}
+
+/**
+ * The chart as a PNG data URL `w` × `h` points, at `scale` pixels per pixel (for the picture other
+ * programs see). A canvas too big for the browser (it gives an empty picture, "data:,") or a drawing
+ * that fails is tried again at 1 pixel per pixel; only where there is no canvas at all, or both fail,
+ * is the picture a blank pixel (the chart itself is still saved with its data).
+ */
+export function chartBoxPng(b: ChartBox, w: number, h: number, scale = 3): string {
+  if (!canvasAvailable()) return BLANK_PNG;
+  const cw = Math.max(1, Math.round(w * PX_PER_PT)), ch = Math.max(1, Math.round(h * PX_PER_PT));
+  let failure: unknown = null;
+  for (const k of scale > 1 ? [scale, 1] : [scale]) {
+    try {
+      const url = chartCanvas({ ...b.chart, w: cw, h: ch }, chartBoxData(b), k).toDataURL('image/png');
+      if (url.startsWith('data:image/png')) return url;
+      failure = new Error(`The chart's ${Math.round(cw * k)} × ${Math.round(ch * k)} pixel picture was refused`);
+    } catch (e) {
+      failure = e;
+    }
+  }
+  console.error('Chart picture not drawn:', failure);
+  return BLANK_PNG;
 }

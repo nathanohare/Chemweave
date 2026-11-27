@@ -127,7 +127,8 @@ describe('shape styles', () => {
 
   it('applies the effects menu\'s choices', () => {
     const s = { id: 1, ...box() } as Shape;
-    expect(effectPatch('shape-fx:glow:8', s)).toEqual({ glow: { color: '#3366cc', size: 8, transparency: 0.4 } });
+    // PowerPoint's Glow Variations are 40% opaque (<a:alpha val="40000"/>, ECMA-376 Part 1, 20.1.2.3.1): 60% see-through
+    expect(effectPatch('shape-fx:glow:8', s)).toEqual({ glow: { color: '#3366cc', size: 8, transparency: 0.6 } });
     expect(effectPatch('shape-fx:soft:none', s)).toEqual({ softEdge: undefined });
     expect(effectPatch('shape-fx:bevel:divot', s)).toEqual({ bevel: { kind: 'divot', w: 6, h: 6 } });
     expect(effectPatch('shape-fx:reflection:0', s)?.reflection).toMatchObject({ size: 0.35 });

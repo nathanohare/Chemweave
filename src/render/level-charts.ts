@@ -131,7 +131,8 @@ export function drawSankey(ctx: Ctx, pen: Pen, chart: Chart, data: SeriesData[],
   const leftOf = (level: number) => (count === 1 ? area.x + (area.w - nodeW) / 2 : area.x + ((area.w - nodeW) * level) / (count - 1));
   // the gaps between nodes narrow in a crowded column, never more than a third of the height in all
   const crowd = Math.max(...columns.map((c) => c.length));
-  const gap = Math.max(1, Math.min(10, height * 0.025, height / 3 / Math.max(1, crowd - 1)));
+  // (under a pixel in a very crowded one: a floor would run the column past the bottom)
+  const gap = Math.min(10, height * 0.025, height / 3 / Math.max(1, crowd - 1));
   // one scale for all the columns, set by the one that needs the most room
   const perUnit = Math.min(...columns.filter((c) => c.length).map((c) =>
     Math.max(1, height - gap * (c.length - 1)) / c.reduce((sum, n) => sum + n.total, 0)));
@@ -140,10 +141,13 @@ export function drawSankey(ctx: Ctx, pen: Pen, chart: Chart, data: SeriesData[],
   const spots = new Map<string, Spot>();
   let nth = 0;
   columns.forEach((col, level) => {
-    const used = col.reduce((sum, n) => sum + n.total * perUnit, 0) + gap * Math.max(0, col.length - 1);
+    // the smallest nodes are a pixel tall where the column has room for that, true to scale where it hasn't
+    const gaps = gap * Math.max(0, col.length - 1);
+    const least = col.reduce((sum, n) => sum + Math.max(1, n.total * perUnit), 0) + gaps <= height ? 1 : 0;
+    const used = col.reduce((sum, n) => sum + Math.max(least, n.total * perUnit), 0) + gaps;
     let y = top + Math.max(0, (height - used) / 2);
     for (const n of col) {
-      const h = Math.max(1, n.total * perUnit);
+      const h = Math.max(least, n.total * perUnit);
       spots.set(key(level, n.label), { x: leftOf(level), y, h, color: colors[nth++ % colors.length], outAt: y, inAt: y });
       y += h + gap;
     }
@@ -312,12 +316,16 @@ export function drawDecomp(ctx: Ctx, pen: Pen, chart: Chart, data: SeriesData[],
   columns.forEach((col, i) => {
     const x = area.x + i * colW;
     const whole = i === 0 ? tree.total : findNode(tree, path.slice(0, i - 1))!.total;
-    // too many to fit: the biggest, then a line saying how many more there are
+    // too many to fit: the biggest, then a line saying how many more there are (where there's room
+    // for it), with the node expanded always among them, so its lines and its closing click stay
     const drawn = col.length > rowsThatFit ? col.slice(0, Math.max(1, rowsThatFit - 1)) : col;
-    const rows = drawn.length + (drawn.length < col.length ? 1 : 0);
+    const open = i > 0 ? col.find((n) => n.label === path[i - 1]) : undefined;
+    if (open && !drawn.includes(open)) drawn[drawn.length - 1] = open;
+    const more = drawn.length < col.length && drawn.length < rowsThatFit;
+    const rows = drawn.length + (more ? 1 : 0);
     // level with the node it splits, as far as the space allows
     const wanted = lineFrom ? lineFrom.y - (rows * rowH) / 2 : top + (height - rows * rowH) / 2;
-    const y0 = Math.min(Math.max(top, wanted), top + height - rows * rowH);
+    const y0 = Math.max(top, Math.min(Math.max(top, wanted), top + height - rows * rowH));
     let nextFrom: { x: number; y: number } | null = null;
     drawn.forEach((n, k) => {
       const y = y0 + k * rowH;
@@ -345,10 +353,11 @@ export function drawDecomp(ctx: Ctx, pen: Pen, chart: Chart, data: SeriesData[],
       const labelStyle = { bold: i === 0 || expanded, color: ink };
       pen.write(shorten(pen, i === 0 ? 'Total' : n.label, barW - amountW - 6, size, labelStyle), x, y + size * 1.05, size, labelStyle);
       if (i === 0 || expanded) nextFrom = { x: x + barW, y: barMid };
-      const drill = i === 0 ? [] : expanded ? path.slice(0, i - 1) : i < levels ? n.path : undefined;
+      // (a node with nothing under it has nothing to expand to)
+      const drill = i === 0 ? [] : expanded ? path.slice(0, i - 1) : i < levels && n.kids.length ? n.path : undefined;
       parts.push({ shape: 'rect', x, y, w: barW, h: rowH, pick: pickOfPath(n.path), ...(drill ? { drill } : {}) });
     });
-    if (drawn.length < col.length) pen.write(`+${col.length - drawn.length} more`, x, y0 + drawn.length * rowH + size * 1.1, size * 0.9, { color: '#8c8c8c' });
+    if (more) pen.write(`+${col.length - drawn.length} more`, x, y0 + drawn.length * rowH + size * 1.1, size * 0.9, { color: '#8c8c8c' });
     lineFrom = nextFrom;
   });
   return parts;
