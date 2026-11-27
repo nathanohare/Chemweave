@@ -140,7 +140,8 @@ export function searchedShift(q: string): number | null {
 export function cellNumbers(c: Cell): number[] {
   if (c === null) return [];
   if (typeof c === 'number') return [c];
-  return [...c.matchAll(/-?\d+(?:\.\d+)?/g)].map((m) => Number(m[0]));
+  // (a typographic minus, as the tables show negative values, counts as a minus)
+  return [...c.matchAll(/[-−]?\d+(?:\.\d+)?/g)].map((m) => Number(m[0].replace('−', '-')));
 }
 
 /** A shift cell's peaks as ranges: "3.69–3.46" is one multiplet spanning both, a lone number a point. */
@@ -267,9 +268,11 @@ export function sortRows(rows: RowMatch[], col: KbColumn, down: boolean): RowMat
 /** The rows as tab-separated text with a header line: to paste into a sheet, a Word table or Excel. */
 export function tableTsv(t: KbTable, rows: RowMatch[]): string {
   const clean = (v: Cell) => (v === null || v === undefined ? '' : String(v).replace(/[\t\n]+/g, ' '));
+  // a number with a typographic minus pastes as text: in a numeric column it goes as a plain one
+  const cell = (c: KbColumn, v: Cell) => (c.numeric && typeof v === 'string' && /^−\d+(?:\.\d+)?$/.test(v.trim()) ? v.trim().replace('−', '-') : clean(v));
   const block = (columns: KbColumn[], rs: RowMatch[]) => {
     const cols = columns.filter((c) => !c.hidden && !c.picture);
-    return [cols.map((c) => c.label).join('\t'), ...rs.map((m) => cols.map((c) => clean(m.row[c.key])).join('\t'))].join('\n');
+    return [cols.map((c) => c.label).join('\t'), ...rs.map((m) => cols.map((c) => cell(c, m.row[c.key])).join('\t'))].join('\n');
   };
   // a table in parts: each part under its title, a blank line between
   if (t.parts) return t.parts.map((p) => ({ p, rs: rows.filter((m) => m.row.part === p.key) })).filter((x) => x.rs.length).map(({ p, rs }) => `${p.title}\n${block(p.columns, rs)}`).join('\n\n');

@@ -22,7 +22,9 @@ function start(): Worker | null {
       waiting.delete(m.id);
       if ('error' in m) w.reject(new Error(m.error)); else w.resolve({ net: m.net, blend: m.blend });
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('NMR prediction stopped unexpectedly. Try again.')); waiting.clear(); worker?.terminate(); worker = null; };
+    const w = worker;
+    // (undefined, not null: the next request starts a new worker; null is for "workers can't run here")
+    w.onerror = () => { for (const p of waiting.values()) p.reject(new Error('NMR prediction stopped unexpectedly. Try again.')); waiting.clear(); w.terminate(); if (worker === w) worker = undefined; };
   } catch {
     worker = null;
   }
