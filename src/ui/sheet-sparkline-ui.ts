@@ -45,7 +45,7 @@ export function colourPopup(x: number, y: number, wb: Workbook | null, pick: (c:
     input.type = 'color';
     input.dataset.systemPicker = '';
     input.addEventListener('change', () => done(input.value));
-    more.append('More colors ', input);
+    more.append('More Colors… ', input);
     m.append(grid, more);
   });
 }
@@ -79,7 +79,7 @@ export class SheetSparklines {
     const block = R.r1 === R.r2 && R.c1 === R.c2 ? null : (s.clip(R) ?? R);
     const w = new ToolWindow(`Create ${KIND_NAMES[kind]} Sparklines`);
     w.home = s.name;
-    w.note('Choose the data range, then the location range: one cell per row (or column) of data.');
+    w.info('Choose the data range, then the location range: one cell per row (or column) of data.');
     const data = w.ref('Data Range', block ? absText(block, null) : '');
     // a column of cells just right of the data is the usual place
     const place = w.ref('Location Range', block ? absText({ r1: block.r1, c1: block.c2 + 1, r2: block.r2, c2: block.c2 + 1 }, null) : '');
@@ -198,11 +198,11 @@ export class SheetSparklines {
     if (!h) return;
     const g = h.group, tick = (on: boolean) => (on ? '✓ ' : '');
     popupMenu(x, y, [
-      [`${tick(!g.empty)}Show empty cells as Gaps`, () => this.setGroup('Empty cells', { empty: undefined })],
-      [`${tick(g.empty === 'zero')}Show empty cells as Zero`, () => this.setGroup('Empty cells', { empty: 'zero' })],
-      [`${tick(g.empty === 'span')}Connect data points with line`, () => this.setGroup('Empty cells', { empty: 'span' }), g.kind === 'line'],
+      [`${tick(!g.empty)}Show Empty Cells as Gaps`, () => this.setGroup('Empty cells', { empty: undefined })],
+      [`${tick(g.empty === 'zero')}Show Empty Cells as Zero`, () => this.setGroup('Empty cells', { empty: 'zero' })],
+      [`${tick(g.empty === 'span')}Connect Data Points with Line`, () => this.setGroup('Empty cells', { empty: 'span' }), g.kind === 'line'],
       null,
-      [`${tick(!!g.hidden)}Show data in hidden rows and columns`, () => this.setGroup('Hidden cells', { hidden: !g.hidden || undefined })],
+      [`${tick(!!g.hidden)}Show Data in Hidden Rows and Columns`, () => this.setGroup('Hidden cells', { hidden: !g.hidden || undefined })],
     ]);
   }
 

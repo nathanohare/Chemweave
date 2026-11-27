@@ -17,9 +17,12 @@ export function attachCode(attach: string, num?: number): number {
   return ATTACH_OTHER;
 }
 
+/** A reference as both functions below read it: lower case, the 〰 and ◆ symbols as words, spaces collapsed. */
+const normalRef = (ref: string) => ref.trim().toLowerCase().replace(/[〰◆]/g, (c) => (c === '〰' ? 'wavy' : 'numbered')).replace(/\s+/g, ' ');
+
 /** The attachment points a reference names: "wavy", "star" (or "*"), "1" or "numbered 1" (one diamond), "numbered" (any diamond). Null when it names none. */
 export function attachCodesFor(ref: string): ((code: number) => boolean) | null {
-  const t = ref.trim().toLowerCase().replace(/[〰◆]/g, (c) => (c === '〰' ? 'wavy' : 'numbered')).replace(/\s+/g, ' ');
+  const t = normalRef(ref);
   if (/^(wavy|wavy bond|squiggle)$/.test(t)) return (c) => c === ATTACH_WAVY;
   if (/^(star|\*|asterisk)$/.test(t)) return (c) => c === ATTACH_STAR;
   if (/^(numbered|diamond)$/.test(t)) return (c) => (c >= 1 && c <= 99) || c === ATTACH_OTHER;
@@ -31,9 +34,9 @@ export function attachCodesFor(ref: string): ((code: number) => boolean) | null 
 
 /** How a reference is named in messages. */
 export function attachName(ref: string): string {
-  const t = ref.trim().toLowerCase();
-  if (t.startsWith('wavy')) return 'wavy-bond';
-  if (t === 'star' || t === '*') return 'star';
+  const t = normalRef(ref);
+  if (t.startsWith('wavy') || t === 'squiggle') return 'wavy-bond';
+  if (t === 'star' || t === '*' || t === 'asterisk') return 'star';
   const n = /(\d+)$/.exec(t);
   return n ? `numbered (${n[1]})` : 'numbered';
 }

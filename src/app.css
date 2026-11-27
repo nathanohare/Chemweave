@@ -2202,7 +2202,6 @@ body.mode-window .cr-warnings .cr-ok { color: #7ddc9a; }
 .df-opts { gap: 12px; padding-left: 22px; }
 .df-look { flex-wrap: wrap; padding-left: 22px; }
 .df-look button[aria-pressed=true] { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
-.df-hint { margin: 0; padding-left: 22px; font-size: var(--fs-xs); }
 
 /* Arrange > 3-D Rotation: angles on sliders, the drawing turning live behind an undimmed backdrop */
 dialog.turn3d-dialog { width: min(94vw, 360px); margin: 64px 16px auto auto; }

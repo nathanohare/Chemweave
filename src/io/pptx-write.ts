@@ -485,6 +485,14 @@ export function swapBox(b: Rect): Rect {
  */
 const WINGDINGS_BULLETS: Record<string, string> = { '➢': 'Ø', '✓': 'ü', '☑': 'þ', '➔': 'è', '❑': 'q', '❖': 'v', '◆': 'u' };
 
+/** A Summary Zoom part's still picture as it goes in the zoom frame (null when it can't: unreadable, or SVG). */
+function summaryStill(p: Shape): { mime: string; bytes: Uint8Array } | null {
+  let still: { mime: string; bytes: Uint8Array };
+  try { still = fromDataUrl(p.src!); } catch { return null; }
+  const ext = MIME_EXT[still.mime];
+  return ext && ext !== 'svg' ? still : null;
+}
+
 /** A bullet's PowerPoint markup: in Arial, or in Wingdings for those Arial lacks. */
 export function bulletXml(ch: string): string {
   const w = WINGDINGS_BULLETS[ch];
@@ -531,9 +539,10 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
         const n = lists[i].n ?? 1;
         inner += `<a:buFont typeface="+mj-lt"/><a:buAutoNum type="${ps.numType}"${n > 1 ? ` startAt="${n}"` : ''}/>`;
       } else {
-        const n = parseInt(m ?? '1', 10);
-        const start = Number.isFinite(n) && n > 1 ? ` startAt="${n}"` : m && /^[a-z]+\./.test(m) ? ` startAt="${letterValue(m)}"` : m && /^[ivxlcdm]+\./.test(m) ? ` startAt="${romanValue(m)}"` : '';
-        inner += `<a:buFont typeface="+mj-lt"/><a:buAutoNum type="${NUMBER_TYPES[level % 3]}"${start === ' startAt="1"' ? '' : start}/>`;
+        // (the item's number at its level as counted for the screen, not read back from its marker:
+        // "i." is a roman one, not the letter i, and "2.1." is the first at its level)
+        const n = lists[i].n ?? 1;
+        inner += `<a:buFont typeface="+mj-lt"/><a:buAutoNum type="${NUMBER_TYPES[level % 3]}"${n > 1 ? ` startAt="${n}"` : ''}/>`;
       }
     } else {
       attrs.push(`marL="${emu(indent)}"`, 'indent="0"');
@@ -552,23 +561,6 @@ export function paragraphsXml(c: Caption, explicit: { size: number; font: string
     const end = `<a:endParaRPr ${lang}${explicit ? ` sz="${Math.round(em * 100)}"` : ''} dirty="0"/>`;
     return `<a:p><a:pPr ${attrs.join(' ')}>${inner}</a:pPr>${body}${end}</a:p>`;
   }).join('');
-}
-
-function letterValue(m: string): number {
-  let n = 0;
-  for (const ch of m.replace('.', '')) n = n * 26 + (ch.charCodeAt(0) - 96);
-  return n;
-}
-
-function romanValue(m: string): number {
-  const v: Record<string, number> = { i: 1, v: 5, x: 10, l: 50, c: 100, d: 500, m: 1000 };
-  const s = m.replace('.', '');
-  let n = 0;
-  for (let i = 0; i < s.length; i++) {
-    const a = v[s[i]], b = v[s[i + 1]] ?? 0;
-    n += a < b ? -a : a;
-  }
-  return n;
 }
 
 // ---------------------------------------------------------------- the file
@@ -1148,7 +1140,9 @@ class Writer {
     const spOf = new Map<number, number>();
     const site = (g: Glue | undefined) => { const sp = g ? spOf.get(g.shape) : undefined; const sh = g ? doc.shapes.get(g.shape) : undefined; return sp && sh ? connectionSite(sh, g!.port, sp) : null; };
     // a Summary Zoom's parts go in one frame, PowerPoint's, where the first of them is
-    const summary = this.summaryParts(parts.pictures);
+    // (each part as a Slide Zoom of its own when one of their pictures can't go in the frame, so none is lost)
+    const parts0 = this.summaryParts(parts.pictures);
+    const summary = parts0 && parts0.every((z) => summaryStill(z.p)) ? parts0 : null;
     // pictures and shapes in their order front to back (the Selection Pane's), back first
     shapeOrder([...parts.pictures, ...parts.shapes]).forEach((p, k) => job(rank ? rank.of('shape', p.id) : 1e6 + k, async () => {
       if (summary?.some((x) => x.p === p)) {
@@ -1171,12 +1165,12 @@ class Writer {
       out.push(await this.picture(path, p.src!, box, p.name?.trim() || `Picture ${id - 1}`, id++, p.crop ?? null, p.look, p));
     }, p.grp));
     // (a connector goes after the shapes it is stuck to, which give it their ids)
-    parts.connectors.forEach((r, k) => job(rank ? Math.max(rank.of('arrow', r.id), ...[r.from, r.to].map((g) => (g ? rank.of('shape', g.shape) + 0.5 : -Infinity))) : 2e6 + k, async () => {
+    parts.connectors.forEach((r, k) => job(rank ? Math.max(rank.of('arrow', r.id), maxOf([r.from, r.to].map((g) => (g ? rank.of('shape', g.shape) + 0.5 : -Infinity)))) : 2e6 + k, async () => {
       mark({ arrows: new Set([r.id]) }, id);
       out.push(this.connector(path, r, id++, doc.style.lineWidth, site));
     }, r.grp));
     // diagrams: a group each, which animates as one
-    parts.diagrams.forEach((g, k) => job(rank ? Math.min(rank.of('shape', g.frame.id), ...g.shapes.map((x) => rank.of('shape', x.id))) : 3e6 + k, async () => {
+    parts.diagrams.forEach((g, k) => job(rank ? Math.min(rank.of('shape', g.frame.id), minOf(g.shapes.map((x) => rank.of('shape', x.id)))) : 3e6 + k, async () => {
       const gid = id++;
       mark({ shapes: new Set([g.frame.id, ...g.shapes.map((x) => x.id)]), arrows: new Set(g.connectors.map((x) => x.id)) }, gid);
       const kids = [
@@ -1502,10 +1496,9 @@ class Writer {
     const boxOf = (p: Shape) => ({ x1: Math.min(p.x1, p.x2), y1: Math.min(p.y1, p.y2), x2: Math.max(p.x1, p.x2), y2: Math.max(p.y1, p.y2) });
     const items: { box: Rect; blip: string; rel: string; tags: string; back: boolean; section: number; k: number }[] = [];
     for (const [k, z] of zs.entries()) {
-      let still: { mime: string; bytes: Uint8Array };
-      try { still = fromDataUrl(z.p.src!); } catch { return ''; }
+      const still = summaryStill(z.p);
+      if (!still) return '';
       const ext = MIME_EXT[still.mime];
-      if (!ext || ext === 'svg') return '';
       items.push({
         box: boxOf(z.p), blip: this.addMedia(from, still.bytes, ext), rel: this.pkg.relate(from, REL.slide, relativeTarget(from, `ppt/slides/slide${z.i + 1}.xml`)),
         tags: this.addTags(from, { [TAG.zoom]: JSON.stringify({ v: 1, zoom: z.p.zoom, link: z.p.link }) }), back: !!z.p.zoom?.back, section: z.section, k,

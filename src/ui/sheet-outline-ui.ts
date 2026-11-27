@@ -124,13 +124,13 @@ export class SheetOutline {
   settings(): void {
     const s = this.view.sheet;
     if (!s) return;
-    const w = new ToolWindow('Outline settings');
-    w.note('Where the summary rows and columns (the totals) are, beside their details.');
+    const w = new ToolWindow('Outline Settings');
+    w.info('Where the summary rows and columns (the totals) are, beside their details.');
     const below = w.check('Summary rows below detail', !s.outline?.summaryAbove);
     const right = w.check('Summary columns to right of detail', !s.outline?.summaryLeft);
     const symbols = w.check('Show outline symbols', s.viewOpts?.outlineSymbols !== false);
     w.actions('OK', () => {
-      this.host.edit('Outline settings', (sh) => {
+      this.host.edit('Outline Settings', (sh) => {
         const o = { summaryAbove: below.checked ? undefined : true, summaryLeft: right.checked ? undefined : true };
         sh.setOutline(o.summaryAbove || o.summaryLeft ? o : null);
         const v = { ...sh.viewOpts, outlineSymbols: symbols.checked ? undefined : false as const };

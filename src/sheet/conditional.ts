@@ -300,14 +300,13 @@ export function rulesAt(rules: CondFormat[], row: number, col: number): CondForm
 
 // ---------------------------------------------------------------- ready-made rules, as Excel offers them
 
-/** Excel's ready-made highlight looks. */
+/** Excel's ready-made highlight formats, by Excel's names (a red border isn't one of the things a rule can set here). */
 export const PRESET_LOOKS: { name: string; look: CfLook }[] = [
-  { name: 'Light red fill with dark red text', look: { fill: '#ffc7ce', color: '#9c0006' } },
-  { name: 'Yellow fill with dark yellow text', look: { fill: '#ffeb9c', color: '#9c5700' } },
-  { name: 'Green fill with dark green text', look: { fill: '#c6efce', color: '#006100' } },
-  { name: 'Light red fill', look: { fill: '#ffc7ce' } },
-  { name: 'Red text', look: { color: '#9c0006' } },
-  { name: 'Red border-free bold text', look: { color: '#c00000', bold: true } },
+  { name: 'Light Red Fill with Dark Red Text', look: { fill: '#ffc7ce', color: '#9c0006' } },
+  { name: 'Yellow Fill with Dark Yellow Text', look: { fill: '#ffeb9c', color: '#9c5700' } },
+  { name: 'Green Fill with Dark Green Text', look: { fill: '#c6efce', color: '#006100' } },
+  { name: 'Light Red Fill', look: { fill: '#ffc7ce' } },
+  { name: 'Red Text', look: { color: '#9c0006' } },
 ];
 
 /** Excel's ready-made colour scales (low, middle, high). */

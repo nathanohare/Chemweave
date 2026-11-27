@@ -6,6 +6,7 @@
 // list on the left. Every change shows at once in the ribbon; Undo takes them back one at a time.
 
 import { inserted, moved, type Pickable } from './toolboxes';
+import { addInfo, setInfo } from './info-tip';
 import { groupLayout, tabOrder, type RibbonInfo, type RibbonPrefs, type RibbonsPrefs } from './ribbon-custom';
 import { dragTile, inside } from './tile-drag';
 import { initials } from './toolbox-editor';
@@ -304,9 +305,12 @@ export class RibbonEditor {
     back.textContent = `‹ ${this.tabName(this.tab)}`;
     back.addEventListener('click', () => { this.group = null; this.draw(); });
     const own = this.group.startsWith('own:');
-    const t = document.createElement('span');
-    t.textContent = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for a custom choice, make a New Group.';
-    crumb.append(back, t);
+    crumb.append(back);
+    // what the group is, behind an "i" by its name (it differs for your own groups)
+    const tip = own ? 'Your group: drag commands in from the left, about, or out to remove them' : 'Rename this group here. Its buttons are laid out by the app; for a custom choice, make a New Group.';
+    const nameLabel = gnameRow.querySelector('label');
+    const have = nameLabel?.querySelector<HTMLElement>('.info-icon');
+    if (have) setInfo(have, tip); else addInfo(nameLabel, tip);
     gname.value = this.groupName(this.group);
     gdel.hidden = !own;
   }

@@ -17,14 +17,14 @@ export function casHtml(state: CasState, i: number): { row: string; button: stri
   const row = (td: string, title = '') => `<tr class="an-cas"><th${title ? ` title="${esc(title)}"` : ''}>CAS RN</th><td>${td}</td></tr>`;
   if (state.kind === 'idle') return { row: row(find('Find')), button: '' };
   if (state.kind === 'busy') return { row: row('<span class="muted">Looking it up…</span>'), button: '' };
-  if (state.kind === 'none') return { row: row(`<span class="muted" title="${esc(state.message)}">None found</span> ${find('Again')}`), button: '' };
+  if (state.kind === 'none') return { row: row(`<span class="muted" title="${esc(state.message)}">None found</span> ${find('Try Again')}`), button: '' };
   if (state.kind === 'error') return { row: row(`<span class="warn">${esc(state.message)}</span> ${find('Try Again')}`), button: '' };
   const [main, ...more] = state.cas;
   const also = more.length ? `Also listed: ${more.slice(0, 6).join(', ')}${more.length > 6 ? '…' : ''}. ` : '';
   const from = state.from === 'your Compound Library' ? 'library' : state.from;
   return {
     row: row(`<span class="cas-num" title="${esc(`${also}${state.name ? `${state.name}, from` : 'From'} ${state.from}.`)}">${esc(main)}</span> <span class="muted">(${esc(from)})</span>`),
-    button: `<button type="button" data-insert="cas:${i}" title="Put the CAS RN under the structure; it follows the structure and can be edited like any text">CAS caption</button>`,
+    button: `<button type="button" data-insert="cas:${i}" title="Put the CAS RN under the structure; it follows the structure and can be edited like any text">CAS Caption</button>`,
   };
 }
 

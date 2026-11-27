@@ -78,7 +78,7 @@ export function paletteRows(value: string | undefined, pick: (c: string) => void
   const edit = document.createElement('button');
   edit.type = 'button';
   edit.className = 'colour-auto palette-edit';
-  edit.textContent = palettes.length ? 'Edit palettes…' : 'New Custom Palette…';
+  edit.textContent = palettes.length ? 'Edit Palettes…' : 'New Custom Palette…';
   edit.addEventListener('click', () => { close(); editPalettes(); });
   box.append(edit);
   return box;
@@ -122,7 +122,7 @@ function openFor(input: HTMLInputElement): void {
   sys.dataset.systemPicker = '';
   sys.value = value || '#000000';
   sys.addEventListener('change', () => pick(sys.value.toLowerCase()));
-  more.append(document.createTextNode('More colors…'), sys);
+  more.append(document.createTextNode('More Colors…'), sys);
   p.append(grid, paletteRows(value, pick, closePop), more);
   // inside an open window the menu has to be in the window too, or it can't be clicked
   (input.closest('dialog[open]') ?? document.body).append(p);
@@ -168,7 +168,7 @@ export function editPalettes(): void {
   if (!dialog) {
     dialog = document.createElement('dialog');
     dialog.className = 'palette-dialog';
-    dialog.setAttribute('aria-label', 'Edit palettes');
+    dialog.setAttribute('aria-label', 'Color Palettes');
     dialog.addEventListener('keydown', (e) => { if (e.key !== 'Escape') e.stopPropagation(); });
     document.body.append(dialog);
   }

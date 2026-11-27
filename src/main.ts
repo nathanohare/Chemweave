@@ -10,7 +10,7 @@ import { watchRibbonTabs } from './ui/ribbon-glide';
 import './old-webkit';
 // the menus made from the command list, before anything looks for their items
 import { pctToSlider, sliderToPct } from './ui/zoom-slider';
-import { infoTipsOnOpen } from './ui/info-tip';
+import { infoFromAttrs, infoTipsOnOpen } from './ui/info-tip';
 import { bothLive, clampShare, dropSide, fitPicture, insertLabel, pictureOf, splitAfterDrop, type Side as SplitSide } from './ui/split-screen';
 import './commands/menus';
 // every mode's Font group, the same controls in the same order (G5-26), before anything looks for them
@@ -95,6 +95,7 @@ import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink
 import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, pathExists, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
+import { GLOW_TRANSPARENCY } from './render/shape-fx';
 import { Workspace, Tab, type SaveHow } from './workspace';
 import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
@@ -186,7 +187,7 @@ import type { Item } from './render/vector';
 import { PAPERS, defaultPaper, orient, placeIn, inside, placeSvg, pageSvg } from './print-layout';
 import { printPages } from './ui/print';
 import { SHEETS } from './io/cdxml-print';
-import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
+import { bitmapToPng, dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { BOX_DEFAULTS } from './ui/toolbox-defaults';
@@ -1408,7 +1409,7 @@ async function pasteIntoSpeciesBox(holder: number, got: Pasted): Promise<void> {
 /** Cells from Excel, Word or a sheet become a table in the ACS style, with the first row as headings. */
 function pasteTable(rows: PastedRows): void {
   const t = tableFromCells(rows, textMeasure, doc.style.captionSize);
-  placeTable(t, 'Paste table');
+  placeTable(t, 'Paste Table');
   flash(`Pasted a table of ${t.rows.length} rows and ${t.cols.length} columns. Double-click a cell to type; the Style panel has its rows, columns and lines.`, 7000);
 }
 
@@ -1479,7 +1480,7 @@ async function insertTable(): Promise<void> {
   if (onSlide) lastTableStyle = got.style ?? '';
   // columns centred (the Style panel lines up each column its own way)
   const t0 = { ...emptyTable(rows, cols, doc.style.captionSize), align: Array(cols).fill('center') };
-  const id = placeTable(onSlide && got.style ? { ...t0, style: got.style } : t0, 'Insert table');
+  const id = placeTable(onSlide && got.style ? { ...t0, style: got.style } : t0, 'Insert Table');
   editor.editTable(id, { r: 0, c: 0 });
 }
 
@@ -1580,7 +1581,7 @@ async function pasteText(text: string, html?: string, plain = false): Promise<vo
   const wrap = b.x2 - b.x1 > most ? most : undefined;
   if (wrap) b = frame(wrap);
   let id = 0;
-  doc.edit('Paste text', () => {
+  doc.edit('Paste Text', () => {
     id = doc.addCaption({ x: c.x - (b.x1 + b.x2) / 2, y: c.y - (b.y1 + b.y2) / 2, runs, justify: 'left', ...(paras ? { paras } : {}), ...(wrap ? { wrap } : {}) }).id;
     editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set([id]), arrows: new Set(), shapes: new Set() };
     editor.placeClear(placingPage());
@@ -1967,7 +1968,7 @@ async function insertChart(): Promise<void> {
   if (here.left()) return;
   const c = pasteCentre();
   let made: Shape | null = null;
-  doc.edit('Insert chart', () => {
+  doc.edit('Insert Chart', () => {
     made = doc.addShape({ kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, chart: got });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set([made!.id]) };
@@ -1983,10 +1984,10 @@ async function editChartShape(id: number): Promise<void> {
   const here = sameDrawing('The chart change', 'applied');
   const got = await editChart(sizedBox(s.chart, Math.abs(s.x2 - s.x1), Math.abs(s.y2 - s.y1)), false, flash);
   if (!got || here.left() || !doc.shapes.get(id)?.chart) return;
-  if (got === 'delete') { doc.edit('Delete chart', () => doc.removeShape(id)); editor.changed(); return; }
+  if (got === 'delete') { doc.edit('Delete Chart', () => doc.removeShape(id)); editor.changed(); return; }
   const { w, h } = (await import('./ui/chart-editor')).chartPoints(got.chart);
   if (here.left()) return;
-  doc.edit('Change chart', () => doc.updateShape(id, { chart: got, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, x1: x, y1: y, x2: x + w, y2: y + h, crop: undefined }));
+  doc.edit('Change Chart', () => doc.updateShape(id, { chart: got, src: chartBoxPng(got, w, h), px: { w: got.chart.w, h: got.chart.h }, x1: x, y1: y, x2: x + w, y2: y + h, crop: undefined }));
   editor.changed();
 }
 editor.onChart = (id) => void editChartShape(id);
@@ -1999,7 +2000,7 @@ async function editMediaShape(id: number): Promise<void> {
   const here = sameDrawing('The playback change', 'applied');
   const got = await editMedia(s.video);
   if (!got || here.left() || !doc.shapes.get(id)?.video) return;
-  doc.edit(s.video.audio ? 'Audio playback' : 'Video playback', () => doc.updateShape(id, { video: got }));
+  doc.edit(s.video.audio ? 'Audio Playback' : 'Video Playback', () => doc.updateShape(id, { video: got }));
   editor.changed();
 }
 editor.onMedia = (id) => void editMediaShape(id);
@@ -2041,7 +2042,7 @@ async function insertMedia(audio: boolean): Promise<void> {
   const w = px.w * k, h = px.h * k;
   const c = deck && type.audio ? { x: deck.size.w / 2, y: deck.size.h / 2 } : pasteCentre();
   let made: Shape | null = null;
-  doc.edit(type.audio ? 'Insert audio' : 'Insert video', () => {
+  doc.edit(type.audio ? 'Insert Audio' : 'Insert Video', () => {
     made = doc.addShape({
       kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, px, src: poster,
       video: { src, ...(type.audio ? { audio: true } : {}), start: 'click', once: true, ...(length ? { length: +length.toFixed(3) } : {}) },
@@ -2092,7 +2093,7 @@ async function insertZoom(summary: boolean): Promise<void> {
   const area = { x1: d.size.w * 0.1, y1: d.size.h * 0.3, x2: d.size.w * 0.9, y2: d.size.h * 0.9 };
   const boxes = zoomGrid(pick.indices.length, d.size, area);
   const made: number[] = [];
-  doc.edit(pick.indices.length > 1 ? 'Insert slide zooms' : 'Insert slide zoom', () => {
+  doc.edit(pick.indices.length > 1 ? 'Insert Slide Zooms' : 'Insert Slide Zoom', () => {
     pick.indices.forEach((i, k) => { const z = zoomShape(d, i, boxes[k], {}); if (z) made.push(doc.addShape(z).id); });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set(made) };
@@ -2149,7 +2150,7 @@ async function actionSettings(): Promise<void> {
   ], { ok: 'OK', note: 'What happens when this is clicked in the slide show. Saved as PowerPoint\'s own action.' });
   if (!got || here.left()) return;
   const link = got.kind === 'place' ? got.place : got.kind === 'url' ? normalizeLink(got.url) ?? '' : '';
-  doc.edit('Action settings', () => { for (const s of shapes) doc.updateShape(s.id, { link: link || undefined }); });
+  doc.edit('Action Settings', () => { for (const s of shapes) doc.updateShape(s.id, { link: link || undefined }); });
   editor.changed();
 }
 
@@ -2284,7 +2285,7 @@ async function insertEquation(): Promise<void> {
   const { w, h } = shapeMathSize(math, measureText);
   const c = pasteCentre();
   let made: Shape | null = null;
-  doc.edit('Insert equation', () => {
+  doc.edit('Insert Equation', () => {
     made = doc.addShape({ kind: 'picture', x1: c.x - w / 2, y1: c.y - h / 2, x2: c.x + w / 2, y2: c.y + h / 2, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, math });
   });
   editor.sel = { atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set([made!.id]) };
@@ -2305,7 +2306,7 @@ async function editEquationShape(id: number): Promise<void> {
   const math = { ...now.math, tex: got.tex };
   const { w, h } = shapeMathSize(math, measureText);
   const x = Math.min(now.x1, now.x2), y = Math.min(now.y1, now.y2);
-  doc.edit('Change equation', () => doc.updateShape(id, { math, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, x1: x, y1: y, x2: x + w * k, y2: y + h * k }));
+  doc.edit('Change Equation', () => doc.updateShape(id, { math, src: shapeMathPicture(math, measureText), px: { w: Math.round(w), h: Math.round(h) }, x1: x, y1: y, x2: x + w * k, y2: y + h * k }));
   editor.changed();
 }
 editor.onEquation = (id) => void editEquationShape(id);
@@ -3113,7 +3114,7 @@ async function structureToName(): Promise<void> {
   const none = states.find((s): s is Extract<NameState, { kind: 'none' }> => s.kind === 'none');
   if (!found.length) { flash(none?.message ?? 'No name found.', 6000); return; }
   const m = editor.measure();
-  doc.edit(found.length > 1 ? 'Name captions' : 'Name caption', () => {
+  doc.edit(found.length > 1 ? 'Name Captions' : 'Name Caption', () => {
     for (const t of found) {
       const c = doc.addCaption(lookCaption(doc, 'caption', t.frag, nameRuns(t.name), {}, true));
       placeAttached(doc, c, m);
@@ -3590,7 +3591,7 @@ async function pasteReaction(text: string, c: { x: number; y: number }): Promise
   // (with the atoms' labels, so HO at the end of one structure doesn't run into the next)
   const boxOf = (ids: number[]) => atomsBox(doc, ids, editor.measure());
   try {
-    doc.edit('Paste reaction', () => {
+    doc.edit('Paste Reaction', () => {
       let x = 0;
       const place = (mb: string, at: number, y = 0) => {
         const ids = addMolfile(doc, mb, 0, 0, { fromFile: rxnFile });
@@ -3915,7 +3916,7 @@ async function addTiedText(role: 'label' | 'caption'): Promise<void> {
     return t;
   };
   const made: number[] = [];
-  doc.edit(role === 'label' ? 'Add ID label' : 'Add caption', () => {
+  doc.edit(role === 'label' ? 'Add ID Label' : 'Add Caption', () => {
     for (const f of frags) {
       const k = keys.get([...f][0]);
       const text = role === 'caption' ? '' : (k && known.get(k)) || freshId();
@@ -3989,7 +3990,7 @@ function captionTyped(id: number): void {
   if (chemText.ionCharges && sp.expected !== undefined && !sp.written) {
     const sign = chargeSign(sp.expected);
     const last = c.runs[c.runs.length - 1];
-    doc.edit('Add charge', () => doc.updateCaption(id, { runs: [...c.runs, { ...last, text: sign, sub: undefined, sup: true, formula: undefined }] }));
+    doc.edit('Add Charge', () => doc.updateCaption(id, { runs: [...c.runs, { ...last, text: sign, sub: undefined, sup: true, formula: undefined }] }));
     editor.changed();
     sp = captionSpecies(doc, doc.captions.get(id)!, m);
     if (!sp) return;
@@ -4027,7 +4028,7 @@ function groupCounterion(id: number, charge: number): void {
   const other = best.caption !== undefined ? doc.captions.get(best.caption)?.grp : doc.atoms.get(best.atoms[0])?.grp;
   if (other !== undefined && other === c.grp) return;
   const sel = { atoms: new Set(best.atoms), bonds: new Set<number>(), captions: new Set([id, ...(best.caption !== undefined ? [best.caption] : [])]), arrows: new Set<number>(), shapes: new Set<number>() };
-  doc.edit('Group salt', () => groupSelection(doc, sel));
+  doc.edit('Group Salt', () => groupSelection(doc, sel));
   editor.changed();
   flash('Grouped the counterion with its partner as one salt. Undo (Ctrl+Z) to keep them apart, or turn this off in Settings ▸ Preferences.', 6000);
 }
@@ -4038,7 +4039,7 @@ function setCaptionChem(how: 'auto' | 'on' | 'off'): boolean {
   const caps = [...editor.sel.captions].map((id) => doc.captions.get(id)).filter((c): c is Caption => !!c);
   if (!caps.length) { flash('Select a text box first.'); return false; }
   const chem = how === 'auto' ? undefined : how === 'on';
-  doc.edit(how === 'off' ? 'Read as plain text' : how === 'on' ? 'Read as chemistry' : 'Read text automatically', () => { for (const c of caps) doc.updateCaption(c.id, { chem }); });
+  doc.edit(how === 'off' ? 'Read as Plain Text' : how === 'on' ? 'Read as Chemistry' : 'Read Text Automatically', () => { for (const c of caps) doc.updateCaption(c.id, { chem }); });
   editor.changed();
   if (how === 'on') {
     const bad = caps.filter((c) => !captionSpecies(doc, doc.captions.get(c.id)!, editor.measure()));
@@ -4233,7 +4234,7 @@ async function expandText(caps: Caption[], full = false): Promise<number[]> {
   }
   const made: number[] = [];
   if (drawn.length) {
-    doc.edit('Expand text', () => {
+    doc.edit('Expand Text', () => {
       for (const d of drawn) {
         const grp = doc.captions.get(d.id)?.grp;
         doc.removeCaption(d.id);
@@ -4782,6 +4783,8 @@ const docFiles: DocxDeps = {
     return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
   },
   svgToPng,
+  // (WebP for Word; GIF, BMP and WebP for RTF)
+  pictureToPng: bitmapToPng,
   bakePicture: (p) => fxPng(p, 'baked'),
   fonts: bundledFaces,
   smiles: (contents, style) => drawingSmiles(structureDoc(contents, style)),
@@ -4869,7 +4872,7 @@ const ws: Workspace = new Workspace(doc, {
   },
   documents: {
     read: async (bytes, name) => (await import('./io/doc-files')).readDocumentFile(bytes, name, docRead),
-    write: async (d, name) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles),
+    write: async (d, name, notes) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles, notes),
   },
   newStyle: (mode) => { const n = mode === 'si' ? null : modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
   newPage: () => (defaultPage ? { ...defaultPage } : null),
@@ -4886,6 +4889,7 @@ const ws: Workspace = new Workspace(doc, {
     }], { ok: 'Open', note: `${n === 1 ? 'A canvas slide' : `${n} canvas slides`} in ${name} ${n === 1 ? 'was' : 'were'} saved as one slide per keyframe, and ${n === 1 ? 'its slides were' : 'their slides were'} changed in PowerPoint since. Keep Canvas discards PowerPoint's changes to those slides; Keep PowerPoint turns them into normal slides.` });
     return got?.keep === 'slides' ? 'slides' : 'canvas';
   },
+  chemdrawObjects: (program) => (program === 'Word' ? officeStructures.docx : officeStructures.pptx) === 'chemdraw',
   opened: (tab) => { keeper.opened(tab); void noteFileCompounds(tab).catch(() => {}); },
   styleSheet: (tab, style) => void offerStyleSheet(tab, style),
   dropped: (tab) => {
@@ -5174,14 +5178,14 @@ const keyframeCommands = {
     const k = canvasNow();
     if (!k) return;
     const got = addKeyframe(k.c, k.d.size, k.i);
-    setKeyframes(k.d, got.canvas, got.index, 'Add keyframe');
+    setKeyframes(k.d, got.canvas, got.index, 'Add Keyframe');
   },
   /** A keyframe showing what is in the window now (as near as the zoom limits allow). */
   keyframeHere(): void {
     const k = canvasNow();
     if (!k) return;
     const got = insertKeyframe(k.c, keyframeAround(renderer.visibleRect(0), k.d.size, 0, 1), k.i);
-    setKeyframes(k.d, got.canvas, got.index, 'Keyframe from window');
+    setKeyframes(k.d, got.canvas, got.index, 'Keyframe from Window');
   },
   fitToSelection(): void {
     const k = canvasNow();
@@ -5191,7 +5195,7 @@ const keyframeCommands = {
     // (only the framing changes: the keyframe keeps its title, zone, spotlight and detour, review F022)
     const key = { ...k.c.keys[k.i], ...keyframeAround(box, k.d.size), id: k.c.keys[k.i].id };
     if (key.zoom <= 1 / ZOOM_IN_MAX + 1e-9 && Math.max((box.x2 - box.x1) / k.d.size.w, (box.y2 - box.y1) / k.d.size.h) < 1 / ZOOM_IN_MAX) flash(`Keyframes zoom in at most ${ZOOM_IN_MAX}×, so this one shows a little more than the selection.`);
-    setKeyframes(k.d, { keys: k.c.keys.map((x, j) => (j === k.i ? key : x)) }, k.i, 'Fit keyframe to selection');
+    setKeyframes(k.d, { keys: k.c.keys.map((x, j) => (j === k.i ? key : x)) }, k.i, 'Fit Keyframe to Selection');
   },
   remove(i?: number): void {
     const k = canvasNow();
@@ -5323,7 +5327,7 @@ const keyframeCommands = {
     const r = renderer.visibleRect(0);
     const size = Math.round(m.titleSize * 2.4);
     let id = 0;
-    doc.edit('Canvas heading', () => {
+    doc.edit('Canvas Heading', () => {
       id = doc.addCaption({
         x: (r.x1 + r.x2) / 2, y: (r.y1 + r.y2) / 2, justify: 'center',
         runs: [{ text: 'Heading', font: m.titleFont, size, bold: true, color: mix(m.titleColor, m.background, 0.6) }],
@@ -5661,7 +5665,7 @@ const rulers = new SlideRulers(host, {
     // a new guide, shown, dragged from the ruler
     const next = { ...view, showGuides: true, guides: { x: [...view.guides.x], y: [...view.guides.y] } };
     next.guides[axis].push(axis === 'x' ? -1e6 : -1e6);
-    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add guide', view);
+    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add Guide', view);
   },
 });
 
@@ -5699,7 +5703,7 @@ function startGuideDrag(d: Deck, view: SlideView, which: { axis: 'x' | 'y'; i: n
     const off = v < 0 || v > (which.axis === 'x' ? d.size.w : d.size.h);
     if (off) view.guides[which.axis].splice(which.i, 1);
     d.settings.view = before;
-    d.setSettings({ ...d.settings, view }, off ? 'Remove guide' : label);
+    d.setSettings({ ...d.settings, view }, off ? 'Remove Guide' : label);
     renderer.repaintAll();
     editor.requestScene();
   };
@@ -5756,7 +5760,7 @@ function toggleGuides(): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
   const v = slideViewOf(d);
-  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide guides' : 'Show guides');
+  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide Guides' : 'Show Guides');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5771,7 +5775,7 @@ async function gridSettings(): Promise<void> {
   slideLook.grid = got.grid;
   guidesOn.slides = got.smart;
   Object.assign(rulerPrefs, got.prefs);
-  d.setSettings({ ...d.settings, view: got.view }, 'Grid and guides');
+  d.setSettings({ ...d.settings, view: got.view }, 'Grid and Guides');
   showGuides();
   showRulers();
   storeSettings();
@@ -5788,7 +5792,7 @@ function addGuide(axis: 'x' | 'y'): void {
   // not a second guide where one is already (the deck's first ones are down the middle, hidden): it shows
   const mid = (axis === 'x' ? d.size.w : d.size.h) / 2;
   if (!next.guides[axis].some((g) => Math.abs(g - mid) < 0.01)) next.guides[axis].push(mid);
-  d.setSettings({ ...d.settings, view: next }, 'Add guide');
+  d.setSettings({ ...d.settings, view: next }, 'Add Guide');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5817,7 +5821,7 @@ async function newDesign(): Promise<void> {
   finishTyping();
   const t = await pickTemplate();
   if (t === 'blank') {
-    const size = await pickDesignSize('New Design: page size');
+    const size = await pickDesignSize('New Design: Page Size');
     if (size) ws.newDesign(size);
   } else if (t && 'blank' in t) {
     ws.newDesign(t.blank);
@@ -5831,7 +5835,7 @@ async function designSize(): Promise<void> {
   const d = deckNow();
   if (!d || ws.active.mode !== 'design') { flash('Page Size is for designs: use File ▸ New ▸ Blank design.'); return; }
   finishTyping();
-  const size = await pickDesignSize('Page size', d.size);
+  const size = await pickDesignSize('Page Size', d.size);
   if (size && deckNow() === d) {
     d.setSize(size);
     editor.fit();
@@ -6092,7 +6096,7 @@ function pasteSlides(keep?: boolean): void {
   if (keep !== undefined || sameLook) { flash(`Pasted ${what}.`); return; }
   const edits = d.edits;
   flash(`Pasted ${what} in this deck's style.`, 8000, {
-    label: 'Keep source formatting',
+    label: 'Keep Source Formatting',
     run: () => {
       // put them in again their own way, in place of the ones just pasted (if nothing has changed since)
       if (deckNow() !== d || d.edits !== edits) { flash('Use Edit ▸ Slides ▸ Paste Slides (Keep Source Formatting) to paste them with their own formatting.'); return; }
@@ -8033,7 +8037,7 @@ async function offerStyleSheet(tab: Tab, style: DocStyle): Promise<void> {
     return;
   }
   const base = tab.name.replace(/\.cds$/i, '');
-  const got = await ask('Use this style sheet?', [
+  const got = await ask('Use This Style Sheet?', [
     { name: 'name', label: 'Name', value: base },
     { name: 'forNew', label: 'Start new canvases in it', value: 'false', type: 'checkbox' },
   ], {
@@ -8456,7 +8460,7 @@ function clearShowTimings(which: 'slide' | 'all'): void {
   const d = deckNow();
   if (!d) return;
   const ix = clearTargets(d, which);
-  if (!d.clearTimings(ix, which === 'all' ? 'Clear timings on all slides' : 'Clear timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
+  if (!d.clearTimings(ix, which === 'all' ? 'Clear Timings on All Slides' : 'Clear Timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
   flash(which === 'all' ? 'Timings cleared: all slides advance on click.' : 'Timing cleared: the slide advances on click.');
 }
 
@@ -8466,7 +8470,7 @@ function clearNarration(which: 'slide' | 'all'): void {
   if (!d) return;
   const ix = clearTargets(d, which).filter((i) => d.narrated(i));
   if (!ix.length) { flash(which === 'all' ? 'No slide has narration to clear.' : 'This slide has no narration to clear.'); return; }
-  d.editSlides(which === 'all' ? 'Clear narration on all slides' : 'Clear narration', ix, (sd) => {
+  d.editSlides(which === 'all' ? 'Clear Narration on All Slides' : 'Clear Narration', ix, (sd) => {
     for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
   });
   flash(`Narration cleared from ${ix.length} slide${ix.length > 1 ? 's' : ''}. Their times stay (Clear ▸ Timings takes those off).`);
@@ -8512,7 +8516,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
         const ix = [...sounds.keys()].filter((i) => i >= 0 && i < d.slides.length);
         if (ix.length) {
           const poster = speakerPng(), s = 24;
-          d.editSlides('Record narration', ix, (sd, i) => {
+          d.editSlides('Record Narration', ix, (sd, i) => {
             // a new recording takes the place of the slide's old one
             for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
             const n = sounds.get(i)!;
@@ -8523,9 +8527,9 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
           });
         } else flash('Nothing was recorded (the microphone gave no sound).');
       }
-      d.setTimings(r.times, r.recordings.size ? 'Record slide show timings' : 'Rehearse timings');
+      d.setTimings(r.times, r.recordings.size ? 'Record Slide Show Timings' : 'Rehearse Timings');
       // narration and timings: one step to undo (review F326)
-      if (r.recordings.size) d.joinSince(history, 'Record slide show timings');
+      if (r.recordings.size) d.joinSince(history, 'Record Slide Show Timings');
       // the whole show, with the times of slides not played this time (rehearsing from one slide)
       const whole = d.slides.reduce((n, s) => n + (s.hidden ? 0 : s.transition?.advanceAfter ?? 0), 0);
       flash(`Kept: the show takes ${clockText(Math.max(whole, r.total))}${r.recordings.size ? ', with narration on the slides' : ''}. Set Up Show ▸ Advance slides can turn the times off.`, 8000);
@@ -8570,7 +8574,7 @@ async function setUpShowCmd(): Promise<void> {
   if (!d || ws.active.mode !== 'slides') return;
   finishTyping();
   const got = await setUpShow(d.settings.show, d.settings.customShows ?? [], d.slides.length);
-  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set up show');
+  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set Up Show');
   showSlideState();
 }
 
@@ -8588,7 +8592,7 @@ async function customShowsCmd(): Promise<void> {
   if (!got || deckNow() !== d) return;
   const show = d.settings.show && d.settings.show.custom !== undefined && !got.shows.some((c) => c.id === d.settings.show!.custom) ? { ...d.settings.show, custom: undefined } : d.settings.show;
   if (show && show.custom === undefined) delete show.custom;
-  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom shows');
+  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom Shows');
   if (got.play !== undefined) present(false, false, { custom: got.play });
 }
 
@@ -11148,7 +11152,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
-    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: GLOW_TRANSPARENCY };
     const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },
@@ -11460,14 +11464,14 @@ const COMMANDS: Record<string, () => unknown> = {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use timings' : 'Advance manually');
+    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use Timings' : 'Advance Manually');
     showSlideState();
   },
   'play-narrations': () => {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play narrations' : 'Show without narration');
+    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play Narrations' : 'Show without Narration');
     showSlideState();
   },
   'header-footer': () => void headerFooter(),
@@ -13041,9 +13045,9 @@ let linkLook: Settings['linkLook'] = 'style';
 async function toggleTerminalMethyls(): Promise<void> {
   const doc = editor.doc;
   if (!editor.sel.atoms.size && askWholeDrawing && doc.fragments().length > 1) {
-    const r = await ask('Every structure on the page?', [
-      { name: 'again', label: 'Don\u2019t ask again (Edit > Settings)', type: 'checkbox', value: 'false' },
-    ], { ok: 'Change every structure', note: 'Nothing is selected, so this shows or hides the terminal methyls on every structure on the page. To change only some, cancel and select them first.' });
+    const r = await ask('Change Every Structure on the Page?', [
+      { name: 'again', label: 'Don\u2019t ask again (Edit ▸ Settings ▸ General)', type: 'checkbox', value: 'false' },
+    ], { ok: 'Change Every Structure', note: 'Nothing is selected, so this shows or hides the terminal methyls on every structure on the page. To change only some, cancel and select them first.' });
     if (!r) return;
     if (r.again === 'true') { askWholeDrawing = false; storeSettings(); }
   }
@@ -14804,7 +14808,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     const st = r?.smiles ? casStateOf(r.smiles) : null;
     if (st?.kind !== 'found' || !frag) return;
     const m = editor.measure();
-    doc.edit('CAS caption', () => {
+    doc.edit('CAS Caption', () => {
       const c = doc.addCaption(lookCaption(doc, 'caption', frag, casRuns(st.cas[0]), {}, true));
       placeAttached(doc, c, m);
     });
@@ -14819,7 +14823,7 @@ $('#analysis-body').addEventListener('click', (e) => {
     // tied to the structure like Add Caption's, so it follows it; edit or retype it like any text
     // (the structure stays selected, so the panel stays open for the other buttons)
     const m = editor.measure();
-    doc.edit(kind === 'pcname' ? 'Name caption' : kind === 'pccas' ? 'CAS caption' : 'Hazards caption', () => {
+    doc.edit(kind === 'pcname' ? 'Name Caption' : kind === 'pccas' ? 'CAS Caption' : 'Hazards Caption', () => {
       const c = doc.addCaption(lookCaption(doc, 'caption', frag, runs, {}, true));
       placeAttached(doc, c, m);
     });
@@ -14897,7 +14901,7 @@ async function attachDescriptors(frags = chosenStructures()): Promise<void> {
   const show = newDescriptors();
   const names = show.includes('name') ? await Promise.all(frags.map((f, i) => descriptorName(f, weighed[i]))) : [];
   if (here.left()) return;
-  doc.edit('Attach descriptors', () => {
+  doc.edit('Attach Descriptors', () => {
     frags.forEach((f, i) => {
       const r = weighed[i];
       if (!r) return;
@@ -15093,6 +15097,7 @@ async function runAnalysis(force: boolean): Promise<void> {
   } : null);
   panel.innerHTML = results.map((r, i) => polymers[i] ? polymerHtml(polymers[i]!) : analysisHtml(r, i, adductSel.value, { prefs, bench: benchOf(r), customize: analysisCustomize, ions: COMMON_ADDUCTS, stereo: r.error ? '' : stereoSummary(frags[i]), unknown: exports[i].unknownLabels, electrons: frags[i].size ? electronsHtml(countElectrons(doc, frags[i].values().next().value!)) : '', rGroups: rGroupNames(frags[i]), name: r.error || !r.smiles || rGroupNames(frags[i]).length ? '' : nameHtml(nameStates.get(r.smiles) ?? { kind: 'idle' }), pubchem: r.error || !r.smiles ? '' : pubchemHtml(pubchemStates.get(r.smiles) ?? { kind: 'idle' }, i), cas: r.error || !r.smiles ? undefined : casHtml(casStateOf(r.smiles), i) })).join('');
   if (analysisCustomize) panel.insertAdjacentHTML('afterbegin', CUSTOMIZE_BAR);
+  infoFromAttrs(panel);
   const nmrOn = prefs.rows.some((x) => x.key === 'nmr' && x.on);
   nmrPanel.attach(panel, results.map((r, i) => (!nmrOn || r.error || !r.smiles || polymers[i] || rGroupNames(frags[i]).length ? null : { molblock: exports[i].molblock, map: exports[i].map })));
   // the NMR section goes where its row is in the order
@@ -15445,7 +15450,7 @@ function checkFileProblems(): void {
   const key = list.map((d) => `${d.where}:${d.doc.version}:${d.doc.atoms.size}`).join('|');
   if (key === fileChecksKey && warningsBox.button.isConnected) return;
   fileChecksKey = key;
-  warningsBox.setFile(checkDrawings(list), tab.mode === 'document' || tab.mode === 'sheet' ? 'Double-click a structure to open it in the drawing tools, where each problem is marked.' : 'Each problem is marked on its slide.');
+  warningsBox.setFile(checkDrawings(list), tab.mode === 'document' || tab.mode === 'sheet' ? 'Double-click a structure to open it in the drawing tools, where each problem is marked.' : tab.mode === 'design' ? 'Each problem is marked on the design.' : 'Each problem is marked on its slide.');
 }
 // (a few seconds after a change is soon enough: a slide, cell or document gives no word of its own)
 setInterval(() => { if (!document.hidden && PROBLEMS_RIBBON[ws.active.mode]) checkFileProblems(); }, 2500);
@@ -17804,7 +17809,7 @@ async function navigationSettings(): Promise<void> {
   const o = orientPrefs;
   const strength = [{ value: 'faint', label: 'Faint' }, { value: 'light', label: 'Light' }, { value: 'strong', label: 'Stronger' }];
   const r = await ask('Navigation', [
-    { name: 'navigator', label: 'Navigator', type: 'checkbox', value: String(o.navigator), help: 'A minimap of the drawing in a corner. Click or drag in it to move; double-click to fit.' },
+    { name: 'navigator', label: 'Document Map', type: 'checkbox', value: String(o.navigator), help: 'A small map of the drawing in a corner. Click or drag in it to move; double-click to fit.' },
     { name: 'navCorner', label: 'Document Map corner', value: o.navCorner, options: [{ value: 'br', label: 'Bottom right' }, { value: 'bl', label: 'Bottom left' }, { value: 'tr', label: 'Top right' }, { value: 'tl', label: 'Top left' }] },
     { name: 'navSize', label: 'Document Map size', value: o.navSize, options: [{ value: 'small', label: 'Small' }, { value: 'medium', label: 'Medium' }, { value: 'large', label: 'Large' }] },
     { name: 'navHideAll', label: 'Hide the Document Map while the whole drawing is on screen', type: 'checkbox', value: String(o.navHideAll) },

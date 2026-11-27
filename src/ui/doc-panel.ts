@@ -3,7 +3,7 @@
 // and margins), the header and footer with the page numbers, and the figure picked. Every
 // value can be typed in; lengths take inches, cm, mm or pt ("2.5 cm").
 
-import { addInfo } from './info-tip';
+import { addInfo, setInfo } from './info-tip';
 import type { Justify } from '../model';
 import { FloatBox, PINNED_ICON } from './float-box';
 import type { DocFile } from '../document/doc-file';
@@ -65,13 +65,15 @@ type Field = HTMLInputElement | HTMLSelectElement;
 export { DOC_BOXES, docBoxPrefs, parseDocPins, type DocBoxKey } from './mode-prefs';
 import { DOC_BOXES, docBoxPrefs, type DocBoxKey } from './mode-prefs';
 import { scrollToItem } from './motion';
-const BOX_TITLES: Record<DocBoxKey, string> = { para: 'Paragraph', style: 'Style', page: 'Page Setup', hf: 'Header, footer and page numbers' };
+const BOX_TITLES: Record<DocBoxKey, string> = { para: 'Paragraph', style: 'Style', page: 'Page Setup', hf: 'Header, Footer and Page Numbers' };
 
 export class DocPanel {
   private fields = new Map<string, Field>();
   private sections: Record<'para' | 'style' | 'page' | 'hf' | 'figure', HTMLElement>;
   private styleTitle!: HTMLElement;
   private figureInfo!: HTMLElement;
+  /** The "i" on the Figure heading, saying how to work with the kind of figure picked. */
+  private figureTip: HTMLElement | null = null;
   private figButtons!: HTMLElement;
   private floats = {} as Record<DocBoxKey, FloatBox>;
   private emptyNote: HTMLElement;
@@ -252,6 +254,7 @@ export class DocPanel {
     this.figureInfo = document.createElement('p');
     this.figureInfo.className = 'muted small dp-note';
     s.append(this.figureInfo);
+    this.figureTip = addInfo(s.querySelector('h3'), ' ');
     this.row(s, 'Size (%)', this.input('fig-scale', (v) => {
       const id = this.host.picked();
       const n = Number(v.replace('%', ''));
@@ -602,8 +605,9 @@ export class DocPanel {
       put('fig-frame', lk?.frame ? String(lk.frame) : '');
       put('fig-frame-colour', lk?.frameColor ?? '#000000');
       put('fig-shadow', lk?.shadow ?? 'none');
-      this.figureInfo.textContent = (isBox ? 'A text box: click inside it to type, drag its edge to move it. ' : o?.kind === 'picture' ? 'A picture. ' : o?.kind === 'drawing' && o.contents.shapes.some((x) => x.diagram) ? 'A diagram: double-click it to change its text, layout or colors (Edit Drawing opens the drawing tools on it). ' : 'A drawing: double-click it to change it with the drawing tools. ')
-        + (sz ? `Shown ${showLength(sz.w, 'in')} × ${showLength(sz.h, 'in')} in${fitted ? ', made smaller to fit between the margins' : ''}.` : '');
+      // how to work with it goes behind the "i" on the heading; the line keeps only the size
+      if (this.figureTip) setInfo(this.figureTip, isBox ? 'A text box: click inside it to type, drag its edge to move it.' : o?.kind === 'picture' ? '' : o?.kind === 'drawing' && o.contents.shapes.some((x) => x.diagram) ? 'A diagram: double-click it to change its text, layout or colors (Edit Drawing opens the drawing tools on it).' : 'A drawing: double-click it to change it with the drawing tools.');
+      this.figureInfo.textContent = (o?.kind === 'picture' ? 'A picture. ' : '') + (sz ? `Shown ${showLength(sz.w, 'in')} × ${showLength(sz.h, 'in')} in${fitted ? ', made smaller to fit between the margins' : ''}.` : '');
       const [edit, own, format] = this.figButtons.querySelectorAll('button');
       edit.style.display = o?.kind === 'drawing' ? '' : 'none';
       format.style.display = o?.kind === 'picture' && !o.chart ? '' : 'none';

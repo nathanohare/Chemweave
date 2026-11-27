@@ -5,6 +5,7 @@
 import { drawMath, layoutMath } from '../document/math';
 import { docMeasure } from '../document/doc-file';
 import { withStack } from '../text/layout';
+import { foldIntoInfo } from './info-tip';
 
 export interface EquationChoice { tex: string; display: boolean }
 
@@ -66,6 +67,8 @@ export function askEquation(opts: { tex: string; display?: boolean; font: string
       <label class="ask-row ask-check" data-display><input type="checkbox" name="display"><span>On a line of its own, centered</span></label>
       <p class="ask-buttons"><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary"></button></p>`;
     d.append(form);
+    // the help sits behind an "i" by the title, not on a line of its own
+    foldIntoInfo(form.querySelector('p.muted'), form.querySelector('h2'));
     const ta = form.querySelector<HTMLTextAreaElement>('textarea')!;
     const canvas = form.querySelector<HTMLCanvasElement>('canvas')!;
     const sel = form.querySelector<HTMLSelectElement>('select')!;

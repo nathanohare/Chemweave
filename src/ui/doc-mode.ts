@@ -5004,7 +5004,7 @@ export class DocumentMode {
     const o = id !== null ? f?.t.objects[id] : undefined;
     if (!f || id === null || o?.kind !== 'drawing' || !o.fromPicture) { this.host.flash('Tracing is for a figure converted from a picture, or a structure made from one.'); return; }
     const trace = { ...traceOf(o.fromPicture), ...patch };
-    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { ...o, fromPicture: { ...o.fromPicture, trace } } } } as DocText, trace.on !== traceOf(o.fromPicture).on ? (trace.on ? 'Trace On' : 'Trace Off') : 'Tracing look');
+    f.ed.update({ ...f.t, objects: { ...f.t.objects, [id]: { ...o, fromPicture: { ...o.fromPicture, trace } } } } as DocText, trace.on !== traceOf(o.fromPicture).on ? (trace.on ? 'Trace On' : 'Trace Off') : 'Tracing Style');
     this.views.forEach((v) => v.redraw());
     this.comments.update();
     this.updateRibbon();
@@ -5569,7 +5569,7 @@ export class DocumentMode {
     const got = await ask('Table of Contents', [
       { name: 'levels', label: 'Show levels', value: String(now), options: [{ value: '1', label: 'Heading 1' }, { value: '2', label: 'Heading 2' }, { value: '3', label: 'Heading 3' }] },
       // a table from a Word file shows its entries as Word last did, until switched to the TOC styles (as Word's Update Table does)
-      ...(wordLook ? [{ name: 'look', label: 'Entries look', value: 'word', options: [{ value: 'word', label: 'As in the Word file' }, { value: 'styles', label: 'TOC 1 to 3 styles' }] }] : []),
+      ...(wordLook ? [{ name: 'look', label: 'Entry formatting', value: 'word', options: [{ value: 'word', label: 'As in the Word file' }, { value: 'styles', label: 'TOC 1 to 3 styles' }] }] : []),
     ], { ok, note: 'The table of contents updates automatically as headings change or move. In Word, right-click ▸ Update Field after editing there.' });
     return got ? { levels: Math.max(1, Math.min(3, Number(got.levels) || 3)), wordLook: wordLook && got.look !== 'styles' } : null;
   }
@@ -5684,7 +5684,7 @@ export class DocumentMode {
     const options = FORMATS.map((v) => ({ value: v, label: [1, 2, 3].map((n) => noteLabel(n, v)).join(', ') }));
     const notes = Object.values(f.t.objects).filter((o) => o.kind === 'note');
     const feet = notes.filter((o) => o.kind === 'note' && !o.end).length, ends = notes.length - feet;
-    const got = await ask('Footnotes and Endnotes', [
+    const got = await ask('Footnote and Endnote', [
       { name: 'foot', label: 'Footnotes numbered', value: f.t.notes?.foot ?? FOOT_FORMAT, options },
       { name: 'end', label: 'Endnotes numbered', value: f.t.notes?.end ?? END_FORMAT, options },
       { name: 'convert', label: 'Convert', value: '', options: [
@@ -5836,7 +5836,7 @@ export class DocumentMode {
     }
     if (!all.some((x) => x.start < end && x.end > start)) { this.goToChange(true); return; }
     // the caret stays where the change was; what follows moved up by what was taken away
-    ed.update(decide(ed.t, accept, start, end), accept ? 'Accept change' : 'Reject change', start, start);
+    ed.update(decide(ed.t, accept, start, end), accept ? 'Accept Change' : 'Reject Change', start, start);
     this.goToChange(true, start);
   }
 
@@ -5923,7 +5923,7 @@ export class DocumentMode {
   private async designDefault(): Promise<void> {
     const d = this.file?.t.design;
     const what = d ? [d.theme && `the ${d.theme} theme`, !d.theme && d.fonts && `${d.fonts} fonts`, !d.theme && d.colors && `${d.colors} colors`, d.styleSet && `the ${d.styleSet} style set`, d.spacing && `${d.spacing} spacing`].filter(Boolean).join(', ') : '';
-    const got = await ask('Set as Default', [], { ok: what ? 'Set as Default' : 'Use the Standard Look', note: what ? `New documents will start with ${what}. (Documents already made keep their own formatting.)` : 'This document uses the standard formatting, so new documents will too.' });
+    const got = await ask('Set as Default', [], { ok: what ? 'Set as Default' : 'Use Standard Formatting', note: what ? `New documents will start with ${what}. (Documents already made keep their own formatting.)` : 'This document uses the standard formatting, so new documents will too.' });
     if (!got) return;
     this.host.setNewDesign?.(d && Object.keys(d).length ? d : null);
     this.host.flash(what ? 'New documents will start with this design.' : 'New documents will start with the standard formatting.');

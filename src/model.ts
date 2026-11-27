@@ -5,7 +5,7 @@
 import type { SectionBreak } from './document/document';
 import { Vec, Rect } from './geom';
 import { DocStyle, ACS_1996 } from './style';
-import { arrowPoints, gluePoint } from './objects';
+import { arrowPoints, gluePoint, paintedBox } from './objects';
 import { followPins } from './chem/pins';
 import { SYMBOLS } from './chem/elements';
 import type { EnergyData } from './design/energy';
@@ -43,6 +43,14 @@ export function outsideValence(b: Pick<Bond, 'display' | 'order'>): boolean {
 /** A bond drawn narrow at a1 and wide at a2: a wedge, hashed, hollow or wavy wedge. */
 export function isWedge(d: BondDisplay): boolean {
   return d === 'wedge' || d === 'hashWedge' || d === 'hollowWedge' || d === 'wavyWedge';
+}
+/**
+ * A wedge turned over to point the other way, as a mirror image needs to keep its stereocentres:
+ * a wedge or a hollow wedge (read as a wedge, toward the viewer) becomes a hashed wedge, a hashed
+ * wedge a wedge. Other bonds, a wavy wedge among them, stay as they are.
+ */
+export function turnedOverWedge(d: BondDisplay): BondDisplay {
+  return d === 'wedge' || d === 'hollowWedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d;
 }
 export type DoublePos = 'auto' | 'left' | 'right' | 'center';
 
@@ -293,6 +301,8 @@ export interface StereoLabel {
   offset?: boolean;
   /** From ChemDraw's file: `text` stands until the structure changes, with a warning where the rules work out otherwise. */
   fromFile?: boolean;
+  /** A typed label's text before it was typed (a file's, or one saved with the drawing): it comes back when the typed text is cleared. */
+  typedOver?: { text: string; fromFile?: boolean };
 }
 
 /** R/S and E/Z labels worked out for a drawing: a descriptor, null for none, undefined while not known. */
@@ -2117,12 +2127,10 @@ export class Doc {
         if (x1 <= x2) this.dirtyRects.push({ x1: x1 - m, y1: y1 - m, x2: x2 + m, y2: y2 + m });
       }
     } else {
-      const sh = e as Shape;
-      // its glow, shadow and reflection reach past its box (and a turned shape's corners stick out)
-      const w = Math.abs(sh.x2 - sh.x1), h = Math.abs(sh.y2 - sh.y1);
-      const pad = 4 + Math.max(sh.glow?.size ?? 0, sh.shadow ? (sh.shadowSize ?? 4) + (sh.shadowBlur ?? 0) : 0) + (sh.rot ? Math.max(w, h) / 2 : 0);
-      const below = sh.reflection ? h * sh.reflection.size + sh.reflection.dist + (sh.rot ? Math.max(w, h) : 0) : 0;
-      this.dirtyRects.push({ x1: Math.min(sh.x1, sh.x2) - pad, y1: Math.min(sh.y1, sh.y2) - pad, x2: Math.max(sh.x1, sh.x2) + pad, y2: Math.max(sh.y1, sh.y2) + pad + below });
+      // its glow, shadow and reflection reach past its box (and a turned shape's corners stick out):
+      // all it paints, as the renderer finds what to draw in a tile (paintedBox)
+      const b = paintedBox(e as Shape);
+      this.dirtyRects.push({ x1: b.x1 - 4, y1: b.y1 - 4, x2: b.x2 + 4, y2: b.y2 + 4 });
     }
   }
 

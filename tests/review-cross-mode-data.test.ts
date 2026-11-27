@@ -96,7 +96,7 @@ describe('slides history and master', () => {
     d.setMaster(m);
     expect(len()).toBeCloseTo(m.drawing.bondLength);
     expect(host.style.bondLength).toBeCloseTo(m.drawing.bondLength);
-    expect(d.undoLabel).toBe('Change slide master');
+    expect(d.undoLabel).toBe('Change Slide Master');
     d.undo();
     expect(len()).toBeCloseTo(first);
     expect(host.style.bondLength).toBeCloseTo(first);

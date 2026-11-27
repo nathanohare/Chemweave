@@ -3,7 +3,7 @@
 // (or, in any cell, the entries already in its column: Excel's Pick From Drop-down List), the
 // alert when typing breaks a rule, and Circle Invalid Data.
 
-import { foldIntoInfo } from './info-tip';
+import { addInfo, foldIntoInfo } from './info-tip';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import type { Sheet } from '../sheet/workbook';
@@ -197,7 +197,8 @@ export class SheetValidation {
     v1.value = rule?.value1 ?? '';
     const v2 = el('input');
     v2.value = rule?.value2 ?? '';
-    const blank = check('Ignore blank (empty cells pass)', !rule?.noBlank);
+    const blank = check('Ignore blank', !rule?.noBlank);
+    addInfo(blank.row.querySelector('span'), 'Empty cells pass.');
     const drop = check('In-cell drop-down', !rule?.noDropDown);
     const rows = { op: row('Data', op), v1: row('Minimum', v1), v2: row('Maximum', v2) };
     const hint = el('p', 'muted small');
@@ -244,9 +245,9 @@ export class SheetValidation {
 
     // Error Alert
     const alert = page('Error Alert');
-    const showAlert = check('Show an alert after something else is typed', !rule?.noAlert);
+    const showAlert = check('Show error alert after invalid data is entered', !rule?.noAlert);
     const style = el('select');
-    for (const [k, label] of [['stop', 'Stop: it can\'t be typed'], ['warning', 'Warning: ask whether to keep it'], ['information', 'Information: say so, and keep it']] as const) style.add(new Option(label, k, false, k === (rule?.alertStyle ?? 'stop')));
+    for (const [k, label] of [['stop', 'Stop'], ['warning', 'Warning'], ['information', 'Information']] as const) style.add(new Option(label, k, false, k === (rule?.alertStyle ?? 'stop')));
     const aTitle = el('input');
     aTitle.value = rule?.alertTitle ?? '';
     aTitle.maxLength = 32;
@@ -255,7 +256,9 @@ export class SheetValidation {
     aText.value = rule?.alert ?? '';
     aText.maxLength = 255;
     aText.placeholder = 'Left empty, the alert says what the cell takes.';
-    alert.append(showAlert.row, row('Style', style), row('Title', aTitle), row('Message', aText));
+    const styleRow = row('Style', style);
+    addInfo(styleRow.firstElementChild, 'Stop: the value can\'t be typed. Warning: asks whether to keep it. Information: says so, and keeps it.');
+    alert.append(showAlert.row, styleRow, row('Title', aTitle), row('Message', aText));
 
     const problem = el('p', 'dv-problem');
     problem.hidden = true;

@@ -79,7 +79,7 @@ export async function readFile(name: string, bytes: Uint8Array | null, opts: Rea
       return newSource(name, ext.slice(1), { error: `“${name}” could not be read (${errName(e)}). It may be damaged; try saving it again from the program that made it.` });
     }
   }
-  if (ext === '.cdx') return newSource(name, 'other', { error: `“${name}” is a ChemDraw .cdx file, which this program can't read. In ChemDraw, use File ▸ Save As… and choose “CDXML” as the type, then add that file instead.` });
+  if (ext === '.cdx') return newSource(name, 'other', { error: `“${name}” is a ChemDraw .cdx file, which Chemweave can't read. In ChemDraw, use File ▸ Save As… and choose “CDXML” as the type, then add that file instead.` });
   if (ext === '.doc') return newSource(name, 'other', { error: `“${name}” is an old-style Word file (.doc). Open it in Word and save it as .docx (File ▸ Save As ▸ Word Document), then add that file instead.` });
   return newSource(name, 'other', { error: `“${name}” is not a PDF, Word .docx or ChemDraw .cdxml file, so it was not read.` });
 }

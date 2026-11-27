@@ -2,7 +2,7 @@
 // the selected scheme out that way at once, so layouts can be tried one after another; Cancel
 // puts the scheme back as it was, Done keeps it (one Undo takes it back).
 
-import { foldIntoInfo } from './info-tip';
+import { addInfo, foldIntoInfo } from './info-tip';
 import type { ArrangeKind, ArrangeOptions } from '../chem/scheme-arrange';
 
 export interface ArrangeHooks {
@@ -65,7 +65,8 @@ export class ArrangeDialog {
     const antiLabel = label('Go around counterclockwise', anti);
     const reagents = document.createElement('input');
     reagents.type = 'checkbox';
-    const reagentLabel = label('Reagents in and by-products out on small arrows (conditions above go in, below come out)', reagents);
+    const reagentLabel = label('Reagents on Small Arrows', reagents);
+    addInfo(reagentLabel, 'Reagents in and by-products out on small arrows (conditions above the arrow go in, conditions below come out).');
     const fork = document.createElement('input');
     fork.type = 'checkbox';
     fork.checked = true;

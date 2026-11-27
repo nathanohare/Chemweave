@@ -32,6 +32,12 @@ function sortCompare(a: Value, b: Value): number {
   return compareValues(a, b);
 }
 
+/** sortCompare in an order (1 smallest first, −1 largest first): empty cells go last either way, as in Excel. */
+function sortCompareIn(a: Value, b: Value, o: number): number {
+  if (a === null || b === null) return a === b ? 0 : a === null ? 1 : -1;
+  return o * sortCompare(a, b);
+}
+
 /** The numbers of an index argument that may be one number or an array of them ({1,2}). */
 function indexList(a: Arg): number[] | CellError {
   const out: number[] = [];
@@ -138,7 +144,7 @@ export const ARRAY_FUNCTIONS: Record<string, FnDef> = {
       for (const o of ord) if (o !== 1 && o !== -1) return ERR.value('The sort order is 1 (smallest first) or −1 (largest first)');
       const keys = idx.map((k, n) => ({ k: k - 1, o: ord[Math.min(n, ord.length - 1)] }));
       const sorted = rows.map((r, i) => ({ r, i })).sort((a, b) => {
-        for (const { k, o } of keys) { const c = sortCompare(a.r[k], b.r[k]); if (c) return o * c; }
+        for (const { k, o } of keys) { const c = sortCompareIn(a.r[k], b.r[k], o); if (c) return c; }
         return a.i - b.i;
       }).map((x) => x.r);
       return array(byCol ? transpose(sorted) : sorted);
@@ -167,7 +173,7 @@ export const ARRAY_FUNCTIONS: Record<string, FnDef> = {
       }
       const n = byRow ? h : w;
       const order = Array.from({ length: n }, (_, i) => i).sort((a, b) => {
-        for (const k of keys) { const c = sortCompare(k.v[a], k.v[b]); if (c) return k.o * c; }
+        for (const k of keys) { const c = sortCompareIn(k.v[a], k.v[b], k.o); if (c) return c; }
         return a - b;
       });
       return array(byRow ? order.map((i) => rows[i]) : rows.map((r) => order.map((j) => r[j])));

@@ -17,7 +17,7 @@ export const CHEM_TAG = 'Chem Illustrator chemistry';
 /** Marks text under a reaction arrow as its Results line (yield, ee, dr); ChemDraw sees ordinary text below the arrow. */
 export const RESULTS_TAG = 'Chem Illustrator results';
 
-/** The usual gap between a structure and its label: a third of a bond length. */
+/** The usual gap between a structure and its label: 30% of a bond length (0.3, to a tenth of a point). */
 export function defaultGap(doc: Doc): number {
   return Math.round(doc.style.bondLength * 0.3 * 10) / 10;
 }

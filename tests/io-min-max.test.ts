@@ -24,15 +24,44 @@ describe('minOf and maxOf', () => {
   });
 });
 
+/**
+ * Where a list is spread into Math.min or Math.max (Math.max(0, ...list), Math.max(f(g(a)), ...list),
+ * over several lines), or passed with Math.max.apply: the line of each. A spread counts only as one of
+ * its own arguments (depth 1), not inside a call in them (Math.max(0, f(...xs)) is fine).
+ */
+function spreads(text: string): number[] {
+  // (comments may name it: blanked, keeping the lines)
+  const src = text.replace(/\/\*[\s\S]*?\*\//g, (c) => c.replace(/[^\n]/g, ' ')).replace(/\/\/[^\n]*/g, '');
+  const lineAt = (i: number) => src.slice(0, i).split('\n').length;
+  const out: number[] = [];
+  for (const m of src.matchAll(/Math\.(min|max)\s*(\(|\.apply\s*\()/g)) {
+    if (m[2] !== '(') { out.push(lineAt(m.index!)); continue; }
+    let depth = 0;
+    for (let i = m.index! + m[0].length - 1; i < src.length; i++) {
+      const ch = src[i];
+      if (ch === '(' || ch === '[' || ch === '{') depth++;
+      else if (ch === ')' || ch === ']' || ch === '}') { if (--depth === 0) break; }
+      else if (depth === 1 && src.startsWith('...', i)) { out.push(lineAt(m.index!)); break; }
+    }
+  }
+  return out;
+}
+
 describe('src/io never spreads a list into Math.min or Math.max', () => {
+  it('finds a spread however the call is written', () => {
+    expect(spreads('const a = Math.max(0, ...list);')).toEqual([1]);
+    expect(spreads('const a = Math.max(f(g(a)), ...list);')).toEqual([1]);
+    expect(spreads('x;\nconst a = Math.min(\n  first,\n  ...rest,\n);')).toEqual([2]);
+    expect(spreads('Math.max.apply(null, xs);')).toEqual([1]);
+    expect(spreads('Math.max(0, f(...xs)); Math.max(a, [...xs].length);')).toEqual([]);
+    expect(spreads('// Math.max(...xs)\n/* Math.min(...ys) */')).toEqual([]);
+  });
+
   it('uses minOf and maxOf instead', () => {
     const files = (readdirSync('src/io', { recursive: true }) as string[]).filter((f) => /\.tsx?$/.test(f));
     const found: string[] = [];
-    for (const f of files)
-      readFileSync(join('src/io', f), 'utf8').split('\n').forEach((line, i) => {
-        if (/^\s*(\/\/|\*)/.test(line)) return; // (comments may name it)
-        if (/Math\.(min|max)\(\s*\.\.\./.test(line) || /Math\.(min|max)\.apply\(/.test(line)) found.push(`src/io/${f}:${i + 1}`);
-      });
+    // (a spread anywhere in its arguments, as Math.max(0, ...list), not only first; review F572)
+    for (const f of files) for (const line of spreads(readFileSync(join('src/io', f), 'utf8'))) found.push(`src/io/${f}:${line}`);
     expect(found, 'use minOf or maxOf from src/io/min-max.ts: a spread overflows the stack on a long list').toEqual([]);
   });
 });

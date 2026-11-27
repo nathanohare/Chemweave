@@ -632,7 +632,7 @@ export class StylePanel {
     const pair = any((x) => x.kind === 'symbol' && (x.symbol === 'LonePair' || x.symbol === 'LonePairBar'));
     if (pair) {
       const isPair = (x: Shape) => x.kind === 'symbol' && (x.symbol === 'LonePair' || x.symbol === 'LonePairBar');
-      this.select('Drawn as', [['LonePair', 'Two dots'], ['LonePairBar', 'Bar']], pair.symbol as string, (v) => set('Lone pair look', isPair, (x) => {
+      this.select('Drawn as', [['LonePair', 'Two dots'], ['LonePairBar', 'Bar']], pair.symbol as string, (v) => set('Lone Pair Style', isPair, (x) => {
         // (the same two ends: a bar runs a little past them, as ChemDraw draws it)
         return x.symbol === v ? {} : { symbol: v };
       }));
@@ -1169,7 +1169,7 @@ export class StylePanel {
       if (pics.length === 1) {
         const buttons = document.createElement('div');
         buttons.className = 'style-buttons';
-        const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit chart…', title: 'Its data, the chart type, titles, axes, colors and fitted lines' });
+        const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit Chart…', title: 'Its data, the chart type, titles, axes, colors and fitted lines' });
         btn.addEventListener('click', () => this.onEditChart(p.id));
         buttons.append(btn);
         this.body.appendChild(buttons);
@@ -1195,12 +1195,12 @@ export class StylePanel {
     };
     const plain = pics.filter((x) => !x.video);
     if (plain.length) button('Picture Format…', 'Brightness, contrast, sharpen, recolor, transparency, Remove Background, crop to a shape or proportions (saved as PowerPoint\'s own settings)', () => this.formatPicture());
-    if (pics.length === 1) button('Crop with mouse', 'Drag the black handles to cut the edges off; Esc when done', () => this.cropWithMouse(p.id));
+    if (pics.length === 1) button('Crop', 'Drag the black handles to cut the edges off; Esc when done', () => this.cropWithMouse(p.id));
     if (pics.some((x) => x.crop)) button('Uncrop', 'Show the whole picture again', () => set('Uncrop picture', (x) => cropTo(x, { l: 0, t: 0, r: 0, b: 0 })));
     // only pictures made of pixels have a background to take out
     const bitmaps = pics.filter((x) => x.src && !/^data:image\/(svg|x-emf|x-wmf)/.test(x.src));
-    if (bitmaps.length) button('Remove white…', 'Make the white background see-through (a logo or a picture of a structure on white)', () => this.removeWhite(bitmaps.map((x) => x.id)));
-    button('Original size', 'Its own size: 96 pixels to the inch, as in PowerPoint', () => set('Picture size', (x) => {
+    if (bitmaps.length) button('Remove White…', 'Make the white background see-through (a logo or a picture of a structure on white)', () => this.removeWhite(bitmaps.map((x) => x.id)));
+    button('Original Size', 'Its own size: 96 pixels to the inch, as in PowerPoint', () => set('Picture size', (x) => {
       const bx = box(x), cc = x.crop ?? { l: 0, t: 0, r: 0, b: 0 };
       if (!x.px) return {};
       return { x2: bx.x1 + x.px.w * 0.75 * (1 - cc.l - cc.r), y2: bx.y1 + x.px.h * 0.75 * (1 - cc.t - cc.b) };
@@ -1218,7 +1218,7 @@ export class StylePanel {
     if (maths.length === 1) {
       const buttons = document.createElement('div');
       buttons.className = 'style-buttons';
-      const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit equation…', title: 'Change it in the equation window (or double-click it)' });
+      const btn = Object.assign(document.createElement('button'), { type: 'button', textContent: 'Edit Equation…', title: 'Change it in the equation window (or double-click it)' });
       btn.addEventListener('click', () => this.onEditEquation(p.id));
       buttons.append(btn);
       this.body.appendChild(buttons);
@@ -1265,8 +1265,8 @@ export class StylePanel {
     const part = cur?.id === s.id ? cur.part : null;
     const cell = part && typeof part !== 'string' && t.rows[part.r] && part.c < t.cols.length ? part : null;
     this.heading('Table');
-    this.note(cell ? `Row ${cell.r + 1}, column ${cell.c + 1}${cell.r < t.head ? ' (a heading)' : ''}. Double-click a cell to edit; Tab moves to the next.`
-      : 'Click a cell to choose its row and column; double-click it to type.');
+    if (cell) this.note(`Row ${cell.r + 1}, column ${cell.c + 1}${cell.r < t.head ? ' (a heading)' : ''}.`);
+    this.help(cell ? 'Double-click a cell to edit; Tab moves to the next.' : 'Click a cell to choose its row and column; double-click it to type.');
     const buttons = (list: [string, string, (() => void) | null][]) => {
       const box = document.createElement('div');
       box.className = 'style-buttons';
@@ -1283,14 +1283,14 @@ export class StylePanel {
     };
     const r = cell?.r ?? t.rows.length - 1, c = cell?.c ?? t.cols.length - 1;
     buttons([
-      ['Row above', 'Put a new row above this one', cell ? () => set('Add table row', insertRow(t, r), { r: r + 1, c }) : null],
-      ['Row below', 'Put a new row below this one', () => set('Add table row', insertRow(t, r + 1), { r: r + 1, c })],
-      ['Delete row', 'Take this row out', cell && t.rows.length > 1 ? () => set('Delete table row', deleteRow(t, r), { r: Math.min(r, t.rows.length - 2), c }) : null],
+      ['Insert Row Above', 'Put a new row above this one', cell ? () => set('Add table row', insertRow(t, r), { r: r + 1, c }) : null],
+      ['Insert Row Below', 'Put a new row below this one', () => set('Add table row', insertRow(t, r + 1), { r: r + 1, c })],
+      ['Delete Row', 'Take this row out', cell && t.rows.length > 1 ? () => set('Delete table row', deleteRow(t, r), { r: Math.min(r, t.rows.length - 2), c }) : null],
     ]);
     buttons([
-      ['Column left', 'Put a new column to the left of this one', cell ? () => set('Add table column', insertColumn(t, c), { r, c: c + 1 }) : null],
-      ['Column right', 'Put a new column to the right of this one', () => set('Add table column', insertColumn(t, c + 1), { r, c: c + 1 })],
-      ['Delete column', 'Take this column out', cell && t.cols.length > 1 ? () => set('Delete table column', deleteColumn(t, c), { r, c: Math.min(c, t.cols.length - 2) }) : null],
+      ['Insert Column Left', 'Put a new column to the left of this one', cell ? () => set('Add table column', insertColumn(t, c), { r, c: c + 1 }) : null],
+      ['Insert Column Right', 'Put a new column to the right of this one', () => set('Add table column', insertColumn(t, c + 1), { r, c: c + 1 })],
+      ['Delete Column', 'Take this column out', cell && t.cols.length > 1 ? () => set('Delete table column', deleteColumn(t, c), { r, c: Math.min(c, t.cols.length - 2) }) : null],
     ]);
     this.number('Heading rows', t.head, 1, 0, t.rows.length, (v) => set('Table headings', { ...t, head: Math.round(v) }),
       'How many rows at the top are headings; in the ACS style a rule goes under them.');
@@ -1323,9 +1323,9 @@ export class StylePanel {
       this.number('Cell spans (rows)', rowSpanOf(t, cell.r, cell.c), 1, 1, t.rows.length - cell.r, (v) => set('Join table cells', setRowSpan(t, cell.r, cell.c, v)),
         'Join this cell with the ones under it (a vertical merge), for a label beside several rows.');
       buttons([
-        ['Merge right', 'Join this cell with the one to its right; their text goes together', canMerge(t, cell.r, cell.c, 'right') ? () => set('Merge cells', mergeRight(t, cell.r, cell.c), cell) : null],
-        ['Merge down', 'Join this cell with the one below it; their text goes together', canMerge(t, cell.r, cell.c, 'down') ? () => set('Merge cells', mergeDown(t, cell.r, cell.c), cell) : null],
-        ['Split cell', 'Split a joined cell back into single cells', spanOf(t, cell.r, cell.c) > 1 || rowSpanOf(t, cell.r, cell.c) > 1 ? () => set('Split cell', splitCell(t, cell.r, cell.c), cell) : null],
+        ['Merge Right', 'Join this cell with the one to its right; their text goes together', canMerge(t, cell.r, cell.c, 'right') ? () => set('Merge cells', mergeRight(t, cell.r, cell.c), cell) : null],
+        ['Merge Down', 'Join this cell with the one below it; their text goes together', canMerge(t, cell.r, cell.c, 'down') ? () => set('Merge cells', mergeDown(t, cell.r, cell.c), cell) : null],
+        ['Split Cells', 'Split a joined cell back into single cells', spanOf(t, cell.r, cell.c) > 1 || rowSpanOf(t, cell.r, cell.c) > 1 ? () => set('Split cell', splitCell(t, cell.r, cell.c), cell) : null],
       ]);
       const own = t.rows[cell.r][cell.c]?.fill;
       this.color('Cell color', own, (v) => set('Cell color', { ...t, rows: t.rows.map((row, rr) => rr !== cell.r ? row : row.map((x, cc) => { if (cc !== cell.c) return x; const { fill: _, ...rest } = x; return v ? { ...rest, fill: v } : rest; })) }),
@@ -1336,11 +1336,11 @@ export class StylePanel {
       'Changes all the table’s text; the footnotes are set a little smaller. Double-click a cell to change part of it.');
     this.color('Line color', s.color, (v) => this.edit('Table line color', () => this.doc.updateShape(s.id, { color: v })));
     buttons([
-      [t.title ? 'Edit title' : 'Add title', 'The title above the table, such as “Table 1. Optimization of the Reaction Conditions”', () => hooks.edit(s.id, 'title')],
-      [t.notes ? 'Edit footnotes' : 'Add footnotes', 'Notes under the table, such as “a Isolated yield.”', () => hooks.edit(s.id, 'notes')],
+      [t.title ? 'Edit Title' : 'Add Title', 'The title above the table, such as “Table 1. Optimization of the Reaction Conditions”', () => hooks.edit(s.id, 'title')],
+      [t.notes ? 'Edit Footnotes' : 'Add Footnotes', 'Notes under the table, such as “a Isolated yield.”', () => hooks.edit(s.id, 'notes')],
     ]);
     buttons([
-      ['Fit columns to text', 'Make each column as wide as its longest line', () => set('Fit table columns', fitColumns(t, hooks.measure, this.doc.style.captionSize))],
+      ['Fit Columns to Text', 'Make each column as wide as its longest line', () => set('Fit table columns', fitColumns(t, hooks.measure, this.doc.style.captionSize))],
     ]);
   }
 
@@ -1370,12 +1370,15 @@ export class StylePanel {
   private chemControls(caps: Caption[]): void {
     const now = new Set(caps.map((x) => (x.chem === undefined ? 'auto' : x.chem ? 'on' : 'off')));
     const value = now.size === 1 ? [...now][0] as 'auto' | 'on' | 'off' : 'auto';
-    this.select<'auto' | 'on' | 'off'>('Read as', READ_AS, value, (v) => this.edit(v === 'off' ? 'Read as plain text' : v === 'on' ? 'Read as chemistry' : 'Read text automatically', () => {
+    this.select<'auto' | 'on' | 'off'>('Read as', READ_AS, value, (v) => this.edit(v === 'off' ? 'Read as Plain Text' : v === 'on' ? 'Read as Chemistry' : 'Read Text Automatically', () => {
       for (const x of caps) this.doc.updateCaption(x.id, { chem: v === 'auto' ? undefined : v === 'on' });
     }));
     if (caps.length !== 1) return;
     const r = captionReading(this.doc, caps[0]);
-    if (r.species) this.note(`Chemistry: ${speciesSummary(r.species)}. It counts in the formula, mass and SMILES of what it is selected with.`);
+    if (r.species) {
+      this.note(`Chemistry: ${speciesSummary(r.species)}.`);
+      this.help('It counts in the formula, mass and SMILES of what it is selected with.');
+    }
     else if (r.why === 'arrow') this.help('Text above or below a reaction arrow stays text. Choose Chemical to count it.');
     else if (r.why === 'unread' && r.forced) this.note('Set to Chemical, but this text can\'t be read as chemistry.');
     else if (r.why === 'tied') this.help('Text attached to a structure stays text.');
@@ -1446,7 +1449,7 @@ export class StylePanel {
       this.edit('Reset to Default Style', () => { for (const x of tied) this.doc.updateCaption(x.id, lookPatch(this.doc, x, attachedAtoms(this.doc, x.attach!))); }));
     button('Unpin from Structure', 'Leave the caption where it is as ordinary text: it no longer follows the structure', () =>
       this.edit('Unpin Caption', () => { for (const x of tied) this.doc.updateCaption(x.id, { attach: undefined }); }));
-    if (loose.length && this.tie) button('Tie the others too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
+    if (loose.length && this.tie) button('Tie the Others Too', 'Tie the selected captions that are loose to the structure nearest each', () => this.tie?.(loose.map((x) => x.id)));
   }
 
   // ------------------------------------------------------------------ building blocks
@@ -1517,14 +1520,14 @@ export class StylePanel {
       // a metal bonded to the middle of a ring or π-bond
       this.heading(`Hapto bond (${haptoText(centre.multi!.length)})`);
       this.select('Style', BOND_STYLES.filter(([v]) => v !== 'wedge' && v !== 'hashWedge'), b.display, (v) => set('Bond style', { display: v }));
-      this.check('A line to each atom', !!b.spokes, (v) => set(v ? 'Hapto bond to each atom' : 'Hapto bond to the middle', { spokes: v || undefined }),
+      this.check('A line to each atom', !!b.spokes, (v) => set(v ? 'Hapto Bond to Each Atom' : 'Hapto Bond to the Middle', { spokes: v || undefined }),
         'Draw a line from the metal to each atom of the ring or π-bond, instead of one line to its middle. ChemDraw shows it to the middle either way.');
       this.color('Color', b.color, (v) => set('Bond color', { color: v }));
       const row = document.createElement('div');
       row.className = 'style-buttons';
       const split = document.createElement('button');
       split.type = 'button';
-      split.textContent = 'Split into single bonds';
+      split.textContent = 'Split into Single Bonds';
       split.title = 'Replace the hapto bond with an ordinary bond from the metal to each atom (σ bonds, or a κ chelate)';
       split.addEventListener('click', () => this.edit('Split hapto bond', () => { splitHapto(this.doc, b.id); }));
       row.append(split);
@@ -1790,7 +1793,7 @@ export class StylePanel {
     // (no atoms would mean the whole drawing to the methyl commands)
     const now = ids.length ? methylState(this.doc, ids) : 'none';
     if (now === 'none') return;
-    const opts: Opt<string>[] = [['hidden', 'Not written out'], ['CH3', 'CH3'], ['Me', 'Me']];
+    const opts: Opt<string>[] = [['hidden', 'Not written out'], ['CH3', 'CH₃'], ['Me', 'Me']];
     if (now === 'mixed') opts.unshift(['mixed', 'Mixed']);
     this.select('Terminal methyls', opts, now, (v) => {
       if (v !== 'mixed') this.edit('Terminal Methyls', () => writeTerminalMethyls(this.doc, ids, v as MethylStyle | 'hidden'));
@@ -2002,7 +2005,8 @@ export class StylePanel {
     const found = [...centres.map((a) => info?.atom(a.id)), ...dbls.map((b) => info?.bond(b.id))].filter(Boolean);
     if (found.length) this.note(`Calculated: ${found.join(', ')}`);
     if (centres.some((a) => info?.undecided?.('a', a.id)) || dbls.some((b) => info?.undecided?.('b', b.id))) {
-      this.note('An R, Ar or unrecognized group determines priority here, so CIP rules can\'t assign a label. Type one below if needed.');
+      this.note('Can\'t be calculated here.');
+      this.help('An R, Ar or unrecognized group determines priority here, so CIP rules can\'t assign a label. Type one below if needed.');
     }
     const shown = [...centres, ...dbls].every((x) => x.showStereo || x.stereoLabel);
     this.check('Show label on drawing', shown, (v) => this.edit(v ? 'Show stereo label' : 'Hide stereo label', () => setStereoShown(this.doc, centres.map((a) => a.id), dbls.map((b) => b.id), v)));

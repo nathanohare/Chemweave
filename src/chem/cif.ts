@@ -146,9 +146,10 @@ export function cifUncertainty(value: string | null | undefined): number | null 
   if (value == null) return null;
   const m = NUMBER.exec(value);
   if (!m || !m[2]) return null;
-  const digits = m[1].split(/[eE]/)[0];
+  const [digits, exp] = m[1].split(/[eE]/);
   const decimals = digits.includes('.') ? digits.split('.')[1].length : 0;
-  return parseInt(m[2], 10) * 10 ** -decimals;
+  // the uncertainty is in the last digit of the mantissa, scaled by the exponent: 1.5e-3(2) is ±0.0002
+  return parseInt(m[2], 10) * 10 ** ((exp ? parseInt(exp, 10) : 0) - decimals);
 }
 
 // CIF's text codes (International Tables, CIF 1.1 "markup"): \a α, \b β, \q θ, \l λ, \m μ,

@@ -26,7 +26,8 @@ describe('reading report files as SI Assistant does', () => {
       expect(d.scans).toBe(want.scans);
       expect(d.measured.size).toBe(want.measured);
       expect(d.calculated.map((v) => +v.toFixed(4))).toEqual(want.calculated.map((v) => +v.toFixed(4)));
-      expect(d.message).toBe(want.message);
+      // (SI Assistant's messages call the app "this program"; Chemweave's say Chemweave, ui-style S70)
+      expect(d.message).toBe(want.message.replace(/this program/g, 'Chemweave'));
       const m = chooseMatch([d], PEAKS, 5);
       if (!want.match) expect(m).toBeNull();
       else {
