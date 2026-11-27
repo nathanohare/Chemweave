@@ -171,6 +171,9 @@ export function tableToText(t: DocText, id: number, sep: Separator): { t: DocTex
     const n = paraCount(rt.plainText(clean));
     for (let k = 0; k < n; k++) ps.push(l.align && l.align !== 'left' ? { ...N, align: l.align } : N);
   });
+  // what belongs to the place, not the table (a section or page starting there, bookmarks) stays with its first line
+  const own = paras[p] ?? {};
+  if (ps.length) ps[0] = cleanPara({ ...ps[0], pageBreak: own.pageBreak, colBreak: own.colBreak, section: own.section, marks: own.marks });
   const body = rt.normalizeRuns([...rt.sliceRuns(t.runs, 0, at), ...runs, ...rt.sliceRuns(t.runs, at + 1, text.length)]);
   const objects: Record<number, DocObject> = { ...t.objects };
   delete objects[id];
@@ -220,8 +223,11 @@ export function splitTable(t: DocText, id: number, r: number): { t: DocText; id:
   const nl = { ...cleanStyle(style), text: '\n' };
   const runs = rt.normalizeRuns([...rt.sliceRuns(t.runs, 0, at + 1), nl, nl, objectRun(nid, cleanStyle(style)), ...rt.sliceRuns(t.runs, at + 1, text.length)]);
   const N = paraFromStyle(styleOf(t, {}), {});
+  // the new table's paragraph as the first's, but not what belongs to that place (a page or
+  // section starting there, its bookmarks and index entries)
+  const { pageBreak: _pb, colBreak: _cb, section: _s, marks: _m, xe: _x, ta: _ta, ...under } = paras[p] ?? {};
   return {
-    t: { ...t, runs, paras: [...paras.slice(0, p + 1), N, paras[p], ...paras.slice(p + 1)], objects: { ...t.objects, [id]: { ...o, table: a }, [nid]: { kind: 'table', table: b } } },
+    t: { ...t, runs, paras: [...paras.slice(0, p + 1), N, under, ...paras.slice(p + 1)], objects: { ...t.objects, [id]: { ...o, table: a }, [nid]: { kind: 'table', table: b } } },
     id: nid,
   };
 }
@@ -249,7 +255,8 @@ export function mergeBlock(t: TableData, b: CellBlock): TableData {
     for (let c = b.c0; c <= b.c1; c++) {
       if (isCovered(t, r, c)) continue;
       const cell = t.rows[r][c];
-      if (!cell.runs.some((x) => x.text) && (r !== b.r0 || c !== b.c0)) continue;
+      // (empty cells add nothing, the top left one too: no empty paragraph above the text)
+      if (!cell.runs.some((x) => x.text)) continue;
       if (any) runs.push({ ...(runs.length ? cleanStyle(rt.styleOf(runs[runs.length - 1])) : {}), text: '\n' });
       any = true;
       runs.push(...cell.runs);

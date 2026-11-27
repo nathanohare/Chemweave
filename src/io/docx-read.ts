@@ -12,7 +12,7 @@
 // Footnotes and endnotes come in as notes
 // typed into here, and a table of figures (a TOC field for captions) as one worked out here.
 
-import { COVER_MARK } from '../document/quick-parts';
+import { COVER_FIRST_OFF_MARK, COVER_MARK } from '../document/quick-parts';
 import { readKeptSettings } from './docx-settings';
 import type { AuthorityMark, CellBorders, Contents, IndexMark, Justify, ParaBorders, ParaStyle, PictureFx, RowHeight, TabStop, TableCell, TableData, TextRun } from '../model';
 import { parseIndex, parseTa, parseToa, parseXe } from '../document/index-toa';
@@ -3987,7 +3987,7 @@ function keepUsedMarks(t: DocText): void {
   t.paras = t.paras.map((p) => {
     if (!p?.marks) return p;
     // (a cover page's own mark stays: it says the page is one, which Remove Current Cover Page and a new cover need)
-    const marks = p.marks.filter((m) => !m.startsWith('_') || m === COVER_MARK || used.has(m.toLowerCase()));
+    const marks = p.marks.filter((m) => !m.startsWith('_') || m === COVER_MARK || m === COVER_FIRST_OFF_MARK || used.has(m.toLowerCase()));
     const { marks: _m, ...rest } = p;
     return marks.length ? { ...rest, marks } : rest;
   });

@@ -574,7 +574,8 @@ export class DocLayouter {
       if (o?.kind === 'toc') return tocLines(tocs.get(o.levels) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, undefined, true, (n) => tocLevelStyle(t, o, n), !o.noLinks);
       if (o?.kind === 'tof') return tocLines(tofs.get(o.name) ?? [], pageOf, st, ps.line, wrap, this.deps.measure, emptyTof(o.name), false);
       if (o?.kind === 'index') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, EMPTY_INDEX, !!o.right);
-      if (o?.kind === 'toa') return listLines(listOf(o), st, ps.line, wrap, this.deps.measure, emptyToa(o.cat), true);
+      // (a category's heading with nothing marked under it is empty too: its words on what to do)
+      if (o?.kind === 'toa') { const items = listOf(o); return listLines(items.some((i) => i.level) ? items : [], st, ps.line, wrap, this.deps.measure, emptyToa(o.cat), true); }
       if (o?.kind !== 'bib') return null;
       const bf = bibFrame(entries, st, ps, this.deps.measure);
       return layoutText({
@@ -1097,6 +1098,10 @@ export class DocLayouter {
   private hfBodies(t: DocText, pages: PageBox[], sizes: Map<number, { w: number; h: number }>, inline: (id: number, room: number) => InlineBox | null, objKey: (id: number) => string, N: NamedStyle, extentOf: (id: number) => number[]): PlacedHf[] {
     const out: PlacedHf[] = [];
     if (!pages.some((p) => p.hf.bodies)) return out;
+    // (the bookmarks and paragraph texts fields look up, found once for all the pages)
+    const fieldCache: { marks?: Map<string, number>; texts?: string[] } = {};
+    // a bookmark's page as the text's own fields have it (settled by layout's passes)
+    const pageOfPara = (p: number) => this.tocPages[p] ?? '';
     for (const pg of pages) {
       const bodies = pg.hf.bodies;
       if (!bodies) continue;
@@ -1107,12 +1112,18 @@ export class DocLayouter {
         const W = Math.max(36, pg.w - pg.setup.left - pg.setup.right);
         // fields show this page's number (none on a first page left unnumbered)
         const num = pg.starts && !pg.hf.onFirst && !pg.hf.firstPage && pg.hf.numbers !== 'none' ? '' : pg.num ?? pg.number;
+        const shown = new Map<number, string>();
+        const fieldShown = (id: number, o: FieldObj): string => {
+          let s = shown.get(id);
+          if (s === undefined) { s = hfFieldText(o, t, num, pages.length, pageOfPara, fieldCache); shown.set(id, s); }
+          return s;
+        };
         const own = (id: number, room: number): InlineBox | null => {
           const o = t.objects[id];
-          if (o?.kind === 'field') return { text: hfFieldText(o, t, num, pages.length) };
+          if (o?.kind === 'field') return { text: fieldShown(id, o) };
           return inline(id, room);
         };
-        const ownKey = (id: number) => (t.objects[id]?.kind === 'field' ? `=${hfFieldText(t.objects[id] as FieldObj, t, num, pages.length)}` : objKey(id));
+        const ownKey = (id: number) => { const o = t.objects[id]; return o?.kind === 'field' ? `=${fieldShown(id, o)}` : objKey(id); };
         const parts: ({ lay: TextLayout } | { id: number; tb: TableBox; align: Justify })[] = [];
         const runsOf = splitParagraphs(body.runs);
         const hfMarks = paragraphMarks(body.runs);
@@ -1130,7 +1141,17 @@ export class DocLayouter {
           const st = styleOf(t, ps[p]);
           const resolved = runs.map((r) => (r.font && r.size ? r : { ...r, font: r.font ?? st.font, size: r.size ?? st.size }));
           const mk = hfMarks[p];
-          const lay = layoutText({ runs: resolved.length ? resolved : [{ font: mk?.font ?? st.font, size: mk?.size ?? st.size, text: '' }], paras: [{ ...ps[p], spaceBefore: ps[p].spaceBefore ?? 0, spaceAfter: ps[p].spaceAfter ?? 0 }], justify: 'left', wrap: W, boxes: true, inline: own }, st.size, this.deps.measure);
+          const lr = resolved.length ? resolved : [{ font: mk?.font ?? st.font, size: mk?.size ?? st.size, text: '' }];
+          const lp = [{ ...ps[p], spaceBefore: ps[p].spaceBefore ?? 0, spaceAfter: ps[p].spaceAfter ?? 0 }];
+          // (laid out once for each look it has: the same on every page but for what its fields show)
+          const objs = runs.filter((r) => r.obj !== undefined).map((r) => `${r.obj}${ownKey(r.obj!)}`);
+          const key = `hf|${JSON.stringify([lr, lp, W, st.size, objs])}`;
+          let lay = this.cache.get(key);
+          if (!lay) {
+            lay = layoutText({ runs: lr, paras: lp, justify: 'left', wrap: W, boxes: true, inline: own }, st.size, this.deps.measure);
+            this.cache.set(key, lay);
+          }
+          this.used.add(key);
           parts.push({ lay });
           h += lay.box.y2 - lay.box.y1 + (ps[p].spaceAfter ?? 0);
         });
@@ -1195,13 +1216,21 @@ export class DocLayouter {
     const changes = changesIn(t.runs);
     if (!changes.length) return [];
     const out: DocLayout['changeBars'] = [];
+    // (the changes are in text order, and so are the lines, page after page: one walk over both)
+    let k = 0, lastStart = -1;
     for (const pg of pages) {
-      let k = 0;
       for (let i = pg.first; i < pg.end; i++) {
         const l = lines[i];
+        if (l.start < lastStart) k = 0;
+        lastStart = l.start;
         while (k < changes.length && changes[k].end < l.start) k++;
         // a change ending at the line's start belongs to the line before (unless it is empty, a paragraph mark)
-        const hit = changes.slice(k).some((c) => c.start < l.end + (l.last ? 1 : 0) && (c.end > l.start || (c.start === c.end && c.start === l.start)));
+        const stop = l.end + (l.last ? 1 : 0);
+        let hit = false;
+        for (let j = k; j < changes.length && changes[j].start < stop && !hit; j++) {
+          const c = changes[j];
+          hit = c.end > l.start || (c.start === c.end && c.start === l.start);
+        }
         if (!hit) continue;
         const left = (l.band?.[0] ?? pg.x + pg.setup.left) - CHANGE_BAR_GAP;
         const y1 = l.y - (l.above ?? l.ascent), y2 = l.y + (l.below ?? l.descent);
@@ -1312,11 +1341,18 @@ export class DocLayouter {
     // runs without a font or size of their own take their paragraph style's (a cell's paragraph in
     // a style of its own, Times in a Calibri document, is as tall as Times makes it)
     const styles = this.cellCtx?.t.styles;
+    // (a run going on past a paragraph's end is cut there: each part in its own paragraph's style)
     let k = 0;
-    const resolved = runs.map((r) => {
-      const st = (ps[k]?.style && styles?.[ps[k].style!]) || N;
-      k += (r.text.match(/\n/g) ?? []).length;
-      return r.font && r.size ? r : { ...r, font: r.font ?? st.font, size: r.size ?? st.size };
+    const resolved = runs.flatMap((r) => {
+      if (r.font && r.size) { k += (r.text.match(/\n/g) ?? []).length; return [r]; }
+      const out: TextRun[] = [];
+      for (const piece of r.obj === undefined && r.text.includes('\n') ? r.text.split(/(\n)/).filter(Boolean) : [r.text]) {
+        const st = (ps[k]?.style && styles?.[ps[k].style!]) || N;
+        out.push({ ...r, text: piece, font: r.font ?? st.font, size: r.size ?? st.size });
+        if (piece === '\n') k++;
+        else if (r.obj !== undefined) k += (piece.match(/\n/g) ?? []).length;
+      }
+      return out;
     });
     // (an empty cell: as tall as its paragraph's style makes it)
     const st0 = (ps[0]?.style && styles?.[ps[0].style!]) || N;

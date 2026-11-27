@@ -5,7 +5,8 @@
 import type { TextRun } from '../model';
 import * as rt from '../richtext';
 import { OBJECT_CHAR } from './document';
-import { parseRev, trackedReplace, type Revisable } from './revisions';
+import { parseRev, revText, trackedReplace, type Revisable } from './revisions';
+import { fitParas, paraCount } from '../text/paragraphs';
 
 export interface FindOptions {
   /** Capitals and small letters must match. */
@@ -81,14 +82,66 @@ export function lookPatch(look: ReplaceLook): Partial<rt.RunStyle> | null {
 export function replaceRanges(runs: TextRun[], hits: [number, number][], replacement: string, look: ReplaceLook = {}, fallback: rt.RunStyle = {}): TextRun[] {
   const patch = lookPatch(look);
   const keep = !replacement && patch !== null;
-  let out = runs;
-  for (const [a, b] of [...hits].sort((x, y) => y[0] - x[0])) {
-    if (keep) { out = rt.applyStyle(out, a, b, patch!); continue; }
-    const style = rt.typingStyle(out, a, b, fallback);
-    out = rt.replaceRange(out, a, b, replacement ? [{ ...style, text: replacement }] : []);
-    if (patch && replacement) out = rt.applyStyle(out, a, a + replacement.length, patch);
+  const sorted = [...hits].sort((x, y) => x[0] - y[0]);
+  if (keep) return rt.applyStyles(runs, sorted.map(([a, b]) => ({ start: a, end: b, patch: patch! })));
+  if (!separate(sorted)) {
+    // (places that touch or overlap: one at a time, from the last)
+    let out = runs;
+    for (const [a, b] of [...sorted].reverse()) {
+      const style = rt.typingStyle(out, a, b, fallback);
+      out = rt.replaceRange(out, a, b, replacement ? [{ ...style, text: replacement }] : []);
+      if (patch && replacement) out = rt.applyStyle(out, a, a + replacement.length, patch);
+    }
+    return out;
   }
-  return out;
+  // one walk over the runs, the replacement put in at each place (the same runs as one at a time)
+  const out: TextRun[] = [];
+  walkHits(runs, sorted, (r, inside) => { if (!inside) out.push(r); }, (style) => {
+    if (!replacement) return;
+    const one = { ...style(fallback), text: replacement };
+    out.push(patch ? { ...rt.cleanStyle({ ...rt.styleOf(one), ...patch }), text: replacement } : one);
+  });
+  return rt.normalizeRuns(out);
+}
+
+/** Places in order, none empty and none touching or overlapping the next. */
+function separate(sorted: [number, number][]): boolean {
+  return sorted.every(([a, b], i) => b > a && (i === 0 || sorted[i - 1][1] < a));
+}
+
+/**
+ * Walk the runs once over places in order (separate): `text` gets each piece of a run outside
+ * them (`inside` true for a piece inside one), and `at` is called after each place's pieces with
+ * the style typing over it takes (that of its first character).
+ */
+function walkHits(runs: TextRun[], sorted: [number, number][], text: (r: TextRun, inside: boolean) => void, at: (style: (fallback: rt.RunStyle) => rt.RunStyle, hit: number) => void): void {
+  let pos = 0, h = 0, first: TextRun | null = null;
+  const close = () => {
+    const r = first;
+    at((fb) => (r ? rt.typingStyle([r], 0, 1, fb) : fb), h);
+    first = null;
+    h++;
+  };
+  for (const r of runs) {
+    const len = r.text.length;
+    let a = 0;
+    while (a < len) {
+      // past the place now open: closed
+      while (h < sorted.length && sorted[h][1] <= pos + a) close();
+      const hit = sorted[h];
+      if (!hit || hit[0] >= pos + len) { text({ ...r, text: r.text.slice(a) }, false); a = len; break; }
+      if (hit[0] > pos + a) { text({ ...r, text: r.text.slice(a, hit[0] - pos) }, false); a = hit[0] - pos; continue; }
+      // inside the place
+      const b = Math.min(len, hit[1] - pos);
+      const piece = { ...r, text: r.text.slice(a, b) };
+      first ??= piece;
+      text(piece, true);
+      a = b;
+    }
+    pos += len;
+  }
+  // places reaching the end of the text (or past it)
+  while (h < sorted.length) close();
 }
 
 /**
@@ -98,15 +151,43 @@ export function replaceRanges(runs: TextRun[], hits: [number, number][], replace
  */
 export function trackedReplaceRanges<T extends Revisable>(t: T, hits: [number, number][], replacement: string, look: ReplaceLook, fallback: rt.RunStyle, who: { author: string; date: string }): { t: T; caret: number } {
   const patch = lookPatch(look);
-  let caret = 0;
-  for (const [a, b] of [...hits].sort((x, y) => y[0] - x[0])) {
-    const style = rt.typingStyle(t.runs, a, b, fallback);
-    const got = trackedReplace(t, a, b, replacement ? [{ ...style, text: replacement }] : [], undefined, who);
-    t = got.t;
-    caret = got.caret;
-    if (patch && replacement) t = { ...t, runs: rt.applyStyle(t.runs, got.caret - replacement.length, got.caret, patch) };
+  const sorted = [...hits].sort((x, y) => x[0] - y[0]);
+  if (!separate(sorted) || replacement.includes('\n') || sorted.some(([a, b]) => rt.plainText(rt.sliceRuns(t.runs, a, b)).includes('\n'))) {
+    // (places that touch, or line breaks: one at a time, from the last)
+    let caret = 0;
+    for (const [a, b] of [...sorted].reverse()) {
+      const style = rt.typingStyle(t.runs, a, b, fallback);
+      const got = trackedReplace(t, a, b, replacement ? [{ ...style, text: replacement }] : [], undefined, who);
+      t = got.t;
+      caret = got.caret;
+      if (patch && replacement) t = { ...t, runs: rt.applyStyle(t.runs, got.caret - replacement.length, got.caret, patch) };
+    }
+    return { t, caret };
   }
-  return { t, caret };
+  // one walk over the runs, as trackedReplace at each place (the places hold no line break, so
+  // the paragraphs stay as they are): text inserted while tracking goes for real, the rest is
+  // marked deleted (keeping earlier deletions' marks), and the replacement follows, marked inserted
+  const del = revText({ kind: 'del', ...who }), ins = revText({ kind: 'ins', ...who });
+  const out: TextRun[] = [];
+  let caret = 0, kept = 0;
+  walkHits(t.runs, sorted, (r, inside) => {
+    if (!inside) { out.push(r); return; }
+    const kind = parseRev(r.rev)?.kind;
+    if (kind === 'ins') return;
+    kept += r.text.length;
+    out.push(kind === 'del' ? r : { ...r, rev: del });
+  }, (style, h) => {
+    const a = sorted[h][0];
+    let added = 0;
+    if (replacement) {
+      const one: TextRun = { ...style(fallback), text: replacement, rev: ins };
+      out.push(patch ? { ...rt.cleanStyle({ ...rt.styleOf(one), ...patch }), text: replacement } as TextRun : one);
+      added = replacement.length;
+    }
+    if (h === 0) caret = a + kept + added;
+    kept = 0;
+  });
+  return { t: { ...t, runs: rt.normalizeRuns(out), paras: fitParas(t.paras, paraCount(rt.plainText(t.runs))) }, caret };
 }
 
 /** Leave out places in text deleted while tracking changes (still there, struck through, but gone from what the text says). */
@@ -118,7 +199,15 @@ export function withoutDeleted(runs: TextRun[], hits: [number, number][]): [numb
     at += r.text.length;
   }
   if (!del.length) return hits;
-  return hits.filter(([a, b]) => !del.some(([x, y]) => a < y && b > x));
+  // (both in text order: the deletions before each place are passed once)
+  let k = 0, last = -Infinity;
+  return hits.filter(([a, b]) => {
+    if (a < last) k = 0;
+    last = a;
+    while (k < del.length && del[k][1] <= a) k++;
+    // (the first deletion ending after the place's start: it overlaps unless it starts after its end)
+    return !(k < del.length && del[k][0] < b);
+  });
 }
 
 /** Where a found range ends up after the ranges before it were replaced (for keeping the selection on the next one). */

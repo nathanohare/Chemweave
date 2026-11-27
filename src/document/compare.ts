@@ -65,13 +65,23 @@ function objectKeys(t: DocText): Map<number, string> {
 
 const refKey = (r: Reference): string => (r.doi ? 'doi:' + normaliseDoi(r.doi).toLowerCase() : `t:${r.title.trim().toLowerCase()}|${r.year}`);
 
+/** How many cells the character starting at cell `i` takes: two for both halves of a pair (a character outside the first plane), else one. */
+function charCells(cells: Cell[], i: number): number {
+  const hi = cells[i].ch.charCodeAt(0), lo = cells[i + 1]?.ch.charCodeAt(0) ?? 0;
+  return hi >= 0xd800 && hi <= 0xdbff && lo >= 0xdc00 && lo <= 0xdfff ? 2 : 1;
+}
+
+/** The character starting at cell `i` (both halves of a pair). */
+const charAt = (cells: Cell[], i: number): string => (charCells(cells, i) === 2 ? cells[i].ch + cells[i + 1].ch : cells[i].ch);
+
 function tokensOf(cells: Cell[], keys: Map<number, string>, level: CompareLevel): Token[] {
   const out: Token[] = [];
   for (let i = 0; i < cells.length;) {
     const c = cells[i];
     if (c.run.obj !== undefined) { out.push({ key: '\u0000' + (keys.get(c.run.obj) ?? ''), start: i, end: i + 1 }); i++; continue; }
-    let j = i + 1;
-    if (level === 'word' && WORD_CHAR.test(c.ch)) while (j < cells.length && cells[j].run.obj === undefined && WORD_CHAR.test(cells[j].ch)) j++;
+    // (a character outside the first plane stays whole: kept, deleted or inserted as one)
+    let j = i + charCells(cells, i);
+    if (level === 'word' && WORD_CHAR.test(charAt(cells, i))) while (j < cells.length && cells[j].run.obj === undefined && WORD_CHAR.test(charAt(cells, j))) j += charCells(cells, j);
     else if (c.ch === ' ' || c.ch === '\t') while (j < cells.length && cells[j].ch === c.ch && cells[j].run.obj === undefined) j++;
     out.push({ key: cells.slice(i, j).map((x) => x.ch).join(''), start: i, end: j });
     i = j;

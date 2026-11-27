@@ -336,11 +336,18 @@ class DocStore implements ZoteroStore {
   }
 
   private fieldJson(id: number): FieldJson | null {
-    return zoteroFields(this.t).find((f) => f.id === String(id)) ?? null;
+    return this.fields().find((f) => f.id === String(id)) ?? null;
   }
 
+  /** The fields of the document as it last was (Zotero asks for each field's text and code in turn: worked out once until it changes). */
+  private memo: { t: DocText; fields: FieldJson[] } | null = null;
+
   prefs(): string { return this.t.zoteroPrefs ?? ''; }
-  fields(): FieldJson[] { return zoteroFields(this.t); }
+  fields(): FieldJson[] {
+    const t = this.t;
+    if (this.memo?.t !== t) this.memo = { t, fields: zoteroFields(t) };
+    return this.memo.fields;
+  }
   cursor(): FieldJson | null { const id = this.host.picked(); return id === null ? null : this.fieldJson(id); }
   canInsert(): boolean { return this.host.canInsert(); }
   insert(note: number): FieldJson {

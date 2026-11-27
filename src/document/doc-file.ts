@@ -14,6 +14,7 @@ import { BOX_PAD, newDocument, nextObjectId, noteStyle, runStyleOf, styleOf, typ
 import { bodyAsZones, hfKeyFor, plainLook, zonesAsBody } from './hf-bodies';
 import { changeSection, sectionsOf } from './sections';
 import { allowedEdit } from './protect';
+import { boxTextTop } from './doc-paint';
 import type { ParaStyle, TextRun } from '../model';
 import { fitParas, paraCount, storedParas } from '../text/paragraphs';
 import { PRINT_VIEW, continuous, hiddenParas, outlineLevel, screenText, type ScreenView } from './doc-views';
@@ -132,7 +133,8 @@ export class DocFile {
       const cur = this.t.objects[id];
       const lay = this.layouter.boxText(this.t, frame.runs, frame.paras, cur?.kind === 'textbox' ? cur.w : o.w);
       const at = this.layout().objects.find((x) => x.id === id);
-      return at ? movedLayout(lay, at.x + BOX_PAD.x, at.y + BOX_PAD.y - lay.box.y1) : lay;
+      // the same top as the painter: a shape's text sits in its middle (boxTextTop)
+      return at ? movedLayout(lay, at.x + BOX_PAD.x, boxTextTop(cur?.kind === 'textbox' ? cur : o, at, lay)) : lay;
     };
     // tracked like the document's own text, and protected with it
     ed.track = this.ed.track;
@@ -289,6 +291,8 @@ export class DocFile {
       let next = nextObjectId(before);
       body = zonesAsBody(before, sec.hf, key, textW, () => { const id = next++; objects[id] = { kind: 'field', code: 'page' }; return id; });
       this.ed.update(changeSection({ ...before, objects }, section, { hf: { ...sec.hf, bodies: { ...sec.hf.bodies, [key]: body } } }), kind === 'header' ? 'Edit header' : 'Edit footer');
+      // refused (a protected document): no step was made, so there is nothing to type into
+      if (this.t === before) return null;
     }
     const look = plainLook(this.t);
     const ed = new TextEditing({ runs: body.runs, paras: body.paras ?? [], justify: 'left', wrap: textW }, look, docMeasure, look.size ?? 10);

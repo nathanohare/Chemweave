@@ -128,18 +128,21 @@ export const CITE_PRESETS: Record<string, CitePreset> = {
 
 export const DEFAULT_STYLE = 'acs';
 
+/** A style id that is one of the presets (its own key: not 'constructor' or 'toString' from a damaged file). */
+const knownStyle = (style: string | undefined): style is string => !!style && Object.hasOwn(CITE_PRESETS, style);
+
 /** The person's own style for documents that haven't chosen one (settings.json: citeStyle, citeOptions). */
 let preferred: { style: string; options: Partial<CiteFormat> } = { style: DEFAULT_STYLE, options: {} };
 
 export function setPreferredStyle(style: string, options: Partial<CiteFormat> = {}): void {
-  preferred = { style: style in CITE_PRESETS ? style : DEFAULT_STYLE, options: cleanOptions(options) };
+  preferred = { style: knownStyle(style) ? style : DEFAULT_STYLE, options: cleanOptions(options) };
 }
 
 export const preferredStyle = (): { style: string; options: Partial<CiteFormat> } => preferred;
 
 /** The format a document uses: its preset with any options changed on top. A document without a style uses the person's own. */
 export function citeFormat(style: string | undefined, options?: Partial<CiteFormat>): CiteFormat {
-  const known = !!style && style in CITE_PRESETS;
+  const known = knownStyle(style);
   const base = CITE_PRESETS[known ? style! : preferred.style].format;
   const opts = options ?? (known ? undefined : preferred.options);
   return opts ? { ...base, ...cleanOptions(opts) } : base;
@@ -159,8 +162,8 @@ export function cleanOptions(o: unknown): Partial<CiteFormat> {
   const out: Record<string, unknown> = {};
   if (!o || typeof o !== 'object') return out;
   for (const [k, v] of Object.entries(o as Record<string, unknown>)) {
+    if (!Object.hasOwn(CHOICES, k)) continue;
     const c = CHOICES[k as keyof CiteFormat];
-    if (!c) continue;
     if (c === 'boolean' ? typeof v === 'boolean' : c === 'count' ? Number.isInteger(v) && (v as number) >= 0 && (v as number) <= 100 : (c as readonly unknown[]).includes(v)) out[k] = v;
   }
   return out as Partial<CiteFormat>;

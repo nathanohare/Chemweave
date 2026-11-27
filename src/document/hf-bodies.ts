@@ -60,11 +60,15 @@ export function hfObjectIds(hfs: (HeaderFooter | undefined)[], objects: Record<n
   return out;
 }
 
-/** What a field in a header or footer shows on a page: `num` is the page's number, `pages` how many there are. */
-export function hfFieldText(o: FieldObj, t: Pick<DocText, 'runs' | 'paras' | 'props'>, num: string, pages: number): string {
+/**
+ * What a field in a header or footer shows on a page: `num` is the page's number, `pages` how
+ * many there are. `pageOf` gives the page a paragraph of the text is on (a bookmark's page, for
+ * PAGEREF); `cache` holds what is worked out from the whole text, for every page of one layout.
+ */
+export function hfFieldText(o: FieldObj, t: Pick<DocText, 'runs' | 'paras' | 'props'>, num: string, pages: number, pageOf?: (para: number) => string, cache?: { marks?: Map<string, number>; texts?: string[] }): string {
   if (o.code === 'page') return num;
   if (o.code === 'numpages') return String(pages);
-  return fieldText(o, { runs: t.runs, paras: t.paras, props: t.props }, 0, () => num, pages);
+  return fieldText(o, { runs: t.runs, paras: t.paras, props: t.props }, 0, pageOf ?? (() => num), pages, cache);
 }
 
 /**
