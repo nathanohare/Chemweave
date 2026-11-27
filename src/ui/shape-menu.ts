@@ -40,7 +40,8 @@ export class ShapeMenu {
   show(button: HTMLElement, tip: string, pick: (id: string) => void, tab: LibraryTab = 'shapes'): void {
     if (this.shown) { this.hide(); return; }
     this.pick = pick;
-    this.anchor = button;
+    // (only a real button toggles: a fallback place, such as the strip of ribbon tabs, must not keep the menu open for a click on a tab)
+    this.anchor = button instanceof HTMLButtonElement ? button : null;
     this.back = document.activeElement;
     // shown first: the library draws its pictures only once it can be seen
     this.pop.hidden = false;

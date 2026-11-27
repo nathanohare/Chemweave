@@ -20,7 +20,7 @@ interface Setup {
   items: SendItem[];
 }
 
-function setup(items: SendItem[], applyOutcome: () => string = () => 'Drew the structure.'): Setup {
+function setup(items: SendItem[], applyOutcome: () => string = () => 'Drew the structure.', withPosition = true): Setup {
   const prefs: AiPrefs = { provider: 'compatible', model: 'qwen3', base: 'http://localhost:11434/v1', localOnly: true, assistant: true };
   const applied: AssistantAction[] = [];
   let at = 0;
@@ -34,7 +34,7 @@ function setup(items: SendItem[], applyOutcome: () => string = () => 'Drew the s
     apply: async (a) => { applied.push(a); const said = applyOutcome(); if (/^(Replaced|Drew|Added)/.test(said)) at++; return said; },
     markStep: () => true,
     undo,
-    position: () => [at],
+    ...(withPosition ? { position: () => [at] } : {}),
     openSettings: async () => {},
     area: () => new DOMRect(0, 0, 1000, 700),
     tab: () => tab,
@@ -102,6 +102,24 @@ describe('F150: a second question while the first is out', () => {
     expect(s.bar.el.textContent).toContain('Answer to the first.');
     expect(s.bar.el.textContent).not.toContain('Thinking…');
   });
+  it('puts each answer under its own question when the second answer comes first', async () => {
+    const waiting: ((r: Response) => void)[] = [];
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((r) => { waiting.push(r); })));
+    const s = setup([]);
+    await s.bar.show();
+    ask(s.bar, 'First question');
+    await vi.waitFor(() => expect(waiting).toHaveLength(1));
+    ask(s.bar, 'Second question');
+    await vi.waitFor(() => expect(waiting).toHaveLength(2));
+    waiting[1](reply('Answer B.'));
+    await vi.waitFor(() => expect(s.bar.el.textContent).toContain('Answer B.'));
+    waiting[0](reply('Answer A.'));
+    await vi.waitFor(() => expect(s.bar.el.textContent).toContain('Answer A.'));
+    const text = s.bar.el.querySelector('.ai-msgs')!.textContent!;
+    expect(text.indexOf('First question')).toBeLessThan(text.indexOf('Answer A.'));
+    expect(text.indexOf('Answer A.')).toBeLessThan(text.indexOf('Second question'));
+    expect(text.indexOf('Second question')).toBeLessThan(text.indexOf('Answer B.'));
+  });
   it('sends one question when Enter is pressed twice', async () => {
     const fetch = vi.fn(async () => reply('Once.'));
     vi.stubGlobal('fetch', fetch);
@@ -140,6 +158,47 @@ describe('F670: Accept can be tried again after it failed', () => {
     expect(s.applied).toHaveLength(2);
     expect(accept.disabled).toBe(true);
     expect([...s.bar.el.querySelectorAll('button')].some((b) => b.textContent === 'Undo')).toBe(true);
+  });
+});
+
+describe('F670: Accept is not offered again when the failed Accept had already changed the page', () => {
+  it('keeps Accept off after "Could not" when something was drawn first', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(proposal('CCO'))));
+    let host!: Setup;
+    host = setup([], () => { host.step(); return 'Could not: Error: selecting failed'; });
+    await host.bar.show();
+    ask(host.bar, 'Draw ethanol');
+    await vi.waitFor(() => expect(host.bar.el.querySelector('.ai-prop')).not.toBeNull());
+    click(host.bar, 'Accept');
+    await tick();
+    expect(host.bar.el.textContent).toContain('Could not');
+    expect([...host.bar.el.querySelectorAll('button')].find((b) => b.textContent === 'Accept')!.disabled).toBe(true);
+  });
+});
+
+describe('F671: a host that cannot say where its history stands', () => {
+  it('still offers Undo, and Accept still works', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(proposal('CCO'))));
+    const s = setup([], () => 'Drew the structure.', false);
+    await s.bar.show();
+    ask(s.bar, 'Draw ethanol');
+    await vi.waitFor(() => expect(s.bar.el.querySelector('.ai-prop')).not.toBeNull());
+    click(s.bar, 'Accept');
+    await tick();
+    click(s.bar, 'Undo');
+    expect(s.undo).toHaveBeenCalledOnce();
+  });
+  it('words the refusal with the menu path the style guide uses', async () => {
+    vi.stubGlobal('fetch', vi.fn(async () => reply(proposal('CCO'))));
+    const s = setup([]);
+    await s.bar.show();
+    ask(s.bar, 'Draw ethanol');
+    await vi.waitFor(() => expect(s.bar.el.querySelector('.ai-prop')).not.toBeNull());
+    click(s.bar, 'Accept');
+    await tick();
+    s.step();
+    click(s.bar, 'Undo');
+    expect(s.bar.el.textContent).toContain('Edit ▸ Undo');
   });
 });
 

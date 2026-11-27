@@ -3,6 +3,7 @@
 // Headings, Total, Input, Output, the Accent styles and the number styles) and the workbook's
 // theme (its colours and fonts, Excel's Themes, Colours and Fonts menus).
 
+import { dismissPopupMenu } from './popup-menu';
 import { textAnglePic } from './select-gallery';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
@@ -22,7 +23,7 @@ const GROUPS: CellStyleGroup[] = ['Good, Bad and Neutral', 'Data and Model', 'Ti
 
 /** A menu of pictures (swatches, previews) that closes on a click outside or Escape. */
 export function galleryMenu(x: number, y: number, cls: string, fill: (m: HTMLDivElement, close: () => void) => void): HTMLDivElement {
-  document.querySelector('.popup-menu')?.remove();
+  dismissPopupMenu();
   const m = document.createElement('div');
   m.className = `menu popup-menu ${cls}`;
   m.setAttribute('role', 'menu');

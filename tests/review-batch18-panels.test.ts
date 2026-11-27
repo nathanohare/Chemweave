@@ -74,6 +74,43 @@ describe('F161: Selection Pane drag-to-reorder counts only the shapes\' rows', (
   });
 });
 
+describe('F784 (parallel paths): a drag the system cancels changes nothing in the Selection Pane or the toolbox editor', () => {
+  it('the Selection Pane does not reorder on pointercancel', () => {
+    const doc = new Doc();
+    doc.edit('s', () => { for (const [name, z] of [['a', 1], ['b', 2], ['c', 3]] as const) doc.addShape({ kind: 'rect', x1: 0, y1: 0, x2: 10, y2: 10, z, name } as never); });
+    const section = document.createElement('section');
+    document.body.append(section);
+    const edits: string[] = [];
+    const panel = new LayersPanel(section, { select: () => {}, selected: () => [], edit: (label, f) => { edits.push(label); doc.edit(label, f); } });
+    panel.show(doc, false);
+    panel.refresh();
+    [...section.querySelectorAll<HTMLElement>('.layer')].forEach((r, i) => {
+      r.getBoundingClientRect = () => ({ top: i * 20, height: 20, bottom: i * 20 + 20, left: 0, right: 100, width: 100, x: 0, y: i * 20, toJSON() {} }) as DOMRect;
+    });
+    section.querySelector<HTMLElement>('.layer-grip')!.dispatchEvent(pointer('pointerdown', { button: 0, clientY: 10 }));
+    window.dispatchEvent(pointer('pointermove', { clientY: 55 }));
+    window.dispatchEvent(pointer('pointercancel'));
+    expect(edits).toEqual([]);
+    expect(section.querySelector('.layer.dragging')).toBeNull();
+  });
+  it('Customize Toolboxes does not take a button out on pointercancel', async () => {
+    let st: ToolboxState = defaultToolboxes();
+    const given = 'abcdefghijkl'.split('').map((c) => `cmd:${c}`);
+    const ed = new ToolboxEditor({
+      get: () => st, set: (s) => { st = s; }, catalogue: () => [], describe: (key) => ({ key, label: key.slice(4).toUpperCase() }),
+      title: (id) => id, given: (id) => (id === 'structure' ? given : []), palette: () => null, flyGrid: () => ({ cols: 1, rows: 1, cells: [null] }), newPlace: () => ({ x: 0, y: 0 }),
+    });
+    ed.open('structure');
+    const before = JSON.stringify(st);
+    const cell = document.querySelector<HTMLElement>('.tbe-board .tbe-cell[data-i="0"]')!;
+    cell.dispatchEvent(pointer('pointerdown', { button: 0, clientX: 0, clientY: 0 }));
+    window.dispatchEvent(pointer('pointermove', { clientX: 900, clientY: 900 }));
+    window.dispatchEvent(pointer('pointercancel'));
+    expect(JSON.stringify(st)).toBe(before);
+    expect(document.querySelector('.tbe-ghost')).toBeNull();
+  });
+});
+
 describe('F728: the Layers list waits while something is dragged on the page', () => {
   it('does not rebuild its rows during the drag, and does once at the drop', () => {
     const doc = new Doc();

@@ -2,6 +2,7 @@
 // ready-made rules and looks, a window for any rule, a list to reorder and change the rules,
 // and the Table Design settings (header row, totals row, bands, first and last column).
 
+import { dismissPopupMenu } from './popup-menu';
 import { foldIntoInfo } from './info-tip';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
@@ -484,7 +485,7 @@ export class SheetFormatting {
 
   /** The gallery of table looks. */
   tableMenu(x: number, y: number, onPick?: (style: string) => void): void {
-    document.querySelector('.popup-menu')?.remove();
+    dismissPopupMenu();
     const m = document.createElement('div');
     m.className = 'menu popup-menu table-gallery';
     m.setAttribute('role', 'menu');

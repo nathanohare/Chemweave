@@ -187,6 +187,33 @@ describe('F789: clicking Shapes again closes the open menu', () => {
   });
 });
 
+describe('F789: a fallback place for the menu does not keep it open', () => {
+  it('a press inside the strip of ribbon tabs (not a button) still closes the menu', async () => {
+    const menu = new ShapeMenu();
+    const strip = document.createElement('div');
+    const tab = document.createElement('button');
+    strip.append(tab);
+    document.body.append(strip);
+    menu.show(strip, 'Pick one', () => {});
+    await tick();
+    tab.dispatchEvent(pointer('pointerdown'));
+    expect(menu.shown).toBe(false);
+  });
+});
+
+describe('F171 (parallel paths): a gallery that takes a pop-up menu away leaves no Escape listener behind', () => {
+  it('dismissPopupMenu removes the menu and its listeners', async () => {
+    const { popupMenu, dismissPopupMenu } = await import('../src/ui/popup-menu');
+    const m = popupMenu(10, 10, [['Item', () => {}]]);
+    await tick();
+    dismissPopupMenu();
+    expect(m.isConnected).toBe(false);
+    const esc = new KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true });
+    document.body.dispatchEvent(esc);
+    expect(esc.defaultPrevented).toBe(false);
+  });
+});
+
 describe('a drag the system cancels lets go of everything', () => {
   it('F707: a floating box stops following the pointer', () => {
     const box = new FloatBox('Paragraph', () => {});

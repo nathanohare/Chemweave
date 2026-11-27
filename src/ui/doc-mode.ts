@@ -4,6 +4,7 @@
 // spelling check knows chemistry words. The panel on the right shows the paragraph's formatting,
 // its style, the page and the figure picked, every value of which can be typed in.
 
+import { dismissPopupMenu } from './popup-menu';
 import { chargeNote } from '../text/charge-digits';
 import { installFontGroups } from './font-group';
 import { applyFormat } from '../text/format';
@@ -6140,7 +6141,7 @@ export class DocumentMode {
       const open = !!document.querySelector('.popup-menu');
       const from = open ? this.ribbonMenuFrom : null;
       if (from === b || (!from && !b.closest('.rb-popped'))) return;
-      document.querySelector('.popup-menu')?.remove();
+      dismissPopupMenu();
       this.ribbonMenu(b.dataset.doc!, b);
     });
     // the View tab's Show boxes (Ruler, Navigation Pane) are checkboxes, as in Word

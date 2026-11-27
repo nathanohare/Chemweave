@@ -25,7 +25,7 @@ export interface AssistantHost {
    * Where the page's Undo history stands now, as a few values that are the same only while nothing
    * has been done since (a card's Undo takes back its own proposal, never a later change).
    */
-  position(): readonly unknown[];
+  position?(): readonly unknown[];
   /** Edit > Settings > AI Model. */
   openSettings(): Promise<void>;
   /** The work area, to sit over. */
@@ -342,25 +342,35 @@ export class AssistantBar {
     // (a second question while this one is out is fine: each answer is shown when it arrives)
     try {
       const answer = await aiAsk(p, q);
-      wait.remove();
-      if (convo !== this.convo) return;
-      this.answer(answer, tab);
+      if (convo !== this.convo) { wait.remove(); return; }
+      this.answer(answer, tab, wait);
     } catch (e) {
-      wait.remove();
-      if (convo !== this.convo) return;
-      this.note(`The model didn't answer: ${e instanceof Error ? e.message : String(e)}`, 'warn');
+      if (convo !== this.convo) { wait.remove(); return; }
+      // (in the place of its Thinking… line: under its own question, however the answers are ordered)
+      const said = this.note(`The model didn't answer: ${e instanceof Error ? e.message : String(e)}`, 'warn');
+      if (wait.isConnected) wait.replaceWith(said);
     }
   }
 
   /** The answer's words, then a card for each change it proposes. */
-  private answer(text: string, tab: object): void {
+  private answer(text: string, tab: object, wait?: HTMLElement): void {
     const { prose, actions } = parseAnswer(text);
     const d = h('div', 'ai-it');
     for (const para of prose.split(/\n{2,}/).filter((x) => x.trim())) d.append(h('p', '', para.trim()));
     for (const a of actions) d.append(this.card(a, tab));
     if (!d.childNodes.length) d.append(h('p', 'ai-muted', '(No answer.)'));
-    this.msgs.append(d);
+    // in the place of its Thinking… line, so each answer sits under its own question
+    if (wait?.isConnected) wait.replaceWith(d); else this.msgs.append(d);
     this.msgs.scrollTop = this.msgs.scrollHeight;
+  }
+
+  /** Where the page's history stands (nothing to tell it by when the host doesn't say). */
+  private position(): readonly unknown[] {
+    return this.host.position?.() ?? [];
+  }
+
+  private samePosition(a: readonly unknown[], b: readonly unknown[]): boolean {
+    return a.length === b.length && a.every((x, i) => x === b[i]);
   }
 
   private card(a: AssistantAction, tab: object): HTMLElement {
@@ -396,16 +406,20 @@ export class AssistantBar {
     const accept = button('Accept', () => void (async () => {
       if (this.host.tab() !== tab) { status.textContent = 'This was asked about another tab. Go back to that tab to accept it.'; return; }
       accept.disabled = reject.disabled = true;
+      const start = this.position();
       const said = await this.host.apply(a).catch((e) => `Could not: ${String(e)}`);
       status.textContent = said;
-      // nothing was changed (the message says why, often "try again"): Accept and Reject stay usable
-      if (!/^(Replaced|Drew|Added)/.test(said)) { accept.disabled = reject.disabled = false; return; }
-      const after = this.host.position();
+      // nothing was changed (the message says why, often "try again"): Accept and Reject stay usable.
+      // Not when something was (a failure after the structure was drawn): a second Accept would draw it twice.
+      if (!/^(Replaced|Drew|Added)/.test(said)) {
+        if (this.samePosition(start, this.position())) accept.disabled = reject.disabled = false;
+        return;
+      }
+      const after = this.position();
       const undo = button('Undo', () => {
         // only while this proposal is still the last thing done: Undo would otherwise take back something later
-        const now = this.host.position();
-        if (now.length !== after.length || now.some((x, i) => x !== after[i])) {
-          status.textContent = 'Something else was changed after this. Use Edit > Undo to go back step by step.';
+        if (!this.samePosition(after, this.position())) {
+          status.textContent = 'Something else was changed after this. Use Edit ▸ Undo to go back step by step.';
         } else {
           this.host.undo();
           status.textContent = 'Undone.';

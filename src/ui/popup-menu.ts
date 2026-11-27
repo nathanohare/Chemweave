@@ -5,10 +5,15 @@ import { popupHost } from './popup-host';
 /** Takes the menu showing now away, with everything it listens to. */
 let dismissShown: (() => void) | null = null;
 
-/** A small menu at a point: [label, action, enabled?] items, null for a line. */
-export function popupMenu(x: number, y: number, items: ([string, () => void, boolean?, string?] | null)[]): HTMLDivElement {
+/** Takes the pop-up menu showing now away, with the keys and resizes it listens to (for a gallery that opens in its place). */
+export function dismissPopupMenu(): void {
   dismissShown?.();
   document.querySelector('.popup-menu')?.remove();
+}
+
+/** A small menu at a point: [label, action, enabled?] items, null for a line. */
+export function popupMenu(x: number, y: number, items: ([string, () => void, boolean?, string?] | null)[]): HTMLDivElement {
+  dismissPopupMenu();
   // where the keys went before (a document's caret, a sheet's cell): Escape goes back there
   const back = document.activeElement;
   const m = document.createElement('div');

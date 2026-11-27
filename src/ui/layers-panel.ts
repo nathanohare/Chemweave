@@ -331,13 +331,14 @@ export class LayersPanel {
         if (i > from && ev.clientY > m) to = Math.max(to, i + 1);
       });
     };
-    const up = () => {
+    const up = (ev?: Event) => {
       window.removeEventListener('pointermove', move);
       window.removeEventListener('pointerup', up);
       window.removeEventListener('pointercancel', up);
       row.classList.remove('dragging');
       row.style.transform = '';
-      if (!moved || to === from || to === from + 1) return;
+      // a drag the system cancelled (a touch gesture took over) is dropped, not carried out where it was last
+      if (ev?.type === 'pointercancel' || !moved || to === from || to === from + 1) return;
       const sel = this.hooks.selected();
       const ids = sel.includes(s.id) ? sel : [s.id];
       const next = reorderLayers(order.map((x) => x.id), ids, to);

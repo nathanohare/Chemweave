@@ -690,9 +690,11 @@ export class ToolboxEditor {
       light(false);
       ghost?.remove();
     };
-    const up = () => {
+    const up = (ev?: Event) => {
       const was = ghost;
       done();
+      // (a drag the system cancelled changes nothing)
+      if (ev?.type === 'pointercancel') return;
       if (!was) { if (from !== null && key.startsWith('pal:')) this.openFolder(key.slice(4)); return; }
       if (out) { if (from !== null) this.remove(from); return; }
       if (!over) return;
