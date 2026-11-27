@@ -84,8 +84,11 @@ export function modelNames(m: SolverModel, sheet: Sheet): DefinedName[] {
     return { name: n, formula: /^solver_(adj|opt|lhs\d+|rhs\d+)$/.test(n) ? withSheet(f, sheet.name) : f, sheet, hidden: true };
   };
   const num = (x: number) => String(x);
+  // an objective or variable cells left empty write no name ('=' alone is no formula); reading
+  // the model back takes a missing one as empty
+  const blank = (t: string) => !t.replace(/^=/, '').trim();
   const out: DefinedName[] = [
-    name('solver_adj', m.vars),
+    ...(blank(m.vars) ? [] : [name('solver_adj', m.vars)]),
     name('solver_cvg', num(m.convergence ?? 0.0001)),
     name('solver_drv', '1'),
     name('solver_eng', num(ENGINE_CODE[m.engine])),
@@ -100,7 +103,7 @@ export function modelNames(m: SolverModel, sheet: Sheet): DefinedName[] {
     name('solver_nod', '2147483647'),
     name('solver_num', num(m.constraints.length)),
     name('solver_nwt', '1'),
-    name('solver_opt', m.objective),
+    ...(blank(m.objective) ? [] : [name('solver_opt', m.objective)]),
     name('solver_pre', num(m.precision ?? 0.000001)),
     name('solver_rbv', '1'),
     name('solver_rlx', m.ignoreInt ? '1' : '2'),
@@ -249,7 +252,7 @@ export function solve(p: Problem, engine: SolverEngine): SolveResult {
   if (engine === 'simplex') return simplexEngine(p, ctr, first);
   if (engine === 'evolutionary') return evolutionary(p, ctr);
   const anyInt = p.integer.some(Boolean);
-  return anyInt ? branchAndBound(p, ctr, (lo, hi, start) => grg({ ...p, lower: lo, upper: hi, x0: start }, ctr)) : grg(p, ctr);
+  return anyInt ? branchAndBound(p, ctr, (lo, hi, start) => grg({ ...p, lower: lo, upper: hi, x0: start }, ctr), true) : grg(p, ctr);
 }
 
 // ---------------------------------------------------------------- Simplex LP
@@ -399,7 +402,11 @@ export function lp(c: number[], A: number[][], b: number[], rel: ('<=' | '=' | '
 
 // ---------------------------------------------------------------- whole numbers: branch and bound
 
-function branchAndBound(p: Problem, ctr: Counter, relaxed: (lo: number[], hi: number[], start: number[]) => SolveResult): SolveResult {
+/**
+ * `recheck`: work out the objective and limits again at each rounded whole-number answer (GRG's
+ * relaxed answers are only near whole numbers; Simplex LP works its final answer out itself).
+ */
+function branchAndBound(p: Problem, ctr: Counter, relaxed: (lo: number[], hi: number[], start: number[]) => SolveResult, recheck = false): SolveResult {
   const ints = p.integer.map((v, j) => (v ? j : -1)).filter((j) => j >= 0);
   let best: SolveResult | null = null;
   let hitLimit = false;
@@ -421,7 +428,14 @@ function branchAndBound(p: Problem, ctr: Counter, relaxed: (lo: number[], hi: nu
       const d = Math.abs(r.x[j] - Math.round(r.x[j]));
       if (d > 1e-6 && d > far) { far = d; branch = j; }
     }
-    if (branch < 0) { best = { ...r, x: r.x.map((v, j) => (p.integer[j] ? Math.round(v) : v)) }; continue; }
+    if (branch < 0) {
+      // the whole-number answer's own objective and limits, worked out again for the rounded x
+      const x = r.x.map((v, j) => (p.integer[j] ? Math.round(v) : v));
+      if (!recheck) { best = { ...r, x }; continue; }
+      const at = ctr.eval(x);
+      best = { ...r, x, f: Number.isFinite(at.f) ? at.f : r.f, g: at.g };
+      continue;
+    }
     const v = r.x[branch];
     const down = { lo: node.lo.slice(), hi: node.hi.slice(), start: r.x.slice() };
     down.hi[branch] = Math.floor(v);
@@ -592,10 +606,15 @@ function evolutionary(p: Problem, ctr: Counter): SolveResult {
     (a.v <= p.precision) !== (b.v <= p.precision) ? a.v <= p.precision : a.v > p.precision ? a.v < b.v : a.s < b.s;
   const size = Math.max(10, Math.min(200, p.population));
   let pop = [score(tidy(p.x0))];
-  while (pop.length < size) pop.push(score(tidy(p.lower.map((lo, j) => lo + rand() * (p.upper[j] - lo)))));
+  // (the time and evaluation limits hold while the start population is made, too)
+  let status: SolveStatus = 'converged';
+  while (pop.length < size) {
+    if (ctr.out) { status = 'limit'; break; }
+    pop.push(score(tidy(p.lower.map((lo, j) => lo + rand() * (p.upper[j] - lo)))));
+  }
   let best = pop.reduce((a, b) => (better(b, a) ? b : a));
   let still = 0;
-  let status: SolveStatus = 'converged';
+  // (a population cut short by a limit never breeds: the first generation stops at the same limit)
   for (let gen = 0; gen < 2000; gen++) {
     if (ctr.out) { status = 'limit'; break; }
     const was = best.s, wasV = best.v;

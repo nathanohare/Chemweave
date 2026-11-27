@@ -8,6 +8,7 @@ import type { Sheet, Workbook } from './workbook';
 import { valueInput } from './workbook';
 import { type Range, MAX_ROWS, MAX_COLS, inRange, rangesOverlap, rangeName, sameRange } from './refs';
 import { isError, type Value } from './values';
+import { mapRefs } from './formula';
 import { newTable, DEFAULT_TABLE_STYLE, type TableDef } from './table-styles';
 import { tableNameFor, type QTable, type Query } from './query';
 
@@ -37,9 +38,12 @@ export function tableNames(wb: Workbook): string[] {
   return [...wb.sheets.flatMap((s) => s.tables.map((t) => t.name)), ...wb.names.map((n) => n.name)];
 }
 
-/** The cells a result takes from its top left cell: a header row, then a row for each record (and `added` columns kept beside them). */
-export function resultRange(at: { row: number; col: number }, t: QTable, added = 0): Range {
-  return { r1: at.row, c1: at.col, r2: at.row + Math.max(1, t.rows.length), c2: at.col + Math.max(1, t.cols.length) - 1 + added };
+/**
+ * The cells a result takes from its top left cell: a header row, then a row for each record (and
+ * `added` columns kept beside them), and the totals row under them when the table has one.
+ */
+export function resultRange(at: { row: number; col: number }, t: QTable, added = 0, totals = false): Range {
+  return { r1: at.row, c1: at.col, r2: at.row + Math.max(1, t.rows.length) + (totals ? 1 : 0), c2: at.col + Math.max(1, t.cols.length) - 1 + added };
 }
 
 const headKey = (v: unknown): string => (typeof v === 'string' || typeof v === 'number' ? String(v).trim().toLowerCase() : '');
@@ -107,7 +111,13 @@ export function wouldCover(s: Sheet, R: Range, own: TableDef | null): boolean {
  */
 export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTable, own: TableDef | null, q: Query): { table: TableDef; cols: string[]; errors: number } {
   const added = own ? addedColumns(s, own, t, q) : [];
-  const R = resultRange(at, t, added.length);
+  const R = resultRange(at, t, added.length, !!own?.totals);
+  // a table with a Total Row keeps it, under the new records: what it held (its label and its
+  // SUBTOTAL formulas, which are made to cover the new records), copied before the rows are cleared
+  const totalsRow = own?.totals ? own.range.r2 : null;
+  const totals = totalsRow !== null ? s.copy({ r1: totalsRow, c1: own!.range.c1, r2: totalsRow, c2: own!.range.c2 }) : null;
+  // the records' last row (the row before the totals row)
+  const dataEnd = own?.totals ? R.r2 - 1 : R.r2;
   let errors = 0;
   const cols = t.cols.length ? t.cols : ['Column1'];
   // where each column goes: the query's in order, each added one after the query column it followed
@@ -125,7 +135,7 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
   // the added columns' cells (as many rows as the new table has), and their widths
   const kept = moves.map((m) => ({
     ...m,
-    block: s.copy({ r1: own!.range.r1, c1: m.from, r2: Math.min(own!.range.r2, R.r2), c2: m.from }),
+    block: s.copy({ r1: own!.range.r1, c1: m.from, r2: Math.min(own!.totals ? own!.range.r2 - 1 : own!.range.r2, dataEnd), c2: m.from }),
     width: s.colWidths.get(m.from),
   }));
   // what the old table covered and the new one doesn't is emptied
@@ -154,8 +164,37 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
   t.types.forEach((k, j) => {
     if (k !== 'date' && k !== 'percent') return;
     if (!t.rows.length) return;
-    s.patchStyle({ r1: R.r1 + 1, c1: place[j], r2: R.r2, c2: place[j] }, { numFmt: k === 'date' ? DATE_FORMAT : PERCENT_FORMAT });
+    s.patchStyle({ r1: R.r1 + 1, c1: place[j], r2: dataEnd, c2: place[j] }, { numFmt: k === 'date' ? DATE_FORMAT : PERCENT_FORMAT });
   });
+  if (totals && totalsRow !== null) {
+    // the old totals row's cells go to the new last row, each in the column its query column
+    // (or added column) went to; a reference to the old records in a column becomes one to the new
+    const O = own!.range;
+    const toCol = new Map<number, number>();
+    for (let c = O.c1; c <= O.c2; c++) {
+      const h = headKey(s.value(O.r1, c));
+      const j = cols.findIndex((name) => headKey(name) === h && h !== '');
+      if (j >= 0) toCol.set(c, place[j]);
+    }
+    for (const m of moves) toCol.set(m.from, m.to);
+    if (!toCol.size) toCol.set(O.c1, R.c1);
+    // the first column holds the "Total" label even when its header changed
+    if (!toCol.has(O.c1)) toCol.set(O.c1, R.c1);
+    s.clear({ r1: R.r2, c1: R.c1, r2: R.r2, c2: R.c2 }, 'all');
+    for (const [from, to] of toCol) {
+      const cell = totals.cells[0]?.[from - O.c1];
+      if (!cell?.input && !cell?.style) continue;
+      let input = cell.input;
+      if (input?.startsWith('=')) {
+        input = mapRefs(input, (x) => {
+          const b = x.b ?? x.a;
+          if (x.sheet || x.kind === 'cols' || x.a.col !== b.col || x.a.col !== from || x.a.row !== O.r1 + 1 || b.row !== O.r2 - 1) return x;
+          return { ...x, kind: 'range', a: { ...x.a, col: to, row: R.r1 + 1 }, b: { ...b, col: to, row: Math.max(R.r1 + 1, dataEnd) } };
+        });
+      }
+      s.setCell(R.r2, to, { input, style: cell.style });
+    }
+  }
   let table: TableDef;
   if (own) {
     table = { ...own, range: R };

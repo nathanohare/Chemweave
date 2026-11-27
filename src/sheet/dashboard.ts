@@ -93,16 +93,22 @@ export interface Resolved {
   names: string[];
   /** The rows of data (header and totals rows left out). */
   rows: number[];
+  /** The header row, or null for a table without one (its names are the table's own). */
+  header: number | null;
+  /** The first row of data. */
+  first: number;
 }
 
 /** The cells a source names; null when its table or sheet has gone. */
 export function resolveSource(wb: Workbook, src: Source | undefined): Resolved | null {
   if (!src) return null;
   let sheet: Sheet | undefined, range: Range | undefined, totals = false;
+  // a table without a header row: its names are its own (from its file, or Column1, Column2…)
+  let own: (string | undefined)[] | null = null;
   if (src.table) {
     for (const s of wb.sheets) {
       const t = s.tables.find((x) => x.name.toLowerCase() === src.table!.toLowerCase());
-      if (t) { sheet = s; range = t.range; totals = !!t.totals; break; }
+      if (t) { sheet = s; range = t.range; totals = !!t.totals; if (!t.header) own = (t.columns ?? []).map((x) => x.name); break; }
     }
   }
   if (!sheet && src.range) {
@@ -117,7 +123,7 @@ export function resolveSource(wb: Workbook, src: Source | undefined): Resolved |
   const seen = new Map<string, number>();
   const names: string[] = [];
   for (let c = range.c1; c <= range.c2; c++) {
-    let n = sheet.shownText(range.r1, c).trim() || `Column${c - range.c1 + 1}`;
+    let n = (own ? own[c - range.c1]?.trim() : sheet.shownText(range.r1, c).trim()) || `Column${c - range.c1 + 1}`;
     const k = n.toLowerCase();
     const count = seen.get(k) ?? 0;
     seen.set(k, count + 1);
@@ -125,8 +131,9 @@ export function resolveSource(wb: Workbook, src: Source | undefined): Resolved |
     names.push(n);
   }
   const rows: number[] = [];
-  for (let r = range.r1 + 1; r <= range.r2 - (totals ? 1 : 0); r++) rows.push(r);
-  return { sheet, range, names, rows };
+  const first = own ? range.r1 : range.r1 + 1;
+  for (let r = first; r <= range.r2 - (totals ? 1 : 0); r++) rows.push(r);
+  return { sheet, range, names, rows, header: own ? null : range.r1, first };
 }
 
 export const sourceKey = (src: Source | undefined): string => (src?.table ? `t:${src.table.toLowerCase()}` : `r:${(src?.range ?? '').replace(/^=/, '').replace(/\$/g, '').toUpperCase()}`);
@@ -318,10 +325,11 @@ export const labelsRepeat = (data: SeriesData[]): boolean => data.some((d) => ne
 /** A chart of columns of a source: x (or labels) and one or more value columns. */
 export function chartOfColumns(res: Resolved, kind: Chart['kind'], x: string | undefined, ys: string[], id: number): Chart {
   const ref = (col: number, r1: number, r2: number) => refText(res.sheet.name, { r1, c1: col, r2, c2: col });
-  const first = res.range.r1 + 1, last = Math.max(first, res.rows[res.rows.length - 1] ?? first);
+  const first = res.first, last = Math.max(first, res.rows[res.rows.length - 1] ?? first);
   const xc = columnOf(res, x);
   const series = ys.map((name) => columnOf(res, name)).filter((c): c is number => c !== null).map((c) => ({
-    name: ref(c, res.range.r1, res.range.r1),
+    // (a table without a header row has no cell holding the name: the name itself)
+    name: res.header === null ? res.names[c - res.range.c1] : ref(c, res.header, res.header),
     ...(xc !== null ? { x: ref(xc, first, last) } : {}),
     y: ref(c, first, last),
   }));
@@ -340,10 +348,10 @@ export function chartOfColumns(res: Resolved, kind: Chart['kind'], x: string | u
  * in `levels`, in that order, weighed by the column named `weights` (unset: every row weighs one).
  */
 export function levelChartOfSource(res: Resolved, levels: string[], weights: string | undefined, id: number, kind: Chart['kind'] = 'sankey'): Chart {
-  const first = res.range.r1 + 1;
+  const first = res.first;
   const last = Math.max(first, res.rows.at(-1) ?? first);
   const cols = levels.flatMap((name) => { const c = columnOf(res, name); return c === null ? [] : [c]; });
-  const chart = levelChart(res.sheet.name, res.range.r1, first, last, cols, columnOf(res, weights), kind);
+  const chart = levelChart(res.sheet.name, res.header, first, last, cols, columnOf(res, weights), kind);
   return { ...chart, id, w: 480, h: 290 };
 }
 // ---------------------------------------------------------------- keeping references right

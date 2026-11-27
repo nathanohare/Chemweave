@@ -430,7 +430,7 @@ export class SheetCharts {
       out.push(row('Overflow', numberBox(b.overflow, (v) => setB({ overflow: v }), 'none', 'and above in one bin')));
       out.push(row('Underflow', numberBox(b.underflow, (v) => setB({ underflow: v }), 'none', 'and below in one bin')));
       const h = histogram(chartData(this.view.wb!, this.sheet, c)[0]?.ys ?? [], b);
-      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}.`));
+      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${h.widened ? ' (widened so the data fits in 1000 bins)' : b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}.`));
     }
     if (c.kind === 'box') {
       const o = c.boxes ?? {};

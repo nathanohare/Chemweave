@@ -284,8 +284,30 @@ export function readRef(wb: Workbook, text: string | undefined, home: Sheet): { 
   return { sheet, range: { r1: Math.min(ref.a.row, b.row), c1: Math.min(ref.a.col, b.col), r2: Math.max(ref.a.row, b.row), c2: Math.max(ref.a.col, b.col) } };
 }
 
-/** The values of a reference in reading order, leaving out hidden rows and columns unless asked. */
+/**
+ * The values of a reference in reading order, leaving out hidden rows and columns unless asked.
+ * A union of blocks in brackets, =(Sheet1!$A$2:$A$3,Sheet1!$A$5:$A$6), as Excel writes a series
+ * over cells that aren't next to each other, gives each block's values in turn.
+ */
 export function refValues(wb: Workbook, text: string | undefined, home: Sheet, showHidden = false, leaveOut?: Map<Sheet, Set<number>>): Value[] | null {
+  const union = text?.trim().replace(/^=/, '').match(/^\(([^()]*)\)$/);
+  if (union && union[1].includes(',') && formulaRefs('=' + union[1]).length > 1) {
+    const out: Value[] = [];
+    // the blocks, split at commas outside a quoted sheet name ('Runs, 2024'!A1)
+    const parts: string[] = [];
+    let cur = '', quoted = false;
+    for (const ch of union[1]) {
+      if (ch === "'") quoted = !quoted;
+      if (ch === ',' && !quoted) { parts.push(cur); cur = ''; } else cur += ch;
+    }
+    parts.push(cur);
+    for (const part of parts) {
+      const got = refValues(wb, part, home, showHidden, leaveOut);
+      if (!got) return null;
+      out.push(...got);
+    }
+    return out;
+  }
   const got = readRef(wb, text, home);
   if (!got) return null;
   const { sheet: s, range: r } = got;

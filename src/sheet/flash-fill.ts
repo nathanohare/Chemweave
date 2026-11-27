@@ -199,12 +199,22 @@ export function flashFill(examples: FlashExample[], rows: string[][]): FlashResu
   if (!candidates.length) return null;
   // the simplest way: fewest fixed characters, then fewest pieces, then the simplest atoms
   const ref = ex[0].row;
-  const best = (p: Piece) => ('atoms' in p ? p.atoms.reduce((m, a) => (atomCost(a, ref) < atomCost(m, ref) ? a : m)) : null);
+  // each atom's cost and each piece's best atom worked out once (many ways share them), and each
+  // way's cost once, not again at every comparison of the sort
+  const atomCosts = new Map<Atom, number>();
+  const costOf = (a: Atom) => { let c = atomCosts.get(a); if (c === undefined) atomCosts.set(a, (c = atomCost(a, ref))); return c; };
+  const bests = new Map<Atom[], Atom>();
+  const best = (p: Piece) => {
+    if (!('atoms' in p)) return null;
+    let b = bests.get(p.atoms);
+    if (!b) bests.set(p.atoms, (b = p.atoms.reduce((m, a) => (costOf(a) < costOf(m) ? a : m))));
+    return b;
+  };
   // fixed letters and digits cost more than fixed punctuation, which is usually what joins the parts
   const fixed = (t: string) => [...t].reduce((n, ch) => n + (/[\p{L}\p{N}]/u.test(ch) ? 5 : 0.5), 1);
-  const cost = (prog: Piece[]) => prog.reduce((s, p) => s + ('text' in p ? fixed(p.text) : 1 + atomCost(best(p)!, ref)), 0);
-  candidates.sort((a, b) => cost(a) - cost(b));
-  const prog = candidates[0].map((p) => ('text' in p ? p : { atoms: [best(p)!] }));
+  const cost = (prog: Piece[]) => prog.reduce((s, p) => s + ('text' in p ? fixed(p.text) : 1 + costOf(best(p)!)), 0);
+  const ranked = candidates.map((prog) => ({ prog, cost: cost(prog) })).sort((a, b) => a.cost - b.cost);
+  const prog = ranked[0].prog.map((p) => ('text' in p ? p : { atoms: [best(p)!] }));
   const values = rows.map((row) => {
     let s = '';
     for (const p of prog) {

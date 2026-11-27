@@ -190,8 +190,10 @@ export function removeSubtotals(s: Sheet, R: Range): Range {
     r2--;
   }
   const out = { ...R, r2 };
+  // rows the outline folded away are shown again; a row hidden by hand (in no group) stays hidden
   for (let r = out.r1; r <= out.r2 + 1; r++) {
-    if (s.rowLevels.has(r)) s.setRowLevel(r, 0);
+    if (!s.rowLevels.has(r)) continue;
+    s.setRowLevel(r, 0);
     if (s.hiddenRows.has(r) && !s.filter) s.setRowHidden(r, false);
   }
   return out;
