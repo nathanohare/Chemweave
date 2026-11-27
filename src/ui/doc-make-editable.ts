@@ -49,8 +49,10 @@ export async function pictureForReading(o: Picture): Promise<{ p: Pixels; ptPerP
   if (!p) return null;
   const c = o.crop;
   if (c && (c.l || c.t || c.r || c.b)) {
-    const x = Math.round(c.l * p.width), y = Math.round(c.t * p.height);
-    const w = Math.max(1, Math.round((1 - c.l - c.r) * p.width)), h = Math.max(1, Math.round((1 - c.t - c.b) * p.height));
+    // each edge kept inside the picture, however the cropping was rounded (or reaches outward, as Word allows)
+    const clamp = (v: number, lo: number, hi: number) => Math.min(hi, Math.max(lo, v));
+    const x = clamp(Math.round(c.l * p.width), 0, p.width - 1), y = clamp(Math.round(c.t * p.height), 0, p.height - 1);
+    const w = clamp(Math.round((1 - c.l - c.r) * p.width), 1, p.width - x), h = clamp(Math.round((1 - c.t - c.b) * p.height), 1, p.height - y);
     const data = new Uint8ClampedArray(w * h * 4);
     for (let row = 0; row < h; row++) data.set(p.data.subarray(((y + row) * p.width + x) * 4, ((y + row) * p.width + x + w) * 4), row * w * 4);
     p = { width: w, height: h, data };
@@ -66,7 +68,10 @@ async function vectorPixels(o: Picture, most: number): Promise<Pixels | null> {
     const img = new Image();
     img.src = src;
     await img.decode();
-    const w0 = o.w || img.naturalWidth * 0.75, h0 = o.h || img.naturalHeight * 0.75;
+    // o.w × o.h is the part left after cropping; the whole image (that is drawn here, then cropped) is larger by what was cut off
+    const cr = o.crop;
+    const w0 = (o.w || img.naturalWidth * 0.75) / Math.max(0.01, 1 - (cr?.l ?? 0) - (cr?.r ?? 0));
+    const h0 = (o.h || img.naturalHeight * 0.75) / Math.max(0.01, 1 - (cr?.t ?? 0) - (cr?.b ?? 0));
     const k = Math.min(300 / 72, most / Math.max(1, w0, h0));
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w0 * k));
@@ -213,7 +218,28 @@ export async function makeEditable(host: MakeEditableHost, pic: Picture, choice:
   return r ? madeFrom(pic, r, choice, ds) : null;
 }
 
-/** The same structure in the other style, from the picture kept (nothing is read again); null when it can't be redone. */
+/**
+ * Whether a structure still holds only what the reader found: the same atoms (element, label,
+ * charge, isotope), bonds, arrows, captions and shapes, atoms and arrow ends where they were put
+ * (to a tenth of a point, as saving and opening again rounds them). The look is not compared.
+ */
+function sameReading(was: Contents, now: Contents): boolean {
+  const near = (a: number, b: number) => Math.abs(a - b) <= 0.1;
+  if (was.atoms.length !== now.atoms.length || was.bonds.length !== now.bonds.length || was.captions.length !== now.captions.length
+    || was.arrows.length !== now.arrows.length || was.shapes.length !== now.shapes.length) return false;
+  const ids = new Map(now.atoms.map((a, i) => [a.id, was.atoms[i].id]));
+  return was.atoms.every((a, i) => { const b = now.atoms[i]; return near(a.x, b.x) && near(a.y, b.y) && a.z === b.z && a.label === b.label && a.charge === b.charge && a.isotope === b.isotope; })
+    && was.bonds.every((a, i) => { const b = now.bonds[i]; return ids.get(b.a1) === a.a1 && ids.get(b.a2) === a.a2 && a.order === b.order && a.display === b.display; })
+    && was.captions.every((a, i) => { const b = now.captions[i]; return near(a.x, b.x) && near(a.y, b.y) && a.runs.map((r) => r.text).join('') === b.runs.map((r) => r.text).join(''); })
+    && was.arrows.every((a, i) => { const b = now.arrows[i]; return near(a.tail.x, b.tail.x) && near(a.tail.y, b.tail.y) && near(a.head.x, b.head.x) && near(a.head.y, b.head.y); });
+}
+
+/**
+ * The same structure in the other style (nothing is read again); null when it can't be redone.
+ * What the person changed in the structure after Make Editable (an atom put right, a bond fixed,
+ * a label added) is kept: only its look changes then, as for a figure drawn by hand. A structure
+ * still as it was read is drawn afresh from what was read, in the style chosen.
+ */
 export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Promise<Drawing | null> {
   const fp = d.fromPicture;
   // a figure drawn by hand: what is drawn in it takes the look (or the document's style)
@@ -224,8 +250,28 @@ export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Pr
   if (!fp?.parts?.length) return null;
   const shown = await pictureForReading(fp.picture);
   if (!shown) return null;
+  // as it was read, in the style it has now: when that is what is there, nothing was changed by hand
+  const was = editableOf(fp.parts, shown.p, shown.ptPerPx, fp.style, ds, fp.texts);
+  if (!sameReading(was.contents, d.contents)) {
+    if (choice === 'match' && !fp.look) return null;
+    return { ...d, contents: withLook(d.contents, choice === 'match' ? fp.look! : null, ds, true), fromPicture: { ...fp, style: choice } };
+  }
   const e = editableOf(fp.parts, shown.p, shown.ptPerPx, choice, ds, fp.texts);
-  return { ...drawingFor(fp.picture, e, choice, fp.parts, { w: shown.p.width, h: shown.p.height }, fp.texts), ...(d.float ? { float: structuredClone(d.float) } : {}), ...(d.look ? { look: d.look } : {}), ...(d.alt ? { alt: d.alt } : {}) };
+  const made = drawingFor(fp.picture, e, choice, fp.parts, { w: shown.p.width, h: shown.p.height }, fp.texts);
+  // what the structure has as an object (where it floats, its look, size, turn, names) stays as it is now; so does tracing and the alt text, cleared or not
+  const { alt: _alt, wordPr: _wordPr, float: _float, look: _look, ...rest } = made;
+  return {
+    ...rest,
+    ...(d.float ? { float: structuredClone(d.float) } : {}),
+    ...(d.look ? { look: d.look } : {}),
+    ...(d.alt ? { alt: d.alt } : {}),
+    ...(d.wordPr ? { wordPr: { ...d.wordPr } } : {}),
+    ...(d.scale !== undefined ? { scale: d.scale } : {}),
+    ...(d.rot !== undefined ? { rot: d.rot } : {}),
+    ...(d.flipH ? { flipH: d.flipH } : {}),
+    ...(d.flipV ? { flipV: d.flipV } : {}),
+    fromPicture: { ...made.fromPicture!, ...(fp.trace ? { trace: fp.trace } : {}) },
+  };
 }
 
 /** The picture back as it was before Make Editable. */

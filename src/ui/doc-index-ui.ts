@@ -202,7 +202,7 @@ export class DocIndexUI {
       { name: 'see', label: 'Cross-reference', value: 'See ', help: 'Shown in place of the page number, for Cross-reference' },
       { name: 'bold', label: 'Page number in bold', type: 'checkbox', value: 'false' },
       { name: 'italic', label: 'Page number in italic', type: 'checkbox', value: 'false' },
-      { name: 'all', label: 'Mark All: every paragraph where the main entry\'s text appears', type: 'checkbox', value: 'false' },
+      { name: 'all', label: 'Mark All: every paragraph where the selected text (or the main entry, when nothing is selected) appears', type: 'checkbox', value: 'false' },
       ...(here.length ? [{ name: 'remove', label: 'Remove this paragraph\'s entries instead', type: 'checkbox' as const, value: 'false', help: `Marked here: ${here.map((x) => x.sub ? `${x.main}: ${x.sub}` : x.main).join('; ')}` }] : []),
     ], { ok: 'Mark', note: 'The entry stays with its paragraph. References ▸ Insert Index lists entries A to Z with page numbers and updates automatically.' });
     this.host.focus();

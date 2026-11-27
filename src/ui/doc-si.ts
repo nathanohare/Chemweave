@@ -91,9 +91,11 @@ export class DocSiUI {
     if (got.which === 'other') link = await si.pick();
     else if (got.which.startsWith('open:')) link = open.find((l) => 'open:' + l.path === got.which) ?? null;
     if (!link) return;
-    if (link.path !== cur?.path || link.title !== cur?.title) f.ed.update({ ...f.t, siLink: link } as DocText, 'Link SI');
+    const linkedNow = link.path !== cur?.path || link.title !== cur?.title;
+    if (linkedNow) f.ed.update({ ...f.t, siLink: link } as DocText, 'Link SI');
     if (!cur) this.host.reveal?.();
-    await this.update(got.typed === 'true', true);
+    // (what the link brings in is one step of Undo with the link, as the Make Compound Numbers window says)
+    await this.update(got.typed === 'true', true, false, linkedNow);
   }
 
   /**
@@ -101,7 +103,7 @@ export class DocSiUI {
    * Compound Number fields, after showing which). `quiet`: the document was only shown again, so
    * nothing is said unless something points at what the SI no longer has.
    */
-  async update(typed = false, say = false, quiet = false): Promise<void> {
+  async update(typed = false, say = false, quiet = false, withLink = false): Promise<void> {
     const f = this.f;
     const got = await this.view(say, quiet);
     if (!got || this.f !== f || !f) return;
@@ -122,7 +124,8 @@ export class DocSiUI {
       }
     }
     const up = updateSiFields(t, got.view);
-    if (up.t !== f.t) f.ed.update(up.t, made ? 'Make compound numbers' : 'Update from SI');
+    // (`withLink`: the link was just made, and what it brings in joins that step)
+    if (up.t !== f.t) f.ed.update(up.t, withLink ? null : made ? 'Make compound numbers' : 'Update from SI');
     if (!say && !up.missing.length) return;
     const parts = [made ? `${made} compound number${made === 1 ? '' : 's'} made` : '', changed.length ? `renumbered by first mention: ${changed.map((x) => `${x.from}→${x.to}`).join(', ')}` : '', up.changed ? `${up.changed} SI label${up.changed === 1 ? '' : 's'} updated` : '', up.missing.length ? `${up.missing.length} point${up.missing.length === 1 ? 's' : ''} at something no longer in the SI` : ''].filter(Boolean);
     this.host.flash(`Linked to “${short(got.link.title, 40)}”${parts.length ? ': ' + parts.join('; ') : ': up to date'}.`, 8000);
@@ -191,12 +194,15 @@ export class DocSiUI {
   /** A mention of compound number `seq` with `letters` after it (linking that letter to `key` when `link`). */
   private mention(seq: number, letters: string, key: string, link: boolean): void {
     const f = this.f!;
-    if (link) f.ed.update(linkNumber(f.t, seq, letters, key), 'Link compound number');
     const ed = this.host.ed();
-    const style = ed.typingStyle();
-    this.host.insertObject({ kind: 'ref', target: seq }, 'Insert compound number', { bold: true });
-    if (letters) { ed.setStyle({ bold: true }); ed.type(letters); }
-    ed.setStyle({ bold: style.bold });
+    // the link, the number and its letter are one step of Undo
+    f.ed.together(() => {
+      if (link) f.ed.update(linkNumber(f.t, seq, letters, key), 'Link compound number');
+      const style = ed.typingStyle();
+      this.host.insertObject({ kind: 'ref', target: seq }, 'Insert compound number', { bold: true });
+      if (letters) { ed.setStyle({ bold: true }); ed.type(letters); }
+      ed.setStyle({ bold: style.bold });
+    });
   }
 
   /** References ▸ Renumber SI: the SI's compounds given the manuscript's IDs (as Manual IDs). */
@@ -281,7 +287,8 @@ export class DocSiUI {
       fixable.length ? [{ value: 'fix', label: `Use SI Values (${fixable.length})`, primary: true }, { value: 'close', label: 'Close' }] : [{ value: 'close', label: 'Close', primary: true }], 'close',
       'Compounds the manuscript gives values for must be in the SI, with the same yield, ee and dr. Values in sentences are notes only.');
     this.host.focus();
-    if (pick === 'fix') { let n = 0; for (const x of fixable) if (this.useSiValue(x)) n++; this.host.flash(`${n} value${n === 1 ? '' : 's'} replaced by the SI’s.`); }
+    // (all the values replaced are one step of Undo)
+    if (pick === 'fix') { let n = 0; this.f?.ed.together(() => { for (const x of fixable) if (this.useSiValue(x)) n++; }); this.host.flash(`${n} value${n === 1 ? '' : 's'} replaced by the SI’s.`); }
   }
 
   /** The SI field, or compound number linked to an SI compound, under a point (its object id), from the laid-out text. */
