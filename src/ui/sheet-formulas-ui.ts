@@ -5,6 +5,7 @@
 
 import { popupMenu } from './sheet-view';
 import { addInfo } from './info-tip';
+import { ask } from './ask';
 import type { SheetView } from './sheet-view';
 import type { Sheet } from '../sheet/workbook';
 import type { Value } from '../sheet/values';
@@ -97,18 +98,23 @@ export class SheetFormulas {
     const text = s.cell(v.sel.active.r, v.sel.active.c)?.input ?? '';
     const m = /^=\s*([A-Za-z_][\w.]*)\((.*)\)\s*$/s.exec(text);
     if (!m || !functionHelp().has(m[1].toUpperCase())) return null;
-    // split at the commas that aren't inside brackets, braces or quotes
+    // split at the commas that aren't inside brackets, braces or quotes; the call's own closing
+    // bracket is the last character, so one that closes early (=IF(A1,1,2)+IF(B1,3,4)) means the
+    // formula is more than one call
     const args: string[] = [];
-    let depth = 0, quote = false, cur = '';
+    let depth = 0, quote = false, sheetQuote = false, cur = '';
     for (const ch of m[2]) {
-      if (ch === '"') quote = !quote;
-      if (!quote && (ch === '(' || ch === '{')) depth++;
-      if (!quote && (ch === ')' || ch === '}')) depth--;
-      if (!quote && depth === 0 && ch === ',') { args.push(cur.trim()); cur = ''; continue; }
+      if (ch === '"' && !sheetQuote) quote = !quote;
+      else if (ch === "'" && !quote) sheetQuote = !sheetQuote;
+      const plain = !quote && !sheetQuote;
+      if (plain && (ch === '(' || ch === '{' || ch === '[')) depth++;
+      if (plain && (ch === ')' || ch === '}' || ch === ']')) depth--;
+      if (depth < 0) return null;
+      if (plain && depth === 0 && ch === ',') { args.push(cur.trim()); cur = ''; continue; }
       cur += ch;
     }
     if (cur.trim() || args.length) args.push(cur.trim());
-    if (depth !== 0 || quote) return null;
+    if (depth !== 0 || quote || sheetQuote) return null;
     return { name: m[1].toUpperCase(), args };
   }
 
@@ -335,12 +341,15 @@ export class SheetFormulas {
   }
 
   /** Change the names in one undoable step (renames carried into every formula). */
-  private saveNames(label: string, next: DefinedName[], renames: [string, string][] = []): void {
+  private saveNames(label: string, next: DefinedName[], renames: { from: string; to: string; was: DefinedName }[] = []): void {
     const v = this.view;
     const wb = v.wb!;
+    const before = wb.names.slice();
     wb.edit(label, () => {
       wb.setNames(next);
-      for (const [from, to] of renames) wb.rewriteAllFormulas((f) => renameInFormula(f, from, to));
+      // only the formulas that mean this name: a workbook name and a sheet's own name of the same
+      // spelling are two names, and a formula follows the one it resolves to
+      for (const { from, to, was } of renames) wb.rewriteAllFormulas((f, home) => (resolveName(before, from, wb.sheetNamed(home)) === was ? renameInFormula(f, from, to) : f));
     }, v.place());
     v.refresh();
   }
@@ -381,7 +390,8 @@ export class SheetFormulas {
       d.append(form);
       const finish = (saved: boolean) => { if (d.open) d.close(); d.remove(); done(saved); };
       cancel.addEventListener('click', () => finish(false));
-      d.addEventListener('cancel', () => done(false));
+      // (Esc closes the window, which then goes from the page as Cancel does)
+      d.addEventListener('cancel', () => finish(false));
       form.addEventListener('submit', (e) => {
         e.preventDefault();
         const nm = name.value.trim();
@@ -398,7 +408,7 @@ export class SheetFormulas {
         if (p) return fail(`"Refers to" can't be read: ${p}`);
         const next: DefinedName = { name: nm, formula: f, ...(sheet ? { sheet } : {}), ...(comment.value.trim() ? { comment: comment.value.trim() } : {}), ...(was?.hidden ? { hidden: true } : {}) };
         const list = was ? wb.names.map((n) => (n === was ? next : n)) : [...wb.names, next];
-        const renames: [string, string][] = was && was.name !== nm ? [[was.name, nm]] : [];
+        const renames = was && was.name !== nm ? [{ from: was.name, to: nm, was }] : [];
         this.saveNames(was ? `Edit name ${nm}` : `Define name ${nm}`, list, renames);
         finish(true);
       });
@@ -450,7 +460,9 @@ export class SheetFormulas {
     wrap.append(table);
     const buttons = el('p', 'ask-buttons');
     const close = el('button', 'primary', 'Close');
-    close.type = 'submit';
+    // (not a submit button: Enter in the Filter box would close the window)
+    close.type = 'button';
+    close.addEventListener('click', () => d.close());
     buttons.append(close);
     form.append(tools, wrap, buttons);
     d.append(form);
@@ -496,6 +508,7 @@ export class SheetFormulas {
       render();
     });
     filter.addEventListener('input', render);
+    filter.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
     d.addEventListener('close', () => { d.remove(); v.focus(); });
     document.body.append(d);
     render();
@@ -553,7 +566,7 @@ export class SheetFormulas {
     const finish = () => { if (d.open) d.close(); d.remove(); v.focus(); };
     cancel.addEventListener('click', finish);
     d.addEventListener('close', () => d.remove());
-    form.addEventListener('submit', (e) => {
+    form.addEventListener('submit', async (e) => {
       e.preventDefault();
       const b = { top: boxes.top.checked, left: boxes.left.checked, bottom: boxes.bottom.checked, right: boxes.right.checked };
       // the cells left once the heading rows and columns are taken off
@@ -573,10 +586,20 @@ export class SheetFormulas {
       if (b.right) for (let r = body.r1; r <= body.r2; r++) make(s.shownText(r, R.c2), { r1: r, r2: r, c1: body.c1, c2: body.c2 });
       finish();
       if (!made.length) { this.host.flash('No headings there could be made into names.'); return; }
-      // a name already in the workbook is replaced, as Excel asks to
-      const kept = wb.names.filter((n) => n.sheet || !made.some((m) => m.name.toLowerCase() === n.name.toLowerCase()));
+      // a name already in the workbook is replaced only when asked, as Excel does
+      const clash = (n: DefinedName, m: DefinedName) => !n.sheet && n.name.toLowerCase() === m.name.toLowerCase();
+      const taken = made.filter((m) => wb.names.some((n) => clash(n, m)));
+      let replaced: DefinedName[] = [];
+      if (taken.length) {
+        const list = taken.map((n) => n.name).join(', ');
+        const yes = await ask('Replace Names?', [], { ok: 'Replace', note: `${list} already ${taken.length === 1 ? 'names' : 'name'} cells in this workbook. Replace ${taken.length === 1 ? 'it' : 'them'}? Formulas that use ${taken.length === 1 ? 'it' : 'them'} will then read the new cells. Cancel keeps the names you have and makes only the others.` });
+        if (yes) replaced = taken;
+        else for (const n of taken) { made.splice(made.indexOf(n), 1); skipped.push(n.name); }
+      }
+      if (!made.length) { this.host.flash(`Nothing named: ${skipped.join(', ')} ${skipped.length === 1 ? 'is' : 'are'} already in use.`, 5000); return; }
+      const kept = wb.names.filter((n) => !replaced.some((m) => clash(n, m)));
       this.saveNames('Create names from selection', [...kept, ...made]);
-      this.host.flash(`Named ${made.map((n) => n.name).join(', ')}.${skipped.length ? ` Skipped: ${skipped.join(', ')}.` : ''}`, 5000);
+      this.host.flash(`Named ${made.map((n) => n.name).join(', ')}.${replaced.length ? ` Replaced: ${replaced.map((n) => n.name).join(', ')}.` : ''}${skipped.length ? ` Skipped: ${skipped.join(', ')}.` : ''}`, 5000);
     });
     document.body.append(d);
     d.showModal();

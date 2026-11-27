@@ -31,6 +31,8 @@ export class ToolWindow {
   private lastRef: HTMLInputElement | null = null;
   private buttons: HTMLParagraphElement;
   onClose: (() => void) | null = null;
+  /** Set when the person pressed Escape (rather than another window or the program taking this one away). */
+  dismissed = false;
   /** The sheet the window was opened on (cells picked on another sheet carry its name). */
   home: string | null = null;
 
@@ -51,7 +53,7 @@ export class ToolWindow {
     this.form.addEventListener('submit', (e) => e.preventDefault());
     this.d.addEventListener('keydown', (e) => {
       e.stopPropagation();
-      if (e.key === 'Escape') { e.preventDefault(); this.close(); }
+      if (e.key === 'Escape') { e.preventDefault(); this.dismissed = true; this.close(); }
     });
     // the window can be moved by its title
     h.addEventListener('pointerdown', (e) => {

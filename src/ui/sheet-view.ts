@@ -3728,7 +3728,8 @@ export class SheetView {
     const s = this.sheet, wb = this.wb;
     if (!s || !wb) return;
     const keepTop = this.scroller.scrollTop, keepLeft = this.scroller.scrollLeft;
-    wb.edit(rows || cols ? 'Split' : 'Remove split', () => s.setSplit(rows || cols ? { rows, cols } : null), this.place());
+    // (frozen panes and a split don't go together: freezing is undone in the same step)
+    wb.edit(rows || cols ? 'Split' : 'Remove split', () => { if (rows || cols) s.setFrozen(0, 0); s.setSplit(rows || cols ? { rows, cols } : null); }, this.place());
     this.metricsKey = '';
     this.layout();
     // the upper and left panes show what showed there; the others go on from them
@@ -3736,6 +3737,14 @@ export class SheetView {
     if (rows) this.scroller.scrollTop = keepTop + this.rows.pos(rows);
     if (cols) this.scroller.scrollLeft = keepLeft + this.cols.pos(cols);
     this.render();
+  }
+
+  /** Whether this many frozen rows and columns leave room in the window for the part that scrolls. */
+  roomToFreeze(rows: number, cols: number): boolean {
+    const vh = this.scroller.clientHeight, vw = this.scroller.clientWidth;
+    // (a window with no size yet, as before it is shown, has no limit)
+    if (!vh || !vw) return true;
+    return this.rows.pos(rows) <= vh - this.HH - 60 && this.cols.pos(cols) <= vw - this.HW - 60;
   }
 
   /** Before a split window's panes are frozen: scroll back by the split's rows and columns, so the cells below and right of them stay where they were. */

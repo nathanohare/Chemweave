@@ -15,7 +15,6 @@ import { textRuns, clipSegment, numAxis, drawChart, chartItems, chartSvg } from 
 import { VectorContext } from '../src/render/vector';
 import { readChartXml, chartXml } from '../src/io/xlsx-chart';
 import { writeXlsx, readXlsx, XlsxPictures } from '../src/io/xlsx';
-import { currentRegion } from '../src/ui/sheet-chart-ui';
 
 const r = (r1: number, c1: number, r2 = r1, c2 = c1) => ({ r1, c1, r2, c2 });
 const close = (a: number, b: number, digits = 6) => expect(a).toBeCloseTo(b, digits);
@@ -134,7 +133,7 @@ describe('charts of cells', () => {
 
   it('finds the table around one cell', () => {
     const wb = kinetics();
-    expect(currentRegion(wb.sheet, 3, 1)).toEqual(r(0, 0, 8, 2));
+    expect(wb.sheet.currentRegion(3, 1)).toEqual(r(0, 0, 8, 2));
   });
 
   it('reads references, and leaves out rows a filter hides unless asked', () => {

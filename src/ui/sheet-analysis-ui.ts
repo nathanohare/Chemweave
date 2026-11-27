@@ -8,6 +8,7 @@ import { ToolWindow, absText } from './tool-window';
 import { ask } from './ask';
 import type { Sheet, Workbook, CellStyle } from '../sheet/workbook';
 import { mergeStyle, valueInput } from '../sheet/workbook';
+import type { DefinedName } from '../sheet/names';
 import { Range, keyOf, rowOf, colOf, cellName, quoteSheet, rangeName, rangesOverlap, sheetNameProblem } from '../sheet/refs';
 import { readRef, refText, newChartId, type Chart } from '../sheet/chart';
 import { isError, type Value, maxOf } from '../sheet/values';
@@ -38,6 +39,12 @@ type Tool = (typeof TOOLS)[number];
 
 /** Where a tool's results go. */
 type Target = { sheet: Sheet; at: { row: number; col: number } } | { newSheet: string };
+
+/** A box's number, or the default when it is empty or not a number (0 is a number). */
+function numberOr(text: string, fallback: number): number {
+  const x = Number(text.trim());
+  return text.trim() && Number.isFinite(x) ? x : fallback;
+}
 
 export class SheetAnalysis {
   /** The tool picked last (the Data Analysis list opens on it). */
@@ -363,8 +370,9 @@ export class SheetAnalysis {
     w.actions('OK', () => {
       const c = this.cells(input.value, 'input range');
       if (typeof c === 'string') return c;
-      const R = c.range;
-      if (R.r1 !== R.r2 && R.c1 !== R.c2) return 'The input range must be one row or one column.';
+      if (c.range.r1 !== c.range.r2 && c.range.c1 !== c.range.c2) return 'The input range must be one row or one column.';
+      // cut at the last row and column in use, as values() does: a whole column is a million rows
+      const R: Range = { ...c.range, r2: Math.min(c.range.r2, Math.max(c.range.r1, c.sheet.lastRow)), c2: Math.min(c.range.c2, Math.max(c.range.c1, c.sheet.lastCol)) };
       const target = out();
       if (typeof target === 'string') return target;
       if (!('sheet' in target)) return 'Give the output range.';
@@ -481,7 +489,13 @@ export class SheetAnalysis {
         spec = { kind: 'discrete', values: rows.map((r) => Number(r[0])), probs: rows.map((r) => Number(r[1])) };
       }
       const sd = seed.value.trim() ? Number(seed.value) : undefined;
-      return this.write(randomNumbers(spec, Number(nv.value) || 1, Number(nn.value), seededRandom(sd)), out(), 'Random numbers');
+      if (sd !== undefined && !Number.isFinite(sd)) return 'Random Seed: give a number, or leave it empty.';
+      const vars = nv.value.trim() ? this.numberOf(nv, 'Number of Variables', (x) => Number.isInteger(x) && x >= 1) : 1;
+      if (typeof vars === 'string') return vars;
+      // (the count is not used by a patterned set, whose box is greyed)
+      const count = d === 'patterned' ? 1 : this.numberOf(nn, 'Number of Random Numbers', (x) => Number.isInteger(x) && x >= 1);
+      if (typeof count === 'string') return count;
+      return this.write(randomNumbers(spec, vars, count, seededRandom(sd)), out(), 'Random numbers');
     });
     w.show();
   }
@@ -512,7 +526,10 @@ export class SheetAnalysis {
       const gs = this.groups(input.value, false, labels.checked);
       if (typeof gs === 'string') return gs;
       const xs = gs.flatMap((x) => x.values).filter((v): v is number => v !== null);
-      const r = sample(xs, how.get() === 'periodic' ? { periodic: Number(period.value) } : { random: Number(count.value) }, seededRandom());
+      const periodic = how.get() === 'periodic';
+      const n = periodic ? this.numberOf(period, 'Period', Number.isInteger) : this.numberOf(count, 'Number of Samples', (x) => Number.isInteger(x) && x >= 1);
+      if (typeof n === 'string') return n;
+      const r = sample(xs, periodic ? { periodic: n } : { random: n }, seededRandom());
       return this.write(r, out(), 'Sampling');
     });
     w.show();
@@ -647,14 +664,16 @@ export class SheetAnalysis {
       st.note(`Target value: ${formatValue(target).text}`, '');
       st.note(`Current value: ${formatValue(res.y, sh.styleAt(a.range.r1, a.range.c1)?.numFmt).text}`, '');
       st.note(`${cellName(b.range.r1, b.range.c1)} = ${+res.x.toPrecision(15)}`, 'muted');
-      // as in Excel, the sheet shows the answer while the status shows; Cancel puts the cell back
+      // as in Excel, the sheet shows the answer while the status shows; Cancel takes it back, leaving
+      // nothing to undo (OK keeps this one step)
       const was = sh.cell(b.range.r1, b.range.c1);
-      this.wb.edit('Goal Seek', () => sh.setCell(b.range.r1, b.range.c1, { ...was, input: String(+res.x.toPrecision(15)) }), this.view.place());
+      const preview = this.wb.preview('Goal Seek', () => sh.setCell(b.range.r1, b.range.c1, { ...was, input: String(+res.x.toPrecision(15)) }), { sheet: sh, sel: b.range });
       this.view.refresh();
       let kept = false;
       st.onClose = () => {
         if (kept) return;
-        this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), this.view.place());
+        // (when something else was done since, the cell is put back as a step of its own)
+        if (!preview.retract()) this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), { sheet: sh, sel: b.range });
         this.view.refresh();
       };
       st.actions('OK', () => { kept = true; });
@@ -691,10 +710,14 @@ export class SheetAnalysis {
       if (ci && !ci.startsWith('=')) return ci;
       if (!ri && !ci) return 'Give a row input cell, a column input cell, or both.';
       if (s.dataTables.some((t) => rangesOverlap(t.ref, ref))) return 'This block overlaps another data table.';
-      this.host.edit('Data Table', (sh) => {
-        sh.clear(ref, 'contents');
-        sh.setDataTables([...sh.dataTables, { id: newDataTableId(), ref, ...(ri ? { rowInput: ri } : {}), ...(ci ? { colInput: ci } : {}) }]);
-      });
+      if (!this.wb.sheets.includes(s)) return 'The sheet this window was opened on is gone.';
+      // on the sheet the window was opened on, whichever sheet is showing now
+      this.view.commitEdit();
+      this.wb.edit('Data Table', () => {
+        s.clear(ref, 'contents');
+        s.setDataTables([...s.dataTables, { id: newDataTableId(), ref, ...(ri ? { rowInput: ri } : {}), ...(ci ? { colInput: ci } : {}) }]);
+      }, { sheet: s, sel: sel });
+      this.view.refresh();
       return null;
     });
     w.show();
@@ -726,6 +749,8 @@ export class SheetAnalysis {
     const lhs = w.ref('Cell Reference:', '', cg);
     const rel = w.select<SolverRel>('Relation', [['<=', '<='], ['=', '='], ['>=', '>='], ['int', 'int'], ['bin', 'bin'], ['dif', 'dif']], '<=', cg);
     const rhs = w.ref('Constraint:', '', cg);
+    // int, bin and dif have no right-hand side
+    const syncRhs = () => { rhs.disabled = ['int', 'bin', 'dif'].includes(rel.value); };
     const conBtns = document.createElement('p');
     conBtns.className = 'tool-row-buttons';
     const btn = (t: string, f: () => void) => { const b = document.createElement('button'); b.type = 'button'; b.textContent = t; b.addEventListener('click', f); conBtns.append(b); return b; };
@@ -749,8 +774,10 @@ export class SheetAnalysis {
       lhs.value = c.lhs.replace(/^=/, '');
       rel.value = c.rel;
       rhs.value = (c.rhs ?? '').replace(/^=/, '');
+      // (setting the relation from here fires no change event)
+      syncRhs();
     });
-    rel.addEventListener('change', () => { rhs.disabled = ['int', 'bin', 'dif'].includes(rel.value); });
+    rel.addEventListener('change', syncRhs);
     const nonNeg = w.check('Make Unconstrained Variables Non-Negative', m.nonNegative);
     const engine = w.select<SolverEngine>('Select a Solving Method:', [['grg', 'GRG Nonlinear'], ['simplex', 'Simplex LP'], ['evolutionary', 'Evolutionary']], m.engine);
     w.info('GRG Nonlinear for smooth models (curve fitting, yields as smooth functions); Simplex LP for linear ones (amounts, costs, mixtures); Evolutionary for models that jump (IF, LOOKUP, rounding).');
@@ -766,28 +793,56 @@ export class SheetAnalysis {
       goal: goal.get(), value: Number(val.value) || 0,
       vars: vars.value.trim() ? `=${vars.value.trim().replace(/^=/, '')}` : '',
       constraints: constraints.slice(), nonNegative: nonNeg.checked, engine: engine.value as SolverEngine,
-      precision: Number(precision.value) || 1e-6, intTolerance: (Number(intTol.value) || 1) / 100, maxTime: Number(maxTime.value) || 30,
+      precision: numberOr(precision.value, 1e-6), intTolerance: numberOr(intTol.value, 1) / 100, maxTime: Number(maxTime.value) || 30,
       seed: Number(seed.value) || 0, ignoreInt: ignoreInt.checked,
     });
-    const save = (mm: SolverModel) => {
-      // the model goes in the sheet's hidden names, as Excel keeps it
-      const keep = this.wb.names.filter((n) => !(n.sheet === s && isSolverName(n.name)));
-      const next = mm.objective || mm.vars ? [...keep, ...modelNames(mm, s)] : keep;
-      if (JSON.stringify(next.map((n) => [n.name, n.formula, n.sheet === s])) !== JSON.stringify(this.wb.names.map((n) => [n.name, n.formula, n.sheet === s]))) {
-        this.wb.edit('Solver model', () => this.wb.setNames(next), this.view.place());
-      }
+    // Excel takes a Constraint Precision above 0 and below 1 (0 would ask for exact answers and run to Max Time)
+    const precisionProblem = (): string | null => {
+      const p = numberOr(precision.value, 1e-6);
+      return p > 0 && p < 1 ? null : 'Constraint Precision: give a number above 0 and below 1 (such as 0.000001).';
     };
-    w.actions('Solve', () => {
+    let solving = false;
+    w.actions('Solve', async () => {
+      // (the window stays open while it waits: one Solve at a time)
+      if (solving) return false;
+      const bad = precisionProblem();
+      if (bad) return bad;
       const mm = model();
       if (!mm.objective) return 'Give the objective cell.';
       if (!mm.vars) return 'Give the variable cells.';
-      save(mm);
-      const run = runSolver(this.wb, s, mm);
-      if (typeof run === 'string') return run;
-      setTimeout(() => this.solverResults(s, mm, run));
-      return null;
-    }, [['Close (Keep Model)', () => { save(model()); w.close(); }]]);
+      solving = true;
+      const go = w.d.querySelector<HTMLButtonElement>('button.primary');
+      if (go) go.disabled = true;
+      try {
+        // the window repaints before the solver holds the page (it can run for Max Time)
+        this.host.flash('Solving…', 2000);
+        await new Promise((r) => setTimeout(r, 30));
+        const run = runSolver(this.wb, s, mm);
+        if (typeof run === 'string') { this.saveSolverModel(s, mm); return run; }
+        // (the model is kept with the answer, in the one step of Solver Results)
+        setTimeout(() => this.solverResults(s, mm, run));
+        return null;
+      } finally {
+        solving = false;
+        if (go) go.disabled = false;
+      }
+    }, [['Close (Keep Model)', () => { const bad = precisionProblem(); if (bad) { w.error(bad); return; } this.saveSolverModel(s, model()); w.close(); }]]);
     w.show();
+  }
+
+  /** The sheet's defined names with the Solver model in them, or null when they are as they are. */
+  private solverNames(s: Sheet, mm: SolverModel): DefinedName[] | null {
+    // the model goes in the sheet's hidden names, as Excel keeps it
+    const keep = this.wb.names.filter((n) => !(n.sheet === s && isSolverName(n.name)));
+    const next = mm.objective || mm.vars ? [...keep, ...modelNames(mm, s)] : keep;
+    const key = (l: DefinedName[]) => JSON.stringify(l.map((n) => [n.name, n.formula, n.sheet === s]));
+    return key(next) !== key(this.wb.names) ? next : null;
+  }
+
+  /** Keep the model on its own (Close, a failed run, Cancel in Solver Results), as one step. */
+  private saveSolverModel(s: Sheet, mm: SolverModel): void {
+    const next = this.solverNames(s, mm);
+    if (next) this.wb.edit('Solver model', () => this.wb.setNames(next), this.view.place());
   }
 
   /** Solver Results: keep the answer or put the values back, and the Answer Report. */
@@ -799,43 +854,67 @@ export class SheetAnalysis {
     const objKey = run.built.objective;
     const found = run.result.f * (run.built.sign === -1 ? -1 : 1);
     if (run.ok && m.goal !== 'value') w.note(`Objective ${cellName(rowOf(objKey), colOf(objKey))}: ${formatValue(found).text}`, 'muted');
-    // as in Excel, the sheet shows the answer while this window is open; Restore or Cancel puts the cells back
+    // as in Excel, the sheet shows the answer while this window is open. That is a preview: Restore
+    // or Cancel takes it back and leaves nothing to undo, and OK makes the one step of the run (the
+    // model, the answer and the Answer Report together)
     const wb = this.wb, v = this.view;
     const was = run.built.vars.map((k) => ({ k, cell: s.cells.get(k) }));
-    let showing = false, kept = false;
+    const restore = () => { for (const { k, cell } of was) s.setCell(rowOf(k), colOf(k), { ...cell }); };
+    let showing = false, finished = false;
+    let preview: ReturnType<Workbook['preview']> | null = null;
+    /** Take the preview back; false when something else was done since, so it stays as a step. */
+    const takeBack = (): boolean => {
+      const p = preview;
+      preview = null;
+      showing = false;
+      return !p || p.retract();
+    };
     const show = (answer: boolean) => {
       if (answer === showing) return;
-      wb.edit(answer ? 'Solver' : 'Restore Original Values', () => {
-        if (answer) keepAnswer(s, run);
-        else for (const { k, cell } of was) s.setCell(rowOf(k), colOf(k), { ...cell });
-      }, v.place());
-      showing = answer;
+      if (answer) {
+        preview = wb.preview('Solver', () => keepAnswer(s, run), v.place());
+        showing = true;
+      } else if (!takeBack()) {
+        // (something else was done meanwhile: the values go back as a step of their own)
+        wb.edit('Restore Original Values', restore, v.place());
+      }
       v.refresh();
     };
     show(keep.get() === 'keep');
     for (const inp of keep.inputs) inp.addEventListener('change', () => show(keep.get() === 'keep'));
-    w.onClose = () => { if (!kept) show(false); };
+    w.onClose = () => {
+      if (finished) return;
+      finished = true;
+      show(false);
+      this.saveSolverModel(s, m);
+    };
     w.actions('OK', () => {
-      kept = true;
-      show(keep.get() === 'keep');
-      if (report.checked) {
-        const when = new Date();
-        const rows = answerReport(s, m, run, when);
+      finished = true;
+      const wantKeep = keep.get() === 'keep';
+      // the report reads the values as they will stand, so it is made while the sheet shows them
+      show(wantKeep);
+      const rows = report.checked ? answerReport(s, m, run, new Date()) : null;
+      // the preview gives way to the one step of the run (if it can't, because something was done since, it stays as a step of its own)
+      takeBack();
+      let sheet: Sheet | undefined;
+      const names = this.solverNames(s, m);
+      wb.edit(wantKeep || rows ? 'Solver' : 'Solver model', () => {
+        if (names) wb.setNames(names);
+        if (wantKeep) keepAnswer(s, run);
+        if (!rows) return;
         let n = 1;
         while (wb.sheetNamed(`Answer Report ${n}`)) n++;
-        let sheet: Sheet;
-        wb.edit('Answer Report', () => {
-          sheet = wb.addSheet(`Answer Report ${n}`, wb.sheets.indexOf(s));
-          rows.forEach((row, r) => row.forEach((val, c) => {
-            if (val === null || val === undefined) return;
-            sheet.setCell(r, c, { input: valueInput(val), ...(r === 0 || (typeof val === 'string' && /^(Objective Cell|Variable Cells|Constraints)/.test(val)) ? { style: { bold: true } } : {}) });
-          }));
-          sheet.setColWidth(1, 70);
-          sheet.setColWidth(2, 120);
-          sheet.setColWidth(4, 110);
-        }, v.place());
-        v.goSheet(wb.sheets.indexOf(sheet!));
-      }
+        const made = wb.addSheet(`Answer Report ${n}`, wb.sheets.indexOf(s));
+        sheet = made;
+        rows.forEach((row, r) => row.forEach((val, c) => {
+          if (val === null || val === undefined) return;
+          made.setCell(r, c, { input: valueInput(val), ...(r === 0 || (typeof val === 'string' && /^(Objective Cell|Variable Cells|Constraints)/.test(val)) ? { style: { bold: true } } : {}) });
+        }));
+        made.setColWidth(1, 70);
+        made.setColWidth(2, 120);
+        made.setColWidth(4, 110);
+      }, v.place());
+      if (sheet) v.goSheet(wb.sheets.indexOf(sheet));
       v.refresh();
     });
     w.show();

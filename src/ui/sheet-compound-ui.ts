@@ -56,7 +56,7 @@ export class SheetCompounds {
   }
 
   /** The cells picked that can be looked up: text, or a drawn structure (by its SMILES). */
-  private targets(onlyCards: boolean): { r: number; c: number; q: { name: string } | { smiles: string } | { cid: number }; shown: string }[] {
+  private targets(onlyCards: boolean): { r: number; c: number; q: { name: string } | { smiles: string } | { cid: number }; shown: string; was: unknown }[] {
     const v = this.view, s = v.sheet!;
     const R = s.clip(v.sel.range) ?? v.sel.range;
     const out: ReturnType<SheetCompounds['targets']> = [];
@@ -65,16 +65,16 @@ export class SheetCompounds {
         const cell = s.cell(r, c);
         if (s.hiddenRows.has(r)) continue;
         if (onlyCards) {
-          if (cell?.compound) out.push({ r, c, q: { cid: cell.compound.cid }, shown: cell.compound.name });
+          if (cell?.compound) out.push({ r, c, q: { cid: cell.compound.cid }, shown: cell.compound.name, was: undefined });
           continue;
         }
         if (cell?.structure) {
           const m = s.wb.chem?.structure(cell.structure);
-          if (m && !isError(m)) out.push({ r, c, q: { smiles: m.smiles }, shown: s.shownText(r, c) || m.formula });
+          if (m && !isError(m)) out.push({ r, c, q: { smiles: m.smiles }, shown: s.shownText(r, c) || m.formula, was: undefined });
           continue;
         }
         const val = s.values.get(keyOf(r, c));
-        if (typeof val === 'string' && val.trim() && !cell?.input?.startsWith('=')) out.push({ r, c, q: { name: val.trim() }, shown: val.trim() });
+        if (typeof val === 'string' && val.trim() && !cell?.input?.startsWith('=')) out.push({ r, c, q: { name: val.trim() }, shown: val.trim(), was: val });
       }
     }
     return out;
@@ -88,7 +88,7 @@ export class SheetCompounds {
     const list = this.targets(onlyCards);
     if (!list.length) { this.host.flash(onlyCards ? 'Select cells holding compounds first.' : 'Select cells with names (Aspirin, DMAP, THF), CAS numbers or drawn structures first.', 6000); return; }
     this.busy = true;
-    const found: { r: number; c: number; card: CompoundCard; shown: string }[] = [];
+    const found: { r: number; c: number; card: CompoundCard; shown: string; was: unknown }[] = [];
     const missed: string[] = [];
     try {
       for (let i = 0; i < list.length; i++) {
@@ -115,17 +115,21 @@ export class SheetCompounds {
       return;
     }
     // into the sheet looked up from, even when another tab or sheet shows by now
+    let made = 0;
     const wrote = this.host.editSheet(s, onlyCards ? 'Refresh compound data' : 'Compound data type', (sh) => {
       for (const f of found) {
         const cell = sh.cell(f.r, f.c);
-        // skip a cell changed while the look-ups ran
-        if (!onlyCards && !cell?.structure && sh.values.get(keyOf(f.r, f.c)) !== f.shown) continue;
+        // skip a cell changed while the look-ups ran (a name as it was typed, spaces and all; a
+        // card that is no longer there, or no longer this compound, when it was a refresh)
+        if (onlyCards ? cell?.compound?.cid !== f.card.cid : !cell?.structure && sh.values.get(keyOf(f.r, f.c)) !== f.was) continue;
         sh.setCompound(f.r, f.c, f.card);
+        made++;
       }
     });
     if (!wrote) return;
+    if (!made) { this.host.flash('The cells changed while PubChem was asked, so they were left as they are. Try again.', 6000); return; }
     const header = missed.length === 1 && list[0].shown === missed[0];
-    this.host.flash(`${onlyCards ? 'Refreshed' : 'Made'} ${found.length} compound${found.length > 1 ? 's' : ''}.${missed.length && !header ? ` PubChem doesn't know: ${missed.slice(0, 4).join(', ')}${missed.length > 4 ? '…' : ''}` : ''} Their cards are in the side panel; Insert Data adds a column of a property.`, missed.length && !header ? 9000 : 5000);
+    this.host.flash(`${onlyCards ? 'Refreshed' : 'Made'} ${made} compound${made > 1 ? 's' : ''}.${missed.length && !header ? ` PubChem doesn't know: ${missed.slice(0, 4).join(', ')}${missed.length > 4 ? '…' : ''}` : ''} Their cards are in the side panel; Insert Data adds a column of a property.`, missed.length && !header ? 9000 : 5000);
   }
 
   refreshCards(): Promise<void> {

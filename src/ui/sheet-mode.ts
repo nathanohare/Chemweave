@@ -929,8 +929,19 @@ export class SheetMode {
     if (!wb) return;
     if (!wb.queries.length) { this.pivots.refreshAll(); return; }
     this.host.flash(`Refreshing ${wb.queries.length} quer${wb.queries.length > 1 ? 'ies' : 'y'}…`, 60000);
-    const problems = await this.queries.refreshQueries();
-    const piv = this.pivots.refreshAll(true);
+    // the sources are read first; then the queries' tables and the PivotTables are written as one step
+    const read = await this.queries.readQueries();
+    const problems = [...read.problems];
+    let piv: ReturnType<SheetPivots['refreshAll']> = { count: 0, problems: [] };
+    this.view.commitEdit();
+    wb.edit('Refresh All', () => {
+      problems.push(...read.write());
+      // the PivotTables read the tables the queries just wrote, so their values are worked out first
+      wb.settle();
+      piv = this.pivots.refreshAll(true);
+    }, this.view.place());
+    this.view.refresh();
+    this.queries.refreshPane();
     problems.push(...piv.problems);
     const done = [`${wb.queries.length} quer${wb.queries.length > 1 ? 'ies' : 'y'}`, ...(piv.count ? [`${piv.count} PivotTable${piv.count > 1 ? 's' : ''}`] : [])].join(' and ');
     this.host.flash(problems.length ? problems.join(' ') : `Refreshed ${done}.`, problems.length ? 9000 : 3000);
@@ -1570,6 +1581,8 @@ export class SheetMode {
     if (s.frozen.rows) { this.edit('Unfreeze', (sh) => sh.setFrozen(0, sh.frozen.cols)); return; }
     const t = this.tableAt();
     const rows = t?.header !== null && t?.header !== undefined ? t.header + 1 : Math.max(1, v.sel.active.r);
+    // (as Freeze Panes: rows counted from row 1 must leave room in the window to scroll)
+    if (!v.roomToFreeze(rows, s.frozen.cols)) { this.host.flash('Freezing here would fill the window with frozen rows. Scroll to the top, or select a cell nearer the top, and try again.', 8000); return; }
     v.keepPlaceForFreeze();
     this.edit('Freeze header row', (sh) => { sh.setSplit(null); sh.setFrozen(rows, sh.frozen.cols); });
     this.host.flash(`Rows 1–${rows} stay in view as you scroll.`);
@@ -2430,6 +2443,8 @@ export class SheetMode {
     if (i >= 0 && i !== wb.active) this.view.goSheet(i);
     this.view.refresh();
     if (i >= 0) this.view.select(p.sel, { r: p.sel.r1, c: p.sel.c1 });
+    // (the Fields window shows the PivotTable as Undo or Redo left it)
+    this.pivots.workbookChanged();
   }
 
   selectAll(): void {

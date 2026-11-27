@@ -8,7 +8,7 @@ import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import { ask, Field } from './ask';
 import type { Sheet } from '../sheet/workbook';
-import { Range, colName, parseCellRef } from '../sheet/refs';
+import { colName, parseCellRef } from '../sheet/refs';
 import {
   Chart, ChartKind, ChartAxis, Series, SeriesFit, ErrorBars, MarkerShape, CHART_NAMES, CHART_PALETTES, MARKERS,
   chartFromRange, chartData, readRef, refText, unionParts, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
@@ -34,22 +34,6 @@ const KINDS = Object.keys(CHART_NAMES) as ChartKind[];
 /** Charts that take fitted lines and error bars. */
 const FITTED = new Set<ChartKind>(['scatter', 'line', 'column', 'bar', 'area', 'bubble']);
 const FITS = (Object.keys(FIT_NAMES) as FitKind[]).filter((k) => !isChemFit(k));
-
-/** The block of filled cells around a cell (Excel's current region), for charting one cell's table. */
-export function currentRegion(s: Sheet, r: number, c: number): Range {
-  const filled = (row: number, col: number) => row >= 0 && col >= 0 && s.value(row, col) !== null && s.value(row, col) !== '';
-  const R = { r1: r, c1: c, r2: r, c2: c };
-  for (let grew = true, guard = 0; grew && guard < 10000; guard++) {
-    grew = false;
-    const rowHas = (row: number) => { for (let col = R.c1 - 1; col <= R.c2 + 1; col++) if (filled(row, col)) return true; return false; };
-    const colHas = (col: number) => { for (let row = R.r1 - 1; row <= R.r2 + 1; row++) if (filled(row, col)) return true; return false; };
-    if (R.r1 > 0 && rowHas(R.r1 - 1)) { R.r1--; grew = true; }
-    if (rowHas(R.r2 + 1)) { R.r2++; grew = true; }
-    if (R.c1 > 0 && colHas(R.c1 - 1)) { R.c1--; grew = true; }
-    if (colHas(R.c2 + 1)) { R.c2++; grew = true; }
-  }
-  return R;
-}
 
 const num = (s: string): number | undefined => (s.trim() !== '' && Number.isFinite(Number(s)) ? Number(s) : undefined);
 
@@ -94,7 +78,7 @@ export class SheetCharts {
     let R = v.sel.range;
     if (R.r1 === R.r2 && R.c1 === R.c2) {
       const t = s.tableAt(R.r1, R.c1);
-      R = t ? t.range : currentRegion(s, R.r1, R.c1);
+      R = t ? t.range : s.currentRegion(R.r1, R.c1);
     } else R = s.clip(R) ?? R;
     if (s.value(R.r1, R.c1) === null && R.r1 === R.r2 && R.c1 === R.c2) {
       this.host.flash('Select the numbers to chart first (with their header row, and for a scatter chart the x column first).', 6000);
@@ -125,7 +109,8 @@ export class SheetCharts {
       const out: Chart = { ...c, kind: k };
       if (k === 'pie' && c.legend === 'none') out.legend = 'right';
       if (k !== 'pie' && c.kind === 'pie' && c.series.length === 1) out.legend = 'none';
-      out.y = { ...c.y, grid: k === 'pie' ? false : c.y.grid ?? true };
+      // (a pie has no axes, so its grid setting is left as it was and comes back with the next kind)
+      out.y = { ...c.y, grid: c.y.grid ?? true };
       return out;
     }, 'Chart type');
   }
@@ -339,7 +324,7 @@ export class SheetCharts {
     const at = { r: yr.range.r2 + 2, c: xr && xr.sheet === yr.sheet ? xr.range.c1 : yr.range.c1 };
     const got = await ask('Fitted Line in Cells', [{ name: 'at', label: 'Top-left cell', value: `${colName(at.c)}${at.r + 1}` }], {
       ok: 'Insert into Cells',
-      note: 'Writes Slope, Intercept and R² with formulas (SLOPE, INTERCEPT, RSQ) that follow the data, plus their standard errors (LINEST) as Excel does.',
+      note: 'Writes Slope, Intercept and R² with formulas (SLOPE, INTERCEPT, RSQ) that follow the data, and the standard error of y (STEYX).',
     });
     const ref = got ? parseCellRef(got.at.trim()) : null;
     if (!ref) return;

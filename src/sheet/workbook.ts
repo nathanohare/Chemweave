@@ -1735,6 +1735,41 @@ export class Workbook {
     return e.after ?? e.before ?? null;
   }
 
+  /**
+   * Make a change that the person may still turn down (Goal Seek's answer, Solver's): a step like
+   * any other, with a way to take it back as if it had never been made, leaving nothing to undo or
+   * redo. `made` is false when the change altered nothing, so there is no step to take back.
+   */
+  preview<T>(label: string, fn: () => T, before?: Place): { result: T; made: boolean; retract(): boolean } {
+    const top = this.undoList[this.undoList.length - 1];
+    const result = this.edit(label, fn, before);
+    const entry = this.undoList[this.undoList.length - 1];
+    const made = entry !== undefined && entry !== top;
+    return {
+      result, made,
+      retract: () => {
+        if (!made) return true;
+        if (this.tx) return false;
+        // undone meanwhile (Ctrl+Z while its window stayed open): only the step to redo is left to drop
+        if (this.redoList[this.redoList.length - 1] === entry) { this.redoList.pop(); return true; }
+        // something else was done since: the step stays, and the caller puts the cells back by hand
+        if (this.undoList[this.undoList.length - 1] !== entry) return false;
+        this.undoList.pop();
+        for (let i = entry.changes.length - 1; i >= 0; i--) this.applyChange(entry.changes[i], 'before');
+        // (counted as a change, so a file saved while the preview showed is known to differ)
+        this.edits++;
+        this.recalcAfter(entry.changes, 'before');
+        this.onChange();
+        return true;
+      },
+    };
+  }
+
+  /** Inside an edit: bring every value up to date with what the edit has changed so far, so what comes next reads them. */
+  settle(): void {
+    if (this.tx) this.recalc();
+  }
+
   private applyChange(c: Change, which: 'before' | 'after'): void {
     const v = c[which];
     if (c.field === 'sheets') {
