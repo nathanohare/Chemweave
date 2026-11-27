@@ -355,6 +355,8 @@ export class RichField {
   }
 
   private onKey(e: KeyboardEvent): void {
+    // (Enter and Escape during an input-method composition belong to the method: they accept or drop the candidate)
+    if (e.isComposing || this.composing || e.keyCode === 229) return;
     const mod = e.ctrlKey || e.metaKey;
     if (this.o.keys?.(e, this)) { e.preventDefault(); return; }
     if (e.key === 'Enter') { e.preventDefault(); this.el.blur(); return; }

@@ -7667,7 +7667,7 @@ async function referencesSlideOptions(): Promise<void> {
 async function insertReference(): Promise<void> {
   if (docActive() || sheetActive()) { void openReferences(); return; }
   finishTyping();
-  const groups = (): RefGroup[] => refHolders().map((h) => ({ name: h.name, refs: h.refs(), style: h.citeStyle() }));
+  const groups = (): RefGroup[] => refHolders().map((h) => ({ key: h.key, name: h.name, refs: h.refs(), style: h.citeStyle() }));
   const here = sameDrawing('The reference');
   const got = await chooseRefsToInsert(groups(), async () => {
     const asked = await ask('Reference by DOI', [{ name: 'doi', label: 'DOI', value: '' }], { ok: 'Look Up', note: 'Paste a DOI (10.1021/om100106e) or a doi.org link. The details are filled in from Crossref, which needs the internet.' });

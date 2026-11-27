@@ -70,21 +70,34 @@ describe('F173 and F776: picking rows does not make the list again', () => {
     expect(row.isConnected).toBe(true);
     expect(row.classList.contains('picked')).toBe(true);
   });
-  it('waits for a pause in typing to search, and does not count the uses again for it', async () => {
-    const counts = { uses: 0 };
-    const { d, rows } = open([holder('1', 'A.docx', [ref('a', 'Palladium catalysis'), ref('b', 'Nickel catalysis'), ref('c', 'Boron')], counts)]);
+  it('waits for a pause in typing to search, and counts the uses anew for it', async () => {
+    const h = holder('1', 'A.docx', [ref('a', 'Palladium catalysis'), ref('b', 'Nickel catalysis'), ref('c', 'Boron')]);
+    const { d, rows } = open([h]);
     const search = d.querySelector<HTMLInputElement>('input[type=search]')!;
-    const n = counts.uses;
+    // a citation is inserted in the document while the window is open (nothing tells the window)
+    h.uses = () => new Map([['b', 2]]);
+    h.useText = (n: number) => (n ? `cited ${n} times` : 'not cited');
     search.value = 'nick';
     search.dispatchEvent(new Event('input', { bubbles: true }));
     expect(rows()).toHaveLength(3); // not yet
     await tick(250);
     expect(rows().map((r) => r.dataset.id)).toEqual(['b']);
-    expect(counts.uses).toBe(n);
+    expect(rows()[0].textContent).toContain('cited 2 times'); // not the count from before
+  });
+  it('counts the uses anew when a file is folded', () => {
+    const h = holder('1', 'A.docx', [ref('b', 'Nickel catalysis')]);
+    const { d, rows } = open([h]);
+    h.uses = () => new Map([['b', 3]]);
+    h.useText = (n: number) => (n ? `cited ${n} times` : 'not cited');
+    const head = () => d.querySelector<HTMLElement>('tr[data-group]')!;
+    head().click(); // fold
+    expect(rows()).toHaveLength(0);
+    head().click(); // show again
+    expect(rows()[0].textContent).toContain('cited 3 times');
   });
 });
 
-describe('F775: Enter and Delete on a button are the button\'s own', () => {
+describe('F775: Enter on a button is the button\'s own; the arrows and Delete still work', () => {
   it('does not open Edit Reference when Enter is pressed on a focused button', () => {
     const { d, rows } = open([holder('1', 'A.docx', [ref('a', 'One')])]);
     rows()[0].click();
@@ -95,6 +108,14 @@ describe('F775: Enter and Delete on a button are the button\'s own', () => {
     d.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
     expect(document.querySelector('dialog.ref-edit')).not.toBeNull();
     document.querySelector('dialog.ref-edit')!.remove();
+  });
+  it('still moves the pick with the arrow keys while a button has focus', () => {
+    const { d, rows } = open([holder('1', 'A.docx', [ref('a', 'One'), ref('b', 'Two')])]);
+    rows()[0].click();
+    const edit = [...d.querySelectorAll<HTMLButtonElement>('button')].find((b) => b.textContent === 'Edit…')!;
+    edit.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowDown', bubbles: true, cancelable: true }));
+    expect(rows()[1].classList.contains('picked')).toBe(true);
+    expect(rows()[0].classList.contains('picked')).toBe(false);
   });
 });
 

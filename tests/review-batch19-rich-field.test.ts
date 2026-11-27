@@ -86,4 +86,25 @@ describe('F175: an input method is not interrupted by a redraw', () => {
     await tick();
     expect(f.text()).toBe('abc');
   });
+  it('leaves Enter and Escape to the input method while composing', () => {
+    const { f, got } = make([{ text: 'ab' }]);
+    f.select(2);
+    f.el.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    (f.el.firstChild as Text).data = 'abか';
+    input(f, 'insertCompositionText', 'か', { isComposing: true });
+    // Enter accepts the candidate and Escape drops it: neither ends the editing of the field
+    for (const key of ['Enter', 'Escape']) {
+      const e = new KeyboardEvent('keydown', { key, isComposing: true, cancelable: true, bubbles: true });
+      f.el.dispatchEvent(e);
+      expect(e.defaultPrevented).toBe(false);
+      expect(document.activeElement).toBe(f.el);
+    }
+    expect(got).toEqual([]);
+    // after the composition, Enter finishes the field as before
+    f.el.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, data: 'か' }));
+    const e = new KeyboardEvent('keydown', { key: 'Enter', cancelable: true, bubbles: true });
+    f.el.dispatchEvent(e);
+    expect(e.defaultPrevented).toBe(true);
+    expect(document.activeElement).not.toBe(f.el);
+  });
 });

@@ -49,4 +49,22 @@ describe('F720: Manage References and what was checked', () => {
     [...d.querySelectorAll<HTMLButtonElement>('.ask-buttons button')].find((b) => b.textContent === 'Cancel')!.click();
     expect(await got).toBeNull();
   });
+  it('keeps a reference with the file it came from when two files have the same name and ids', async () => {
+    const first = ref('r1', 'From the first file'), second = ref('r1', 'From the second file');
+    const second2 = { ...second, title: 'From the second file, corrected' };
+    document.body.replaceChildren();
+    const got = chooseRefsToInsert([{ key: '1', name: 'Untitled', refs: [first] }, { key: '2', name: 'Untitled', refs: [second] }],
+      async () => null,
+      async (): Promise<RefGroup[]> => [{ key: '1', name: 'Untitled', refs: [first] }, { key: '2', name: 'Untitled', refs: [second2] }]);
+    const d = document.querySelector<HTMLDialogElement>('dialog.insert-refs-dialog')!;
+    const boxes = () => [...d.querySelectorAll<HTMLInputElement>('.slide-refs-row input')];
+    boxes()[1].checked = true; // the second file's reference
+    boxes()[1].dispatchEvent(new Event('change', { bubbles: true }));
+    [...d.querySelectorAll<HTMLButtonElement>('.ask-buttons button')].find((b) => b.textContent === 'Manage References…')!.click();
+    await tick();
+    expect(boxes().map((b) => b.checked)).toEqual([false, true]);
+    d.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true }));
+    const r = (await got)!;
+    expect(r.refs).toEqual([second2]);
+  });
 });

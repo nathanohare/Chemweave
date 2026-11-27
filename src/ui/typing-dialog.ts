@@ -82,12 +82,12 @@ export class TypingDialog {
     showDialog(this.d);
   }
 
-  /** Use the standard list: asks first when that would replace replacements of your own (nothing here undoes it). */
+  /** Use the Standard List: asks first when that would replace custom replacements (nothing here undoes it). */
   private async useStandard(): Promise<void> {
     const mine = this.opts.get().replacements;
     const same = mine.length === DEFAULT_REPLACEMENTS.length && mine.every(([a, b], i) => a === DEFAULT_REPLACEMENTS[i][0] && b === DEFAULT_REPLACEMENTS[i][1]);
     if (!same) {
-      const pick = await askChoice('Use the Standard List?', 'The standard list replaces the replacements you have set up here, and they can\'t be brought back.',
+      const pick = await askChoice('Use the Standard List?', 'The standard list replaces the custom replacements here, and they can\'t be brought back.',
         [{ value: 'keep', label: 'Cancel' }, { value: 'use', label: 'Use the Standard List', primary: true }], 'keep');
       if (pick !== 'use') return;
     }

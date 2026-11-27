@@ -479,8 +479,6 @@ export class ReferencesDialog {
   private folded = new Set<string>();
   private closed: (() => void) | null = null;
   private searchTimer: ReturnType<typeof setTimeout> | null = null;
-  /** How much each reference is used, as of the last time the files' own lists were looked at (see `fill`). */
-  private usesCache = new Map<string, Map<string, number>>();
 
   constructor(private host: ReferencesHost) {}
 
@@ -514,8 +512,8 @@ export class ReferencesDialog {
       e.stopPropagation();
       if (e.target instanceof HTMLInputElement || e.target instanceof HTMLSelectElement || e.target instanceof HTMLTextAreaElement) return;
       const mod = e.ctrlKey || e.metaKey;
-      // Enter, Delete and the arrows on a button or link are that control's own (Enter presses it)
-      if (!mod && e.target instanceof Element && e.target.closest('button, a, [role=button]')) return;
+      // Enter and Space on a button or link are that control's own (they press it); the arrows and Delete are not
+      if (!mod && (e.key === 'Enter' || e.key === ' ') && e.target instanceof Element && e.target.closest('button, a, [role=button]')) return;
       if (e.key === 'Delete' && this.selected.size) { e.preventDefault(); void this.remove(); }
       else if (e.key === 'Enter' && this.selected.size) { e.preventDefault(); void this.edit(); }
       else if (e.key === 'ArrowDown' || e.key === 'ArrowUp') { e.preventDefault(); this.step(e.key === 'ArrowDown' ? 1 : -1, e.shiftKey); }
@@ -543,7 +541,7 @@ export class ReferencesDialog {
     // (typing waits a moment for the next key before the list is made again)
     this.search.addEventListener('input', () => {
       if (this.searchTimer) clearTimeout(this.searchTimer);
-      this.searchTimer = setTimeout(() => { this.searchTimer = null; this.fill(true); }, 150);
+      this.searchTimer = setTimeout(() => { this.searchTimer = null; this.fill(); }, 150);
     });
     this.warning = el('p', { className: 'refs-warning', role: 'status' });
     this.hint = el('p', { className: 'muted refs-hint' });
@@ -615,7 +613,6 @@ export class ReferencesDialog {
     );
     d.addEventListener('close', () => {
       if (this.searchTimer) { clearTimeout(this.searchTimer); this.searchTimer = null; }
-      this.usesCache.clear();
       d.remove(); this.d = null; this.panels.clear(); this.closed?.(); this.closed = null;
     });
     addCloseX(d, d.querySelector<HTMLElement>('.refs-head')!);
@@ -626,11 +623,8 @@ export class ReferencesDialog {
     return new Promise((resolve) => { this.closed = resolve; });
   }
 
-  /**
-   * Fill the window again (after any change, here or in a file). `again`: only the list was asked to
-   * show differently (searched, a group folded), so how much each reference is used is not counted anew.
-   */
-  fill(again = false): void {
+  /** Fill the window again (after any change, here or in a file; how much each reference is used is counted anew). */
+  fill(): void {
     if (!this.d) return;
     const holders = this.host.holders();
     if (!holders.some((h) => h.key === this.group)) this.group = this.host.current() ?? holders[0]?.key ?? null;
@@ -641,7 +635,6 @@ export class ReferencesDialog {
     const q = this.search.value.trim().toLowerCase();
     const rows: HTMLTableRowElement[] = [];
     let saidHow = false;
-    if (!again) this.usesCache.clear();
     for (const g of holders) {
       const all = g.refs();
       const refs = all.filter((r) => (!q || `${describe(r)} ${r.authors.join(' ')} ${r.doi}`.toLowerCase().includes(q)) && (g.shows?.(r) ?? true));
@@ -654,8 +647,7 @@ export class ReferencesDialog {
       head.title = (note ? note + '\n' : '') + (fold ? 'Click to show these references' : 'Click to collapse these references (and to add to this group)');
       rows.push(head);
       if (fold) continue;
-      let uses = again ? this.usesCache.get(g.key) : undefined;
-      if (!uses) { uses = g.uses(); this.usesCache.set(g.key, uses); }
+      const uses = g.uses();
       for (const r of refs) {
         const n = uses.get(r.id) ?? 0;
         const tr = el('tr', { draggable: true },
@@ -741,7 +733,7 @@ export class ReferencesDialog {
     if (this.group !== key) this.group = key;
     else if (this.folded.has(key)) this.folded.delete(key);
     else this.folded.add(key);
-    this.fill(true);
+    this.fill();
   }
 
   /** Pick a row: alone, added to the rows picked (Ctrl), or every row from the last one picked (Shift). */

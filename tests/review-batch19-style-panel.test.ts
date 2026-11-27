@@ -75,14 +75,25 @@ describe('F804: Expected Count ▸ Other… takes the number offered', () => {
     expect(row(body, 'Expected Count').querySelector('input[type=number]')).toBeNull();
     expect(row(body, 'Expected Count').querySelector('select')).not.toBeNull();
   });
-  it('puts the list back when the box is clicked away from unchanged', () => {
+  it('puts the list back on Auto when the box is clicked away from unchanged', () => {
     const { doc, m, body } = rhodium();
     const n = openOther(body);
     n.focus();
     n.blur();
     expect(row(body, 'Expected Count').querySelector('input[type=number]')).toBeNull();
-    expect(row(body, 'Expected Count').querySelector('select')).not.toBeNull();
-    expect(doc.atoms.get(m)!.ecount?.expect).toBe(16);
+    const list = row(body, 'Expected Count').querySelector('select')!;
+    expect(list).not.toBeNull();
+    // nothing was typed: the count stays automatic (it still follows the drawing)
+    expect(doc.atoms.get(m)!.ecount?.expect).toBeUndefined();
+    expect(list.value).toBe('auto');
+  });
+  it('stores a number that was typed when the box is clicked away', () => {
+    const { doc, m, body } = rhodium();
+    const n = openOther(body);
+    n.focus();
+    n.value = '14';
+    n.blur();
+    expect(doc.atoms.get(m)!.ecount?.expect).toBe(14);
   });
   it('takes nothing on Escape', () => {
     const { doc, m, body } = rhodium();

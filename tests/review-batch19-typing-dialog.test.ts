@@ -22,14 +22,26 @@ function make(replacements: [string, string][]) {
   return { prefs, reset, choose };
 }
 
-describe('F818: Use the standard list asks before replacing your own', () => {
-  it('keeps the list when the question is cancelled', async () => {
+describe('F818: Use the Standard List asks before replacing custom replacements', () => {
+  it('keeps the list when the question is canceled', async () => {
     const { prefs, reset, choose } = make([['(c)', '©'], ['mine', 'MINE']]);
     reset();
     await tick();
     choose('Cancel');
     await tick();
     expect(prefs.replacements).toEqual([['(c)', '©'], ['mine', 'MINE']]);
+  });
+  it('names the button, the question and its answer the same way', async () => {
+    const { reset } = make([['mine', 'MINE']]);
+    const button = document.querySelector<HTMLButtonElement>('[data-act=reset]')!;
+    reset();
+    await tick();
+    const question = [...document.querySelectorAll('dialog.ask')].pop()!;
+    const answers = [...document.querySelectorAll<HTMLButtonElement>('.ask-buttons button')].map((b) => b.textContent);
+    expect(button.textContent).toBe('Use the Standard List');
+    expect(answers).toContain(button.textContent);
+    expect(question.textContent).toContain('Use the Standard List?');
+    expect(question.textContent).toContain('custom replacements');
   });
   it('replaces it when confirmed', async () => {
     const { prefs, reset, choose } = make([['mine', 'MINE']]);

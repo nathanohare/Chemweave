@@ -1960,12 +1960,15 @@ export class StylePanel {
         if (n.value.trim() && Number.isFinite(v) && v >= 2 && v <= 30) set('Expected Count', (now) => ({ ...now, expect: v }));
         else { this.key = ''; this.refresh(); }
       };
-      // (the number offered, taken with Enter or by clicking away unchanged, is a change the browser doesn't report)
+      const cancel = () => { if (finished) return; finished = true; this.key = ''; this.refresh(); };
+      // (the number offered is taken with Enter, which the browser doesn't report as a change; clicking away
+      // without touching the box changes nothing and the list stays on Auto)
+      const offered = n.value;
       n.addEventListener('change', done);
-      n.addEventListener('blur', done);
+      n.addEventListener('blur', () => { if (n.value === offered) cancel(); else done(); });
       n.addEventListener('keydown', (e) => {
         if (e.key === 'Enter') done();
-        if (e.key === 'Escape') { finished = true; this.key = ''; this.refresh(); }
+        if (e.key === 'Escape') cancel();
         e.stopPropagation();
       });
       holder.replaceChildren(n);

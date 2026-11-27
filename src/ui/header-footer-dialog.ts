@@ -159,6 +159,10 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
     show(tab);
     note();
 
+    let slideTouched = false;
+    pages.slide.addEventListener('input', () => { slideTouched = true; });
+    pages.slide.addEventListener('change', () => { slideTouched = true; });
+
     let finished = false;
     const done = (v: HeaderFooterResult | null) => {
       if (finished) return;
@@ -172,9 +176,10 @@ export function editHeaderFooter(m: Master, slide: { layout: LayoutId; hf?: Slid
         header: hdr.i.checked ? hdrText.value : '', footer: nfoot.i.checked ? nfootText.value : '',
         date: nd.on.checked, dateFormat: nd.format(), ...(nd.fixed().trim() ? { dateFixed: nd.fixed().trim() } : {}), pageNumbers: page.i.checked,
       };
-      // confirming on the Notes and Handouts tab changes only the notes pages and handouts: the slide
-      // boxes on the other tab were filled from the current slide and were never looked at
-      if (showing === 'notes') {
+      // confirming on the Notes and Handouts tab changes only the notes pages and handouts, unless something was
+      // changed on the Slide tab first (that goes in too): the slide boxes were filled from the current slide
+      // and, left alone, say nothing
+      if (showing === 'notes' && !slideTouched) {
         return { master: { ...m, notesHF: notes }, show: { number: showsNumber(m, slide.layout, slide.hf), footer: showsFooter(m, slide.layout, slide.hf), date: showsDate(m, slide.layout, slide.hf) }, scope: 'notes' };
       }
       const off = offTitle.i.checked;

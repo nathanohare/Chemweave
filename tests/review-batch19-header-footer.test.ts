@@ -67,4 +67,27 @@ describe('F157: Apply to All on the Notes and Handouts tab', () => {
     applyHeaderFooter(d, r, [1]);
     expect(d.slides[1].hf).toBeUndefined(); // Apply to All clears each slide's own setting
   });
+
+  it('keeps what was changed on the Slide tab when confirmed from the Notes and Handouts tab', async () => {
+    const host = new Doc();
+    const d = Deck.blank(host);
+    d.attach();
+    d.addSlide('title-content');
+    document.body.replaceChildren();
+    const got = editHeaderFooter(d.master, d.slides[1], 1, 'slide');
+    const dlg = document.querySelector<HTMLDialogElement>('dialog.hf-dialog')!;
+    const slidePage = dlg.querySelectorAll<HTMLElement>('.hf-page')[0];
+    const footer = slidePage.querySelector<HTMLInputElement>('input[placeholder^="e.g. Smith"]')!;
+    footer.value = 'Smith group';
+    footer.dispatchEvent(new Event('input', { bubbles: true }));
+    // on to the Notes and Handouts tab, then Apply to All
+    [...dlg.querySelectorAll<HTMLButtonElement>('.hf-tabs button')].find((b) => b.textContent === 'Notes and Handouts')!.click();
+    dlg.querySelector<HTMLButtonElement>('button.primary')!.click();
+    const r = (await got)!;
+    expect(r.scope).toBe('all');
+    expect(r.master.footer).toBe('Smith group');
+    expect(r.show.footer).toBe(true);
+    applyHeaderFooter(d, r, [1]);
+    expect(d.master.footer).toBe('Smith group');
+  });
 });

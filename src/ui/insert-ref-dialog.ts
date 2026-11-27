@@ -9,7 +9,14 @@ import { describe, shortLabel, type Reference } from '../document/references';
 import { REF_FORMS, referenceRuns, type RefForm } from '../deck/slide-refs';
 import { showDialog } from './dialog-host';
 
-export interface RefGroup { name: string; refs: Reference[]; style?: string }
+export interface RefGroup {
+  /** What tells this group from another with the same name (two open files can share a name); the name when none is given. */
+  key?: string;
+  name: string;
+  refs: Reference[];
+  style?: string;
+}
+const groupKey = (g: RefGroup): string => g.key ?? g.name;
 
 export interface InsertRefsResult { refs: Reference[]; form: RefForm; style: string; numbered: boolean }
 
@@ -30,7 +37,7 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
     const picked: Reference[] = [];
     const extra: Reference[] = [];
     /** The group each reference picked came from (looked up again by its id after Manage References). */
-    const from = new Map<Reference, string>();
+    const from = new Map<Reference, string>(); // the group each came from (its key)
     const list = el('div', 'slide-refs-list');
     const styleSel = el('select');
     for (const [k, p] of Object.entries(CITE_PRESETS)) styleSel.add(new Option(`${p.name} (${p.journals})`, k));
@@ -67,7 +74,7 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
           box.checked = picked.includes(r);
           box.addEventListener('change', () => {
             const i = picked.indexOf(r);
-            if (box.checked && i < 0) { picked.push(r); from.set(r, g.name); } else if (!box.checked && i >= 0) picked.splice(i, 1);
+            if (box.checked && i < 0) { picked.push(r); from.set(r, groupKey(g)); } else if (!box.checked && i >= 0) picked.splice(i, 1);
             if (box.checked && knownStyle(g.style) && picked.length === 1) styleSel.value = g.style;
             show();
           });
@@ -104,9 +111,9 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
         const kept: Reference[] = [];
         for (const r of picked) {
           if (extra.includes(r)) { kept.push(r); continue; }
-          const g = gs.find((x) => x.name === from.get(r));
+          const g = gs.find((x) => groupKey(x) === from.get(r));
           const now = g?.refs.find((x) => x.id === r.id);
-          if (now && g) { from.set(now, g.name); kept.push(now); }
+          if (now && g) { from.set(now, groupKey(g)); kept.push(now); }
         }
         picked.splice(0, picked.length, ...kept);
         fill(gs);

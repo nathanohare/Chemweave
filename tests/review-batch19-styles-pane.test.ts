@@ -13,10 +13,10 @@ import type * as rt from '../src/richtext';
 function setup() {
   const t0 = newDocument();
   const citation: NamedStyle = { ...t0.styles.Normal, id: 'Citation', name: 'Citation', custom: true } as NamedStyle;
-  const t: DocText = { ...t0, styles: { ...t0.styles, Citation: citation } };
-  const at = { style: 'Normal' };
+  const t: DocText = { ...t0, styles: { ...t0.styles, Citation: citation }, charStyles: { Compound: { id: 'Compound', name: 'Compound', custom: true, italic: true } as never } };
+  const at = { style: 'Normal', where: '3:3' };
   const host = {
-    doc: () => ({ t, para: { style: at.style } as ParaStyle, look: {} as rt.RunStyle }),
+    doc: () => ({ t, para: { style: at.style } as ParaStyle, look: {} as rt.RunStyle, at: at.where }),
     applyPara: vi.fn((id: string) => { at.style = id; }),
     applyChar: vi.fn(), newStyle: vi.fn(), modify: vi.fn(), remove: vi.fn(), focus: vi.fn(),
   } satisfies StylesPaneHost;
@@ -47,6 +47,28 @@ describe('F806: Modify and Delete follow the highlighted style', () => {
     pane.refresh();
     expect(item('Normal').getAttribute('aria-pressed')).toBe('true');
     expect(button('Delete').disabled).toBe(true); // Normal is a standard style and can't be deleted
+    button('Modify…').click();
+    expect(host.modify).toHaveBeenCalledWith('para', 'Normal');
+    expect(host.remove).not.toHaveBeenCalled();
+  });
+});
+
+describe('F806: a clicked character style', () => {
+  it('can be deleted while the caret is still where it was when the style was applied', () => {
+    const { pane, host, item, button } = setup();
+    item('Compound').click();
+    pane.refresh(); // the caret sits just outside the word, in text with no character style
+    expect(button('Delete').disabled).toBe(false);
+    button('Delete').click();
+    expect(host.remove).toHaveBeenCalledWith('char', 'Compound');
+  });
+  it('is no longer the one Delete and Modify act on once the caret moves elsewhere', () => {
+    const { pane, host, at, item, button } = setup();
+    item('Compound').click();
+    pane.refresh();
+    at.where = '40:40'; // clicked into another paragraph, which has no character style
+    pane.refresh();
+    expect(button('Delete').disabled).toBe(true);
     button('Modify…').click();
     expect(host.modify).toHaveBeenCalledWith('para', 'Normal');
     expect(host.remove).not.toHaveBeenCalled();
