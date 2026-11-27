@@ -424,6 +424,30 @@ export function shapeBox(s: Shape): Rect {
   return rot ? boxOf(turnedCorners(r, shapeMid(s), rot)) : r;
 }
 
+/**
+ * Everything a shape paints, as it shows on the page: its box (a bracket's lips, and the other
+ * half of a pair), its glow and shadow round it and its reflection below it (Shape Effects), all
+ * turned with it. What is drawn where a tile or an edit reaches is found with this.
+ */
+export function paintedBox(s: Shape): Rect {
+  let r = flatBox(s);
+  if (s.kind === 'bracket' && s.pair) {
+    // the other half mirrors this one, 0.6 of its length to the right of it (as drawn)
+    const l = Math.hypot(s.x2 - s.x1, s.y2 - s.y1), reach = bracketReach(s);
+    const n = l > 0 ? perp(mul(sub({ x: s.x2, y: s.y2 }, { x: s.x1, y: s.y1 }), 1 / l)) : { x: 0, y: 0 };
+    const o = mul(n, l * 0.6);
+    const far = [{ x: s.x1 + o.x, y: s.y1 + o.y }, { x: s.x2 + o.x, y: s.y2 + o.y }];
+    r = { x1: Math.min(r.x1, ...far.map((v) => v.x - reach)), y1: Math.min(r.y1, ...far.map((v) => v.y - reach)), x2: Math.max(r.x2, ...far.map((v) => v.x + reach)), y2: Math.max(r.y2, ...far.map((v) => v.y + reach)) };
+  }
+  const w = Math.abs(s.x2 - s.x1), h = Math.abs(s.y2 - s.y1);
+  const shadow = s.shadow && s.kind !== 'rect' && s.kind !== 'oval' ? (s.shadowSize ?? Math.max(4, 0.04 * Math.min(w, h))) + (s.shadowBlur ?? 0) : 0;
+  const pad = Math.max(s.glow?.size ?? 0, shadow);
+  const below = s.reflection ? h * s.reflection.size + (s.reflection.dist ?? 0) : 0;
+  r = { x1: r.x1 - pad, y1: r.y1 - pad, x2: r.x2 + pad, y2: r.y2 + pad + below };
+  const rot = shapeTurn(s);
+  return rot ? boxOf(turnedCorners(r, shapeMid(s), rot)) : r;
+}
+
 /** A shape's box before it is turned (with its shadow and frame). */
 function flatBox(s: Shape): Rect {
   const r = { x1: Math.min(s.x1, s.x2), y1: Math.min(s.y1, s.y2), x2: Math.max(s.x1, s.x2), y2: Math.max(s.y1, s.y2) };

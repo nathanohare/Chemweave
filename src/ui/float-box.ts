@@ -12,7 +12,8 @@ export class FloatBox {
   /** Pinned down the right side of the window (dock). */
   docked = false;
 
-  constructor(title: string, private onPin: () => void) {
+  /** `onClose` is told whenever it is closed (by ×, Esc or close()), for a window that must stop what it is doing. */
+  constructor(title: string, private onPin: () => void, public onClose?: () => void) {
     this.el = document.createElement('div');
     this.el.className = 'float-box';
     this.el.hidden = true;
@@ -71,7 +72,9 @@ export class FloatBox {
   }
 
   close(): void {
+    const was = !this.el.hidden;
     this.el.hidden = true;
+    if (was) this.onClose?.();
   }
 
   /**
@@ -113,9 +116,16 @@ export class FloatBox {
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       head.setPointerCapture(e.pointerId);
       const move = (m: PointerEvent) => this.place(m.clientX - dx, m.clientY - dy);
-      const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); };
+      // (a pointer the system takes away, a touch gesture for one, ends the drag too)
+      const up = () => {
+        head.removeEventListener('pointermove', move);
+        head.removeEventListener('pointerup', up);
+        head.removeEventListener('pointercancel', up);
+        try { head.releasePointerCapture(e.pointerId); } catch { /* already let go */ }
+      };
       head.addEventListener('pointermove', move);
       head.addEventListener('pointerup', up);
+      head.addEventListener('pointercancel', up);
     });
   }
 }

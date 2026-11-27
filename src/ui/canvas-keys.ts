@@ -178,15 +178,25 @@ export class CanvasKeys {
       this.live = { index: g.index, key: k };
       this.hooks.repaint();
     };
-    const up = () => {
+    const end = () => {
       removeEventListener('pointermove', move, true);
       removeEventListener('pointerup', up, true);
+      removeEventListener('pointercancel', cancel, true);
       const l = this.live;
       this.live = null;
-      if (moved && l && deck.current === slide) deck.setCanvas({ keys: c.keys.map((k, i) => (i === l.index ? l.key : k)) }, g.part === 'move' ? 'Move keyframe' : 'Zoom keyframe');
+      return l;
+    };
+    // the pointer was taken away (a touch gesture, a lost capture): nothing is changed
+    const cancel = () => { end(); this.hooks.repaint(); };
+    const up = () => {
+      const l = end();
+      // (only while it is the same slide with the same keyframes as when the drag began: an Undo
+      // pressed during the drag changed them, and writing the old list back would undo that Undo)
+      if (moved && l && deck.current === slide && slide.canvas === c) deck.setCanvas({ keys: c.keys.map((k, i) => (i === l.index ? l.key : k)) }, g.part === 'move' ? 'Move keyframe' : 'Zoom keyframe');
       this.hooks.repaint();
     };
     addEventListener('pointermove', move, true);
     addEventListener('pointerup', up, true);
+    addEventListener('pointercancel', cancel, true);
   }
 }

@@ -125,9 +125,13 @@ const sub = (n: number) => String(n).replace(/\d/g, (d) => SUBS[Number(d)]);
 const PKA_TIP = 'Estimated in water by Perrin, Dempsey and Serjeant\'s rules (Hammett and Taft constants). Typical error 0.5–1 unit.';
 
 /** Solubility in words a chemist reads at a glance: mg/mL, or µg/mL when small. */
-function solubility(logS: number, mw: number): string {
+export function solubility(logS: number, mw: number): string {
   const mgPerMl = 10 ** logS * mw;
-  return mgPerMl >= 1 ? `${mgPerMl >= 100 ? Math.round(mgPerMl) : mgPerMl.toPrecision(2)} mg/mL` : `${(mgPerMl * 1000).toPrecision(2)} µg/mL`;
+  // two figures, written out in full (toPrecision gives "1.0e+2" for 99.7 and "1.5e+2" for 150)
+  const two = (x: number) => { const t = x.toPrecision(2); return t.includes('e') ? String(Number(t)) : t; };
+  // (the unit is chosen after rounding: 0.9996 mg/mL is "1.0 mg/mL", not "1000 µg/mL")
+  const rounded = Number(mgPerMl.toPrecision(2));
+  return rounded >= 1 ? `${rounded >= 100 ? Math.round(mgPerMl) : two(mgPerMl)} mg/mL` : `${two(mgPerMl * 1000)} µg/mL`;
 }
 
 /** The most acidic proton and the most basic atom. */

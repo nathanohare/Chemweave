@@ -34,11 +34,12 @@ export function notesLookOf(text: string, looks: RunLook[]): NotesLook | undefin
  */
 export function bulletEdits(text: string, start: number, end: number): { at: number; remove: number; insert: string }[] {
   const lines: number[] = [];
-  let at = text.lastIndexOf('\n', start - 1) + 1;
+  // (lastIndexOf with -1 looks at the very start, so a caret there on an empty first line would be taken for the line after it)
+  let at = start > 0 ? text.lastIndexOf('\n', start - 1) + 1 : 0;
   for (;;) {
     lines.push(at);
     const next = text.indexOf('\n', at);
-    if (next < 0 || next >= end || (next + 1 > end && end > start)) break;
+    if (next < 0 || next >= end || (next + 1 >= end && end > start)) break;
     at = next + 1;
   }
   const all = lines.every((p) => text.startsWith(NOTE_BULLET, p));

@@ -325,11 +325,11 @@ describe('F325, F326: narration recorded while rehearsing', () => {
   it('is not put in a presentation closed while the recordings were read', () => {
     const closed = b.indexOf('if (!ws.tabs.some((t) => t.deck === d))');
     expect(closed).toBeGreaterThan(b.indexOf('await recordingToWav'));
-    expect(closed).toBeLessThan(b.indexOf("d.editSlides('Record narration'"));
+    expect(closed).toBeLessThan(b.indexOf("d.editSlides('Record Narration'"));
   });
   it('joins the narration and the timings into one undo step', () => {
-    expect(b.indexOf('history = d.historyLength;')).toBeLessThan(b.indexOf("d.editSlides('Record narration'"));
-    expect(b.indexOf("d.joinSince(history, 'Record slide show timings')")).toBeGreaterThan(b.indexOf('d.setTimings('));
+    expect(b.indexOf('history = d.historyLength;')).toBeLessThan(b.indexOf("d.editSlides('Record Narration'"));
+    expect(b.indexOf("d.joinSince(history, 'Record Slide Show Timings')")).toBeGreaterThan(b.indexOf('d.setTimings('));
   });
 });
 

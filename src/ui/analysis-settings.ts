@@ -59,7 +59,14 @@ export function analysisSettingsPage(host: AnalysisSettingsHost): Promise<void> 
   const marker = document.createElement('input');
   marker.type = 'hidden';
   marker.value = '0';
-  const touched = () => { marker.value = String(Number(marker.value) + 1); form.dispatchEvent(new Event('input', { bubbles: true })); };
+  // (the page's own input event is only a signal that something changed: reading the boxes for it would
+  // put the page's old boxes over the change just made to the working copy, before it is drawn again)
+  let signalling = false;
+  const touched = () => {
+    marker.value = String(Number(marker.value) + 1);
+    signalling = true;
+    try { form.dispatchEvent(new Event('input', { bubbles: true })); } finally { signalling = false; }
+  };
 
   const draw = () => {
     const at = d.querySelector('.as-cols')?.scrollTop ?? 0;
@@ -151,7 +158,7 @@ export function analysisSettingsPage(host: AnalysisSettingsHost): Promise<void> 
     }
   };
 
-  form.addEventListener('input', () => { read(); preview(); });
+  form.addEventListener('input', () => { if (!signalling) read(); preview(); });
   form.addEventListener('change', () => { read(); preview(); });
   form.addEventListener('pointerdown', (e) => {
     const grip = (e.target as HTMLElement).closest<HTMLElement>('[data-grip]');
@@ -261,7 +268,7 @@ export async function askLabCalc(c: LabCalc, sample: FragmentResult | null, benc
     { name: 'volume', label: 'Show the volume, neat', value: String(c.volume), type: 'checkbox', help: 'From the density: PubChem\'s measured value once looked up, else estimated (Girolami). Not shown for a solid.' },
     { name: 'mmol', label: 'Show the amount in mmol', value: String(c.mmol), type: 'checkbox', help: 'When the amount is a mass or volume, or in equiv.' },
     { name: 'solution', label: 'Volume of a solution', value: c.solution === null ? '' : String(c.solution), type: 'number', unit: 'M', placeholder: 'none' },
-    { name: 'sig', label: 'Significant figures', value: String(c.sig), options: ['2', '3', '4', '5'].map((x) => ({ value: x, label: x })) },
+    { name: 'sig', label: 'Significant figures', value: String(c.sig), options: ['1', '2', '3', '4', '5', '6'].map((x) => ({ value: x, label: x })) },
     { name: 'h', label: 'Show in', value: '', type: 'heading' },
     { name: 'panel', label: 'Analysis panel', value: String(inPanel), type: 'checkbox' },
     { name: 'ribbon', label: 'Ribbon box', value: String(inRibbon), type: 'checkbox' },

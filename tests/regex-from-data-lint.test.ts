@@ -34,7 +34,6 @@ const BASELINE: Record<string, number> = {
   'src/io/docx-read.ts': 10,
   'src/io/docx-write.ts': 1,
   'src/io/pptx-keep.ts': 1,
-  'src/io/xlsx-ole.ts': 3,
   'src/io/xlsx.ts': 1,
   'src/kb/pretty.ts': 1,
   // (reflag's copy of a pattern, moved here from src/si/chemtext.ts)

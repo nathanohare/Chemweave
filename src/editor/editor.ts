@@ -8040,20 +8040,20 @@ export class Editor {
   }
 
   /** How the text the ribbon's Font and Paragraph buttons would change looks now (for showing which are on). */
-  textLook(): { style: rt.RunStyle; align: Justify; list?: 'bullet' | 'number'; line: number; before?: number; after?: number; wrap?: number; link?: boolean; defaultSize: number; defaultFont?: string } | null {
+  textLook(): { style: rt.RunStyle; align: Justify; list?: 'bullet' | 'number'; line: number; before?: number; after?: number; wrap?: number; link?: boolean; defaultSize: number; defaultFont?: string; defaultColor?: string } | null {
     const st = this.doc.style;
     const ed = this.captionEd?.ed;
     if (this.labelTyping) return { style: this.labelTyping.look(), align: 'left', line: 1, defaultSize: st.labelSize, defaultFont: st.labelFont || 'Arial' };
     if (ed) {
       const p = ed.currentPara();
-      return { style: ed.currentStyle(), align: ed.currentAlign(), list: p.list, line: ed.t.lineSpacing ?? 1, before: p.spaceBefore, after: p.spaceAfter, wrap: ed.t.wrap, link: !!ed.linkHere(), defaultSize: ed.defaultSize, defaultFont: ed.defaults.font ?? st.captionFont };
+      return { style: ed.currentStyle(), align: ed.currentAlign(), list: p.list, line: ed.t.lineSpacing ?? 1, before: p.spaceBefore, after: p.spaceAfter, wrap: ed.t.wrap, link: !!ed.linkHere(), defaultSize: ed.defaultSize, defaultFont: ed.defaults.font ?? st.captionFont, ...(ed.defaults.color ? { defaultColor: ed.defaults.color } : {}) };
     }
     const c = [...this.sel.captions].map((id) => this.doc.captions.get(id)).find((x): x is Caption => !!x);
     if (c) {
       const base = c.ph ? this.doc.textStyles?.[c.ph] : undefined;
       const runs = applyBase(c.runs, base);
       const len = plainText(runs).length;
-      return { style: len ? rt.commonStyle(runs, 0, len) : { ...(base ?? {}) }, align: c.justify ?? 'left', list: c.paras?.[0]?.list, line: c.lineSpacing ?? 1, before: c.paras?.[0]?.spaceBefore, after: c.paras?.[0]?.spaceAfter, wrap: c.wrap, defaultSize: base?.size ?? st.captionSize, defaultFont: base?.font ?? st.captionFont };
+      return { style: len ? rt.commonStyle(runs, 0, len) : { ...(base ?? {}) }, align: c.justify ?? 'left', list: c.paras?.[0]?.list, line: c.lineSpacing ?? 1, before: c.paras?.[0]?.spaceBefore, after: c.paras?.[0]?.spaceAfter, wrap: c.wrap, defaultSize: base?.size ?? st.captionSize, defaultFont: base?.font ?? st.captionFont, ...(base?.color ? { defaultColor: base.color } : {}) };
     }
     const sh = [...this.sel.shapes].map((id) => this.doc.shapes.get(id)).find((x): x is Shape => !!x && x.kind === 'geo' && !!x.text?.runs.length);
     if (sh?.text) {

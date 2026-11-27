@@ -9,12 +9,15 @@ import { Deck, type LayoutId, type Master, type SlideSize, type SlideHF } from '
 import type { Anim, Transition } from './animation';
 import type { Background } from './background';
 import type { CanvasData } from './canvas';
+import type { DeckRefs, RefListSpec, RefLook } from './slide-refs';
 
 /** Everything the audience window needs to show the slides. */
 export interface DeckData {
   size: SlideSize;
   master: Master;
-  slides: { layout: LayoutId; contents: Contents; transition?: Transition; anims?: Anim[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData }[];
+  slides: { layout: LayoutId; contents: Contents; transition?: Transition; anims?: Anim[]; background?: Background; hideGraphics?: boolean; hidden?: boolean; hf?: SlideHF; canvas?: CanvasData; ownItems?: boolean; refs?: string[]; refLook?: Partial<RefLook>; refList?: RefListSpec }[];
+  /** The presentation's references, for the reference lines at the foot of slides and the References slide. */
+  refs?: DeckRefs;
   /** How the show plays, as the presenter's player does (Set Up Show): its slides in order, without animations, by its timings. */
   play?: { order: number[] | null; noAnimation: boolean; useTimings: boolean };
 }
@@ -43,7 +46,8 @@ export function deckData(deck: Deck, play?: DeckData['play']): DeckData {
   return {
     size: { ...deck.size },
     master: deck.master,
-    slides: deck.slides.map((s, i) => ({ layout: s.layout, contents: deck.docOf(i).contents(), transition: s.transition, anims: s.anims, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas })),
+    slides: deck.slides.map((s, i) => ({ layout: s.layout, contents: deck.docOf(i).contents(), transition: s.transition, anims: s.anims, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas, ...(s.ownItems ? { ownItems: true } : {}), ...(s.refs ? { refs: s.refs } : {}), ...(s.refLook ? { refLook: s.refLook } : {}), ...(s.refList ? { refList: s.refList } : {}) })),
+    ...(deck.settings.refs ? { refs: structuredClone(deck.settings.refs) } : {}),
     ...(play ? { play } : {}),
   };
 }
@@ -51,7 +55,7 @@ export function deckData(deck: Deck, play?: DeckData['play']): DeckData {
 /** A deck to play, made from the data sent. */
 export function deckFromData(d: DeckData): Deck {
   const deck = new Deck(new Doc());
-  deck.load(d.slides.map((s) => deck.makeSlide(s.layout, s.contents, '', { transition: s.transition, anims: s.anims, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas })), d.size, d.master);
+  deck.load(d.slides.map((s) => deck.makeSlide(s.layout, s.contents, '', { transition: s.transition, anims: s.anims, background: s.background, hideGraphics: s.hideGraphics, hidden: s.hidden, hf: s.hf, canvas: s.canvas, ownItems: s.ownItems, refs: s.refs, refLook: s.refLook, refList: s.refList })), d.size, d.master, undefined, d.refs ? { refs: d.refs } : {});
   return deck;
 }
 

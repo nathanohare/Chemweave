@@ -45,6 +45,10 @@ interface Row {
   smiles: HTMLInputElement;
   notes: HTMLElement;
   aiButton?: HTMLButtonElement;
+  /** Counts each new reading or typed correction, so a late answer to an older one is ignored. */
+  gen: number;
+  /** A SMILES was typed for it: the background reading leaves it alone. */
+  typed?: boolean;
 }
 
 export function pixelsCanvas(p: Pixels): HTMLCanvasElement {
@@ -86,7 +90,7 @@ export function openReview(o: ReviewOptions): void {
     junkLabel.hidden = n === 0;
     junkText.textContent = `Show ${n} ${n === 1 ? 'picture' : 'pictures'} that don't look like structures`;
   };
-  showJunk.addEventListener('change', () => { for (const r of list.querySelectorAll<HTMLElement>('.import-row.junk')) r.hidden = !showJunk.checked; });
+  showJunk.addEventListener('change', () => { for (const r of list.querySelectorAll<HTMLElement>('.import-row.junk')) r.hidden = !showJunk.checked; count(); });
   const title = el('h2', { textContent: o.title });
   addInfo(title, o.note);
   d.append(title, status, list, junkLabel,
@@ -103,7 +107,7 @@ export function openReview(o: ReviewOptions): void {
     const smiles = el('input', { type: 'text', className: 'import-smiles', placeholder: 'SMILES', spellcheck: false, title: 'Type a correction as SMILES and press Enter' });
     smiles.setAttribute('aria-label', 'SMILES');
     const notes = el('div', { className: 'import-notes' });
-    const row: Row = { found, el: el('div', { className: 'import-row' }), tick, out, smiles, notes };
+    const row: Row = { found, el: el('div', { className: 'import-row' }), tick, out, smiles, notes, gen: 0 };
     const side = el('div', { className: 'import-side' }, el('div', { className: 'import-where', textContent: found.where }), smiles, notes);
     if (o.alt) {
       row.aiButton = el('button', { type: 'button', textContent: `Read with ${o.alt.name}`, title: sends });
@@ -116,22 +120,25 @@ export function openReview(o: ReviewOptions): void {
       if (e.key !== 'Enter') return;
       e.preventDefault();
       const t = smiles.value.trim();
-      if (t && t !== row.checked?.smiles) void show(row, o.typed(t), true);
+      if (t && t !== row.checked?.smiles) { row.typed = true; void show(row, o.typed(t), true, ++row.gen); }
     });
     list.append(row.el);
     return row;
   });
 
+  /** The ticked pictures the person can see (a hidden one isn't placed). */
+  const ticked = () => rows.filter((r) => r.tick.checked && !r.el.hidden);
+
   function count(): void {
-    const n = rows.filter((r) => r.tick.checked).length;
+    const n = ticked().length;
     place.textContent = n === 1 ? 'Place 1 Structure' : `Place ${n} Structures`;
     place.disabled = n === 0;
   }
 
-  async function show(row: Row, result: ReadResult, tickIt: boolean): Promise<void> {
+  async function show(row: Row, result: ReadResult, tickIt: boolean, gen: number): Promise<void> {
     row.out.textContent = 'Checking…';
     const checked = await o.check(result);
-    if (closed) return;
+    if (closed || row.gen !== gen) return;
     row.result = result;
     row.checked = checked;
     row.out.textContent = '';
@@ -157,24 +164,25 @@ export function openReview(o: ReviewOptions): void {
   async function readRow(row: Row, read: (p: Pixels) => Promise<ReadResult>): Promise<void> {
     row.out.textContent = 'Reading…';
     if (row.aiButton) row.aiButton.disabled = true;
+    const gen = ++row.gen;
     try {
       const r = await read(row.found.pixels);
-      if (!closed) await show(row, r, read === o.alt?.read);
+      if (!closed && row.gen === gen) await show(row, r, read === o.alt?.read, gen);
     } catch (e) {
-      if (!closed) { row.out.textContent = 'Not read'; row.notes.textContent = '⚠ ' + (e instanceof Error ? e.message : String(e)); }
+      if (!closed && row.gen === gen) { row.out.textContent = 'Not read'; row.notes.textContent = '⚠ ' + (e instanceof Error ? e.message : String(e)); }
     } finally {
       if (row.aiButton) row.aiButton.disabled = false;
     }
   }
 
   place.addEventListener('click', () => {
-    const chosen = rows.filter((r) => r.tick.checked && r.result && r.checked).map((r) => ({ result: r.result!, checked: r.checked! }));
+    const chosen = ticked().filter((r) => r.result && r.checked).map((r) => ({ result: r.result!, checked: r.checked! }));
     close();
     if (chosen.length) o.place(chosen);
   });
   cancel.addEventListener('click', close);
   d.addEventListener('close', () => { closed = true; d.remove(); });
-  all.addEventListener('click', () => { for (const r of rows) if (!r.tick.disabled) r.tick.checked = true; count(); });
+  all.addEventListener('click', () => { for (const r of rows) if (!r.tick.disabled && !r.el.hidden) r.tick.checked = true; count(); });
   none.addEventListener('click', () => { for (const r of rows) r.tick.checked = false; count(); });
   aiAll?.addEventListener('click', async () => {
     aiAll.disabled = true;
@@ -190,7 +198,7 @@ export function openReview(o: ReviewOptions): void {
     for (const row of rows) {
       if (closed) return;
       status.textContent = `Reading ${++i} of ${rows.length}…`;
-      if (!row.result) await readRow(row, o.read);
+      if (!row.result && !row.typed) await readRow(row, o.read);
     }
     if (!closed) {
       const doubtful = rows.filter((r) => r.checked?.problems.length).length;

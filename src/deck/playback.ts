@@ -25,7 +25,7 @@ import { Turner } from './turn-render';
 import { isSameView } from './turn3d';
 import {
   buildSteps, partStates, slideParts, partOf, hostOf, mainAnims, triggerSeqs, splitParas, expandParas, moved,
-  type Anim, type Part, type Step, type Transition, type Side,
+  type Anim, type Part, type PartState, type Step, type Transition, type Side,
 } from './animation';
 
 const ease = (p: number) => 1 - (1 - p) ** 3;
@@ -212,6 +212,48 @@ export class SlideFrames {
     drawDrawing(ctx, one);
   }
 
+  /** How the parts stand with `done` steps played and nothing running (for the pointer, which asks on every move). */
+  private idleMemo: { key: string; states: Map<Part, PartState> } | null = null;
+  /** (`fired`: the clicks of the triggers' sequences played so far, which bring in what they are set to) */
+  private statesAt(done: number, fired?: Map<string, { done: number; t: number }>): Map<Part, PartState> | null {
+    if (!this.layers.length) return null;
+    const key = `${done}|${fired ? [...fired].map(([k, f]) => `${k}:${f.done}`).join(',') : ''}`;
+    if (this.idleMemo?.key !== key) this.idleMemo = { key, states: partStates(this.parts, this.anims, done, -1, fired) };
+    return this.idleMemo.states;
+  }
+
+  /**
+   * Is the shape or text on the slide showing with `done` steps played? (One not yet come in, or gone out, can't be clicked.)
+   * Text that comes in a paragraph at a time is showing where `para` is in (`para`: the paragraph at the point, when it is known).
+   */
+  private showing(done: number, kind: 'shapes' | 'captions', id: number, fired?: Map<string, { done: number; t: number }>, para?: number): boolean {
+    const states = this.statesAt(done, fired);
+    if (!states) return true;
+    const mine = this.layers.filter((l) => l.part.sel[kind].has(id));
+    if (!mine.length) return true;
+    const by = para !== undefined ? mine.find((l) => l.part.para === para) : undefined;
+    if (by) return states.get(by.part)?.visible ?? true;
+    // (no paragraph known, or the text is not played by paragraphs: showing when any of its parts is)
+    return mine.some((l) => states.get(l.part)?.visible ?? true);
+  }
+
+  /** The paragraph of a text box that its point `y` (from the box's own origin) is in. */
+  private paraAt(lay: ReturnType<typeof layoutText>, y: number): number | undefined {
+    return lay.lines?.find((l) => y >= l.y - l.ascent && y <= l.y + l.descent)?.para;
+  }
+
+  /** A text box laid out as it is drawn, kept (the slide's text does not change while it is shown). */
+  private layouts = new Map<number, { c: Caption; lay: ReturnType<typeof layoutText> }>();
+  private layoutOf(c: Caption): ReturnType<typeof layoutText> {
+    const hit = this.layouts.get(c.id);
+    if (hit && hit.c === c) return hit.lay;
+    const doc = this.doc;
+    const base = c.ph ? doc.textStyles?.[c.ph] : captionBase(doc.style);
+    const lay = layoutText({ ...(base ? { ...c, runs: applyBase(c.runs, base) } : c), single: PPT_SINGLE }, base?.size ?? doc.style.captionSize, (t, s, family, style) => measureText(t, s, family, style));
+    this.layouts.set(c.id, { c, lay });
+    return lay;
+  }
+
   /** The slide's triggers: the part a click sets each sequence off on, and the sequence's clicks. */
   readonly triggers = new Map<string, { part: Part; steps: Step[] }>();
 
@@ -231,8 +273,8 @@ export class SlideFrames {
    * Videos and sounds on the slide, showing with `done` steps played: where they go, in CSS
    * pixels on the canvas (a hidden sound's icon still has its place, to be clicked).
    */
-  videoSpots(done: number): MediaSpot[] {
-    const states = this.layers.length ? partStates(this.parts, this.anims, done, -1) : null;
+  videoSpots(done: number, fired?: Map<string, { done: number; t: number }>): MediaSpot[] {
+    const states = this.statesAt(done, fired);
     const { x, y, k } = this.at;
     const out: MediaSpot[] = [];
     for (const sh of this.doc.shapes.values()) {
@@ -266,10 +308,10 @@ export class SlideFrames {
    * What a click at a point on the canvas (CSS pixels) does: a shape's or zoom's action (the top
    * one there), and the box of what was clicked, in CSS pixels.
    */
-  shapeActionAt(px: number, py: number): { link: string; zoom?: Shape['zoom']; rect: Rect } | null {
+  shapeActionAt(px: number, py: number, done = 0, fired?: Map<string, { done: number; t: number }>): { link: string; zoom?: Shape['zoom']; rect: Rect } | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
-    const hits = [...this.doc.shapes.values()].filter((s) => s.link && !s.hidden && p.x >= Math.min(s.x1, s.x2) && p.x <= Math.max(s.x1, s.x2) && p.y >= Math.min(s.y1, s.y2) && p.y <= Math.max(s.y1, s.y2));
+    const hits = [...this.doc.shapes.values()].filter((s) => s.link && !s.hidden && this.showing(done, 'shapes', s.id, fired) && p.x >= Math.min(s.x1, s.x2) && p.x <= Math.max(s.x1, s.x2) && p.y >= Math.min(s.y1, s.y2) && p.y <= Math.max(s.y1, s.y2));
     const top = hits.sort((a, b) => (a.z ?? 0) - (b.z ?? 0)).pop();
     if (!top) return null;
     const r = { x1: x + Math.min(top.x1, top.x2) * k, y1: y + Math.min(top.y1, top.y2) * k, x2: x + Math.max(top.x1, top.x2) * k, y2: y + Math.max(top.y1, top.y2) * k };
@@ -277,15 +319,15 @@ export class SlideFrames {
   }
 
   /** The link in the slide's text at a point on the canvas (CSS pixels), if any. */
-  linkAt(px: number, py: number): string | null {
+  linkAt(px: number, py: number, done = 0, fired?: Map<string, { done: number; t: number }>): string | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
     const doc = this.doc;
     for (const c of doc.captions.values()) {
-      if (!c.runs.some((r) => r.link)) continue;
-      const base = c.ph ? doc.textStyles?.[c.ph] : captionBase(doc.style);
-      const lay = layoutText({ ...(base ? { ...c, runs: applyBase(c.runs, base) } : c), single: PPT_SINGLE }, base?.size ?? doc.style.captionSize, (t, s, family, style) => measureText(t, s, family, style));
+      if (!c.runs.some((r) => r.link) || !this.showing(done, 'captions', c.id, fired)) continue;
+      const lay = this.layoutOf(c);
       const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      if (!this.showing(done, 'captions', c.id, fired, this.paraAt(lay, q.y - c.y))) continue;
       const span = linkAtPoint(lay, c.runs, q.x - c.x, q.y - c.y);
       if (span) return span.link;
     }
@@ -293,16 +335,16 @@ export class SlideFrames {
   }
 
   /** The text at a point on the canvas (CSS pixels from its corner) that `want`s, the last one if several. */
-  textAt(px: number, py: number, want: (c: Caption) => boolean): Caption | null {
+  textAt(px: number, py: number, want: (c: Caption) => boolean, done = 0, fired?: Map<string, { done: number; t: number }>): Caption | null {
     const { x, y, k } = this.at;
     const p = { x: (px - x) / k, y: (py - y) / k };
     const doc = this.doc;
     let top: Caption | null = null;
     for (const c of doc.captions.values()) {
-      if (c.hidden || !want(c)) continue;
-      const base = c.ph ? doc.textStyles?.[c.ph] : captionBase(doc.style);
-      const lay = layoutText({ ...(base ? { ...c, runs: applyBase(c.runs, base) } : c), single: PPT_SINGLE }, base?.size ?? doc.style.captionSize, (t, s, family, style) => measureText(t, s, family, style));
+      if (c.hidden || !want(c) || !this.showing(done, 'captions', c.id, fired)) continue;
+      const lay = this.layoutOf(c);
       const q = c.rot ? turnAbout(p, c, -c.rot) : p;
+      if (!this.showing(done, 'captions', c.id, fired, this.paraAt(lay, q.y - c.y))) continue;
       const b = lay.box, m = 2;
       if (q.x - c.x >= b.x1 - m && q.x - c.x <= b.x2 + m && q.y - c.y >= b.y1 - m && q.y - c.y <= b.y2 + m) top = c;
     }
@@ -361,8 +403,9 @@ export class SlideFrames {
       if (!run) { paint(); ctx.restore(); continue; }
       const a = run.anim, p = a.exit ? 1 - run.p : run.p;
       ctx.save();
-      if (a.effect === 'appear') { if (a.exit) { ctx.restore(); continue; } }
-      else if (a.effect === 'fade') ctx.globalAlpha = p;
+      if (a.effect === 'appear') { if (a.exit) { ctx.restore(); ctx.restore(); continue; } }
+      // (the part's own see-through, from Transparency, and the mini-map's, stay: the fade is over them)
+      else if (a.effect === 'fade') ctx.globalAlpha *= p;
       else if (a.effect === 'wipe') {
         const r = wipeRect(L.box, a.from ?? 'bottom', p);
         ctx.beginPath();
@@ -534,14 +577,13 @@ export class MorphFrames {
 
   /** `shown`: the parts of the first slide still on it at its end (not those its animations took off). */
   constructor(page0: SlidePage, doc0: Doc, shown: Part[], page1: SlidePage, doc1: Doc, w: number, h: number, private dpr: number, fill: string | null) {
-    const scratch = document.createElement('canvas');
     const empty = (d: Doc) => subDoc(d, () => false);
     paintSlide(this.base0, w, h, dpr, page0, empty(doc0), fill);
     this.at = paintSlide(this.base1, w, h, dpr, page1, empty(doc1), fill);
     const pieces = (page: SlidePage, doc: Doc, parts: Part[]): Piece[] =>
       parts.filter((p) => p.kind !== 'highlight').map((part) => {
         const one = subDoc(doc, (kind, id) => inPart(part, kind, id));
-        const at = paintSlide(scratch, w, h, dpr, page, one, null, false);
+        const at = slidePlace(w, h, page);
         const b0 = selectionBox(doc, part.sel, POINTS) ?? { x1: 0, y1: 0, x2: page.size.w, y2: page.size.h };
         const pad = 8;
         const box = { x1: b0.x1 - pad, y1: b0.y1 - pad, x2: b0.x2 + pad, y2: b0.y2 + pad };
@@ -549,7 +591,16 @@ export class MorphFrames {
         const sx = Math.floor((at.x + box.x1 * at.k) * dpr), sy = Math.floor((at.y + box.y1 * at.k) * dpr);
         const sw = Math.max(1, Math.ceil((box.x2 - box.x1) * at.k * dpr)), sh = Math.max(1, Math.ceil((box.y2 - box.y1) * at.k * dpr));
         c.width = sw; c.height = sh;
-        c.getContext('2d')?.drawImage(scratch, sx, sy, sw, sh, 0, 0, sw, sh);
+        // painted straight onto a canvas the size of its box, not on a whole screen to be cut from (every part would cost a screen)
+        const ctx = c.getContext('2d');
+        if (ctx) {
+          const shown = shownRect(page);
+          ctx.setTransform(at.k * dpr, 0, 0, at.k * dpr, at.x * dpr - sx, at.y * dpr - sy);
+          ctx.beginPath();
+          ctx.rect(Math.max(shown.x1, box.x1), Math.max(shown.y1, box.y1), Math.max(0, Math.min(shown.x2, box.x2) - Math.max(shown.x1, box.x1)), Math.max(0, Math.min(shown.y2, box.y2) - Math.max(shown.y1, box.y1)));
+          ctx.clip();
+          drawDrawing(ctx, one);
+        }
         const k = morphKey(doc, part);
         return { part, key: k.key + '\u0000' + k.role, kind: k.kind, box, canvas: c };
       });
@@ -671,6 +722,8 @@ export class Player {
   private fired = new Map<string, { done: number }>();
   /** The slides the show plays, in order (a custom show, or a range of slides); every slide not hidden when null. */
   order: number[] | null = null;
+  /** Where in `order` the slide showing stands: a slide the order has twice is told apart by it. */
+  private at = 0;
   /**
    * On a canvas slide, a look at another keyframe (a compound number clicked, or a keyframe picked
    * in Presenter View's map): the keyframe the view is at until the next click flies it back.
@@ -716,15 +769,15 @@ export class Player {
 
   /** The link at a point on the canvas (CSS pixels from its corner), if any. */
   linkAt(px: number, py: number): string | null {
-    return this.moving ? null : this.current.linkAt(px, py);
+    return this.moving ? null : this.current.linkAt(px, py, this.done, this.idleFired());
   }
 
   /** What a click at a point does: a shape's action or zoom (with its box), else a link in the text. */
   actionAt(px: number, py: number): { link: string; zoom?: Shape['zoom']; rect?: Rect } | null {
     if (this.moving) return null;
-    const sh = this.current.shapeActionAt(px, py);
+    const sh = this.current.shapeActionAt(px, py, this.done, this.idleFired());
     if (sh) return sh;
-    const link = this.current.linkAt(px, py);
+    const link = this.current.linkAt(px, py, this.done, this.idleFired());
     return link ? { link } : null;
   }
 
@@ -739,7 +792,7 @@ export class Player {
    * showing to slide i, shrinking into its box there.
    */
   zoom(i: number, rect: Rect, out = false): void {
-    this.stop();
+    this.halt(true);
     this.started = true;
     const from = document.createElement('canvas');
     from.width = this.canvas.width;
@@ -786,12 +839,23 @@ export class Player {
     this.paint();
   }
 
+  /** The show stops: everything moving, and every sound, stops with it. */
   stop(): void {
+    this.halt(false);
+    for (const v of this.carried) this.drop(v);
+    this.carried = [];
+  }
+
+  /**
+   * What is moving stops, ready for the next slide. A sound playing across slides (Play Across
+   * Slides) goes on when the slide is changing (`changing`), instead of stopping with it.
+   */
+  private halt(changing: boolean): void {
     cancelAnimationFrame(this.raf);
     clearTimeout(this.timer);
     this.dropFree();
     this.moving = null;
-    this.videos(false);
+    this.videos(false, changing);
   }
 
   private vids = new Map<number, { el: HTMLMediaElement; media: Media; tick: number }>();
@@ -807,22 +871,28 @@ export class Player {
    * part of its file between its trims, at its volume, faded in and out, round and round unless
    * it plays once.
    */
-  private videos(on: boolean): void {
+  private videos(on: boolean, carry = false): void {
     const host = this.canvas.parentElement;
-    const spots = on && host ? [...this.current.videoSpots(this.done), ...this.current.hiddenSpots].filter((x) => !(this.noNarration && x.media.narration)) : [];
+    const spots = on && host ? [...this.current.videoSpots(this.done, this.idleFired()), ...this.current.hiddenSpots].filter((x) => !(this.noNarration && x.media.narration)) : [];
     const keep = new Set(spots.map((s) => s.id));
     for (const [id, v] of this.vids) {
       if (keep.has(id)) continue;
       this.vids.delete(id);
-      // a sound playing across slides goes on (not when the show stops)
-      if (on && v.media.audio && v.media.across && !v.el.paused) { this.carried.push(v); continue; }
+      // a sound playing across slides goes on when the slide changes (not when the show stops, see stop)
+      if ((on || carry) && v.media.audio && v.media.across && !v.el.paused) { this.carried.push(v); continue; }
       this.drop(v);
     }
-    if (!on) { for (const v of this.carried) this.drop(v); this.carried = []; }
+    // a sound carried over that has finished is let go
+    this.carried = this.carried.filter((v) => { if (!v.el.paused) return true; this.drop(v); return false; });
     if (!host || !spots.length) return;
     if (getComputedStyle(host).position === 'static') host.style.position = 'relative';
     for (const s of spots) {
       let v = this.vids.get(s.id);
+      // a sound carried over from this very slide (back to it, or a custom show that returns to it) goes on as the one sound it is
+      if (!v) {
+        const k = this.carried.findIndex((c) => c.media === s.media || (c.media.audio && s.media.audio && c.media.src === s.media.src));
+        if (k >= 0) { v = this.carried.splice(k, 1)[0]; this.vids.set(s.id, v); }
+      }
       if (!v) {
         const m = s.media;
         const el = document.createElement(m.audio ? 'audio' : 'video');
@@ -883,7 +953,7 @@ export class Player {
   private fullScreen(v: { el: HTMLMediaElement; media: Media }, on: boolean): void {
     if (v.media.audio || !v.media.full) return;
     v.el.dataset.full = on ? '1' : '';
-    const s = this.current.videoSpots(this.done).find((x) => this.vids.get(x.id) === v);
+    const s = this.current.videoSpots(this.done, this.idleFired()).find((x) => this.vids.get(x.id) === v);
     if (s) this.place(v.el, s);
   }
 
@@ -896,7 +966,7 @@ export class Player {
   /** A click in the show on a video or a sound's icon starts or pauses it; false when there is none there. */
   clickMedia(px: number, py: number): boolean {
     if (this.moving) return false;
-    for (const s of this.current.videoSpots(this.done)) {
+    for (const s of this.current.videoSpots(this.done, this.idleFired())) {
       if (px < s.x || px > s.x + s.w || py < s.y || py > s.y + s.h) continue;
       const v = this.vids.get(s.id);
       if (!v) continue;
@@ -912,14 +982,15 @@ export class Player {
 
   /** Whether there is a video or sound to click at a point (for the pointer). */
   mediaAt(px: number, py: number): boolean {
-    return !this.moving && this.current.videoSpots(this.done).some((s) => px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h);
+    return !this.moving && this.current.videoSpots(this.done, this.idleFired()).some((s) => px >= s.x && px <= s.x + s.w && py >= s.y && py <= s.y + s.h);
   }
 
   /** A morph from slide `was` (as it was left) to the slide now showing. */
   private morphFrom(was: number): MorphFrames | undefined {
     const s = this.deck.slides[was];
     if (!s) return undefined;
-    const doc0 = this.deck.docOf(was), anims = s.anims ?? [];
+    // (the animations as the show played them: none without animation, when everything was showing)
+    const doc0 = this.deck.docOf(was), anims = this.animsOf(was);
     // the same Part objects the states are kept by, so the parts gone are left out
     const parts = slideParts(doc0);
     const states = anims.length ? partStates(parts, anims, this.wasDone, -1) : new Map<Part, { visible: boolean }>();
@@ -1116,7 +1187,7 @@ export class Player {
     if (this.moving) return -1;
     const c = this.deck.slides[this.i]?.canvas;
     if (!c?.keys.length || c.show?.noLinks) return -1;
-    const hit = this.current.textAt(px, py, (t) => !!compoundId(plainText(t.runs)));
+    const hit = this.current.textAt(px, py, (t) => !!compoundId(plainText(t.runs)), this.done, this.idleFired());
     if (!hit) return -1;
     const id = compoundId(plainText(hit.runs)), size = this.deck.size;
     const same = [...this.deck.docOf(this.i).captions.values()].filter((t) => !t.hidden && compoundId(plainText(t.runs)) === id);
@@ -1391,18 +1462,39 @@ export class Player {
     else this.drawKey(ctx, c.at, t, fired);
   }
 
+  /** Where in the show's order the slide showing stands (a custom show may play a slide more than once), or -1 when it has no order or the slide is not in it. */
+  get position(): number {
+    return this.order ? (this.order[this.at] === this.i ? this.at : this.order.indexOf(this.i)) : -1;
+  }
+
+  /** The place in the show's order of slide i: the one the show is at when it is slide i, else its first. */
+  private orderPlace(i: number): number {
+    return this.order && i === this.i && this.order[this.at] === i ? this.at : this.order?.indexOf(i) ?? -1;
+  }
+
+  /** The place in the show's order after (1) or before (-1) slide i's, or -1 at either end. */
+  private neighbour(i: number, d: 1 | -1): number {
+    const order = this.order!;
+    const k = this.orderPlace(i);
+    if (k >= 0) return order[k + d] === undefined ? -1 : k + d;
+    // a slide that is not in the order: the next one that is, in slide order
+    const at = d > 0 ? order.findIndex((j) => j > i) : order.map((j, n) => ({ j, n })).reverse().find((x) => x.j < i)?.n ?? -1;
+    return at;
+  }
+
   /** The slide the show plays after slide i (in its order), or -1 at the end. */
   after(i: number): number {
     if (!this.order) return this.deck.shownAfter(i);
-    const k = this.order.indexOf(i);
-    return k >= 0 ? this.order[k + 1] ?? -1 : this.order.find((j) => j > i) ?? -1;
+    return this.order[this.neighbour(i, 1)] ?? -1;
   }
 
   /** The slide the show played before slide i, or -1 at the start. */
   before(i: number): number {
     if (!this.order) return this.deck.shownBefore(i);
-    const k = this.order.indexOf(i);
-    return k > 0 ? this.order[k - 1] : k === 0 ? -1 : [...this.order].reverse().find((j) => j < i) ?? -1;
+    const k = this.orderPlace(i);
+    // (at the first place there is nothing before it)
+    if (k === 0) return -1;
+    return this.order[this.neighbour(i, -1)] ?? -1;
   }
 
   /** The first slide of the show. */
@@ -1426,6 +1518,11 @@ export class Player {
   }
 
   /** How far each trigger's sequence has played at a time (for drawing). */
+  /** The triggers' clicks played so far, for asking what is showing with nothing moving. */
+  private idleFired(): Map<string, { done: number; t: number }> | undefined {
+    return this.fired.size ? new Map([...this.fired].map(([k, f]) => [k, { done: f.done, t: -1 }])) : undefined;
+  }
+
   private firedAt(now: number): Map<string, { done: number; t: number }> {
     const out = new Map<string, { done: number; t: number }>();
     for (const [k, f] of this.fired) out.set(k, { done: f.done, t: -1 });
@@ -1450,8 +1547,8 @@ export class Player {
   }
 
   /** Show slide `i`: with its transition (from what is on screen now), or straight away; at its start or with everything played. */
-  show(i: number, how: { transition?: boolean; atEnd?: boolean } = {}): void {
-    this.stop();
+  show(i: number, how: { transition?: boolean; atEnd?: boolean; pos?: number } = {}): void {
+    this.halt(true);
     this.started = true;
     let from: HTMLCanvasElement | null = null;
     const t = this.deck.slides[i].transition;
@@ -1465,7 +1562,10 @@ export class Player {
     // a morph pairs things by where they are on two slides: not into or out of a canvas, where places are on the canvas
     const morph = t?.kind === 'morph' && was !== undefined && !this.deck.slides[was]?.canvas && !this.deck.slides[i].canvas;
     this.wasDone = this.done;
+    // (the place in the order is worked out before the slide changes)
+    const pos = how.pos ?? (this.order ? this.order.indexOf(i) : -1);
     this.i = i;
+    if (pos >= 0) this.at = pos;
     this.framesBy.clear();
     this.keyNow = 0;
     this.away = null;
@@ -1513,7 +1613,7 @@ export class Player {
     if (this.beforeNextSlide()) return;
     // hidden slides (Hide Slide) are skipped, and slides not in the show's order
     const j = this.after(this.i);
-    if (j >= 0) this.show(j, { transition: true });
+    if (j >= 0) this.show(j, { transition: true, ...(this.order ? { pos: this.neighbour(this.i, 1) } : {}) });
     else this.onPastEnd();
   }
 
@@ -1535,7 +1635,7 @@ export class Player {
       return;
     }
     const j = this.before(this.i);
-    if (j >= 0) this.show(j, { atEnd: true });
+    if (j >= 0) this.show(j, { atEnd: true, ...(this.order ? { pos: this.neighbour(this.i, -1) } : {}) });
   }
 
   private finish(): void {
@@ -1572,14 +1672,18 @@ export class Player {
     const m = this.moving;
     if (m?.kind === 'transition') {
       this.videos(false);
-      const p = Math.min(1, (now - m.t0) / 1000 / Math.max(0.01, m.t.dur));
+      let built = false;
       if (!m.to) {
         m.to = document.createElement('canvas');
         m.to.width = this.canvas.width;
         m.to.height = this.canvas.height;
         this.drawNow(m.to.getContext('2d')!, -1, this.firedAt(now));
+        built = true;
       }
-      if (m.morph === null && m.was !== undefined) m.morph = this.morphFrom(m.was);
+      if (m.morph === null && m.was !== undefined) { m.morph = this.morphFrom(m.was); built = true; }
+      // the clock starts once the pictures are made, so a slow first frame doesn't use up the transition
+      if (built) m.t0 = performance.now();
+      const p = Math.min(1, (performance.now() - m.t0) / 1000 / Math.max(0.01, m.t.dur));
       if (m.zoom) drawZoom(ctx, m.from!, m.to, m.zoom.rect, p, m.zoom.out, this.canvas.width, this.canvas.height);
       else if (m.morph) m.morph.draw(ctx, p);
       else drawTransition(ctx, m.from, m.to, m.t, p, this.canvas.width, this.canvas.height);
@@ -1598,7 +1702,8 @@ export class Player {
         this.drawNow(ctx, -1, this.firedAt(now));
         this.videos(true);
         this.onChange();
-        this.onIdle();
+        // (a slide whose time ran out during the move goes on now)
+        this.idle();
         return;
       }
       this.videos(false);
@@ -1628,7 +1733,8 @@ export class Player {
         this.drawNow(ctx, -1, this.firedAt(now));
         this.videos(true);
         this.onChange();
-        this.onIdle();
+        // (a slide whose time ran out during the move goes on now)
+        this.idle();
         return;
       }
       this.videos(false);
