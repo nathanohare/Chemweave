@@ -285,22 +285,36 @@ export function readRef(wb: Workbook, text: string | undefined, home: Sheet): { 
 }
 
 /**
+ * The blocks of a union of references in brackets, =(Sheet1!$A$2:$A$3,Sheet1!$A$5:$A$6), as Excel
+ * writes a series over cells that aren't next to each other; null when the text isn't one. Commas
+ * and brackets inside a quoted sheet name ('Pivot (2)', 'Runs, 2024') are part of the name.
+ */
+export function unionParts(text: string | undefined): string[] | null {
+  const t = text?.trim().replace(/^=/, '').trim() ?? '';
+  if (!t.startsWith('(') || !t.endsWith(')')) return null;
+  const parts: string[] = [];
+  let cur = '', quoted = false, depth = 0;
+  for (let i = 1; i < t.length - 1; i++) {
+    const ch = t[i];
+    if (ch === "'") quoted = !quoted;
+    else if (!quoted && ch === '(') depth++;
+    else if (!quoted && ch === ')') { if (--depth < 0) return null; }
+    if (ch === ',' && !quoted && depth === 0) { parts.push(cur.trim()); cur = ''; } else cur += ch;
+  }
+  if (quoted || depth) return null;
+  parts.push(cur.trim());
+  if (parts.length < 2 || !parts.every((p) => formulaRefs('=' + p).length === 1)) return null;
+  return parts;
+}
+
+/**
  * The values of a reference in reading order, leaving out hidden rows and columns unless asked.
- * A union of blocks in brackets, =(Sheet1!$A$2:$A$3,Sheet1!$A$5:$A$6), as Excel writes a series
- * over cells that aren't next to each other, gives each block's values in turn.
+ * A union of blocks (see `unionParts`) gives each block's values in turn.
  */
 export function refValues(wb: Workbook, text: string | undefined, home: Sheet, showHidden = false, leaveOut?: Map<Sheet, Set<number>>): Value[] | null {
-  const union = text?.trim().replace(/^=/, '').match(/^\(([^()]*)\)$/);
-  if (union && union[1].includes(',') && formulaRefs('=' + union[1]).length > 1) {
+  const parts = unionParts(text);
+  if (parts) {
     const out: Value[] = [];
-    // the blocks, split at commas outside a quoted sheet name ('Runs, 2024'!A1)
-    const parts: string[] = [];
-    let cur = '', quoted = false;
-    for (const ch of union[1]) {
-      if (ch === "'") quoted = !quoted;
-      if (ch === ',' && !quoted) { parts.push(cur); cur = ''; } else cur += ch;
-    }
-    parts.push(cur);
     for (const part of parts) {
       const got = refValues(wb, part, home, showHidden, leaveOut);
       if (!got) return null;

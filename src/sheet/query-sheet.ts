@@ -116,6 +116,9 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
   // SUBTOTAL formulas, which are made to cover the new records), copied before the rows are cleared
   const totalsRow = own?.totals ? own.range.r2 : null;
   const totals = totalsRow !== null ? s.copy({ r1: totalsRow, c1: own!.range.c1, r2: totalsRow, c2: own!.range.c2 }) : null;
+  // the old table's headers, read before the header row is written over
+  const oldHeads = new Map<number, string>();
+  if (own) for (let c = own.range.c1; c <= own.range.c2; c++) oldHeads.set(c, headKey(s.value(own.range.r1, c)));
   // the records' last row (the row before the totals row)
   const dataEnd = own?.totals ? R.r2 - 1 : R.r2;
   let errors = 0;
@@ -144,6 +147,8 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
     if (O.r2 > R.r2) s.clear({ r1: R.r2 + 1, c1: O.c1, r2: O.r2, c2: O.c2 }, 'all');
     if (O.c2 > R.c2) s.clear({ r1: O.r1, c1: R.c2 + 1, r2: Math.min(O.r2, R.r2), c2: O.c2 }, 'all');
     s.clear({ r1: O.r1, c1: O.c1, r2: Math.min(O.r2, R.r2), c2: Math.min(O.c2, R.c2) }, 'contents');
+    // the old totals row's own look (bold totals) doesn't stay on the record that takes its place
+    if (own.totals && O.r2 <= R.r2) s.clear({ r1: O.r2, c1: O.c1, r2: O.r2, c2: Math.min(O.c2, R.c2) }, 'all');
   }
   for (const k of kept) {
     if (k.from !== k.to) s.clear({ r1: R.r1, c1: k.to, r2: R.r2, c2: k.to }, 'all');
@@ -172,17 +177,26 @@ export function writeResult(s: Sheet, at: { row: number; col: number }, t: QTabl
     const O = own!.range;
     const toCol = new Map<number, number>();
     for (let c = O.c1; c <= O.c2; c++) {
-      const h = headKey(s.value(O.r1, c));
+      const h = oldHeads.get(c) ?? '';
       const j = cols.findIndex((name) => headKey(name) === h && h !== '');
       if (j >= 0) toCol.set(c, place[j]);
     }
     for (const m of moves) toCol.set(m.from, m.to);
-    if (!toCol.size) toCol.set(O.c1, R.c1);
-    // the first column holds the "Total" label even when its header changed
-    if (!toCol.has(O.c1)) toCol.set(O.c1, R.c1);
     s.clear({ r1: R.r2, c1: R.c1, r2: R.r2, c2: R.c2 }, 'all');
-    for (const [from, to] of toCol) {
-      const cell = totals.cells[0]?.[from - O.c1];
+    // formulas go with their columns (a column the results no longer have takes its total with
+    // it); the label in the first column ("Total") stays in the first column, unless a moved
+    // formula now sits there, when it goes with its own column
+    const cellOf = (from: number) => totals.cells[0]?.[from - O.c1];
+    const isLabel = (from: number) => { const c = cellOf(from); return from === O.c1 && !c?.input?.startsWith('='); };
+    const placed = new Map<number, number>();
+    for (const [from, to] of toCol) if (!isLabel(from)) placed.set(from, to);
+    if (isLabel(O.c1)) {
+      const taken = new Set([...placed].filter(([from]) => cellOf(from)?.input).map(([, to]) => to));
+      const to = !taken.has(R.c1) ? R.c1 : toCol.get(O.c1);
+      if (to !== undefined && !taken.has(to)) placed.set(O.c1, to);
+    }
+    for (const [from, to] of placed) {
+      const cell = cellOf(from);
       if (!cell?.input && !cell?.style) continue;
       let input = cell.input;
       if (input?.startsWith('=')) {

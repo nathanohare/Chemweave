@@ -322,7 +322,14 @@ export function goToSpecial(s: Sheet, sel: Range, active: { r: number; c: number
         }
         frontier = next;
       }
-      return blocks.length ? blocks : null;
+      // overlapping blocks (=SUM(A1:A10)+A5) as blocks that don't overlap, so no cell counts twice
+      const apart: Range[] = [];
+      for (const b of blocks) {
+        let pieces = [b];
+        for (const o of apart) pieces = pieces.flatMap((p) => cut(p, o));
+        apart.push(...pieces);
+      }
+      return apart.length ? apart : null;
     }
     case 'dependents': {
       // formulas on this sheet that read the selected cells (and, for every level, those reading them)

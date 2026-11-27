@@ -9,7 +9,7 @@ import type { Range } from './refs';
 import { inRange } from './refs';
 import type { Value } from './values';
 import { isError } from './values';
-import { Chart, CategoryPick, SeriesData, readRef, refText, mapChartRefs, levelChart, cellLabel } from './chart';
+import { Chart, CategoryPick, SeriesData, readRef, refText, mapChartRefs, levelChart, cellLabel, unionParts } from './chart';
 import { adjustFormula, renameSheetInFormula, SheetChange } from './formula';
 
 /** Where a tile's rows come from: a table by name (it grows with the table), or a block of cells with a header row. */
@@ -201,15 +201,30 @@ export function chartPickMask(wb: Workbook, d: Dashboard, except?: number, only?
   for (const t of d.tiles.filter(counts)) {
     for (const { level, value } of t.pick!) {
       const labels = (t.chart.series[level] ?? t.chart.series[0])?.x;
-      const at = labels ? readRef(wb, labels, wb.sheet) : null;
-      if (!at) continue;
-      const rows = out.get(at.sheet) ?? new Set<number>();
-      out.set(at.sheet, rows);
-      const end = Math.min(at.range.r2, Math.max(at.range.r1, at.sheet.lastRow));
-      for (let r = at.range.r1; r <= end; r++) if (cellLabel(at.sheet.value(r, at.range.c1)) !== value) rows.add(r);
+      // (a union of blocks, a PivotChart's labels over a Tabular report, block by block)
+      for (const part of labels ? unionParts(labels) ?? [labels] : []) {
+        const at = readRef(wb, part, wb.sheet);
+        if (!at) continue;
+        const rows = out.get(at.sheet) ?? new Set<number>();
+        out.set(at.sheet, rows);
+        const end = Math.min(at.range.r2, Math.max(at.range.r1, at.sheet.lastRow));
+        for (let r = at.range.r1; r <= end; r++) if (cellLabel(at.sheet.value(r, at.range.c1)) !== value) rows.add(r);
+      }
     }
   }
   return out;
+}
+
+/**
+ * The name of the column a chart's labels come from: the header cell over them, or, in a table
+ * without a header row, the table's own name for the column (its first row is a record).
+ */
+export function labelsName(wb: Workbook, ref: string | undefined): string {
+  const at = ref ? readRef(wb, unionParts(ref)?.[0] ?? ref, wb.sheet) : null;
+  if (!at) return '';
+  const t = at.sheet.tables.find((x) => !x.header && x.range.r1 === at.range.r1 && at.range.c1 >= x.range.c1 && at.range.c1 <= x.range.c2);
+  if (t) return t.columns?.[at.range.c1 - t.range.c1]?.name ?? `Column${at.range.c1 - t.range.c1 + 1}`;
+  return at.range.r1 > 0 ? at.sheet.shownText(at.range.r1 - 1, at.range.c1) : '';
 }
 
 /** Every row left out by any of several masks. */

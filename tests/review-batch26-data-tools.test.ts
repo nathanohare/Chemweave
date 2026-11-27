@@ -120,6 +120,9 @@ describe('Text to Columns', () => {
 });
 
 describe('Advanced Filter', () => {
+  // "If you include blank rows in your criteria range, Excel includes them in the filtering
+  // process. The effect is that no data is filtered out, so all records are returned." (Dummies,
+  // "Using Advanced Table Filtering in Excel 2010", dummies.com article 206006)
   it('a blank criteria row matches every record (F1096)', () => {
     const wb = book({ A1: 'Region', B1: 'Yield', A2: 'North', B2: '1', A3: 'South', B3: '2', A4: 'North', B4: '3', A5: 'East', B5: '4', D1: 'Region', D2: 'North' });
     expect(advancedRows(wb.sheet, { list: R('A1:B5'), criteria: R('D1:D2') })).toEqual([1, 3]);

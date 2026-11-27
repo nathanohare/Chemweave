@@ -9,7 +9,7 @@
 import type { Sheet } from './workbook';
 import { Range, inRange, parseRange, rangeName } from './refs';
 import { Value, isError, readTyped, toText } from './values';
-import type { Arg } from './args';
+import { extent, type Arg } from './args';
 import { formatValue } from './numfmt';
 
 export type ValidationKind = 'any' | 'whole' | 'decimal' | 'list' | 'date' | 'time' | 'length' | 'custom';
@@ -213,8 +213,11 @@ function formulaList(src: string, v: Validation, sheet: Sheet, host: ValidationH
   if (got !== null && typeof got === 'object' && 'block' in got) {
     const s = got.sheet ? host.sheetNamed(got.sheet) : sheet;
     const out: string[] = [];
-    for (let i = 0; i < got.h; i++) {
-      for (let j = 0; j < got.w; j++) {
+    // a whole column (=$H:$H named) stops at the cells in use, as a plain reference does
+    let { h, w } = extent(got);
+    if (got.at && s) { h = Math.min(h, Math.max(0, s.lastRow - got.at.r + 1)); w = Math.min(w, Math.max(0, s.lastCol - got.at.c + 1)); }
+    for (let i = 0; i < h; i++) {
+      for (let j = 0; j < w; j++) {
         const t = got.at && s ? s.shownText(got.at.r + i, got.at.c + j) : plainText(got.block[i]?.[j] ?? null);
         if (t !== '') out.push(t);
       }

@@ -11,7 +11,7 @@ import type { Sheet } from '../sheet/workbook';
 import { Range, colName, parseCellRef } from '../sheet/refs';
 import {
   Chart, ChartKind, ChartAxis, Series, SeriesFit, ErrorBars, MarkerShape, CHART_NAMES, CHART_PALETTES, MARKERS,
-  chartFromRange, chartData, readRef, refText, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
+  chartFromRange, chartData, readRef, refText, unionParts, isXY, hasLevels, comboAs, onSecondAxis, Bins, BoxOptions, retitle, titleIs, titleWithLook,
 } from '../sheet/chart';
 import { CHEM_FITS, FIT_NAMES, FitKind, fitEquation, fitResults, isChemFit, isTemperatureFit, r2Text, fitNumber } from '../sheet/fit';
 import { histogram } from '../sheet/chart-stats';
@@ -210,6 +210,12 @@ export class SheetCharts {
   asRef(text: string | undefined): string | undefined {
     const t = text?.trim();
     if (!t) return undefined;
+    // a union of blocks (a PivotChart's labels over a Tabular report) stays a union
+    const parts = unionParts(t);
+    if (parts) {
+      const each = parts.map((p) => readRef(this.view.wb!, p, this.sheet));
+      return each.every(Boolean) ? `=(${each.map((g) => refText(g!.sheet.name, g!.range).replace(/^=/, '')).join(',')})` : t.startsWith('=') ? t : '=' + t;
+    }
     const got = readRef(this.view.wb!, t, this.sheet);
     return got ? refText(got.sheet.name, got.range) : t.startsWith('=') ? t : '=' + t;
   }
@@ -326,6 +332,7 @@ export class SheetCharts {
     const c = this.chart;
     if (!c) return;
     const s = c.series[i];
+    if (unionParts(s.y) || unionParts(s.x)) { this.host.flash('Fitted Line in Cells needs the series\' values and labels each in one block of cells.'); return; }
     const yr = readRef(this.view.wb!, s.y, this.sheet);
     const xr = s.x ? readRef(this.view.wb!, s.x, this.sheet) : null;
     if (!yr) return;

@@ -6,11 +6,11 @@ import type { SheetView } from './sheet-view';
 import type { SheetCharts } from './sheet-chart-ui';
 import { ask, Field } from './ask';
 import { addInfo, withInfo } from './info-tip';
-import { refText, readRef, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
+import { refText, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
 import {
   Dashboard, Tile, TileKind, Source, Aggregate, KpiTile, TableTile, SlicerTile, GalleryTile, TextTile, ChartTile,
   AGGREGATE_NAMES, TILE_NAMES, resolveSource, sourceKey, sourceName, columnOf, newTileId, freeSpot, chartOfColumns,
-  levelChartOfSource, hasFilters, withoutFilters, describePick, type Resolved,
+  levelChartOfSource, hasFilters, withoutFilters, describePick, labelsName, type Resolved,
 } from '../sheet/dashboard';
 
 export interface DashUiHost {
@@ -277,10 +277,7 @@ export class DashboardUi {
 
   /** What a chart tile picked, in words, its levels named by the header cells over their categories. */
   private pickWords(t: ChartTile): string {
-    const names = t.chart.series.map((s) => {
-      const at = s.x ? readRef(this.wb, s.x, this.wb.sheet) : null;
-      return at && at.range.r1 > 0 ? at.sheet.shownText(at.range.r1 - 1, at.range.c1) : '';
-    });
+    const names = t.chart.series.map((s) => labelsName(this.wb, s.x));
     return describePick(t, names);
   }
 

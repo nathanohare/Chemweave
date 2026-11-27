@@ -138,6 +138,26 @@ export function moveSparklines(groups: SparklineGroup[], axis: 'row' | 'col', at
 
 // ---------------------------------------------------------------- what is drawn
 
+/**
+ * The axis limits a group's settings give: a number typed for Minimum or Maximum as it is; Same
+ * for All Sparklines the lowest and highest of every value in the group (`all`). Columns stand
+ * on zero, so the automatic limits take in zero (all below zero, the bars hang from it).
+ */
+export function groupLimits(g: SparklineGroup, all: number[]): { min?: number; max?: number } {
+  const col = g.kind === 'column';
+  return {
+    min: typeof g.minAxis === 'number' ? g.minAxis : g.minAxis === 'group' && all.length ? minOf(all, col ? 0 : Infinity) : undefined,
+    max: typeof g.maxAxis === 'number' ? g.maxAxis : g.maxAxis === 'group' && all.length ? maxOf(all, col ? 0 : -Infinity) : undefined,
+  };
+}
+
+/** The limits one sparkline is drawn with: the group's, with its own values for a limit left to each sparkline (undefined when both are). */
+export function sparkLimits(g: SparklineGroup, nums: number[], set: { min?: number; max?: number }): { min: number; max: number } | undefined {
+  if (set.min === undefined && set.max === undefined) return undefined;
+  const col = g.kind === 'column';
+  return { min: set.min ?? minOf(nums, col ? 0 : Infinity), max: set.max ?? maxOf(nums, col ? 0 : -Infinity) };
+}
+
 export interface SparkShape {
   /** A line through the points (gaps break it: null). */
   line?: ({ x: number; y: number } | null)[];
