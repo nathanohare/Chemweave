@@ -32,14 +32,15 @@ export function depthCues(doc: Doc, ex: MolExport): DepthCues {
   for (const b of doc.bonds.values()) {
     const i = index.get(b.a1), j = index.get(b.a2);
     if (i === undefined || j === undefined) continue;
-    if (b.display === 'wedge' || b.display === 'hashWedge') cues.wedges.push({ a: i, b: j, toward: b.display === 'wedge' });
+    // (a hollow wedge is read as a wedge: toward the reader)
+    if (b.display === 'wedge' || b.display === 'hollowWedge' || b.display === 'hashWedge') cues.wedges.push({ a: i, b: j, toward: b.display !== 'hashWedge' });
     else if (b.display === 'bold') cues.near.push([i, j]);
     else if (b.display === 'hash') cues.far.push([i, j]);
   }
   return cues;
 }
 
-const SHOWN: Partial<Record<BondDisplay, string>> = { wedge: 'w', hashWedge: 'h', bold: 'b', hash: 'x' };
+const SHOWN: Partial<Record<BondDisplay, string>> = { wedge: 'w', hollowWedge: 'w', hashWedge: 'h', bold: 'b', hash: 'x' };
 
 /** A structure as the 3-D builder sees it: its atoms and bonds and the depth its bonds show (not where anything is). */
 export function structureKey(doc: Doc, ids: Iterable<number>): string {

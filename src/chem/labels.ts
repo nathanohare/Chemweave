@@ -134,6 +134,9 @@ export const isBuiltInNickname = (name: string): boolean => BUILT_IN.has(name);
 /** The program's own nicknames and their SMILES (first atom where it joins). */
 export const builtInNicknames = (): [string, string][] => [...BUILT_IN].map((n) => [n, NICKNAMES[n]]);
 
+/** Whether two spellings read as the same group (sameReading), kept as worked out. */
+const SAME_READING = new Map<string, boolean>();
+
 /**
  * Add nicknames of the person's own (or ones a drawing brings with it): name → SMILES, the
  * first atom being where it joins. Built-in names are left as they are. Returns the names added.
@@ -146,7 +149,7 @@ export function addNicknames(more: Record<string, string>): string[] {
     nickCache.delete(name);
     added.push(name);
   }
-  if (added.length) { NICK_NAMES = nickNames(); graphCache.clear(); }
+  if (added.length) { NICK_NAMES = nickNames(); graphCache.clear(); SAME_READING.clear(); }
   return added;
 }
 
@@ -157,6 +160,7 @@ export function removeNickname(name: string): void {
   nickCache.delete(name);
   NICK_NAMES = nickNames();
   graphCache.clear();
+  SAME_READING.clear();
 }
 
 export interface Token {
@@ -323,25 +327,81 @@ export function styleLabel(label: string, marks?: LabelMarks, look: AlkylLook = 
   const want = alkylWants(look);
   const keep = { label, ...(marks ? { marks } : {}) };
   if (!want) return keep;
-  const at = new Map<number, boolean>();
+  // each prefix: whether it has a dash now, and whether the dash may change
+  const at = new Map<number, { dash: boolean; free: boolean }>();
   for (const t of tokenize(label)) {
     if (t.kind !== 'nick' || t.at === undefined) continue;
-    for (const f of alkylPrefixes(t.text)) at.set(t.at + f.at, f.dash);
+    const fs = alkylPrefixes(t.text);
+    // the abbreviation with its dashes as the look wants them: when that isn't an abbreviation too
+    // (tBuDavePhos has no t-BuDavePhos, t-Bu-Xantphos no tBu-Xantphos), its dashes stay as typed
+    let restyled = '';
+    for (let i = 0; i < t.text.length; i++) {
+      const f = fs.find((x) => x.at === i);
+      restyled += t.text[i];
+      if (!f) continue;
+      const dash = dashFree(label, t.at + i) ? want.dash : f.dash;
+      if (dash && !f.dash) restyled += '-';
+      else if (!dash && f.dash) i++;
+    }
+    // (decided by reading: CO2tBu and CO2t-Bu, PnBu3 and Pn-Bu3 are the same groups and follow the
+    // look; review F049)
+    const free = restyled === t.text || sameReading(t.text, restyled);
+    for (const f of fs) at.set(t.at + f.at, { dash: f.dash, free });
   }
   if (!at.size) return keep;
   const was = (marks ?? '').padEnd(label.length, '.');
-  let text = '', m = '';
-  for (let i = 0; i < label.length; i++) {
-    const had = at.get(i);
-    if (had === undefined) { text += label[i]; m += was[i]; continue; }
-    text += label[i];
-    // (raised for ᵗBu; a prefix raised by an earlier look comes back down)
-    m += withMark(was[i], { italic: want.italic, ...(want.sup ? { pos: 'up' as const } : readMark(was[i]).pos === 'up' ? { pos: 'auto' as const } : {}) });
-    const dash = dashFree(label, i) ? want.dash : had;
-    if (dash && !had) { text += '-'; m += '.'; }
-    else if (!dash && had) i++;
+  const restyle = (locked: boolean) => {
+    let text = '', m = '';
+    for (let i = 0; i < label.length; i++) {
+      const p = at.get(i);
+      if (p === undefined) { text += label[i]; m += was[i]; continue; }
+      const had = p.dash;
+      text += label[i];
+      // (raised for ᵗBu; a prefix raised by an earlier look comes back down)
+      m += withMark(was[i], { italic: want.italic, ...(want.sup ? { pos: 'up' as const } : readMark(was[i]).pos === 'up' ? { pos: 'auto' as const } : {}) });
+      const dash = !locked && p.free && dashFree(label, i) ? want.dash : had;
+      if (dash && !had) { text += '-'; m += '.'; }
+      else if (!dash && had) i++;
+    }
+    return { label: text, ...(anyMarks(m) ? { marks: m } : {}) };
+  };
+  const out = restyle(false);
+  // a whole label that is an abbreviation (tBuDavePhos, read only as a whole) keeps its spelling
+  // unless the restyled one reads as the same group
+  return NICKNAMES[label] && out.label !== label && !sameReading(label, out.label) ? restyle(true) : out;
+}
+
+/**
+ * A label's group as text that doesn't depend on the order its atoms were read in, nor on whether a
+ * ring was written aromatic or with alternating bonds (Ph, C1=CC=CC=C1): each atom by element,
+ * charge, written hydrogens, mass, bonds and π bonds, each bond by its two atoms.
+ */
+function readingKey(g: MiniGraph): string {
+  const deg = g.atoms.map(() => 0), pi = g.atoms.map(() => 0);
+  for (const b of g.bonds) { deg[b.a]++; deg[b.b]++; pi[b.a] += b.order - 1; pi[b.b] += b.order - 1; }
+  const atom = (i: number) => { const a = g.atoms[i]; return `${a.z}${a.dummy ? '*' : ''}${a.charge}h${a.hCount ?? '?'}i${a.iso ?? 0}d${deg[i]}p${Math.round(pi[i])}`; };
+  const atoms = g.atoms.map((_, i) => atom(i)).sort();
+  const bonds = g.bonds.map((b) => [atom(b.a), atom(b.b)].sort().join('-')).sort();
+  return atoms.join(',') + '|' + bonds.join(',');
+}
+
+/**
+ * Whether two spellings of a label read as the same group (CO2tBu and CO2t-Bu), so a look may
+ * change one into the other. A spelling that the abbreviation table knows only as a name, with
+ * no reading of its own (a ligand listed by its paper's spelling), counts as different, as does
+ * one that isn't read at all.
+ */
+function sameReading(a: string, b: string): boolean {
+  const k = a + '\u0000' + b;
+  let same = SAME_READING.get(k);
+  if (same === undefined) {
+    const ga = labelGraph(a), gb = labelGraph(b);
+    same = !!ga && !!gb && readingKey(ga) === readingKey(gb);
+    // (labels are styled each time they are drawn: the answers are kept, a few hundred at most)
+    if (SAME_READING.size > 2000) SAME_READING.clear();
+    SAME_READING.set(k, same);
   }
-  return { label: text, ...(anyMarks(m) ? { marks: m } : {}) };
+  return same;
 }
 
 /** Pieces with the hand-set marks applied, split where a mark changes how a character sits. */
@@ -780,7 +840,11 @@ export function parseSmiles(smi: string): MiniGraph {
       // a ring number: one digit, or %nn for ten and over
       const n = c === '%' ? Number(smi.slice(i + 1, i + 3)) + 100 : Number(c);
       if (c === '%') i += 2;
+      // (a ring number before any atom, or closing on the atom that opened it, as in a damaged
+      // SMILES from settings or a file, is passed over; review F402)
+      if (prev < 0) { pendingOrder = 0; i++; continue; }
       const open = rings.get(n);
+      if (open && (open.atom === prev || !atoms[open.atom])) { rings.delete(n); pendingOrder = 0; i++; continue; }
       if (open) {
         const ord = pendingOrder || open.order || (atoms[open.atom].aromatic && atoms[prev].aromatic ? 1.5 : 1);
         bonds.push({ a: open.atom, b: prev, order: ord });
@@ -791,13 +855,17 @@ export function parseSmiles(smi: string): MiniGraph {
       continue;
     }
     if (c === '[') {
+      // (a nickname's SMILES can come from settings or an opened file: a bracket that isn't
+      // closed, or an atom this doesn't read, is a dummy atom, and reading always moves on)
       const j = smi.indexOf(']', i);
-      const inner = smi.slice(i + 1, j);
-      const m = /^(\d*)([A-Za-z][a-z]?)(H\d?)?([+-]\d?)?$/.exec(inner)!;
+      const inner = smi.slice(i + 1, j < 0 ? smi.length : j);
+      // isotope, element, chirality (not used here), hydrogens, charge (+, ++, +2), atom map
+      const m = j < 0 ? null : /^(\d*)([A-Za-z][a-z]?)(?:@@?)?(H\d*)?([+-]{1,2}|[+-]\d+)?(?::\d+)?$/.exec(inner);
+      if (!m) { add(0, false, 0, true); i = j < 0 ? smi.length : j + 1; continue; }
       const aromatic = /^[a-z]/.test(m[2]);
       const sym = aromatic ? m[2][0].toUpperCase() + m[2].slice(1) : m[2];
       let charge = 0;
-      if (m[4]) charge = (m[4][0] === '+' ? 1 : -1) * (m[4].length > 1 ? Number(m[4].slice(1)) : 1);
+      if (m[4]) charge = (m[4][0] === '+' ? 1 : -1) * (/\d/.test(m[4]) ? Number(m[4].slice(1)) : m[4].length);
       const h = m[3] ? (m[3].length > 1 ? Number(m[3].slice(1)) : 1) : 0;
       add(elementNumber(sym) ?? 0, aromatic, charge, false, h, m[1] ? Number(m[1]) : undefined);
       i = j + 1;

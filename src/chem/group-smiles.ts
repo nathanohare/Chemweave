@@ -99,8 +99,14 @@ export function selectedGroup(doc: Doc, ids: Iterable<number>): { start: number;
   for (const id of set) for (const n of doc.neighbors(id)) if (!set.has(n.id)) out.push({ inside: id, outside: n.id });
   if (out.length > 1) return { error: 'The group joins the rest of the structure by more than one bond. Select a group that hangs off by a single bond.' };
   const start = out[0]?.inside ?? [...set][0];
+  // one piece: every selected atom is reached from the join through bonds inside the selection
+  // (the SMILES is written from the join, so a separate piece would be left out and then deleted)
+  const reached = new Set([start]);
+  for (const todo = [start]; todo.length;) for (const n of doc.neighbors(todo.pop()!)) if (set.has(n.id) && !reached.has(n.id)) { reached.add(n.id); todo.push(n.id); }
+  if (reached.size < set.size) return { error: 'Select the atoms of one group: the selection is in more than one piece.' };
   const g = groupGraph(doc, set, start);
   if (!g) return { error: 'A label in the group can\'t be read as chemistry.' };
   const join = out[0] ? doc.bondBetween(out[0].inside, out[0].outside) : undefined;
-  return { start, smiles: graphSmiles(g, join ? Math.round(join.order) : 0), outside: out[0]?.outside ?? null };
+  // an aromatic join (order 1.5) is one bond to the group's first atom, as labelTip counts it
+  return { start, smiles: graphSmiles(g, join ? (join.order === 1.5 ? 1 : Math.round(join.order)) : 0), outside: out[0]?.outside ?? null };
 }

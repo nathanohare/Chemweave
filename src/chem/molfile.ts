@@ -5,7 +5,7 @@
 import { attachCode } from './attach-codes';
 import { Doc, isMetalAtom, outsideValence, radicalElectrons, type EnhancedStereo, type Shape } from '../model';
 import { metalCarbonyl } from './hapto';
-import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, maxValence, valenceOfBonds } from './elements';
+import { SYMBOLS, elementNumber, hasImplicitH, implicitHydrogens, isMetal, negativeChargeSite, valenceOfBonds } from './elements';
 import { CARBONYL_LIGAND, isCarbonylLabel, kekulize, labelDonates, labelGraph, MiniGraph } from './labels';
 import { stereoAnchor, stereoSense } from './stereo';
 import { aromaticAsSingle, kekuleDoubles } from './aromatic';
@@ -528,13 +528,8 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const used = g.atoms.map(() => 0);
       for (const gb of g.bonds) { const o = gb.order === 1.5 ? 1.5 : gb.order; used[gb.a] += o; used[gb.b] += o; }
       used[0] += valenceOfBonds((doc.adj.get(id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b)).map((b) => b.order));
-      // (only when the charge would break that atom's valence: B of B(OH)3 − takes it with its four
-      // bonds, as a borate is drawn; review F1e-R02)
-      const most = maxValence(g.atoms[0].z, q);
-      if (implicitHydrogens(g.atoms[0].z, Math.ceil(used[0]), 0) <= 0 && most !== undefined && Math.ceil(used[0]) > most) {
-        const k = g.atoms.findIndex((ga, i) => i > 0 && (ga.z === 8 || ga.z === 16 || ga.z === 7) && !ga.charge && implicitHydrogens(ga.z, Math.ceil(used[i]), 0) > 0);
-        if (k > 0) qAt = k;
-      }
+      // (B of B(OH)3 − takes it with its four bonds, as a borate is drawn; review F1e-R02)
+      qAt = negativeChargeSite(g.atoms, used, 0, q);
     }
     // A bonded label that is its element with the hydrogens it shows (N, NH on a methyl) means that
     // atom with those hydrogens, whatever the valence rule gives (Nate, 2026-11-23): its valence is
@@ -547,7 +542,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const r = k === 0 ? 0 : 0.35 + 0.05 * k;
       const sym = ga.dummy ? generic : SYMBOLS[ga.z] || generic;
       if (sym === generic) genericAt.push([atoms.length, `${a.label}/${k}`]);
-      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}), ...(k === 0 && val !== undefined ? { val } : {}) });
+      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}), ...(k === 0 && val !== undefined ? { val } : {}), ...(k === 0 && files && a.enhStereo ? { enh: a.enhStereo } : {}) });
       map.push(k === 0 ? id : -1);
       if (g!.atoms.length > 1) inLabel.push(base + k);
     });
