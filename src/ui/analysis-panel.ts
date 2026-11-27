@@ -434,7 +434,7 @@ export function analysisHtml(r: FragmentResult, i: number, adductText: string, e
   };
 
   const buttons = `<div class="an-buttons">
-      ${core ? '' : `<button type="button" data-insert="formula:${i}" title="Attach the formula and masses under the structure: they follow it and update when it changes (choose what is shown in the Style panel)">Attach descriptors</button><button type="button" class="an-icon-btn an-gear" data-analysis-settings="descriptors" title="Attached descriptor settings: what they show, in what order, and how each line is written" aria-label="Attached descriptor settings">${GEAR_ICON}</button>`}
+      ${core ? '' : `<button type="button" data-insert="formula:${i}" title="Attach the formula and masses under the structure: they follow it and update when it changes (choose what is shown in the Style panel)">Attach Descriptors</button><button type="button" class="an-icon-btn an-gear" data-analysis-settings="descriptors" title="Attached descriptor settings: what they show, in what order, and how each line is written" aria-label="Attached descriptor settings">${GEAR_ICON}</button>`}
       @@HRMS@@
       ${core ? '' : extras.cas?.button ?? ''}
     </div>`;

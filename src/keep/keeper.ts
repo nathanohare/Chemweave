@@ -256,7 +256,7 @@ export class Keeper {
     }
     tab.autoSave = on;
     this.paused.delete(tab.id);
-    this.host.flash(on ? `AutoSave on for ${tab.name}: it saves itself a few seconds after each change.` : `AutoSave off for ${tab.name}: press Ctrl+S to save.`, 5000);
+    this.host.flash(on ? `AutoSave on for ${tab.name}: it saves itself ${this.prefs.autoSaveSeconds} seconds after the last change.` : `AutoSave off for ${tab.name}: press Ctrl+S to save.`, 5000);
     this.host.refresh();
   }
 
@@ -366,7 +366,7 @@ export class Keeper {
     const keepMine = () => { t.stamp = disk; this.paused.delete(t.id); this.told.delete(t.id); };
     notice(`disk-${t.id}`, `${t.name} changed on disk`,
       `It was changed ${when(disk.modified)} outside Chemweave: by another program, someone else in a shared folder, or OneDrive bringing in changes.` +
-      (t.dirty ? 'You also have unsaved changes. Reload discards them, Keep My Version overwrites theirs on the next save, and Open Their Version opens theirs in a new tab to compare.' : ' Reload shows their version; Keep My Version leaves the tab as it is.'), [
+      (t.dirty ? ' You also have unsaved changes. Reload discards them, Keep My Version overwrites theirs on the next save, and Open Their Version opens theirs in a new tab to compare.' : ' Reload shows their version; Keep My Version leaves the tab as it is.'), [
         { label: t.dirty ? 'Reload and Discard Mine' : 'Reload', run: () => void this.reload(t), main: !t.dirty },
         { label: 'Keep My Version', run: keepMine, main: t.dirty },
         { label: 'Open Their Version', run: () => { keepMine(); void this.openDiskCopy(t); } },

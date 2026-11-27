@@ -5,6 +5,7 @@
 import { checkBalance, type BalanceSpecies } from '../chem/balance';
 import { chargeText } from '../chem/formula';
 import { showDialog } from './dialog-host';
+import { addInfo } from './info-tip';
 import { after } from '../regex-behind';
 
 export interface BalanceInput {
@@ -27,6 +28,7 @@ export function showBalance(input: BalanceInput, reagentsCount = true): Promise<
     form.method = 'dialog';
     const h = document.createElement('h2');
     h.textContent = 'Check Balance';
+    addInfo(h, 'Each species is counted once; draw by-products such as water or salts to balance a step.');
     const verdict = document.createElement('p');
     verdict.className = 'balance-verdict';
     verdict.setAttribute('role', 'status');
@@ -81,10 +83,8 @@ export function showBalance(input: BalanceInput, reagentsCount = true): Promise<
       }
       verdict.textContent = parts.join(' ');
       verdict.classList.toggle('ok', b.balanced);
-      note.textContent = [
-        input.unread.length ? `Not counted (not read as a compound): ${input.unread.join(', ')}.` : '',
-        'Each species is counted once; draw by-products such as water or salts to balance a step.',
-      ].filter(Boolean).join(' ');
+      note.textContent = input.unread.length ? `Not counted (not read as a compound): ${input.unread.join(', ')}.` : '';
+      note.hidden = !note.textContent;
     };
     box.addEventListener('change', draw);
     draw();

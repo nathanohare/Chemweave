@@ -1370,7 +1370,7 @@ export class StylePanel {
   private chemControls(caps: Caption[]): void {
     const now = new Set(caps.map((x) => (x.chem === undefined ? 'auto' : x.chem ? 'on' : 'off')));
     const value = now.size === 1 ? [...now][0] as 'auto' | 'on' | 'off' : 'auto';
-    this.select<'auto' | 'on' | 'off'>('Read as', READ_AS, value, (v) => this.edit(v === 'off' ? 'Read as plain text' : v === 'on' ? 'Read as chemistry' : 'Read text automatically', () => {
+    this.select<'auto' | 'on' | 'off'>('Read as', READ_AS, value, (v) => this.edit(v === 'off' ? 'Read as Plain Text' : v === 'on' ? 'Read as Chemistry' : 'Read Text Automatically', () => {
       for (const x of caps) this.doc.updateCaption(x.id, { chem: v === 'auto' ? undefined : v === 'on' });
     }));
     if (caps.length !== 1) return;
@@ -1517,7 +1517,7 @@ export class StylePanel {
       // a metal bonded to the middle of a ring or π-bond
       this.heading(`Hapto bond (${haptoText(centre.multi!.length)})`);
       this.select('Style', BOND_STYLES.filter(([v]) => v !== 'wedge' && v !== 'hashWedge'), b.display, (v) => set('Bond style', { display: v }));
-      this.check('A line to each atom', !!b.spokes, (v) => set(v ? 'Hapto bond to each atom' : 'Hapto bond to the middle', { spokes: v || undefined }),
+      this.check('A line to each atom', !!b.spokes, (v) => set(v ? 'Hapto Bond to Each Atom' : 'Hapto Bond to the Middle', { spokes: v || undefined }),
         'Draw a line from the metal to each atom of the ring or π-bond, instead of one line to its middle. ChemDraw shows it to the middle either way.');
       this.color('Color', b.color, (v) => set('Bond color', { color: v }));
       const row = document.createElement('div');

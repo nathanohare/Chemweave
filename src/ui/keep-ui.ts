@@ -3,6 +3,7 @@
 // Recovery Options.
 
 import { ask } from './ask';
+import { addInfo } from './info-tip';
 import type { KeepPrefs } from '../keep/prefs';
 import type { Session, CopiedTab } from '../keep/recovery';
 import { VERSION_LABEL, type Version } from '../keep/versions';
@@ -71,7 +72,7 @@ export function hasNotice(key: string): boolean {
 
 // ---------------------------------------------------------------- small windows
 
-function dialog(cls: string, title: string): { d: HTMLDialogElement; form: HTMLFormElement; buttons: HTMLElement } {
+function dialog(cls: string, title: string): { d: HTMLDialogElement; form: HTMLFormElement; buttons: HTMLElement; h: HTMLElement } {
   const d = document.createElement('dialog');
   d.className = `ask ${cls}`;
   const form = document.createElement('form');
@@ -82,7 +83,7 @@ function dialog(cls: string, title: string): { d: HTMLDialogElement; form: HTMLF
   buttons.className = 'ask-buttons';
   form.append(h);
   d.append(form);
-  return { d, form, buttons };
+  return { d, form, buttons, h };
 }
 
 function para(text: string): HTMLParagraphElement {
@@ -139,10 +140,11 @@ export interface RecoverChoice {
 /** The copies left when the app stopped unexpectedly: which to reopen. */
 export function recoverDialog(sessions: Session[], atStart: boolean): Promise<RecoverChoice | null> {
   return new Promise((resolve) => {
-    const { d, form, buttons } = dialog('keep-recover', 'Recover Unsaved Work');
-    form.append(para(atStart
+    const { d, form, buttons, h } = dialog('keep-recover', 'Recover Unsaved Work');
+    // (what the window is, and what Not Now and Delete Copies do, behind an "i" by the title)
+    addInfo(h, `${atStart
       ? 'Chemweave closed before these were saved. These are the copies made last; select the ones to reopen. Reopened files aren’t saved until you save them.'
-      : 'Copies of unsaved work left when Chemweave closed unexpectedly. Select the ones to reopen.'));
+      : 'Copies of unsaved work left when Chemweave closed unexpectedly. Select the ones to reopen.'} ${atStart ? '“Not Now” keeps them: File ▸ Versions and Recovery ▸ Recover Unsaved Work… has them later.' : 'Copies are deleted after the number of days set in File ▸ Versions and Recovery ▸ AutoSave and Recovery Options.'}`);
     const list = document.createElement('div');
     list.className = 'keep-list';
     const boxes: { input: HTMLInputElement; session: Session; tab: CopiedTab }[] = [];
@@ -190,7 +192,7 @@ export function recoverDialog(sessions: Session[], atStart: boolean): Promise<Re
     buttons.append(spacer);
     button(atStart ? 'Not Now' : 'Close', 'later');
     button('Reopen', 'reopen', true);
-    form.append(buttons, para(atStart ? '“Not Now” keeps them: File ▸ Versions and Recovery ▸ Recover Unsaved Work… has them later.' : 'Copies are deleted after the number of days set in File ▸ Versions and Recovery ▸ AutoSave and Recovery Options.'));
+    form.append(buttons);
     d.addEventListener('close', () => { d.remove(); resolve(result); });
     document.body.append(d);
     d.showModal();
@@ -207,8 +209,9 @@ export interface VersionActions {
 
 /** The kept versions of the tab's file, newest first, to open, restore or delete. */
 export function versionDialog(fileName: string, place: string, versions: Version[], note: string, act: VersionActions): void {
-  const { d, form, buttons } = dialog('keep-versions', `Version History: ${fileName}`);
-  form.append(para(place));
+  const { d, form, buttons, h } = dialog('keep-versions', `Version History: ${fileName}`);
+  // (where the file is, and how many versions are kept, behind an "i" by the title)
+  addInfo(h, `${place} ${note}`);
   const list = document.createElement('div');
   list.className = 'keep-list';
   list.setAttribute('role', 'listbox');
@@ -272,7 +275,7 @@ export function versionDialog(fileName: string, place: string, versions: Version
     if (v) void act.restore(v).then((ok) => { if (ok) d.close(); });
   });
   button('Open a Copy', 'Open this version in a new tab, to look at or copy from, leaving the file as it is', () => { if (picked) { act.open(picked); d.close(); } }, true, true);
-  form.append(buttons, para(note));
+  form.append(buttons);
   render();
   d.addEventListener('close', () => d.remove());
   document.body.append(d);

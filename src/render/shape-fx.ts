@@ -43,7 +43,7 @@ const BEVEL_LOOK: Record<BevelKind, { light: number; dark: number; steps: number
 };
 
 export const BEVELS: { id: BevelKind; name: string }[] = [
-  { id: 'circle', name: 'Round' }, { id: 'relaxedInset', name: 'Relaxed Inset' }, { id: 'cross', name: 'Cross' }, { id: 'coolSlant', name: 'Cool Slant' },
+  { id: 'circle', name: 'Circle' }, { id: 'relaxedInset', name: 'Relaxed Inset' }, { id: 'cross', name: 'Cross' }, { id: 'coolSlant', name: 'Cool Slant' },
   { id: 'angle', name: 'Angle' }, { id: 'softRound', name: 'Soft Round' }, { id: 'convex', name: 'Convex' }, { id: 'slope', name: 'Slope' },
   { id: 'divot', name: 'Divot' }, { id: 'riblet', name: 'Riblet' }, { id: 'hardEdge', name: 'Hard Edge' }, { id: 'artDeco', name: 'Art Deco' },
 ];

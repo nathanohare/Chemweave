@@ -96,7 +96,7 @@ export async function restoreFromTrash(p: SiProject, id: string): Promise<string
   if (!RESTORABLE.has(entry.kind)) {
     throw new SiProjectError(entry.kind === 'incomplete'
       ? `Chemweave can't tell where these files belong. Move them back by hand from the Trash folder (${folder}).`
-      : `${KIND_NAMES[entry.kind] ?? 'This kind of item'}s can't be put back here. It is still in the Trash folder (${folder}), to move back by hand.`);
+      : `${KIND_NAMES[entry.kind] ? `This ${KIND_NAMES[entry.kind].toLowerCase()}` : 'This kind of item'} can't be put back here. It is still in the Trash folder (${folder}), to move back by hand.`);
   }
   const item = entry.info.item;
   if (!safeName(item)) throw damaged(folder);

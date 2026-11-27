@@ -6,6 +6,7 @@
 // Export for the journal opens Export Picture (or PDF) with the resolution the journal asks for.
 
 import { FloatBox } from './float-box';
+import { addInfo, setInfo } from './info-tip';
 import { JOURNALS, journalById, preflight, preflightSummary, type PreflightIssue, type PreflightResult, type PrintSize } from '../preflight';
 import type { Item } from '../render/vector';
 import type { Rect } from '../geom';
@@ -72,6 +73,8 @@ export class PreflightPane {
   private summary: HTMLParagraphElement;
   private list: HTMLDivElement;
   private foot: HTMLDivElement;
+  /** The "i" by the title: where the rules come from, and that journals change them. */
+  private sourceInfo: HTMLElement | null;
   private choice = loadChoice();
   /** The last check, for Export Picture's resolution. */
   last: PreflightResult | null = null;
@@ -80,6 +83,8 @@ export class PreflightPane {
     this.box = new FloatBox('Check Figure for Journal', () => {});
     this.box.el.classList.add('a11y-pane', 'preflight-pane');
     (this.box.el.querySelector('.fb-pin') as HTMLElement | null)?.setAttribute('hidden', '');
+    this.sourceInfo = addInfo(this.box.el.querySelector('.fb-head'), ' ');
+    if (this.sourceInfo) setInfo(this.sourceInfo, '');
     const form = document.createElement('div');
     form.className = 'pf-form';
     const row = (label: string, el: HTMLElement, help: string) => {
@@ -160,6 +165,7 @@ export class PreflightPane {
     const j = journalById(this.choice.journal) ?? JOURNALS[0];
     this.list.replaceChildren();
     this.foot.replaceChildren();
+    if (this.sourceInfo) setInfo(this.sourceInfo, '');
     if (!fig) {
       this.last = null;
       this.summary.textContent = 'There is nothing to check here. Draw the figure on the Canvas, or open a Design page.';
@@ -207,7 +213,7 @@ export class PreflightPane {
     btns.append(ex);
     const src = document.createElement('p');
     src.className = 'muted small pf-source';
-    src.textContent = `Rules from ${j.source}. Journals change their guidelines: check the journal's own page before sending. `;
+    if (this.sourceInfo) setInfo(this.sourceInfo, `Rules from ${j.source}. Journals change their guidelines: check the journal's own page before sending.`);
     const link = document.createElement('a');
     link.href = j.url;
     link.textContent = 'Open the guidelines';

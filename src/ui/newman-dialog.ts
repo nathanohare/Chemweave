@@ -11,6 +11,7 @@ import { chartTab, type ChartChoice, type ChartHost } from './newman-chart-tab';
 import type { NewmanText } from '../design/newman-prefs';
 import { addInfo, infoIcon, setInfo } from './info-tip';
 import { FONT_GROUPS } from '../fonts';
+import { minusText } from './minus-text';
 
 /** What the window settles on; the caller makes the projection from it. */
 export interface NewmanChoice {
@@ -55,7 +56,7 @@ const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&l
 export function torsionText(c: NewmanConformer): string {
   const phi = Math.round(norm180(c.view.dihedral));
   const name = commonName(phi);
-  return `${phi}°${name ? ' ' + name : ''}`;
+  return `${minusText(phi)}°${name ? ' ' + name : ''}`;
 }
 
 /** The Energy Chart tab, when the window offers one. */
@@ -199,7 +200,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
     choice.method = methodSel.value as 'mmff' | 'xtb';
     methodSel.disabled = choice.source === 'drawn';
     turn.value = String(choice.turn);
-    turnOut.textContent = `${choice.turn}°`;
+    turnOut.textContent = `${minusText(choice.turn)}°`;
     choice.text = { ...choice.text };
     const flags = ['ideal', 'wedges', 'rs', 'mark', 'linked'] as const;
     for (const k of flags) {
@@ -221,7 +222,7 @@ export function askNewman<S = never>(start: NewmanChoice, host: NewmanHost, edit
       b.addEventListener('click', () => { if (choice.text[k]) delete choice.text[k]; else choice.text[k] = true; b.setAttribute('aria-pressed', String(!!choice.text[k])); paint(); });
     }
 
-    turn.addEventListener('input', () => { choice.turn = Number(turn.value) || 0; turnOut.textContent = `${choice.turn}°`; paint(); });
+    turn.addEventListener('input', () => { choice.turn = Number(turn.value) || 0; turnOut.textContent = `${minusText(choice.turn)}°`; paint(); });
     turn.addEventListener('dblclick', () => { choice.turn = 0; turn.value = '0'; turnOut.textContent = '0°'; paint(); });
     const reverse = () => { choice.reversed = !choice.reversed; choice.index = 0; void load(); chartStale = true; if (tab === 'chart') { chartStale = false; chart?.open(true); } };
     for (const b of form.querySelectorAll<HTMLButtonElement>('[data-act=swap]')) b.addEventListener('click', (e) => { e.stopPropagation(); reverse(); });

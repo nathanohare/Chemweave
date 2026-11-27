@@ -128,6 +128,11 @@ export interface WorkspaceHooks {
   canvasEdited?(name: string, n: number): Promise<'canvas' | 'slides'>;
   /** AutoSave couldn't write a file (no window is shown for it). */
   autoSaveFailed?(tab: Tab, message: string): void;
+  /**
+   * Settings ▸ General ▸ Save structures in Word / PowerPoint files as: true when `program`'s files
+   * hold the structures as ChemDraw objects rather than pictures (so the save message doesn't say they are pictures).
+   */
+  chemdrawObjects?(program: 'Word' | 'PowerPoint'): boolean;
   /** A file was opened from disk into this tab. */
   opened?(tab: Tab): void;
   /** A ChemDraw style sheet (.cds) was opened into this drawing tab: offer its settings as a drawing style. */
@@ -936,9 +941,12 @@ export class Workspace {
   }
 
   /** Said once per tab after a Word or PowerPoint save that holds structures. */
-  private officeNoteFor(tab: Tab): string {
-    if (tab.deck && tab.mode !== 'design' && tab.deck.slides.some((_, i) => tab.deck!.docOf(i).atoms.size)) return officeNote(tab, 'PowerPoint');
-    if (tab.mode === 'document' && hasStructures(tab.document!.t)) return officeNote(tab, 'Word');
+  private officeNoteFor(tab: Tab, name: string): string {
+    // (a Word or PowerPoint file whose structures are saved as ChemDraw objects: they are not pictures there)
+    const ext = extensionOf(name);
+    const objects = (program: 'Word' | 'PowerPoint', types: RegExp) => types.test(ext) && !!this.hooks.chemdrawObjects?.(program);
+    if (tab.deck && tab.mode !== 'design' && tab.deck.slides.some((_, i) => tab.deck!.docOf(i).atoms.size)) return objects('PowerPoint', /^(pptx|pptm|potx|potm|ppsx|ppsm)$/) ? '' : officeNote(tab, 'PowerPoint');
+    if (tab.mode === 'document' && hasStructures(tab.document!.t)) return objects('Word', /^(docx|docm|dotx|dotm)$/) ? '' : officeNote(tab, 'Word');
     return '';
   }
 
@@ -969,7 +977,7 @@ export class Workspace {
       if (go === 'save-as') return this.saveAs(tab);
       enc = await this.encode(tab, name);
       await writeFile(ref, name, enc.data, enc.type);
-      if (!auto) enc.note += this.officeNoteFor(tab);
+      if (!auto) enc.note += this.officeNoteFor(tab, name);
       // later saves of a ChemDraw file rewrite only what changed since this one (unless it changed while being written)
       if (enc.type === CDXML && (!live || this.host.version === version)) adoptSaved(this.docOf(tab), enc.data as string);
     } catch (e) {
