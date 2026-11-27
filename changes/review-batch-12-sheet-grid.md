@@ -1,6 +1,6 @@
 Fixed: Spreadsheet: a Total Row goes into the row under the table when it is free, and otherwise makes a whole row so merges, tables, rules and formulas under the table follow; when cells beside the table would have to move, it says so and changes nothing.
 Fixed: Spreadsheet: removing a Total Row only clears it when nothing is directly under it, and leaves the cells where they are when others sit beside the table.
-Fixed: Spreadsheet: Increase and Decrease Indent reach every empty cell of a block of up to 10,000 cells, say so when a bigger block's empty cells are left as they are, and keep each cell's own level in a long column.
+Fixed: Spreadsheet: Increase and Decrease Indent reach every empty cell of a block of up to 50,000 cells, say so when a bigger block's empty cells are left as they are, and keep each cell's own level in a long column.
 Fixed: Spreadsheet: Fill Down and Fill Right fill the cells selected below or beside the data, and no longer replace the first cell with the one above it.
 Fixed: Spreadsheet: unchecking one value in a filter's list of more than 1,000 values no longer hides every row whose value isn't listed, and with (Select all) unchecked only the values checked show; the list says how many it shows.
 Fixed: Spreadsheet: Strikethrough and a lowered or raised cell show in copied cells and in printouts.

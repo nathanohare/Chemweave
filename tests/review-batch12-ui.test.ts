@@ -143,10 +143,10 @@ describe('F251 and F1037: Increase Indent', () => {
     expect(s.styleAt(700, 0)?.indent).toBe(1);
     expect(s.styleAt(999, 0)?.indent).toBe(1);
   });
-  it('says so when the empty cells of a block over 10,000 cells are left as they are', () => {
+  it('says so when the empty cells of a block over 50,000 cells are left as they are', () => {
     const { wb, sel, host, s, flashes } = setUp();
     wb.edit('t', () => s.setInput(0, 0, 'x'));
-    sel.range = { r1: 0, c1: 0, r2: 19999, c2: 0 };
+    sel.range = { r1: 0, c1: 0, r2: 59999, c2: 0 };
     new SheetLook(host as never).indent(1);
     expect(s.styleAt(0, 0)?.indent).toBe(1);
     expect(s.styleAt(5, 0)?.indent).toBeUndefined();

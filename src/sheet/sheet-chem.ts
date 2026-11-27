@@ -21,25 +21,37 @@ export interface ChemEngine {
 
 type Answer = MolProps | CellError;
 
-/** Answers kept at most (oldest go first; they're worked out again if needed). */
 /** How long building inputs may hold the window before letting it paint and take input, in ms. */
 const SLICE_MS = 40;
+/**
+ * Answers kept at most (the least recently used go first; they're worked out again if needed).
+ * An answer read since the last answers arrived is never dropped, however many there are: the
+ * sheets worked out again then still need it, and dropping it would ask for it again for ever.
+ */
 const KEEP = 20000;
+
+/** An answer kept, with the round of answers (epoch) in which it was last read or stored. */
+interface Kept<V> { v: V; at: number }
 
 export class SheetChem implements ChemHost {
   /** Called when answers have arrived: work the sheets out again. */
   onAnswers: () => void = () => {};
-  private byStructure = new Map<number, Answer>();
-  private bySmiles = new Map<string, Answer>();
-  private matches = new Map<string, boolean | null>();
-  private hammetts = new Map<string, HammettResult>();
+  private byStructure = new Map<number, Kept<Answer>>();
+  private bySmiles = new Map<string, Kept<Answer>>();
+  /** Substructure answers by query and structure; null when the engine could not tell (see matchErrors). */
+  private matches = new Map<string, Kept<boolean | null>>();
+  /** Why the engine could not answer a substructure query, by query id. */
+  private matchErrors = new Map<number, string>();
+  private hammetts = new Map<string, Kept<HammettResult>>();
+  /** Counts the rounds of answers: the sheets are worked out again after each. */
+  private epoch = 0;
   /** Hammett questions not sent yet, by reference: the molecules asked about, by key. */
   private wantHammett = new Map<string, Map<string, () => string | null>>();
   private queryIds = new WeakMap<Contents, number>();
   private nextQuery = 1;
   /** Questions not sent yet. */
   private wantProps = new Map<string, { input: () => string | null; store: (a: Answer) => void }>();
-  private wantMatch = new Map<number, { query: Contents; items: Map<string, { input: () => string | null; key: string }> }>();
+  private wantMatch = new Map<number, { qid: number; query: Contents; items: Map<string, { input: () => string | null; key: string }> }>();
   private scheduled = false;
   private inFlight = 0;
   private waiters: (() => void)[] = [];
@@ -51,7 +63,7 @@ export class SheetChem implements ChemHost {
   constructor(private engine: ChemEngine, private molfile: (c: Contents, opts?: { attachKinds?: boolean }) => { molblock: string | null; problem?: string }) {}
 
   structure(s: Structure): Answer {
-    const got = this.byStructure.get(s.id);
+    const got = this.got(this.byStructure, s.id);
     if (got) return got;
     const key = `s${s.id}`;
     if (!this.wantProps.has(key)) {
@@ -69,7 +81,7 @@ export class SheetChem implements ChemHost {
   }
 
   smiles(text: string): Answer {
-    const got = this.bySmiles.get(text);
+    const got = this.got(this.bySmiles, text);
     if (got) return got;
     const key = `t${text}`;
     if (!this.wantProps.has(key)) {
@@ -83,10 +95,10 @@ export class SheetChem implements ChemHost {
     let qid = this.queryIds.get(query);
     if (!qid) { qid = this.nextQuery++; this.queryIds.set(query, qid); }
     const key = `${qid}|${s.id}`;
-    const got = this.matches.get(key);
+    const got = this.got(this.matches, key);
     if (got !== undefined) return got;
     let q = this.wantMatch.get(qid);
-    if (!q) { q = { query, items: new Map() }; this.wantMatch.set(qid, q); }
+    if (!q) { q = { qid, query, items: new Map() }; this.wantMatch.set(qid, q); }
     if (!q.items.has(key)) {
       q.items.set(key, { key, input: () => this.molfile(s.contents).molblock });
       this.schedule();
@@ -102,7 +114,7 @@ export class SheetChem implements ChemHost {
   hammett(mol: Structure | string, ref: string): HammettResult | CellError {
     const id = typeof mol === 'string' ? `t${mol}` : `s${mol.id}`;
     const key = `${ref}\n${id}`;
-    const got = this.hammetts.get(key);
+    const got = this.got(this.hammetts, key);
     if (got) return got;
     if (!this.engine.hammett) return ERR.na('Hammett constants need the chemistry engine');
     let want = this.wantHammett.get(ref);
@@ -116,6 +128,12 @@ export class SheetChem implements ChemHost {
       this.schedule();
     }
     return ERR.busy();
+  }
+
+  /** Why the engine could not answer a substructure query (its rows then can't be told), or undefined. */
+  substructureError(query: Contents): string | undefined {
+    const qid = this.queryIds.get(query);
+    return qid ? this.matchErrors.get(qid) : undefined;
   }
 
   /** Waits until every question asked so far has its answer. */
@@ -140,6 +158,7 @@ export class SheetChem implements ChemHost {
     this.byStructure.clear();
     this.bySmiles.clear();
     this.matches.clear();
+    this.matchErrors.clear();
     this.hammetts.clear();
   }
 
@@ -149,9 +168,27 @@ export class SheetChem implements ChemHost {
     queueMicrotask(() => this.flush());
   }
 
-  private keep<K>(map: Map<K, unknown>, key: K, v: unknown): void {
-    map.set(key, v);
-    if (map.size > KEEP) map.delete(map.keys().next().value as K);
+  /** A kept answer, marked as read in this round (and moved to the back of the line to drop). */
+  private got<K, V>(map: Map<K, Kept<V>>, key: K): V | undefined {
+    const e = map.get(key);
+    if (!e) return undefined;
+    if (e.at !== this.epoch) {
+      e.at = this.epoch;
+      map.delete(key);
+      map.set(key, e);
+    }
+    return e.v;
+  }
+
+  /** Keep an answer; past KEEP, drop the least recently used ones not read in this round. */
+  private keep<K, V>(map: Map<K, Kept<V>>, key: K, v: V): void {
+    map.delete(key);
+    map.set(key, { v, at: this.epoch });
+    while (map.size > KEEP) {
+      const [oldest, e] = map.entries().next().value as [K, Kept<V>];
+      if (e.at === this.epoch) break;
+      map.delete(oldest);
+    }
   }
 
   /**
@@ -198,20 +235,34 @@ export class SheetChem implements ChemHost {
       for (const q of matches) {
         const qm = this.molfile(q.query).molblock;
         const items = [...q.items.values()];
-        if (!qm) { for (const it of items) this.matches.set(it.key, false); continue; }
+        // a part to look for that can't be written as a structure: no row can be told, and why is kept
+        if (!qm) {
+          for (const it of items) this.keep(this.matches, it.key, null);
+          if (!this.matchErrors.has(q.qid)) this.matchErrors.set(q.qid, this.molfile(q.query).problem ?? 'The part to look for could not be read as a structure.');
+          continue;
+        }
         const asked: string[] = [];
         const inputs: string[] = [];
         const got = await this.inputs(items, (it) => it.input());
         items.forEach((it, i) => {
           const input = got[i];
-          if (input === null) { this.matches.set(it.key, false); return; }
+          if (input === null) { this.keep(this.matches, it.key, false); return; }
           asked.push(it.key);
           inputs.push(input);
         });
         if (!inputs.length) continue;
+        // a molecule the engine could not check (a query too deep, a failed engine) is neither a
+        // match nor a miss: null, with the reason kept for the query
+        const failed = (why: string) => { this.matchErrors.set(q.qid, why); };
         jobs.push(this.engine.substructure(qm, inputs).then(
-          (res) => res.results.forEach((r, i) => this.keep(this.matches, asked[i], r ?? false)),
-          () => asked.forEach((k) => this.matches.set(k, false)),
+          (res) => {
+            asked.forEach((k, i) => {
+              const r = res.results[i];
+              if (typeof r === 'boolean') this.keep(this.matches, k, r);
+              else { this.keep(this.matches, k, null); failed(res.error ?? 'The chemistry engine could not check this structure'); }
+            });
+          },
+          (e) => { asked.forEach((k) => this.keep(this.matches, k, null)); failed(`The chemistry engine stopped${e instanceof Error && e.message ? `: ${e.message}` : ''}.`); },
         ));
       }
       for (const [ref, want] of hammetts) {
@@ -230,6 +281,8 @@ export class SheetChem implements ChemHost {
     } finally {
       this.inFlight--;
     }
+    // a new round: the sheets are worked out again, reading (and so keeping) what they still use
+    this.epoch++;
     this.onAnswers();
     if (!this.busy) {
       const w = this.waiters;

@@ -122,8 +122,12 @@ function palette(info: TableStyleInfo): Palette {
 
 const thin = (color?: string): Border | undefined => (color ? { style: 'thin', color } : undefined);
 
-/** The look a table gives one of its cells (null when the cell is outside the table or the table has no style). */
-export function tableCellLook(t: TableDef, row: number, col: number, hiddenRow?: (r: number) => boolean): TableCellLook | null {
+/**
+ * The look a table gives one of its cells (null when the cell is outside the table or the table
+ * has no style). `hiddenBefore(first, row)` counts the hidden rows from `first` up to (not
+ * including) `row`, so the stripes count the rows showing.
+ */
+export function tableCellLook(t: TableDef, row: number, col: number, hiddenBefore?: (first: number, row: number) => number): TableCellLook | null {
   const R = t.range;
   if (row < R.r1 || row > R.r2 || col < R.c1 || col > R.c2) return null;
   const info = tableStyleInfo(t.style);
@@ -165,7 +169,7 @@ export function tableCellLook(t: TableDef, row: number, col: number, hiddenRow?:
     // bands count the rows showing (a filtered table keeps its stripes)
     let i = 0;
     const first = R.r1 + (t.header ? 1 : 0);
-    if (hiddenRow) { for (let r = first; r < row; r++) if (!hiddenRow(r)) i++; } else i = row - first;
+    i = row - first - (hiddenBefore ? hiddenBefore(first, row) : 0);
     const colBand = (col - R.c1) % 2 === 0;
     if (t.bandRows && i % 2 === 0 && p.band) out.fill = p.band;
     else if (t.bandRows && p.band2) out.fill = p.band2;
