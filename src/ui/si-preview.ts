@@ -110,6 +110,11 @@ const READ_BAND = 0.12;
 /** How many characters from a paragraph's start keep its own look (Home ▸ Paragraph with the caret in it). */
 const PARA_ANCHOR = 24;
 
+/** The text and its sources when formatting starts (see SiPreview.formatContext). */
+type FormatContext = { owner: unknown; text: string; spansNow: SourceSpan[]; blocksNow: SourceBlock[] };
+/** What one formatting step writes: fields' new stored text, and changes to the formatting file. */
+type FormatPlan = { fields: { src: string; text: string; from: string }[]; later: ((items: PreviewFormat[]) => PreviewFormat[])[]; printedNow: Map<string, string> };
+
 export class SiPreview {
   readonly view: DocView;
   private file: DocFile | null = null;
@@ -1478,16 +1483,34 @@ export class SiPreview {
     return out;
   }
 
-  /** Format stretches of the selection each its own way, then select what was selected again. */
-  async formatEach(stretches: { start: number; end: number; look: FormatLook }[]): Promise<void> {
-    const ed = this.file?.ed;
-    if (!ed) return;
-    const [a, b] = [ed.start, ed.end];
-    for (const s of stretches) {
-      ed.select(s.start, s.end);
-      if (!(await this.format(s.look))) break;
+  /**
+   * Format stretches of the selection each its own way (Grow Font on mixed sizes), as one write
+   * (so one Undo step), then select what was selected again. False when there was nothing to do.
+   */
+  async formatEach(stretches: { start: number; end: number; look: FormatLook }[]): Promise<boolean> {
+    if (!this.file || !stretches.length) return false;
+    if (!this.editable) { this.api.flash(this.why); return false; }
+    if (this.dirty.size || this.fresh.size) await this.writeNow();
+    const f = this.file;
+    if (!f) return false;
+    const ctx = this.formatContext(f);
+    const gen0 = this.editGen;
+    const plans: FormatPlan[] = [];
+    for (const st of stretches) {
+      const plan = await this.planFormat(st.look, st.start, st.end, ctx);
+      if (plan) plans.push(plan);
     }
-    ed.select(a, b);
+    // (two stretches changing the same field's stored text would each start from the old text: a
+    // look that goes in the field, which Grow Font's size never does, is written one stretch at a time)
+    const srcs = plans.flatMap((x) => x.fields.map((y) => y.src));
+    if (new Set(srcs).size < srcs.length) {
+      const [a, b] = [f.ed.start, f.ed.end];
+      let any = false;
+      for (const st of stretches) { f.ed.select(st.start, st.end); any = (await this.format(st.look)) || any; }
+      f.ed.select(a, b);
+      return any;
+    }
+    return this.writePlans(plans, 'Format', gen0, ctx.owner);
   }
 
   /** Whether every character selected has `key` (Bold pressed again takes it off). */
@@ -1520,13 +1543,20 @@ export class SiPreview {
     if (this.dirty.size || this.fresh.size) await this.writeNow();
     const f = this.file;
     if (!f) return false;
-    const owner = this.owner;
-    const text = f.ed.text;
-    const s = f.ed.start, e = f.ed.end;
     const gen0 = this.editGen;
-    // (the text's sources as they are now: a compile shown while the field is read below doesn't move them)
-    const spansNow = this.spans.map((x) => ({ ...x }));
-    const blocksNow = this.blocks.map((x) => ({ ...x }));
+    const ctx = this.formatContext(f);
+    const plan = await this.planFormat(look, f.ed.start, f.ed.end, ctx);
+    return plan ? this.writePlans([plan], what, gen0, ctx.owner) : false;
+  }
+
+  /** The text and its sources as they are now (a compile shown while fields are read doesn't move them). */
+  private formatContext(f: DocFile): FormatContext {
+    return { owner: this.owner, text: f.ed.text, spansNow: this.spans.map((x) => ({ ...x })), blocksNow: this.blocks.map((x) => ({ ...x })) };
+  }
+
+  /** What formatting `look` on `s`..`e` of the shown text writes, or null when there is nothing to do. */
+  private async planFormat(look: FormatLook | 'clear' | 'unlink', s: number, e: number, ctx: FormatContext): Promise<FormatPlan | null> {
+    const { owner, text, spansNow, blocksNow } = ctx;
     // the selection as stretches of the printed text of each source
     const parts = new Map<string, [number, number]>();
     const put = (src: string, a: number, b: number): void => {
@@ -1558,7 +1588,7 @@ export class SiPreview {
       pos = Math.max(pos, hi);
     }
     if (pos < e) gap(pos, e);
-    if (!parts.size) return false;
+    if (!parts.size) return null;
     const fields: { src: string; text: string; from: string }[] = [];
     const later: ((items: PreviewFormat[]) => PreviewFormat[])[] = [];
     const sideFile = (src: string, printed: string, a: number, b: number): void => {
@@ -1572,7 +1602,7 @@ export class SiPreview {
       const items = await this.api.readFormats(owner).catch(() => []);
       if (![...parts].some(([src, [a, b]]) => linkPieceOn(items, src, printedNow.get(src)!, a, b))) {
         this.api.flash('This link is made by Chemweave (a mention of a compound, figure or table, or a citation): change the mention on the SI page.', 7000);
-        return false;
+        return null;
       }
     }
     const offKeys = look === 'clear' || look === 'unlink' ? [] : (Object.keys(look) as (keyof FormatLook)[]).filter((k) => look[k] === false);
@@ -1595,6 +1625,14 @@ export class SiPreview {
       if (onKeys.length) later.push((items) => clearFormats(items, src, printed, a, b, onKeys));
       for (const [ma, mb] of got.missed) sideFile(src, printed, ma, mb);
     }
+    if (!fields.length && !later.length) return null;
+    return { fields, later, printedNow };
+  }
+
+  /** Write planned formatting as one change (one Undo step). False when nothing was written. */
+  private async writePlans(plans: FormatPlan[], what: 'Format' | 'Link' | 'Remove Link', gen0: number, owner: unknown): Promise<boolean> {
+    const fields = plans.flatMap((x) => x.fields);
+    const later = plans.flatMap((x) => x.later);
     if (!fields.length && !later.length) return false;
     const change = later.length ? (items: PreviewFormat[]): PreviewFormat[] => later.reduce((acc, fn) => fn(acc), items) : null;
     try {
@@ -1605,7 +1643,7 @@ export class SiPreview {
     }
     // (the fields' stored text has changed: typing next starts from it, and a compile started before
     // isn't shown; the printed text is as it was, as formatting doesn't change the words)
-    for (const x of fields) this.written.set(x.src, { printed: printedNow.get(x.src)!, raw: x.text });
+    for (const p of plans) for (const x of p.fields) this.written.set(x.src, { printed: p.printedNow.get(x.src)!, raw: x.text });
     if (fields.length) this.bumpWritten(gen0);
     // (the compile that follows the write shows it)
     return true;

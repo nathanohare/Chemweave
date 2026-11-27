@@ -1,4 +1,4 @@
-Fixed: Text boxes, captions, Document and the SI Live Preview: Increase Font Size and Decrease Font Size on a selection with text of different sizes now steps each part from its own size, instead of making it all one size.
+Fixed: Text boxes, captions, Document and the SI Live Preview: Increase Font Size and Decrease Font Size on a selection with text of different sizes now steps each part from its own size, instead of making it all one size, and one Undo takes it back.
 Fixed: Typing with an input method (Chinese, Japanese, accents) over selected text now takes one Undo, and the selected text stays in place until the new text is confirmed.
 Fixed: Text with both an outline and a shadow: every word now has its shadow in justified text and in text with character spacing, not only the first.
 Fixed: Copy and paste: font names with quotes no longer break the copied text's formatting, tabs are copied as tabs, and numbered lists keep their letters and roman numbers (A., I., i., (a)) when pasted into Word.
