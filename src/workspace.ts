@@ -72,6 +72,8 @@ export interface Tab {
   /** When it was last saved here, and whether AutoSave did it (shown on the tab). */
   savedAt: number;
   savedHow: SaveHow | null;
+  /** Made by New (or the drawing the app starts with), not opened from a file: while untouched, an opened file takes its place. */
+  fresh?: boolean;
 }
 
 /** A save the person asked for, or one AutoSave made. */
@@ -99,7 +101,8 @@ export interface WorkspaceHooks {
   /** Reading and writing Word files. */
   documents: {
     read(bytes: Uint8Array, name: string): Promise<{ doc: DocText; warnings: string[] }>;
-    write(doc: DocText, name: string): Promise<Uint8Array>;
+    /** `notes`, when given, is told what the file couldn't keep. */
+    write(doc: DocText, name: string, notes?: string[]): Promise<Uint8Array>;
   };
   /** The drawing style a new tab of this kind starts with, when you have chosen one (File > Drawing Style). */
   newStyle?(mode: Mode): DocStyle | null;
@@ -116,6 +119,8 @@ export interface WorkspaceHooks {
    * stop when the file has been changed elsewhere since it was opened ('save-as' asks for another place).
    */
   beforeWrite?(tab: Tab, ref: FileRef, name: string, how: SaveHow): Promise<'go' | 'stop' | 'save-as'>;
+  /** The write that beforeWrite answered 'go' to has ended, written or not (after saved or autoSaveFailed). */
+  written?(tab: Tab): void;
   /** Save As has a file name (`name`): anything to ask about saving under it, before it is written. */
   beforeSaveAs?(tab: Tab, name: string): Promise<void>;
   /** A file was written (`was`: where the tab's file was before, which Save As changes). */
@@ -229,7 +234,7 @@ export class Workspace {
   private nextId = 1;
 
   constructor(public host: Doc, private hooks: WorkspaceHooks) {
-    const t = this.makeTab('drawing', this.untitled('drawing'));
+    const t = this.newTab('drawing', this.untitled('drawing'));
     this.tabs.push(t);
     this.active = t;
     t.seen = host.version;
@@ -238,6 +243,13 @@ export class Workspace {
   private makeTab(mode: Mode, name: string, ref: FileRef = { kind: 'none' }): Tab {
     return { id: this.nextId++, mode, name, ref, stash: new Doc(), deck: null, book: null, document: null, si: null, view: null, sheetState: null, dirty: false, seen: 0, savedEdits: 0, windowOf: null,
       stamp: null, autoSave: null, changes: 0, savedAt: 0, savedHow: null };
+  }
+
+  /** A tab made by New (see Tab.fresh). */
+  private newTab(mode: Mode, name: string): Tab {
+    const t = this.makeTab(mode, name);
+    t.fresh = true;
+    return t;
   }
 
   /** "Canvas 1", "Presentation 2", "Design 1"… with the right extension, not already used by an open tab. */
@@ -332,9 +344,17 @@ export class Workspace {
 
   /** The tab after (or before) the one showing, round the end. */
   cycle(step: 1 | -1): void {
-    if (this.tabs.length < 2) return;
+    const n = this.tabs.length;
+    if (n < 2) return;
     const i = this.tabs.indexOf(this.active);
-    this.activate(this.tabs[(i + step + this.tabs.length) % this.tabs.length]);
+    for (let k = 1; k < n; k++) {
+      const t = this.tabs[(((i + step * k) % n) + n) % n];
+      // a canvas live beside the tab showing would only show that tab again: on past it
+      const beside = this.besideOf(t);
+      if (t.mode === 'drawing' && beside === this.active && bothLive(t.mode, beside.mode)) continue;
+      this.activate(t);
+      return;
+    }
   }
 
   /** Call after anything changes, to keep the unsaved marks right. */
@@ -462,7 +482,7 @@ export class Workspace {
   // ---------------------------------------------------------------- new and open
 
   newDrawing(): Tab {
-    const t = this.makeTab('drawing', this.untitled('drawing'));
+    const t = this.newTab('drawing', this.untitled('drawing'));
     const st = this.hooks.newStyle?.('drawing');
     if (st) t.stash.style = { ...st };
     t.stash.page = this.hooks.newPage?.() ?? null;
@@ -485,7 +505,7 @@ export class Workspace {
 
   /** A new drawing tab beside the one showing, without showing it. */
   addDrawing(): Tab {
-    const t = this.makeTab('drawing', this.untitled('drawing'));
+    const t = this.newTab('drawing', this.untitled('drawing'));
     const st = this.hooks.newStyle?.('drawing');
     if (st) t.stash.style = { ...st };
     t.stash.page = this.hooks.newPage?.() ?? null;
@@ -497,7 +517,7 @@ export class Workspace {
   /** New slides, in place of an untouched new drawing (as when the app has just started). */
   newSlides(): Tab {
     const spare = this.active.mode === 'drawing' ? this.spare() : null;
-    const t = this.makeTab('slides', this.untitled('slides'));
+    const t = this.newTab('slides', this.untitled('slides'));
     t.deck = Deck.blank(this.host);
     const m = this.hooks.newMaster?.(t.deck.master);
     if (m) t.deck.useMaster(m);
@@ -512,7 +532,7 @@ export class Workspace {
   /** A new design (Design mode) of a size, in place of an untouched new drawing. */
   newDesign(size: SlideSize, fill?: (doc: Doc) => void): Tab {
     const spare = this.active.mode === 'drawing' ? this.spare() : null;
-    const t = this.makeTab('design', this.untitled('design'));
+    const t = this.newTab('design', this.untitled('design'));
     t.deck = Deck.design(this.host, size, fill);
     const st = this.hooks.newStyle?.('design');
     if (st) t.deck.useDrawingStyle(st);
@@ -528,7 +548,7 @@ export class Workspace {
    */
   newSheet(book?: Workbook, instead?: Tab): Tab {
     const spare = instead ? this.spare(instead) : this.active.mode === 'drawing' ? this.spare() : null;
-    const t = this.makeTab('sheet', instead && spare ? spare.name : this.untitled('sheet'));
+    const t = this.newTab('sheet', instead && spare ? spare.name : this.untitled('sheet'));
     t.book = book ?? new Workbook();
     const st = this.hooks.newStyle?.('sheet');
     if (st) t.book.drawingStyle = { ...st };
@@ -544,7 +564,7 @@ export class Workspace {
    */
   newDocument(doc?: DocText, instead?: Tab): Tab {
     const spare = instead ? this.spare(instead) : this.active.mode === 'drawing' ? this.spare() : null;
-    const t = this.makeTab('document', instead && spare ? spare.name : this.untitled('document'));
+    const t = this.newTab('document', instead && spare ? spare.name : this.untitled('document'));
     const st = this.hooks.newStyle?.('document');
     // (Design > Set as Default: the look new documents start with)
     const design = doc ? null : newDocDesign();
@@ -658,11 +678,14 @@ export class Workspace {
   /** The tab showing (or `t`), when it is new and untouched (an opened file takes its place). */
   private spare(t: Tab = this.active): Tab | null {
     if (!this.tabs.includes(t)) return null;
-    if (this.held.includes(t) || t.dirty || t.ref.kind !== 'none' || !isNewName(t.name)) return null;
+    // (made by New, not a file opened that happens to have a name like a new one's)
+    if (!t.fresh || this.held.includes(t) || t.dirty || t.ref.kind !== 'none' || !isNewName(t.name)) return null;
+    // another window still shows its document or sheet
+    if (this.tabs.some((x) => x.windowOf === t)) return null;
     if (t.mode === 'drawing') return this.host.atoms.size || this.host.captions.size || this.host.arrows.size || this.host.shapes.size ? null : t;
-    if (t.mode === 'sheet') return t.book!.edits === 0 ? t : null;
-    if (t.mode === 'document') return t.document!.edits === 0 ? t : null;
-    return t.deck!.edits === 0 ? t : null;
+    if (t.mode === 'sheet') return t.book?.edits === 0 ? t : null;
+    if (t.mode === 'document') return t.document?.edits === 0 ? t : null;
+    return t.deck?.edits === 0 ? t : null;
   }
 
   /** Another program's chemistry file (molfile, RXN, MRV, KET, CML, ChemDoodle JSON) as a drawing in the style new drawings start with. */
@@ -681,7 +704,9 @@ export class Workspace {
     t.seen = this.host.version;
     if (spare) this.drop(spare);
     const parts = [`${stats.atoms} atoms`, `${stats.bonds} bonds`, ...(stats.arrows ? [`${stats.arrows} arrow${stats.arrows === 1 ? '' : 's'}`] : []), ...(stats.texts ? [`${stats.texts} text${stats.texts === 1 ? '' : 's'}`] : [])];
-    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}. Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
+    // (atoms the file gives no place are said, not drawn in a heap; review F554)
+    const lost = scene.leftOut ? ` ${scene.leftOut} atom${scene.leftOut === 1 ? '' : 's'} with no place in the file ${scene.leftOut === 1 ? 'was' : 'were'} left out.` : '';
+    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}.${lost} Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
     return true;
   }
 
@@ -826,7 +851,7 @@ export class Workspace {
       if (next) this.activate(next);
       else {
         // the last tab: a fresh drawing takes its place
-        const t = this.makeTab('drawing', this.untitled('drawing', tab));
+        const t = this.newTab('drawing', this.untitled('drawing', tab));
         // with the style and page a new drawing starts with
         const st = this.hooks.newStyle?.('drawing');
         if (st) t.stash.style = { ...st };
@@ -926,9 +951,10 @@ export class Workspace {
     if (tab.mode === 'document') {
       // the contents' page numbers come from the printed pages, whatever view shows
       tab.document!.printLayout();
-      return { data: await this.hooks.documents.write(tab.document!.t, name), type: ext === 'rtf' ? RTF : ext === 'odt' ? ODT : DOCX, note: documentSaveNote(name) };
+      const notes: string[] = [];
+      const data = await this.hooks.documents.write(tab.document!.t, name, notes);
+      return { data, type: ext === 'rtf' ? RTF : ext === 'odt' ? ODT : DOCX, note: documentSaveNote(name) + notes.map((n) => ` ${n}`).join('') };
     }
-    keepOnPage(this.docOf(tab));
     const exchange = CHEM_EXCHANGE.find((t) => t.extension === ext);
     if (exchange) return exchangeFile(this.docOf(tab), exchange, name, tab.v3000);
     const text = atFirstPage(this.docOf(tab), () => writeCdxml(this.docOf(tab), { name, textMeasure: this.hooks.measure, cdx: ext === 'cdx' }));
@@ -956,17 +982,33 @@ export class Workspace {
   }
 
   private async writeTo(tab: Tab, ref: FileRef, name: string, how: SaveHow = 'saved'): Promise<boolean> {
+    const going = { on: false };
+    try {
+      return await this.writeOnce(tab, ref, name, how, going);
+    } finally {
+      if (going.on) this.hooks.written?.(tab);
+    }
+  }
+
+  private async writeOnce(tab: Tab, ref: FileRef, name: string, how: SaveHow, going: { on: boolean }): Promise<boolean> {
     const auto = how === 'autosaved';
     // what the tab holds now: changes made while the file is being written stay unsaved
     const edits = tab.deck?.edits ?? tab.book?.edits ?? tab.document?.edits ?? 0;
     const live = tab === this.active || (tab === this.pane && !this.aside);
-    const version = this.host.version;
+    let version = this.host.version;
     const was = tab.ref;
     let enc;
     try {
       const go = (await this.hooks.beforeWrite?.(tab, ref, name, how)) ?? 'go';
       if (go === 'stop') return false;
       if (go === 'save-as') return this.saveAs(tab);
+      going.on = true;
+      // a drawing on a fixed page is moved back onto it first: that move is saved, so it leaves nothing unsaved
+      if (!tab.deck && !tab.book && !tab.document && tab.mode === 'drawing') {
+        const v0 = this.host.version;
+        keepOnPage(this.docOf(tab));
+        if (live && v0 === version) version = this.host.version;
+      }
       enc = await this.encode(tab, name);
       await writeFile(ref, name, enc.data, enc.type);
       if (!auto) enc.note += this.officeNoteFor(tab);
@@ -1007,7 +1049,8 @@ export class Workspace {
 
   /** Tabs with no file on disk yet (new, or downloaded in a browser): Save Workspace puts them in its folder. */
   get unsavedTabs(): Tab[] {
-    return this.fileTabs.filter((t) => t.ref.kind !== 'path');
+    // (a drawing being edited from Word or PowerPoint is saved back there, not into a workspace)
+    return this.fileTabs.filter((t) => t.ref.kind !== 'path' && t.ref.kind !== 'embedded');
   }
 
   /**
@@ -1025,7 +1068,8 @@ export class Workspace {
     const folder = folderOf(path);
     this.noteChange();
     const taken = new Set<string>();
-    const own = this.fileTabs;
+    // a drawing being edited from Word or PowerPoint keeps its way back there: not written into the workspace or listed in it
+    const own = this.fileTabs.filter((t) => t.ref.kind !== 'embedded');
     for (const t of own) {
       const inFolder = t.ref.kind === 'path' && !/[\\/]/.test(relativeTo(folder, t.ref.path));
       if (t.ref.kind === 'path' && inFolder) taken.add(baseName(t.ref.path));
@@ -1051,7 +1095,7 @@ export class Workspace {
       return { file: relativeTo(folder, (t.ref as { path: string }).path), ...(p !== undefined ? { beside: p } : {}) };
     });
     try {
-      await writeFile({ kind: 'path', path }, baseName(path), workspaceText({ tabs, active: own.indexOf(this.mainOf(this.active)) }), WORKSPACE);
+      await writeFile({ kind: 'path', path }, baseName(path), workspaceText({ tabs, active: Math.max(0, own.indexOf(this.mainOf(this.active))) }), WORKSPACE);
     } catch (e) {
       await showError(`Could not save the workspace: ${e instanceof Error ? e.message : String(e)}`);
       return false;
@@ -1092,7 +1136,9 @@ export class Workspace {
         opened.push(null);
         continue;
       }
-      opened.push((await this.openBytes(bytes, baseName(full), { kind: 'path', path: full })) ? this.active : null);
+      // (the file's own tab: one already open may be a canvas beside a document, which shows instead)
+      const ok = await this.openBytes(bytes, baseName(full), { kind: 'path', path: full });
+      opened.push(ok ? this.tabs.find((t) => t.ref.kind === 'path' && t.ref.path === full) ?? null : null);
     }
     // the split screen (the first one listed: workspaces saved before split screen could list one per
     // document, sheet or deck, each with a canvas on its right), then the tab that was showing

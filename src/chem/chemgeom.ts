@@ -2,7 +2,7 @@
 // bond, or on an atom), chains, and merging new atoms into existing ones that land on
 // the same spot. All positions are in points with y running down.
 
-import { Doc, Atom, Bond, BondDisplay } from '../model';
+import { Doc, Atom, Bond, BondDisplay, isWedge } from '../model';
 import { ringsThroughBond } from './aromatic';
 import { Vec, add, sub, mul, norm, perp, dot, angleOf, fromAngle, dist, normAngle, DEG } from '../geom';
 
@@ -151,7 +151,7 @@ export function sproutDir(doc: Doc, atomId: number, order = 1): Vec {
     const chainLike = all.filter((pp) => {
       if (doc.degree(pp.id) > 1) return true;
       const b = doc.bondBetween(n.id, pp.id);
-      return !b || b.order < 2 && b.display !== 'wedge' && b.display !== 'hashWedge';
+      return !b || b.order < 2 && !isWedge(b.display);
     });
     const prev = chainLike.length ? chainLike : all;
     const score = (d: Vec) => {

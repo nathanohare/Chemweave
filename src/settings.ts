@@ -32,7 +32,7 @@ import { parseDarkPalettes, type DarkPalette } from './dark-page';
 import { DEFAULT_SCHEME_PREFS, parseSchemePrefs, type SchemePrefs } from './chem/scheme-layout';
 import { DEFAULT_ANALYSIS, parseAnalysisPrefs, type AnalysisPrefs } from './chem/analysis-prefs';
 import { DEFAULT_NEWMAN_PREFS, parseNewmanPrefs, type NewmanPrefs } from './design/newman-prefs';
-import { CITE_PRESETS, DEFAULT_STYLE, cleanOptions, type CiteFormat } from './document/cite-styles';
+import { DEFAULT_STYLE, cleanOptions, knownStyle, type CiteFormat } from './document/cite-styles';
 import { DEFAULT_KEEP, parseKeepPrefs, type KeepPrefs } from './keep/prefs';
 import { parseThemes, type SlideTemplate } from './deck/templates';
 import { parseRecent } from './text/symbols';
@@ -468,7 +468,7 @@ export function parseSettings(text: string | null | undefined): Settings {
   if (r.notesHeight === 84) s.notesHeight = 32;
   if (r.slidePaneWidth === 212) s.slidePaneWidth = 160;
   if (typeof r.slideNotes === 'boolean') s.slideNotes = r.slideNotes;
-  if (typeof r.citeStyle === 'string' && r.citeStyle in CITE_PRESETS) s.citeStyle = r.citeStyle;
+  if (typeof r.citeStyle === 'string' && knownStyle(r.citeStyle)) s.citeStyle = r.citeStyle;
   s.citeOptions = cleanOptions(r.citeOptions);
   s.palettes = parsePalettes(r.palettes);
   s.toolboxes = parseToolboxes(r.toolboxes);
@@ -638,9 +638,11 @@ export async function loadSettings(notice: (msg: string) => void = () => {}, sto
   }
   let where = '';
   try { where = await store.setAside(); } catch { /* left where it is */ }
+  // (it couldn't be moved aside: saving would write over it, so nothing is saved until the next start)
+  if (!where) keepOff = true;
   let backup: string | null = null;
   try { backup = await store.readBackup(); } catch { /* none */ }
-  const kept = where ? ` The damaged file was kept as ${where}.` : '';
+  const kept = where ? ` The damaged file was kept as ${where}.` : ' The damaged file couldn\u2019t be moved aside, so settings changes won\u2019t be saved, to protect it. To save them again, move or delete the damaged settings file (or make its folder one that can be written to), then restart.';
   if (backup && settingsReadable(backup)) {
     notice(`Your settings file was damaged, so the last good copy was restored.${kept}`);
     return parseSettings(backup);
@@ -649,22 +651,32 @@ export async function loadSettings(notice: (msg: string) => void = () => {}, sto
   return parseSettings(null);
 }
 
-let pending: ReturnType<typeof setTimeout> | null = null;
+let pending: { timer: ReturnType<typeof setTimeout>; write: () => Promise<void> } | null = null;
 
 /** Save settings shortly (several quick changes make one write). Failures are reported, never fatal. */
 export function saveSettings(s: Settings, onError: (msg: string) => void = () => {}): void {
   if (keepOff) return;
-  if (pending) clearTimeout(pending);
-  pending = setTimeout(async () => {
-    pending = null;
+  if (pending) clearTimeout(pending.timer);
+  const write = async () => {
     const text = settingsText(s);
     try {
+      // (in a browser this happens at once, before anything is awaited, so a page being left still gets it)
       if (isTauri()) await invoke('settings_write', { contents: wellFormed(text) });
       else localStorage.setItem(STORAGE_KEY, text);
     } catch (e) {
       onError(`Settings were not saved: ${e}`);
     }
-  }, 300);
+  };
+  pending = { timer: setTimeout(() => { pending = null; void write(); }, 300), write };
+}
+
+/** Write settings waiting to be saved now (the window or page is going). */
+export async function flushSettings(): Promise<void> {
+  const p = pending;
+  if (!p) return;
+  clearTimeout(p.timer);
+  pending = null;
+  await p.write();
 }
 
 /** Where the settings live, for the Hotkeys window. */

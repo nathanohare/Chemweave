@@ -319,7 +319,8 @@ export class DocPanel {
     const lay = f.layout();
     const placed = lay.objects.find((o) => o.id === id);
     if (!placed) return;
-    const pg = f.t.page;
+    // the margins of the page the figure is on (its section's own), as the layout measures them
+    const pg = lay.pages[placed.page]?.setup ?? f.t.page;
     const pageTop = lay.pages[placed.page]?.top ?? 0;
     if (axis === 'x') {
       const abs = cur.xFrom === 'page' ? cur.x : cur.x + pg.left;
@@ -370,12 +371,12 @@ export class DocPanel {
     this.row(s, 'Space after (pt)', this.input('p-after', (v) => { const n = parseLength(v, 'pt'); if (n !== null) paras({ spaceAfter: Math.max(0, n) }, 'spacing'); }));
     this.row(s, 'Right indent (in)', this.input('p-right', (v) => { const n = parseLength(v, 'in'); if (n !== null) paras({ indentRight: n || undefined }, 'indent'); }), 'From the right margin; less than 0 goes into it');
     this.row(s, 'Line spacing', this.select('p-rule', [['multiple', 'Multiple'], ['atLeast', 'At least'], ['exact', 'Exactly']], (v) => {
-      const p = this.host.file()?.ed.currentPara();
+      const p = this.host.file()?.textEd.currentPara();
       if (v === 'multiple') paras({ linePt: undefined, lineRule: undefined }, 'spacing');
       else paras({ linePt: p?.linePt ?? 12, lineRule: v as 'exact' | 'atLeast', line: undefined }, 'spacing');
     }), 'Multiple: times single spacing. At least or Exactly: a height in points (Exactly can cut off tall figures, as in Word)');
     this.row(s, 'At', this.input('p-line', (v) => {
-      const p = this.host.file()?.ed.currentPara();
+      const p = this.host.file()?.textEd.currentPara();
       if (p?.linePt) { const n = parseLength(v, 'pt'); if (n !== null && n > 0 && n <= 1584) paras({ linePt: n }, 'spacing'); return; }
       const n = Number(v);
       if (n > 0 && n <= 10) paras({ line: Math.abs(n - 1) < 1e-6 ? undefined : n }, 'spacing');
@@ -527,7 +528,12 @@ export class DocPanel {
     this.row(s, 'Number format', this.select('hf-format', FORMATS.map((v) => [v, [1, 2, 3].map((n) => pageNumText(n, v)).join(', ')]), (v) => this.changeSec('Page numbers', () => ({ format: v as Section['format'] }))),
       'Front matter is often numbered i, ii, iii, and the text after a section break 1, 2, 3');
     this.check(s, 'hf-continue', 'Continue from previous section', (v) => this.changeSec('Page numbers', (x) => ({ restart: v ? undefined : x.restart ?? 1 })));
-    this.row(s, 'First page number', this.input('hf-start', (v) => { const n = Math.round(Number(v)); if (Number.isFinite(n)) this.changeSec('Page numbers', () => ({ restart: n })); }));
+    this.row(s, 'First page number', this.input('hf-start', (v) => {
+      // (0 is allowed, as in Word: the page after a cover is then 1; a box cleared or not a number goes back to what the section has)
+      const n = Math.round(Number(v));
+      if (v.trim() !== '' && Number.isFinite(n) && n >= 0) this.changeSec('Page numbers', () => ({ restart: n }));
+      else this.update();
+    }));
     this.check(s, 'hf-first', 'Number the first page', (v) => hf((h) => ({ ...h, onFirst: v })), 'Leave off for a title page');
     // a first page and even pages of their own (Word's Different First Page and Different Odd & Even Pages)
     const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
@@ -607,6 +613,12 @@ export class DocPanel {
       format.style.display = o?.kind === 'picture' && !o.chart ? '' : 'none';
       own.style.display = isBox ? 'none' : '';
     }
+    // named styles belong to the document's own paragraphs: while a table cell, text box or note is
+    // typed in, they are left alone (not applied to the paragraph that holds the box) until the text is clicked
+    const inBox = !!f.box;
+    const why = 'Styles are for the text of the document: click it first (not inside a table cell, text box or note)';
+    for (const [k, el] of this.fields) if (k === 'p-style' || k.startsWith('s-')) { (el as HTMLInputElement).disabled = inBox; el.title = inBox ? why : ''; }
+    this.sections.style.querySelectorAll('button').forEach((b) => { b.disabled = inBox; });
     // the paragraph
     const p = ed.currentPara();
     const st = styleOf(t, p);

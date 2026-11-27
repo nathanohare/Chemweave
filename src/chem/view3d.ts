@@ -67,29 +67,84 @@ function cross(p: P3, q: P3, r: P3, s: P3): boolean {
 export function clutter(view: P3[], sk: Skeleton): { score: number; overlaps: number } {
   // `overlaps`: atoms the drawing's own checks would flag as on top of an atom or a bond
   const { atoms, bonds, L } = sk;
-  const bonded = new Set(bonds.map(([a, b]) => (a < b ? `${a},${b}` : `${b},${a}`)));
+  const bonded = bondedPairs(sk);
   let score = 0, overlaps = 0;
-  for (let i = 0; i < atoms.length; i++) for (let j = i + 1; j < atoms.length; j++) {
-    const a = atoms[i], b = atoms[j];
-    if (bonded.has(a < b ? `${a},${b}` : `${b},${a}`)) continue;
-    const d = Math.hypot(view[a][0] - view[b][0], view[a][1] - view[b][1]) / L;
-    if (d < NEAR_ATOM) { score += 3 + 3 * (1 - d / NEAR_ATOM); if (d < HIT_ATOM) overlaps++; }
-  }
-  for (const [a, b] of bonds) {
+  // (only things near each other are compared: atoms and bonds are sorted into squares a bond
+  // length wide first, which is the same answer quicker; a view search calls this about a
+  // thousand times, which for a 300-atom model held the window for seconds)
+  const nearAtom = NEAR_ATOM * L, nearBond = NEAR_BOND * L;
+  // (squares at least a little wide, so a model whose bonds all have no length, or a position that
+  // isn't a number, can't make the square search below run on without end; review F423)
+  const step = L > 1e-6 && Number.isFinite(L) ? L : 1.5;
+  const cell = (v: number) => (Number.isFinite(v) ? Math.floor(v / step) : 0);
+  const grid = new Map<string, number[]>();
+  atoms.forEach((a, i) => {
+    const k = `${cell(view[a][0])},${cell(view[a][1])}`;
+    const list = grid.get(k);
+    if (list) list.push(i); else grid.set(k, [i]);
+  });
+  const near = (x0: number, x1: number, y0: number, y1: number, each: (i: number) => void) => {
+    for (let gx = cell(x0); gx <= cell(x1); gx++) for (let gy = cell(y0); gy <= cell(y1); gy++) for (const i of grid.get(`${gx},${gy}`) ?? []) each(i);
+  };
+  atoms.forEach((a, i) => {
+    const ax = view[a][0], ay = view[a][1];
+    near(ax - nearAtom, ax + nearAtom, ay - nearAtom, ay + nearAtom, (j) => {
+      if (j <= i) return;
+      const b = atoms[j];
+      if (bonded.has(a < b ? a * bonded.size1 + b : b * bonded.size1 + a)) return;
+      const d = Math.hypot(ax - view[b][0], ay - view[b][1]) / L;
+      if (d < NEAR_ATOM) { score += 3 + 3 * (1 - d / NEAR_ATOM); if (d < HIT_ATOM) overlaps++; }
+    });
+  });
+  const box = bonds.map(([a, b]) => [Math.min(view[a][0], view[b][0]), Math.max(view[a][0], view[b][0]), Math.min(view[a][1], view[b][1]), Math.max(view[a][1], view[b][1])]);
+  bonds.forEach(([a, b], k) => {
     const len = Math.hypot(view[a][0] - view[b][0], view[a][1] - view[b][1]) / L;
     if (len < SHORT_BOND) score += 1.5 * (1 - len / SHORT_BOND) + 0.5;
-    for (const c of atoms) {
-      if (c === a || c === b) continue;
+    const [x0, x1, y0, y1] = box[k];
+    // (an atom further than nearBond outside the bond's box is at least that far from the bond)
+    near(x0 - nearBond, x1 + nearBond, y0 - nearBond, y1 + nearBond, (ci) => {
+      const c = atoms[ci];
+      if (c === a || c === b) return;
       const d = segDist(view[c][0], view[c][1], view[a][0], view[a][1], view[b][0], view[b][1]) / L;
       if (d < NEAR_BOND) { score += 3; if (d < HIT_BOND) overlaps++; }
+    });
+  });
+  // crossings: bonds sorted into the squares their boxes cover; a pair is counted in the square
+  // where both boxes' lower left corners have been passed (one square only)
+  const bgrid = new Map<string, number[]>();
+  box.forEach(([x0, x1, y0, y1], k) => {
+    for (let gx = cell(x0); gx <= cell(x1); gx++) for (let gy = cell(y0); gy <= cell(y1); gy++) {
+      const key = `${gx},${gy}`;
+      const list = bgrid.get(key);
+      if (list) list.push(k); else bgrid.set(key, [k]);
+    }
+  });
+  for (const [key, list] of bgrid) {
+    const [gx, gy] = key.split(',').map(Number);
+    for (let u = 0; u < list.length; u++) for (let v = u + 1; v < list.length; v++) {
+      const i = list[u], j = list[v];
+      const p = box[i], q = box[j];
+      // (bonds whose boxes don't overlap can't cross)
+      if (p[1] < q[0] || q[1] < p[0] || p[3] < q[2] || q[3] < p[2]) continue;
+      if (cell(Math.max(p[0], q[0])) !== gx || cell(Math.max(p[2], q[2])) !== gy) continue;
+      const [a, b] = bonds[i], [c, d] = bonds[j];
+      if (a === c || a === d || b === c || b === d) continue;
+      if (cross(view[a], view[b], view[c], view[d])) score += 1;
     }
   }
-  for (let i = 0; i < bonds.length; i++) for (let j = i + 1; j < bonds.length; j++) {
-    const [a, b] = bonds[i], [c, d] = bonds[j];
-    if (a === c || a === d || b === c || b === d) continue;
-    if (cross(view[a], view[b], view[c], view[d])) score += 1;
-  }
   return { score, overlaps };
+}
+
+/** A skeleton's bonded pairs as numbers (smaller index × size1 + larger), made once per skeleton. */
+const pairsOf = new WeakMap<Skeleton, Set<number> & { size1: number }>();
+function bondedPairs(sk: Skeleton): Set<number> & { size1: number } {
+  let got = pairsOf.get(sk);
+  if (!got) {
+    const size1 = Math.max(0, ...sk.atoms, ...sk.bonds.flat()) + 1;
+    got = Object.assign(new Set(sk.bonds.map(([a, b]) => (a < b ? a * size1 + b : b * size1 + a))), { size1 });
+    pairsOf.set(sk, got);
+  }
+  return got;
 }
 
 /** Evenly spread directions (a Fibonacci sphere). */

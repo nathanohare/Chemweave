@@ -29,8 +29,9 @@ export function smoothLoop(pts: Vec[]): Vec[][] {
   // the direction through each point: halfway between the way in and the way out
   const dirs = pts.map((p, k) => {
     const d = add(unit(sub(p, at(k - 1))), unit(sub(at(k + 1), p)));
-    // two species only: the loop goes round, square to the line between them
-    if (len(d) < 1e-9 || n === 2) { const c = unit(sub(at(k + 1), p)); return { x: -c.y * (k === 0 ? 1 : -1), y: c.x * (k === 0 ? 1 : -1) }; }
+    // two species only: the loop goes round, square to the line to the next one (so it leaves
+    // one going one way and the other going back: (0, 1) and then (0, −1) for two side by side)
+    if (len(d) < 1e-9 || n === 2) { const c = unit(sub(at(k + 1), p)); return { x: -c.y, y: c.x }; }
     return unit(d);
   });
   const out: Vec[][] = [];

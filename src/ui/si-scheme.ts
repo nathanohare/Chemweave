@@ -77,6 +77,14 @@ export class SiSchemePage {
   private conds = new Map<string, SiRichBox>();
   /** Structures in the conditions as pictures, by id (filled before the strip is drawn). */
   private inlinePics = new Map<string, string>();
+  /** Pictures already drawn, by the structure's text: a change to a label or yield draws only what is new. */
+  private svgs = new Map<string, string | null>();
+  private picture(mol: string): string | null {
+    if (!this.svgs.has(mol)) this.svgs.set(mol, this.host.pictureOf(mol));
+    return this.svgs.get(mol) ?? null;
+  }
+  /** Each paint is made after the one before it: two at once would put the boxes of both on the page's lists. */
+  private painting: Promise<void> = Promise.resolve();
 
   constructor(private host: SiSchemeHost) {
     // a scheme made as one pasted picture opens as an editor scheme with its compounds as the first step's products (written with the next change)
@@ -117,23 +125,33 @@ export class SiSchemePage {
   }
 
   /** Draw the strip and the preview again. */
-  async paint(): Promise<void> {
+  paint(): Promise<void> {
+    const run = this.painting.then(() => this.paintNow());
+    this.painting = run.catch(() => {});
+    return run;
+  }
+
+  private async paintNow(): Promise<void> {
     for (const b of this.boxes) b.commit();
     this.boxes.length = 0;
     this.conds.clear();
     const d = E.editorData(this.k);
     // pictures of the structures in the conditions
     this.inlinePics.clear();
-    for (const sid of Object.keys(d.inline)) {
-      const mol = await E.inlineMol(this.p, this.k, sid);
-      const svg = mol ? this.host.pictureOf(mol) : null;
+    const sids = Object.keys(d.inline);
+    const inlineMols = await Promise.all(sids.map((sid) => E.inlineMol(this.p, this.k, sid)));
+    sids.forEach((sid, i) => {
+      const svg = inlineMols[i] ? this.picture(inlineMols[i]) : null;
       if (svg) this.inlinePics.set(sid, sized(svg, this.layout.cond_structure_pct / 100 * 0.75));
-    }
+    });
+    // (every box's structure is read at once, not one after another)
+    const every = [...d.starting, ...d.steps.flatMap((st) => st.products)];
+    const boxMols = new Map<Json, string>(await Promise.all(every.map(async (b): Promise<[Json, string]> => [b, await E.boxMol(this.p, this.k, b)])));
     const parts: HTMLElement[] = [];
     const side = async (boxes: Json[], where: string): Promise<void> => {
       for (let i = 0; i < boxes.length; i++) {
         if (i) parts.push(el('div', 'si-scheme-plus', '+'));
-        parts.push(await this.boxEl(boxes[i], where));
+        parts.push(await this.boxEl(boxes[i], where, boxMols.get(boxes[i])));
       }
     };
     await side(d.starting, E.START);
@@ -156,15 +174,15 @@ export class SiSchemePage {
     return b;
   }
 
-  private async boxEl(box: Json, where: string): Promise<HTMLElement> {
+  private async boxEl(box: Json, where: string, read?: string): Promise<HTMLElement> {
     const id = str(box.id);
     const c = E.boxCompound(this.k, box);
     const wrap = el('div', 'si-scheme-box');
     wrap.tabIndex = 0;
     wrap.dataset.box = id;
     const pic = el('div', 'si-scheme-pic');
-    const mol = await E.boxMol(this.p, this.k, box);
-    const svg = mol ? this.host.pictureOf(mol) : null;
+    const mol = read ?? await E.boxMol(this.p, this.k, box);
+    const svg = mol ? this.picture(mol) : null;
     if (svg) pic.innerHTML = sized(svg, 0.9);
     else pic.append(el('span', 'muted', str(box.picture) ? 'Pasted picture (draw it to replace)' : 'Double-click to draw'));
     pic.title = 'Double-click to draw the structure';
@@ -183,7 +201,8 @@ export class SiSchemePage {
       lab.placeholder = 'ID';
       lab.setAttribute('aria-label', 'ID label');
       lab.title = 'The ID printed under the structure (bold). Mark as Compound gives it an ID from the ID table and a data page instead.';
-      lab.addEventListener('change', () => void this.act('Edit Label', () => E.setBoxValues(this.p, this.k, id, { label: lab.value })));
+      // (only the preview is drawn again: the strip, with the box the person went on to, stays as it is)
+      lab.addEventListener('change', () => void this.act('Edit Label', () => E.setBoxValues(this.p, this.k, id, { label: lab.value }), false, true));
       idRow.append(lab);
     }
     const yl = el('input', 'si-scheme-yield');
@@ -192,7 +211,7 @@ export class SiSchemePage {
     yl.placeholder = auto ? `auto: ${auto}%` : 'yield';
     yl.setAttribute('aria-label', 'Yield');
     yl.title = c ? 'The yield printed under it: empty uses the compound’s Yield field; type to print something else' : 'The yield printed under it (empty: none)';
-    yl.addEventListener('change', () => void this.act('Edit Yield', () => E.setBoxValues(this.p, this.k, id, { yield: yl.value.trim() ? yl.value : c ? null : '' })));
+    yl.addEventListener('change', () => void this.act('Edit Yield', () => E.setBoxValues(this.p, this.k, id, { yield: yl.value.trim() ? yl.value : c ? null : '' }), false, true));
     idRow.append(yl);
     wrap.append(pic, idRow);
     const pick = (): void => { this.picked = { kind: 'box', id, where }; this.mark(); this.host.chosen(this); };
@@ -458,19 +477,25 @@ export class SiSchemePage {
         return;
       }
       case 'insert-structure': {
-        let target = this.picked?.kind === 'step' ? this.conds.get(`${this.picked.id}:${this.picked.which}`) : undefined;
-        if (!target) { const st = this.pickedStep(); target = st ? this.conds.get(`${st}:top`) : undefined; }
-        if (!target) { this.host.flash('Click in the conditions above or under an arrow first.'); return; }
-        const into = target;
+        let at = this.picked?.kind === 'step' ? { step: this.picked.id, which: this.picked.which } : null;
+        let target = at ? this.conds.get(`${at.step}:${at.which}`) : undefined;
+        if (!target) { const st = this.pickedStep(); at = st ? { step: st, which: 'top' as const } : null; target = st ? this.conds.get(`${st}:top`) : undefined; }
+        if (!target || !at) { this.host.flash('Click in the conditions above or under an arrow first.'); return; }
+        const into = target, where = at;
         this.host.editStructure(null, 'Structure in the conditions', (got) => {
           if (!got || !got.atoms.length) return;
           const m = this.host.molfileOf(got);
           if (!m.molblock) { this.host.flash(m.problem ?? 'The drawing could not be read as a structure.'); return; }
           void (async () => {
-            const sid = await this.step('Insert Structure', () => E.addInlineStructure(p, k, m.molblock!));
-            const svg = this.host.pictureOf(m.molblock!);
-            if (svg) this.inlinePics.set(sid, sized(svg, this.layout.cond_structure_pct / 100 * 0.75));
-            into.insertRef(STRUCT + sid);
+            // (the stored structure and the conditions that show it are one step of Undo)
+            await this.step('Insert Structure', async () => {
+              const sid = await E.addInlineStructure(p, k, m.molblock!);
+              const svg = this.picture(m.molblock!);
+              if (svg) this.inlinePics.set(sid, sized(svg, this.layout.cond_structure_pct / 100 * 0.75));
+              const text = into.insertRef(STRUCT + sid, false);
+              try { await E.setConditions(p, k, where.step, where.which, text); } catch (e) { into.unsaved(); throw e; }
+            });
+            await this.drawPreview();
           })().catch((e) => this.host.flash(`The structure could not be added: ${e instanceof Error ? e.message : String(e)}`));
         });
         return;

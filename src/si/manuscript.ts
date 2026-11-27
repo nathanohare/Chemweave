@@ -17,6 +17,7 @@ import type { SiTarget } from './compile-doc';
 import { valuesOf, compoundName, type SiProject } from './project';
 import { partText } from './fields';
 import * as C from './ms-check';
+import { isQuant, isRacemic } from './ms-parse';
 import { notAfter } from '../regex-behind';
 
 /** What the manuscript needs from the SI: its targets (compounds and labels) and the page each is on. */
@@ -174,7 +175,7 @@ function typedIds(runs: readonly TextRun[], scope: TypedScope = {}): { run: numb
 interface Mention { key: string; id: string; inSi: boolean; /** The compound number field it is (its seq), when it is one. */ seq?: number; letters?: string }
 
 /** The compound mentions in some runs: compound number fields (with the letters after them), SI ID fields, and bold numbers typed. */
-function mentionsIn(runs: readonly TextRun[], c: Ctx): Mention[] {
+function mentionsIn(runs: readonly TextRun[], c: Ctx, scope: TypedScope = {}): Mention[] {
   const out: Mention[] = [];
   runs.forEach((r, i) => {
     const seq = numberSeq(r, c.objects);
@@ -195,7 +196,7 @@ function mentionsIn(runs: readonly TextRun[], c: Ctx): Mention[] {
     const o = r.obj !== undefined ? c.objects[r.obj] : undefined;
     if (o?.kind === 'si' && o.what === 'id') out.push({ key: o.key, id: o.text, inSi: c.keys.has(o.key) });
   });
-  for (const x of typedIds(runs)) {
+  for (const x of typedIds(runs, scope)) {
     // the letters after a compound number field are part of it
     if (!x.num) continue;
     const id = x.num + x.letters;
@@ -215,11 +216,19 @@ function allRuns(t: DocText): TextRun[][] {
   return out;
 }
 
+/** Where typed numbers in the document's text are not compounds (as linkTypedIds reads them): heading-style paragraphs, and the references on. */
+const textScope = (t: DocText): TypedScope => ({ paras: t.paras, stopAt: (obj) => t.objects[obj]?.kind === 'bib' });
+
+/** The compound mentions of every run list of the document (allRuns), the text's read in its scope. */
+function allMentions(t: DocText, c: Ctx): Mention[] {
+  return allRuns(t).flatMap((runs, i) => mentionsIn(runs, c, i === 0 ? textScope(t) : {}));
+}
+
 /** Each SI compound's IDs in the manuscript (more than one is a problem). */
 export function manuscriptIds(t: DocText, view: SiView): Map<string, Set<string>> {
   const c = ctxOf(t, view);
   const out = new Map<string, Set<string>>();
-  for (const runs of allRuns(t)) for (const m of mentionsIn(runs, c)) if (m.inSi) { const s = out.get(m.key) ?? new Set(); s.add(m.id); out.set(m.key, s); }
+  for (const m of allMentions(t, c)) if (m.inSi) { const s = out.get(m.key) ?? new Set(); s.add(m.id); out.set(m.key, s); }
   return out;
 }
 
@@ -358,7 +367,7 @@ export function nextLetter(t: DocText, seq: number, view: SiView): string {
   const o = t.objects[seq];
   if (o?.kind === 'seq') for (const l of Object.keys(o.si ?? {})) used.add(l);
   const c = ctxOf(t, view);
-  for (const runs of allRuns(t)) for (const m of mentionsIn(runs, c)) if (m.seq === seq && m.letters) used.add(m.letters);
+  for (const m of allMentions(t, c)) if (m.seq === seq && m.letters) used.add(m.letters);
   for (let i = 0; i < 26; i++) { const l = String.fromCharCode(97 + i); if (!used.has(l)) return l; }
   return 'aa';
 }
@@ -496,7 +505,8 @@ export function checkAgainstSi(t: DocText, view: SiView): SiFinding[] {
       const hasValues = [...cols.keys()].some((k) => textOf(row[k]?.runs ?? [], c).trim());
       for (const m of ms) {
         if (m.inSi) { inTables.add(m.key); continue; }
-        if (m.key || seenMissing.has(normId(m.id))) continue;
+        // (an SI ID field of a compound that is gone is reported above; a compound number linked to one is reported here)
+        if ((m.key && m.seq === undefined) || seenMissing.has(normId(m.id))) continue;
         seenMissing.add(normId(m.id));
         out.push(hasValues
           ? { level: 'problem', key: '', id: m.id, what: 'compound', manuscript: 'with values', si: 'not in the SI', where, message: `${m.id} has values in ${where} but is not in the SI.` }
@@ -512,6 +522,8 @@ export function checkAgainstSi(t: DocText, view: SiView): SiFinding[] {
         if (!cell) continue;
         const text = textOf(cell.runs, c).trim();
         if (!text) continue;
+        // (a cell with no value, such as "–", "n.d." or "trace", says nothing: as agreeYield, sameEe and sameDr read it)
+        if (!/\d/.test(text) && !(col === 'yield' && isQuant(text)) && !(col === 'ee' && isRacemic(text))) continue;
         const mine = si[col]?.trim() ?? '';
         const at = valueAt(cell, c, col, tid, r, k);
         if (!mine) { out.push({ level: 'problem', key, id, what: col, manuscript: text, si: 'empty', where, message: `${id}: ${where} gives ${label(col)} ${text}, but the SI's ${label(col)} is empty.` }); continue; }
@@ -523,15 +535,18 @@ export function checkAgainstSi(t: DocText, view: SiView): SiFinding[] {
 
   // sentences: "2a … 94% yield", notes only (and compounds with no SI data at all, in the text)
   const lines = splitParas(t.runs);
+  // (bold numbers from the references on are volumes and years, as linkTypedIds reads them)
+  const refsAt = referencesStart(t, lines, c);
   lines.forEach((runs, p) => {
-    const ms = mentionsIn(runs, c);
+    if (p >= refsAt) return;
+    const ms = mentionsIn(runs, c, { paras: [t.paras[p]] });
     for (const m of ms) {
-      if (m.inSi || m.key || seenMissing.has(normId(m.id))) continue;
+      if (m.inSi || (m.key && m.seq === undefined) || seenMissing.has(normId(m.id))) continue;
       seenMissing.add(normId(m.id));
       out.push({ level: 'note', key: '', id: m.id, what: 'compound', manuscript: 'mentioned', si: 'not in the SI', where: `paragraph ${p + 1}`, message: `${m.id} is mentioned in paragraph ${p + 1} but is not in the SI.` });
     }
     for (const s of sentences(runs, c)) {
-      const sm = mentionsIn(s.runs, c).filter((m) => m.inSi && view.data.has(m.key));
+      const sm = mentionsIn(s.runs, c, { paras: [t.paras[p]] }).filter((m) => m.inSi && view.data.has(m.key));
       const said = new Set<string>();
       for (const { m, value } of sentenceYields(s.text, sm)) {
         const si = view.data.get(m.key)!;
@@ -594,9 +609,19 @@ function agreeYield(manuscript: string, si: string): boolean {
 function valueAt(cell: TableCell, c: Ctx, col: Col, table: number, row: number, column: number): SiFinding['at'] | undefined {
   if (col !== 'yield' || cell.runs.some((r) => r.obj !== undefined)) return undefined;
   const text = textOf(cell.runs, c);
-  const m = /\d+(?:\.\d+)?/.exec(text);
+  // (with its sign and % sign: the SI's value comes with its own sign, or is "quant.")
+  const m = /(?:[<>≥≤]\s*)?\d+(?:\.\d+)?(?:\s*%)?/.exec(text);
   if (!m || /\d/.test(text.slice(m.index + m[0].length))) return undefined;
   return { table, row, col: column, start: m.index, end: m.index + m[0].length };
+}
+
+/** The paragraph the references start at (their heading after the first paragraph, or the bibliography), or Infinity. */
+function referencesStart(t: DocText, lines: readonly TextRun[][], c: Ctx): number {
+  for (let p = 0; p < lines.length; p++) {
+    if (p > 0 && REFERENCES_HEAD.test(textOf(lines[p], c))) return p;
+    if (lines[p].some((r) => r.obj !== undefined && t.objects[r.obj]?.kind === 'bib')) return p;
+  }
+  return Infinity;
 }
 
 /** The runs of each paragraph. */
@@ -639,8 +664,11 @@ export function useSiValue(t: DocText, f: SiFinding): DocText | null {
   if (o?.kind !== 'table') return null;
   const cell = o.table.rows[at.row]?.[at.col];
   if (!cell) return null;
-  const value = yieldValues(f.si)[0];
-  if (!value) return null;
+  const found = yieldValues(f.si)[0];
+  if (!found) return null;
+  // (the cell's % sign kept after a number; "quant." takes its place)
+  const pct = /\s*%$/.exec(cell.runs.map((r) => r.text).join('').slice(at.start, at.end))?.[0] ?? '';
+  const value = found === 'quant.' ? found : found + pct;
   let pos = 0;
   const runs = cell.runs.map((r) => {
     const s = pos, e = pos + r.text.length;
@@ -662,7 +690,7 @@ export function siField(what: SiFieldWhat, target: SiTarget, view: SiView): SiOb
 export function mentionCounts(t: DocText, view: SiView): Map<string, number> {
   const c = ctxOf(t, view);
   const counts = new Map<string, number>();
-  for (const runs of allRuns(t)) for (const m of mentionsIn(runs, c)) if (m.inSi) counts.set(m.key, (counts.get(m.key) ?? 0) + 1);
+  for (const m of allMentions(t, c)) if (m.inSi) counts.set(m.key, (counts.get(m.key) ?? 0) + 1);
   return counts;
 }
 

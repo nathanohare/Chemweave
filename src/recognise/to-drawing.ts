@@ -3,7 +3,7 @@
 // aromatic given alternating double bonds, and the layout of the picture kept.
 
 import type { Doc } from '../model';
-import { elementNumber } from '../chem/elements';
+import { elementNumber, GROUP_LIKE } from '../chem/elements';
 import type { ReadGraph } from './molscribe';
 
 export interface ReadAtom {
@@ -20,9 +20,17 @@ export interface ReadAtom {
 
 const AROMATIC = new Set(['b', 'c', 'n', 'o', 'p', 's', 'se', 'as', 'te']);
 
+/**
+ * Symbols the reader writes for groups as often as for elements, read as groups when they stand
+ * alone ([Ts] tosyl, [Ac] acetyl, [Pr] propyl, [Ar] aryl, [Y] a group's letter): tennessine,
+ * actinium, praseodymium, argon or yttrium in a drawing of an organic structure is far rarer.
+ */
+const GROUP_FIRST = new Set([...GROUP_LIKE, 'Ar', 'Y']);
+
 /** An atom as the reader wrote it: C, c, Cl, [NH+], [13CH3], [O-], or a group such as [OMe] or [R1]. */
 export function parseSymbol(sym: string): ReadAtom {
   const plain = sym.startsWith('[') && sym.endsWith(']') ? sym.slice(1, -1) : sym;
+  if (GROUP_FIRST.has(plain)) return { label: plain, charge: 0, aromatic: false, h: 0 };
   if (AROMATIC.has(plain)) return { z: elementNumber(plain[0].toUpperCase() + plain.slice(1)), charge: 0, aromatic: true, h: 0 };
   const m = /^(\d+)?([A-Z][a-z]?|b|c|n|o|p|s|se|as|te)(@{0,2})(H(\d*))?([+-]+\d*|\+\d*|-\d*)?$/.exec(plain);
   if (m) {

@@ -338,10 +338,11 @@ export class SheetNotes {
     const v = this.view;
     const s = v.sheet;
     const layer = v.noteLayer;
-    const list = s && !s.dashboard ? [...s.notes].filter(([, n]) => n.kind === 'note' && (n.shown || this.showAll)) : [];
-    const key = list.length ? JSON.stringify(list) : '';
+    // (what the notes are is told by the sheet, its changes so far and whether all are shown: not by writing each one out, for every drawing of the grid)
+    const key = s && !s.dashboard && s.notes.size ? `${s.uid}|${s.wb.edits}|${s.notes.size}|${this.showAll}` : '';
     if (key !== this.layerKey) {
       this.layerKey = key;
+      const list = key ? [...s!.notes].filter(([, n]) => n.kind === 'note' && (n.shown || this.showAll)) : [];
       layer.replaceChildren(...list.map(([k, n]) => {
         const box = el('div', 'sh-note sh-note-shown');
         box.dataset.key = String(k);

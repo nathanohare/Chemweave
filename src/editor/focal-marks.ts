@@ -97,10 +97,15 @@ export function drawLayoutPreview(ctx: CanvasRenderingContext2D, doc: Doc, pv: L
     if (Math.hypot(d.x, d.y) < 1e-3) return;
     const atoms = new Set(u.atoms);
     ctx.beginPath();
-    for (const b of doc.bonds.values()) {
-      if (!atoms.has(b.a1) || !atoms.has(b.a2)) continue;
-      const p = doc.atoms.get(b.a1)!, q = doc.atoms.get(b.a2)!;
-      ctx.moveTo(p.x + d.x, p.y + d.y); ctx.lineTo(q.x + d.x, q.y + d.y);
+    // the unit's own bonds, from its atoms (each once, from its first atom)
+    for (const id of u.atoms) {
+      for (const bid of doc.adj.get(id) ?? []) {
+        const b = doc.bonds.get(bid);
+        if (!b || b.a1 !== id || !atoms.has(b.a2)) continue;
+        const p = doc.atoms.get(b.a1), q = doc.atoms.get(b.a2);
+        if (!p || !q) continue;
+        ctx.moveTo(p.x + d.x, p.y + d.y); ctx.lineTo(q.x + d.x, q.y + d.y);
+      }
     }
     ctx.stroke();
     if (!u.atoms.length) {

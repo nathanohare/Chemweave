@@ -105,8 +105,9 @@ export function arrowEllipseFrame(r: Pick<Arrow, 'tail' | 'head' | 'bez' | 'elli
     const c = e.center, u = sub(e.major, c), v = sub(e.minor, c);
     const t0 = local(c, u, v, r.tail), t1 = local(c, u, v, r.head);
     const span = (Math.abs(e.angularSize) * Math.PI) / 180;
-    // the way round that ends at the head
-    const fwd = normAngle(t1 - t0 - span), back = normAngle(t1 - t0 + span);
+    // the way round that ends at the head (signed differences: a hair below zero is near zero, not near a full turn)
+    const wrap = (a: number) => Math.atan2(Math.sin(a), Math.cos(a));
+    const fwd = wrap(t1 - t0 - span), back = wrap(t1 - t0 + span);
     return { c, u, v, t0, sweep: Math.abs(fwd) <= Math.abs(back) ? span : -span };
   }
   if (!r.sweep || r.bez?.length) return null;
@@ -214,8 +215,8 @@ export const PORT_OUT: Vec[] = [{ x: 0, y: -1 }, { x: 1, y: 0 }, { x: 0, y: 1 },
 export function shapePorts(s: Shape): Vec[] | null {
   if (s.kind === 'line' || s.kind === 'bracket' || s.kind === 'symbol') return null;
   const rot = shapeTurn(s);
-  const b = rot ? flatBox(s) : shapeBox(s);
-  const ps = ports(b.x1, b.y1, b.x2, b.y2);
+  // the shape's own sides (not its shadow or frame, which bounds and repainting count)
+  const ps = ports(Math.min(s.x1, s.x2), Math.min(s.y1, s.y2), Math.max(s.x1, s.x2), Math.max(s.y1, s.y2));
   // a turned shape's connection points turn with it
   return rot ? ps.map((p) => turnAbout(p, shapeMid(s), rot)) : ps;
 }
@@ -666,8 +667,10 @@ export function dragArrowHandle(r: Arrow, which: HandleId, p: Vec, free: boolean
   if (!free) sweep = Math.round(sweep / (15 * DEG)) * 15 * DEG;
   else if (Math.abs(sweep) < 1 * DEG) sweep = 0;
   const patch: Partial<Arrow> = { sweep: sweep || 0 };
-  // a half head (fishhook) keeps its barb on the outside of the curve
-  if (sweep && r.sweep && Math.sign(sweep) !== Math.sign(r.sweep)) {
+  // a half head (fishhook) keeps its barb on the outside of the curve (straight counts as bent
+  // the positive way, as headBend has it, so a drag through straight still swaps it)
+  const side = (x: number) => (x < 0 ? -1 : 1);
+  if (side(sweep) !== side(r.sweep ?? 0)) {
     const swap = (h: Arrow['headStyle']) => (h === 'halfLeft' ? 'halfRight' : h === 'halfRight' ? 'halfLeft' : h);
     if (!r.equilibrium) { patch.headStyle = swap(r.headStyle); patch.tailStyle = swap(r.tailStyle); }
   }

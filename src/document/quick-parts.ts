@@ -6,12 +6,19 @@
 
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
-import { fitParas, paraCount, splitParagraphs } from '../text/paragraphs';
+import { cleanPara, fitParas, paraCount, splitParagraphs } from '../text/paragraphs';
 import type { FieldCode } from './fields';
 import type { DocObject, DocText } from './document';
+import { decide, parseRev } from './revisions';
 
 /** The bookmark on a cover page's first paragraph, so it can be found and taken out again. */
 export const COVER_MARK = '_Cover';
+/** Beside COVER_MARK: the document's first page had no header or page number before the cover went in (Remove Cover Page keeps it so). */
+export const COVER_FIRST_OFF_MARK = '_CoverFirstOff';
+/** On a cover page's last paragraph: the cover ends there (the paragraph after it starts the document's own first page). */
+export const COVER_END_MARK = '_CoverEnd';
+/** The marks a cover page's paragraphs carry. */
+const COVER_MARKS = [COVER_MARK, COVER_FIRST_OFF_MARK, COVER_END_MARK];
 
 /** A saved piece of text (Insert > Quick Parts > Save Selection to Quick Part Gallery). */
 export interface QuickPart {
@@ -28,9 +35,10 @@ export function parseQuickParts(v: unknown): QuickPart[] {
     if (!x || typeof x !== 'object') continue;
     const o = x as Record<string, unknown>;
     if (typeof o.name !== 'string' || !o.name.trim() || !Array.isArray(o.runs)) continue;
-    const runs = (o.runs as unknown[]).filter((r): r is TextRun => !!r && typeof r === 'object' && typeof (r as TextRun).text === 'string').map((r) => {
+    // (text a tracked change deleted is not part of it)
+    const runs = (o.runs as unknown[]).filter((r): r is TextRun => !!r && typeof r === 'object' && typeof (r as TextRun).text === 'string' && parseRev((r as TextRun).rev)?.kind !== 'del').map((r) => {
       // figures and fields don't travel between documents: just their text
-      const { obj: _o, rev: _r, cmt: _c, ...rest } = r as TextRun;
+      const { obj: _o, rev: _r, cmt: _c, fmt: _f, hide: _h, ...rest } = r as TextRun;
       return rest;
     });
     const paras = Array.isArray(o.paras) ? (o.paras as unknown[]).filter((p): p is ParaStyle => !!p && typeof p === 'object') : [];
@@ -46,16 +54,18 @@ export function parseQuickParts(v: unknown): QuickPart[] {
 export function partFromSelection(t: DocText, start: number, end: number, name: string): QuickPart | null {
   if (end <= start) return null;
   const text = rt.plainText(t.runs);
-  const runs = rt.sliceRuns(t.runs, start, end).filter((r) => r.obj === undefined).map((r) => {
-    const { rev: _r, cmt: _c, link: _l, ...rest } = r;
-    return rest;
-  });
-  if (!runs.some((r) => r.text.trim())) return null;
+  const sliced = rt.sliceRuns(t.runs, start, end).filter((r) => r.obj === undefined);
   const paras = fitParas(t.paras, paraCount(text));
   let first = 0;
   for (let i = 0; i < start; i++) if (text[i] === '\n') first++;
-  const n = paraCount(rt.plainText(runs));
-  const ps = paras.slice(first, first + n).map((p) => {
+  // the text as it will read: tracked changes accepted (deleted text out, new looks kept)
+  const read = decide({ runs: sliced, paras: paras.slice(first, first + paraCount(rt.plainText(sliced))) }, true);
+  const runs = read.runs.map((r) => {
+    const { rev: _r, fmt: _f, hide: _h, cmt: _c, link: _l, ...rest } = r;
+    return rest;
+  });
+  if (!runs.some((r) => r.text.trim())) return null;
+  const ps = fitParas(read.paras, paraCount(rt.plainText(runs))).map((p) => {
     const { pageBreak: _a, colBreak: _b, section: _s, marks: _m, ...rest } = p;
     return rest;
   });
@@ -138,10 +148,19 @@ export const COVER_PAGES: CoverDesign[] = [
  */
 export function insertCover(t: DocText, design: CoverDesign, accent: string, base: rt.RunStyle, field: (code: FieldCode, format?: string) => { id: number; o: DocObject }): DocText {
   let doc = removeCover(t);
+  // (whether the first page showed its header and number, for Remove Cover Page to put back; a
+  // cover that can no longer be told from the text, its page break joined away, says what it was
+  // before it, and its marks go: they would mark two covers)
+  const was = fitParas(doc.paras, paraCount(rt.plainText(doc.runs)));
+  const stuck = !!was[0]?.marks?.includes(COVER_MARK);
+  const firstOn = stuck ? !was[0].marks!.includes(COVER_FIRST_OFF_MARK) : doc.hf.onFirst;
+  if (stuck) doc = { ...doc, paras: was.map((p) => (p.marks?.some((m) => COVER_MARKS.includes(m)) ? cleanPara({ ...p, marks: p.marks.filter((m) => !COVER_MARKS.includes(m)) }) : p)) };
+  const firstMarks = firstOn ? [COVER_MARK] : [COVER_MARK, COVER_FIRST_OFF_MARK];
   const objects = { ...doc.objects };
   const runs: TextRun[] = [];
   const paras: ParaStyle[] = [];
-  design.paras(accent).forEach((cp, i) => {
+  const lines = design.paras(accent);
+  lines.forEach((cp, i) => {
     const look = rt.cleanStyle({ ...base, ...cp.look });
     if (i > 0) runs.push({ ...look, text: '\n' });
     for (const piece of cp.pieces) {
@@ -150,7 +169,8 @@ export function insertCover(t: DocText, design: CoverDesign, accent: string, bas
       objects[f.id] = f.o;
       runs.push({ ...look, obj: f.id, text: '￼' });
     }
-    paras.push({ ...cp.ps, ...(i === 0 ? { marks: [COVER_MARK] } : {}) });
+    const marks = [...(i === 0 ? firstMarks : []), ...(i === lines.length - 1 ? [COVER_END_MARK] : [])];
+    paras.push({ ...cp.ps, ...(marks.length ? { marks } : {}) });
   });
   const n = paraCount(rt.plainText(doc.runs));
   const old = fitParas(doc.paras, n);
@@ -174,9 +194,20 @@ export function coverParas(t: DocText): { first: number; end: number } | null {
   const n = paraCount(rt.plainText(t.runs));
   const paras = fitParas(t.paras, n);
   if (!paras[0]?.marks?.includes(COVER_MARK)) return null;
-  for (let i = 1; i < n; i++) if (paras[i].pageBreak || paras[i].section) return { first: 0, end: i };
-  return { first: 0, end: n };
+  // the cover ends at its last line's mark, and only while the paragraph after it starts a new
+  // page: when that break was joined away (Backspace at the start of the text after the cover),
+  // there is no telling where the cover ends, so none is taken (taking up to a later break would
+  // take the document's own text with it)
+  const last = paras.findIndex((p) => p.marks?.includes(COVER_END_MARK));
+  const starts = (i: number) => i > 0 && i < n && !!(paras[i].pageBreak || paras[i].section);
+  if (last >= 0) return starts(last + 1) ? { first: 0, end: last + 1 } : null;
+  // (a cover made before covers marked their end: its break within as many lines as a cover has)
+  for (let i = 1; i < n && i <= MOST_COVER_LINES; i++) if (starts(i)) return { first: 0, end: i };
+  return null;
 }
+
+/** The most paragraphs a cover page has. */
+const MOST_COVER_LINES = Math.max(...COVER_PAGES.map((d) => d.paras('#000000').length));
 
 /** The document without its cover page (its first page then shows its number again). */
 export function removeCover(t: DocText): DocText {
@@ -193,5 +224,6 @@ export function removeCover(t: DocText): DocText {
   });
   const rest = paras.slice(c.end);
   if (rest[0]) { const { pageBreak: _p, ...r0 } = rest[0]; rest[0] = r0; }
-  return { ...t, runs: rt.normalizeRuns(runs), paras: rest.length ? rest : [{}], hf: { ...t.hf, onFirst: true } };
+  const onFirst = !paras[0]?.marks?.includes(COVER_FIRST_OFF_MARK);
+  return { ...t, runs: rt.normalizeRuns(runs), paras: rest.length ? rest : [{}], hf: { ...t.hf, onFirst } };
 }

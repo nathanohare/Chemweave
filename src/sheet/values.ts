@@ -131,7 +131,8 @@ export function numberText(n: number): string {
   if (!Number.isFinite(n)) return '#NUM!';
   if (n === 0) return '0';
   const s = String(Number(n.toPrecision(15)));
-  return s.includes('e') ? s.replace('e+', 'E+').replace('e-', 'E-') : s;
+  // the exponent has at least two digits, as Excel writes it (1E-07, not 1E-7)
+  return s.includes('e') ? s.replace('e+', 'E+').replace('e-', 'E-').replace(/E([+-])(\d)$/, 'E$10$2') : s;
 }
 
 /** TRUE or FALSE for IF and the like. */
