@@ -7,8 +7,8 @@
 import { describe, it, expect } from 'vitest';
 import { Doc, type Arrow } from '../src/model';
 import { ACS_1996 } from '../src/style';
-import { writeMrvFile, writeCmlFile, writeChemDoodleJson, readMrv, readCmlFile } from '../src/io/chem-formats';
-import { insertDrawing, extractDrawing, looksLikeChemistry } from '../src/io/clipboard';
+import { writeMrvFile, writeCmlFile, writeChemDoodleJson, readMrv, readCmlFile, readScene } from '../src/io/chem-formats';
+import { insertDrawing, extractDrawing, looksLikeChemistry, readPasteEvent } from '../src/io/clipboard';
 import { splitSdf, uniqueName, readBatchFile } from '../src/io/batch-convert';
 import { readCml, CML_NS } from '../src/io/cml';
 import { savedPath } from '../src/io/files';
@@ -61,6 +61,15 @@ describe('Marvin, CML and ChemDoodle files (F107, F547, F548, F549)', () => {
     d.style = { ...ACS_1996 };
     d.bulk(() => { d.addCaption({ x: 0, y: 0, runs: [{ text: 'a]]>b' }], justify: 'left' }); });
     expect(readMrv(writeMrvFile(d).text)!.texts.map((t) => t.text)).toContain('a]]>b');
+  });
+
+  it('F550: a singlet radical saved as ChemDoodle JSON is said, as it opens again as a triplet', () => {
+    // BIOVIA CTfile Formats, M  RAD: 1 singlet, 2 doublet, 3 triplet
+    const d = new Doc();
+    d.style = { ...ACS_1996 };
+    d.bulk(() => { const c = d.addAtom(0, 0); const h = d.addAtom(L, 0, 1); d.addBond(c.id, h.id); d.updateAtom(c.id, { radical: 'singlet' }); });
+    const w = writeChemDoodleJson(d);
+    expect((w.notes ?? []).join(' ')).toMatch(/singlet/);
   });
 
   it('F547: a hydrogen bond written as a single bond is said', () => {
@@ -125,10 +134,26 @@ describe('paste (F108, F109, F552, F553)', () => {
     for (const id of [...m.shifts![0], ...m.slides![0].flat()]) expect(sel.atoms.has(id)).toBe(true);
   });
 
-  it('F553: a web address is not taken as a structure', () => {
-    expect(looksLikeChemistry('https://example.org/picture.png')).toBe(false);
+  it('F553: a web address, a file name or a word is not taken as a structure', () => {
+    for (const t of ['https://example.org/picture.png', 'example.com/pic.png', 'picture.png', 'Yield']) expect(looksLikeChemistry(t), t).toBe(false);
+    // OpenSMILES: organic-subset atoms, brackets, bonds, branches, ring closures
+    for (const t of ['CCO', 'Cl/C=C/Br', '[NH4+].[Cl-]', 'C1CC%10CC1']) expect(looksLikeChemistry(t), t).toBe(true);
     // SMILES still are (OpenSMILES: ring closures, aromatic atoms, charges)
     expect(looksLikeChemistry('c1ccccc1O')).toBe(true);
+  });
+
+  /** A browser paste event holding these formats. */
+  const pasteEvent = (data: Record<string, string>, files: File[] = []) => ({
+    clipboardData: { getData: (t: string) => data[t] ?? '', files, types: [...Object.keys(data), ...(files.length ? ['Files'] : [])] },
+  }) as unknown as ClipboardEvent;
+
+  it('F553: a paste of a word with a picture gives the picture; with cells, the table; SMILES stays text', async () => {
+    // (a stand-in for a File: jsdom's has no arrayBuffer)
+    const png = { type: 'image/png', arrayBuffer: async () => new Uint8Array([0x89, 0x50, 0x4e, 0x47]).buffer } as unknown as File;
+    expect((await readPasteEvent(pasteEvent({ 'text/plain': 'picture.png' }, [png]))).kind).toBe('picture');
+    const cells = '<table><tr><td>Yield</td><td>95%</td></tr></table>';
+    expect((await readPasteEvent(pasteEvent({ 'text/plain': 'Yield', 'text/html': cells }))).kind).toBe('table');
+    expect(await readPasteEvent(pasteEvent({ 'text/plain': 'CCO' }, [png]))).toEqual({ kind: 'text', text: 'CCO' });
   });
 });
 
@@ -152,18 +177,29 @@ describe('Batch Convert (F533, F534, F535)', () => {
     expect(long).toBe('a'.repeat(119) + '.png');
   });
 
-  it('F535: many equal names are numbered quickly', () => {
-    const used = new Set<string>();
-    const t0 = performance.now();
+  it('F535: many equal names are numbered without counting up from 2 each time', () => {
+    // (the names looked up are counted, not timed)
+    let looks = 0;
+    class Counted extends Set<string> { has(v: string): boolean { looks++; return super.has(v); } }
+    const used = new Counted();
     let last = '';
-    for (let i = 0; i < 20000; i++) last = uniqueName('compound', 'mol', used);
-    expect(last).toBe('compound (20000).mol');
-    expect(performance.now() - t0).toBeLessThan(1500);
+    for (let i = 0; i < 2000; i++) last = uniqueName('compound', 'mol', used);
+    expect(last).toBe('compound (2000).mol');
+    expect(looks).toBeLessThan(3 * 2000);
   });
 });
 
 describe('CML, Save dialog, fitting, tables, workspaces, plates (F554, F575, F576, F603, F604, F551)', () => {
-  it('F554: atoms with only 3D coordinates are not piled up at the origin', () => {
+  it('F554: a CML atom with no place at all is left out and counted, not put at 0, 0', () => {
+    const cml = `<cml xmlns="${CML_NS}"><molecule id="m1"><atomArray><atom id="a1" elementType="C" x2="1" y2="1"/><atom id="a2" elementType="O" x2="2.5" y2="1"/><atom id="a3" elementType="N"/></atomArray>`
+      + '<bondArray><bond atomRefs2="a1 a2" order="1"/><bond atomRefs2="a2 a3" order="1"/></bondArray></molecule></cml>';
+    const s = readScene('cml', cml)!;
+    expect(s.mols[0].atoms.map((a) => a.sym)).toEqual(['C', 'O']);
+    expect(s.mols[0].bonds).toHaveLength(1);
+    expect(s.leftOut).toBe(1);
+  });
+
+  it('F554: atoms with only 3D coordinates are not piled up at the origin (Chem4Word)', () => {
     const cml = `<cml xmlns="${CML_NS}"><molecule id="m1"><atomArray><atom id="a1" elementType="C" x2="1" y2="1"/><atom id="a2" elementType="O" x3="1" y3="2" z3="0"/></atomArray></molecule></cml>`;
     const c = readCml(cml)!;
     expect(c.atoms).toHaveLength(1);

@@ -92,6 +92,8 @@ export interface FMol {
    * collection (STEABS) had an Abs flag, beside structures without one (review F1d-R04).
    */
   absAsFlags?: boolean;
+  /** Atoms of this molecule the file gives no place, left out (review F554). */
+  leftOut?: number;
 }
 export type FArrowKind = 'synthesis' | 'retro' | 'equilibrium' | 'resonance';
 export interface FScene {
@@ -110,6 +112,8 @@ export interface FScene {
    * (every atom at 0, 0, or molecules on top of one another); then laid out afresh.
    */
   keepPlaces?: boolean;
+  /** Atoms the file gives no place (no x2/y2 nor x3/y3 in CML or Marvin), left out (review F554). */
+  leftOut?: number;
 }
 
 /** The kinds of chemistry file read here, by extension. */
@@ -580,6 +584,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
   const contracted = new Set<string>();
   const groupOf = new Map<number, string>();
   const hTotal = new Map<number, number>();
+  let placeless = 0;
   const vals = new Map<number, number>();
   const addAtoms = (owner: Element) => {
     for (const arr of kids(owner, 'atomArray')) {
@@ -588,6 +593,9 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
         ? list.map((a) => Object.fromEntries(Array.from(a.attributes).map((x) => [x.localName, x.value])))
         : arrayRows(arr);
       for (const r of rows) {
+        // (an atom with no place is left out and counted, not put at 0, 0; review F554)
+        const xs = r.x2 ?? r.x3, ys = r.y2 ?? r.y3;
+        if (xs === undefined || ys === undefined || !Number.isFinite(parseFloat(xs)) || !Number.isFinite(parseFloat(ys))) { placeless++; continue; }
         const id = r.id ?? r.atomID ?? `a${atoms.length + 1}`;
         let sym = r.elementType ?? 'C';
         let label = false;
@@ -603,7 +611,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
         if (alias && (sym === '*' || sym === 'R')) { sym = alias; label = true; }
         // D and T are hydrogen with its mass, not a label (review F1c-R02)
         if (label && (sym === 'D' || sym === 'T')) label = false;
-        const a: FAtom = { sym, x: num(r.x2 ?? r.x3), y: num(r.y2 ?? r.y3), ...(label ? { label } : {}) };
+        const a: FAtom = { sym, x: num(xs), y: num(ys), ...(label ? { label } : {}) };
         const chg = parseInt(r.formalCharge ?? '', 10), iso = parseInt(r.isotopeNumber ?? r.isotope ?? '', 10), map = parseInt(r.mrvMap ?? '', 10);
         if (chg) a.charge = chg;
         if (iso > 0) a.iso = iso;
@@ -674,7 +682,7 @@ function cmlMolecule(m: Element, mrv: boolean, byId?: Map<string, FAtom>): FMol 
     atoms[i].hCount = Math.max(0, n - drawn);
   }
   hFromValence(atoms, bonds, new Map([...vals].filter(([i]) => !hTotal.has(i))));
-  const mol: FMol = { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}) };
+  const mol: FMol = { atoms, bonds, ...(m.getAttribute('title') ? { name: m.getAttribute('title')! } : {}), ...(placeless ? { leftOut: placeless } : {}) };
   return expanded.length ? contract(mol, expanded) : mol;
 }
 
@@ -907,11 +915,17 @@ export function readScene(format: ChemFormat, text: string): FScene | null {
     case 'mol': { const m = readMolfile(text); return m ? { mols: [m], arrows: [], pluses: [], texts: [], unit: 1.5 } : null; }
     case 'sdf': { const ms = readSdfMols(text); return ms.length ? { mols: ms, arrows: [], pluses: [], texts: [], unit: 1.5 } : null; }
     case 'rxn': return readRxnFile(text);
-    case 'mrv': return readMrv(text);
+    case 'mrv': return withLeftOut(readMrv(text));
     case 'ket': return readKet(text);
-    case 'cml': return readCmlFile(text);
+    case 'cml': return withLeftOut(readCmlFile(text));
     case 'cdjson': return readChemDoodleJson(text);
   }
+}
+
+/** A scene with the atoms its molecules left out (no place in the file) counted for the whole file. */
+function withLeftOut(s: FScene | null): FScene | null {
+  const n = s ? s.mols.reduce((t, m) => t + (m.leftOut ?? 0), 0) : 0;
+  return s && n ? { ...s, leftOut: n } : s;
 }
 
 // ---------------------------------------------------------------- scene → drawing
@@ -1655,5 +1669,9 @@ export function writeChemDoodleJson(doc: Doc): WrittenChem & { leftOut: number }
     ...(scene.arrows.length ? { s: scene.arrows.map((r) => ({ t: 'Line', x1: +fx(r.x1, 3), y1: +fx(r.y1, 3), x2: +fx(r.x2, 3), y2: +fx(r.y2, 3), a: r.kind === 'retro' ? 'retrosynthetic' : r.kind === 'equilibrium' ? 'equilibrium' : r.kind === 'resonance' ? 'resonance' : 'synthetic' })) } : {}),
   };
   const maps = scene.mols.some((m) => m.atoms.some((a) => a.map));
-  return { text: JSON.stringify(j) + '\n', unknown: got.unknown, leftOut: scene.texts.length + scene.pluses.length, notes: [...(maps ? ['atom-atom map numbers left out (ChemDoodle JSON has no place for them)'] : []), ...(scene.mols.some((m) => m.bonds.some((b) => b.hbond)) ? ['hydrogen bonds written as single bonds (ChemDoodle JSON has no hydrogen bond)'] : [])] };
+  // (r counts radical electrons, 1 or 2, as the reader here takes it: a singlet's two read back as
+  // a triplet's, so that is said; review F550)
+  const singlet = scene.mols.some((m) => m.atoms.some((a) => a.rad === 1));
+  return { text: JSON.stringify(j) + '\n', unknown: got.unknown, leftOut: scene.texts.length + scene.pluses.length, notes: [...(maps ? ['atom-atom map numbers left out (ChemDoodle JSON has no place for them)'] : []),
+    ...(singlet ? ['singlet radicals written as two radical electrons (ChemDoodle JSON has no singlet; they open again as triplets)'] : []), ...(scene.mols.some((m) => m.bonds.some((b) => b.hbond)) ? ['hydrogen bonds written as single bonds (ChemDoodle JSON has no hydrogen bond)'] : [])] };
 }

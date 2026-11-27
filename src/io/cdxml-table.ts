@@ -142,13 +142,16 @@ export function linesFromBorders(b: Borders[][]): { lines: TableData['lines']; h
   // one column has no lines inside it across, so it is boxed when each cell has its sides and a
   // rule runs between every two rows (review F539)
   if (m === 1 && b.every((row) => row[0].left && row[0].right) && b.every((row, r) => r === n - 1 || row[0].bottom || b[r + 1][0].top)) return { lines: 'grid', head: n > 1 ? 1 : 0 };
-  // the first row with a rule under every cell (or over the next row's); else the first with a rule
-  // under most: a heading joined over most of the columns has a rule of its own under it, above
-  // the headings' end (review F102)
+  // the first row most of whose cells have a rule under them (or over the next row); a heading
+  // joined over most of the columns has a rule of its own under it, above the headings' end, so
+  // from there on down while the rows below are ruled the same way, to the first rule under every
+  // cell (review F102)
   const ruled = (r: number) => { let k = 0; for (let c = 0; c < m; c++) if (b[r][c].bottom || b[r + 1][c].top) k++; return k; };
-  for (let r = 0; r < n - 1; r++) if (ruled(r) === m) return { lines: 'acs', head: r + 1 };
-  for (let r = 0; r < n - 1; r++) if (ruled(r) > m / 2) return { lines: 'acs', head: r + 1 };
-  return { lines: 'acs', head: 0 };
+  let r = 0;
+  while (r < n - 1 && ruled(r) <= m / 2) r++;
+  if (r >= n - 1) return { lines: 'acs', head: 0 };
+  while (ruled(r) < m && r + 1 < n - 1 && ruled(r + 1) > m / 2) r++;
+  return { lines: 'acs', head: r + 1 };
 }
 
 /** Is there a rule under every cell of row r (or over every cell of the row below)? */

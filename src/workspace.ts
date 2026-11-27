@@ -681,7 +681,9 @@ export class Workspace {
     t.seen = this.host.version;
     if (spare) this.drop(spare);
     const parts = [`${stats.atoms} atoms`, `${stats.bonds} bonds`, ...(stats.arrows ? [`${stats.arrows} arrow${stats.arrows === 1 ? '' : 's'}`] : []), ...(stats.texts ? [`${stats.texts} text${stats.texts === 1 ? '' : 's'}`] : [])];
-    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}. Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
+    // (atoms the file gives no place are said, not drawn in a heap; review F554)
+    const lost = scene.leftOut ? ` ${scene.leftOut} atom${scene.leftOut === 1 ? '' : 's'} with no place in the file ${scene.leftOut === 1 ? 'was' : 'were'} left out.` : '';
+    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}.${lost} Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
     return true;
   }
 

@@ -37,10 +37,13 @@ export function withoutDoctype(text: string): string {
   // A scan by hand, each character looked at once: a regular expression for the internal subset
   // backtracked over the rest of the text at every unclosed "<!DOCTYPE[", so a crafted file froze
   // the app before it was refused (review F626).
-  const lower = text.toLowerCase();
+  // (found in the text itself, never in a lower-cased copy, whose length can differ: İ becomes two
+  // characters; review of batch 03)
+  const find = /<!doctype/gi;
   const parts: string[] = [];
   let from = 0;
-  for (let at = lower.indexOf('<!doctype'); at >= 0; at = lower.indexOf('<!doctype', from)) {
+  for (let m = find.exec(text); m; find.lastIndex = from, m = find.exec(text)) {
+    const at = m.index;
     parts.push(text.slice(from, at));
     let i = at + 9, inSubset = false, end = -1;
     while (i < text.length) {
@@ -55,6 +58,7 @@ export function withoutDoctype(text: string): string {
     if (end < 0) throw refuse();
     from = end + 1;
   }
+  if (!from) { if (/<!ENTITY/i.test(text)) throw refuse(); return text; }
   parts.push(text.slice(from));
   const out = parts.join('');
   if (/<!(?:DOCTYPE|ENTITY)/i.test(out)) throw refuse();

@@ -79,12 +79,20 @@ const pts = (v: string | null): number[] => (v ? v.trim().split(/\s+/).map(Numbe
 export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: Map<string, { kind: RefKind; id: number }> } {
   const t0 = performance.now();
   // ChemDraw writes a DOCTYPE pointing at a web address; drop it so nothing is fetched.
-  const xml = new DOMParser().parseFromString(withoutDoctype(text), 'application/xml');
+  const parse = (t: string) => new DOMParser().parseFromString(withoutDoctype(t), 'application/xml');
+  const failed = (x: Document) => x.getElementsByTagName('parsererror').length > 0;
+  let xml = parse(text);
+  // (a file that isn't well-formed XML, one cut off by a failed copy: Chromium keeps the part read
+  // before the error with a <parsererror> in it, which would open as part of the drawing; review
+  // F106. Bytes after the drawing's end (an embedded object's stream padded with NULs) are left off.)
+  if (failed(xml)) {
+    const end = text.lastIndexOf('</CDXML>');
+    const whole = end >= 0 && end + 8 < text.length ? parse(text.slice(0, end + 8)) : null;
+    if (whole && !failed(whole)) xml = whole;
+    else throw new Error(text.includes('<CDXML') ? "This CDXML file is damaged and can't be read." : 'This does not look like a CDXML file.');
+  }
   const t1 = performance.now();
   const root = xml.documentElement;
-  // (a file that isn't well-formed XML, one cut off by a failed copy: Chromium keeps the part read
-  // before the error with a <parsererror> in it, which would open as part of the drawing; review F106)
-  if (xml.getElementsByTagName('parsererror').length) throw new Error(text.includes('<CDXML') ? "This CDXML file is damaged and can't be read." : 'This does not look like a CDXML file.');
   if (!root || root.nodeName !== 'CDXML') throw new Error('This does not look like a CDXML file.');
   decodeTags(root);
   hoistOwnTags(root);

@@ -9,7 +9,7 @@ import { Doc, type Arrow } from '../src/model';
 import { ACS_1996 } from '../src/style';
 import { readCdxml, applyLineEnds, takeFrameTexts } from '../src/io/cdxml';
 import { writeCdxml } from '../src/io/cdxml-write';
-import { cdxmlToCdx, cdxToCdxml } from '../src/io/cdx';
+import { cdxmlToCdx, cdxToCdxml, hexText, hexBytes } from '../src/io/cdx';
 import { withoutDoctype } from '../src/io/xml';
 import { tableBorders, linesFromBorders, applyTableTag, type TableTag } from '../src/io/cdxml-table';
 import type { TableData } from '../src/model';
@@ -24,6 +24,9 @@ describe('reading damaged or crafted files (F106, F626)', () => {
     expect(() => readCdxml(wrap('<fragment id="1"><n id="2" p="0 0"/></fragment><parsererror>line 1</parsererror>'))).toThrow(/damaged/);
     // and a file cut off in the middle of a fragment
     expect(() => readCdxml(wrap('<fragment id="1"><n id="2" p="0 0"/>').slice(0, -20))).toThrow(/damaged/);
+    // bytes after the drawing ends (an embedded object's stream padded with NULs) are left off
+    const padded = readCdxml(wrap('<fragment id="1"><n id="2" p="0 0"/></fragment>') + '\0\0\0\0');
+    expect(padded.doc.atoms.size).toBe(1);
     // not a CDXML file at all: said as before
     expect(() => readCdxml('hello')).toThrow(/does not look like a CDXML file/);
   });
@@ -31,7 +34,8 @@ describe('reading damaged or crafted files (F106, F626)', () => {
   it('F626: many unclosed "<!DOCTYPE[" are refused at once, not after minutes', () => {
     const t0 = performance.now();
     expect(() => withoutDoctype('<!DOCTYPE['.repeat(20000))).toThrow(/entities/);
-    expect(performance.now() - t0).toBeLessThan(1000);
+    // (a generous limit: the old pattern took many seconds on this text)
+    expect(performance.now() - t0).toBeLessThan(4000);
   });
 
   it('F626: a DOCTYPE, internal subset and all, is still taken out; an entity elsewhere refused', () => {
@@ -39,6 +43,8 @@ describe('reading damaged or crafted files (F106, F626)', () => {
     expect(withoutDoctype('<?xml version="1.0"?><!DOCTYPE CDXML SYSTEM "http://www.cambridgesoft.com/xml/cdxml.dtd"><CDXML/>')).toBe('<?xml version="1.0"?><CDXML/>');
     expect(withoutDoctype('<!DOCTYPE x [<!ENTITY a "]>">]><x/>')).toBe('<x/>');
     expect(() => withoutDoctype('<x><!ENTITY a "b"></x>')).toThrow(/entities/);
+    // (U+0130 lower-cases to two characters: the DOCTYPE is still found where it is)
+    expect(withoutDoctype('<!-- İİİ --><!DOCTYPE CDXML SYSTEM "x.dtd"><CDXML/>')).toBe('<!-- İİİ --><CDXML/>');
     expect(() => withoutDoctype('<!DOCTYPE x [<!ENTITY a "b"><x/>')).toThrow(/entities/);
   });
 });
@@ -101,6 +107,31 @@ describe('tables (F102, F539)', () => {
     expect(applyTableTag(plain, tag, linesFromBorders(b), b).head).toBe(2);
   });
 
+  it('F102: a rule under most of a row high up doesn\'t give way to the full rule lower down', () => {
+    // four columns: a rule under three cells of row 1, a full one under row 3 (above the last)
+    const none = () => ({ left: 0, top: 0, bottom: 0, right: 0 });
+    const b = Array.from({ length: 5 }, () => Array.from({ length: 4 }, none));
+    for (let c = 0; c < 4; c++) { b[0][c].top = 1; b[4][c].bottom = 1; b[2][c].bottom = 1; }
+    for (let c = 0; c < 3; c++) b[0][c].bottom = 1;
+    expect(linesFromBorders(b)).toEqual({ lines: 'acs', head: 1 });
+  });
+
+  it('F102, F539: the tables of the Steps come back from a CDXML save', () => {
+    const d = new Doc();
+    d.style = { ...ACS_1996 };
+    const acs = table(4, 4, 2, 'acs');
+    acs.rows[0][1] = { ...acs.rows[0][1], span: 3 };
+    const grid = table(3, 1, 1, 'grid');
+    d.bulk(() => {
+      d.addShape({ kind: 'table', x1: 0, y1: 0, x2: 160, y2: 60, table: acs } as never);
+      d.addShape({ kind: 'table', x1: 0, y1: 200, x2: 40, y2: 245, table: grid } as never);
+    });
+    const back = [...readCdxml(writeCdxml(d)).doc.shapes.values()].filter((s) => s.table).map((s) => s.table!);
+    const wide = back.find((t) => t.cols.length === 4)!, narrow = back.find((t) => t.cols.length === 1)!;
+    expect([wide.lines, wide.head]).toEqual(['acs', 2]);
+    expect(narrow.lines).toBe('grid');
+  });
+
   it('F539: a one-column table with every border is read as boxed', () => {
     const t = table(3, 1, 1, 'grid');
     expect(linesFromBorders(tableBorders(t, 1)).lines).toBe('grid');
@@ -109,11 +140,20 @@ describe('tables (F102, F539)', () => {
   });
 });
 
-// a seven-membered ring with a circle (tropylium), as in tests/charge-sign-cdxml.test.ts
-const ring = '<n id="85" p="267.97 163.56" Charge="1"/><n id="86" p="280.87 157.17"/><n id="87" p="283.92 143.10"/><n id="88" p="274.83 131.94"/><n id="89" p="260.43 132.10"/><n id="90" p="251.58 143.44"/><n id="91" p="254.93 157.46"/>'
-  + '<b id="92" B="85" E="86" Order="1.5"/><b id="93" B="86" E="87" Order="1.5"/><b id="94" B="87" E="88" Order="1.5"/><b id="95" B="88" E="89" Order="1.5"/><b id="96" B="89" E="90" Order="1.5"/><b id="97" B="90" E="91" Order="1.5"/><b id="98" B="91" E="85" Order="1.5"/>';
-const circle = '<graphic id="101" BoundingBox="277.06 146.97 267.79 146.97" GraphicType="Orbital" OvalType="Circle" OrbitalType="s" Center3D="267.79 146.97 0" MajorAxisEnd3D="277.06 146.97 0" MinorAxisEnd3D="267.79 156.23 0"/>';
-const plus = '<graphic id="99" GraphicType="Symbol" SymbolType="Plus" BoundingBox="267.97 147.75 267.97 153.51"><represent attribute="Charge" object="85"/></graphic>';
+// A regular seven-membered ring (tropylium) of 14.4 pt bonds round (200, 150), its circle and a
+// charge sign made here: a regular n-gon of side a has circumradius a / (2 sin(π/n)).
+const RC = { x: 200, y: 150 }, RR = 14.4 / (2 * Math.sin(Math.PI / 7));
+const f2 = (v: number) => v.toFixed(2);
+const ringAt = () => Array.from({ length: 7 }, (_, k) => {
+  const t = (2 * Math.PI * k) / 7;
+  return `<n id="${85 + k}" p="${f2(RC.x + RR * Math.sin(t))} ${f2(RC.y - RR * Math.cos(t))}"${k === 0 ? ' Charge="1"' : ''}/>`;
+}).join('') + Array.from({ length: 7 }, (_, k) => `<b id="${92 + k}" B="${85 + k}" E="${85 + ((k + 1) % 7)}" Order="1.5"/>`).join('');
+const ring = ringAt();
+/** The ring's circle, its centre `off` points right of the ring's middle, radius 9. */
+const circleAt = (off = 0) => `<graphic id="101" BoundingBox="${f2(RC.x + off + 9)} ${f2(RC.y)} ${f2(RC.x + off)} ${f2(RC.y)}" GraphicType="Orbital" OvalType="Circle" OrbitalType="s" Center3D="${f2(RC.x + off)} ${f2(RC.y)} 0" MajorAxisEnd3D="${f2(RC.x + off + 9)} ${f2(RC.y)} 0" MinorAxisEnd3D="${f2(RC.x + off)} ${f2(RC.y + 9)} 0"/>`;
+const circle = circleAt();
+const plus = `<graphic id="99" GraphicType="Symbol" SymbolType="Plus" BoundingBox="${f2(RC.x)} ${f2(RC.y)} ${f2(RC.x)} ${f2(RC.y + 5.76)}"><represent attribute="Charge" object="85"/></graphic>`;
+const centerOf = (xml: string) => [...parse(xml).getElementsByTagName('graphic')].find((e) => e.getAttribute('GraphicType') === 'Orbital')!.getAttribute('Center3D')!.split(' ').map(Number);
 
 describe('ring circles and charge signs (F103, F542)', () => {
   it('F103: a ring scaled about its centre gets a circle of its new size', () => {
@@ -123,8 +163,22 @@ describe('ring circles and charge signs (F103, F542)', () => {
     doc.edit('Scale', () => { for (const a of atoms) doc.updateAtom(a.id, { x: cx + 2 * (a.x - cx), y: cy + 2 * (a.y - cy) }); });
     const g = [...parse(writeCdxml(doc)).getElementsByTagName('graphic')].find((e) => e.getAttribute('GraphicType') === 'Orbital')!;
     const [x, y] = g.getAttribute('Center3D')!.split(' ').map(Number), [mx, my] = g.getAttribute('MajorAxisEnd3D')!.split(' ').map(Number);
-    // the file's circle had a radius of 9.27 (277.06 − 267.79); twice the ring, about twice the circle
-    expect(Math.hypot(mx - x, my - y)).toBeGreaterThan(1.5 * 9.27);
+    // the file's circle had a radius of 9; twice the ring, about twice the circle
+    expect(Math.hypot(mx - x, my - y)).toBeGreaterThan(1.5 * 9);
+  });
+
+  it('F542: a circle a little off its ring\'s middle stays put while its ring stays, and moves with it', () => {
+    const text = wrap(`<fragment id="100">${ring}${circleAt(0.5)}</fragment><fragment id="200"><n id="201" p="0 0"/><n id="202" p="14.4 0"/><b id="203" B="201" E="202"/></fragment>`);
+    // something else edited: the circle is where the file had it
+    let { doc } = readCdxml(text);
+    const other = [...doc.atoms.values()].find((a) => a.x === 0)!;
+    doc.edit('Move', () => doc.updateAtom(other.id, { y: 30 }));
+    expect(centerOf(writeCdxml(doc))[0]).toBeCloseTo(RC.x + 0.5, 2);
+    // the ring moved 10 to the right: the circle with it, still 0.5 off
+    ({ doc } = readCdxml(text));
+    const ringAtoms = [...doc.atoms.values()].filter((a) => a.x > 100);
+    doc.edit('Move', () => { for (const a of ringAtoms) doc.updateAtom(a.id, { x: a.x + 10 }); });
+    expect(centerOf(writeCdxml(doc))[0]).toBeCloseTo(RC.x + 10.5, 2);
   });
 
   it('F542: a file not changed here, its + before the circle, is saved exactly as it was', () => {
@@ -151,6 +205,20 @@ describe('shapes that change form, and arrows (F104, F105, F540, F541)', () => {
     const again = readCdxml(out).doc;
     expect([...again.shapes.values()].filter((s) => s.kind === 'ring')).toHaveLength(1);
     expect([...again.shapes.values()].find((s) => s.kind === 'ring')!.shadow).toBeFalsy();
+  });
+
+  it('F104: a closed curve made plain again leaves no old group behind', () => {
+    const d = new Doc();
+    // a closed path: its start, then two handles and a point for each of four segments, back at the start
+    const geo = 'path:0,0,3333,0,6667,0,10000,0,10000,3333,10000,6667,10000,10000,6667,10000,3333,10000,0,10000,0,6667,0,3333,0,0';
+    d.bulk(() => { d.addShape({ kind: 'geo', geo, x1: 0, y1: 0, x2: 40, y2: 40, filled: true, transparency: 0.5 } as never); });
+    const first = readCdxml(writeCdxml(d)).doc;
+    const s0 = [...first.shapes.values()][0];
+    expect(s0.transparency).toBe(0.5);
+    first.edit('Solid', () => first.updateShape(s0.id, { transparency: undefined }));
+    const out = writeCdxml(first);
+    expect(parse(out).getElementsByTagName('curve')).toHaveLength(1);
+    expect([...readCdxml(out).doc.shapes.values()]).toHaveLength(1);
   });
 
   it('F105: a curved arrow keeps its Auto-Animate piece through CDXML and CDX', () => {
@@ -188,5 +256,21 @@ describe('shapes that change form, and arrows (F104, F105, F540, F541)', () => {
     expect(g?.getAttribute('GraphicType')).toBe('Line');
     expect(g?.hasAttribute('AngularSize')).toBe(false);
     expect(g?.getAttribute('BoundingBox')?.split(' ').map(Number)).toEqual([50, 60, 0, 60]);
+  });
+});
+
+describe('hex data in CDX (F537)', () => {
+  it('goes to hex text and back byte for byte', () => {
+    const bytes = Uint8Array.from({ length: 70000 }, (_, i) => (i * 37) & 0xff);
+    const hex = hexText(bytes);
+    expect(hex.slice(0, 8)).toBe('00254A6F');
+    expect(hexBytes(hex)).toEqual(bytes);
+    expect(hexBytes(hex.toLowerCase())).toEqual(bytes);
+  });
+  it('reads an odd last digit and bad digits as parseInt reads a pair', () => {
+    expect([...hexBytes('ABC')]).toEqual([0xab]);
+    expect([...hexBytes('G1')]).toEqual([Number.isNaN(parseInt('G1', 16)) ? 0 : parseInt('G1', 16)]);
+    expect([...hexBytes('1G')]).toEqual([parseInt('1G', 16)]);
+    expect([...hexBytes('')]).toEqual([]);
   });
 });

@@ -828,11 +828,27 @@ export type Pasted =
   | { kind: 'table'; rows: PastedRows }
   | { kind: 'nothing' };
 
+/**
+ * One word made only of what a SMILES string is made of (OpenSMILES: the organic-subset atoms B C
+ * N O P S F Cl Br I, aromatic b c n o p s, * , atoms in brackets, bonds, branches, ring closures
+ * and dots), with an atom in it: "Yield", "picture.png" or a web address isn't one (review F553).
+ */
+function smilesShaped(t: string): boolean {
+  const part = /Cl|Br|[BCNOPSFIbcnops*]|\[[^[\]]*\]|%\d\d|[\d\-=#$:/\\.~()@+]/y;
+  let atom = false;
+  part.lastIndex = 0;
+  while (part.lastIndex < t.length) {
+    const m = part.exec(t);
+    if (!m) return false;
+    if (/^(?:Cl|Br|[A-Za-z*]|\[)/.test(m[0])) atom = true;
+  }
+  return atom;
+}
+
 /** Text that could be a structure (a molfile, one word that could be SMILES, or a CXSMILES with its |…| extras). */
 export function looksLikeChemistry(text: string): boolean {
   const t = text.trim();
-  // (a web address is never a structure: SMILES has no "://", so a picture copied with its address beside it stays a picture; review F553)
-  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && !t.includes('://') && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
+  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && smilesShaped(t));
 }
 
 /** A Windows bitmap from the clipboard (no file header) as a .bmp file a web page can show. */
@@ -891,11 +907,13 @@ export async function readNativeClipboard(): Promise<Pasted> {
   if (inside) return { kind: 'drawing', doc: inside };
   const t = await nativeFirst(['CF_UNICODETEXT']);
   const text = t ? new TextDecoder().decode(t[1]).replace(/\0+$/, '') : '';
-  if (looksLikeChemistry(text)) return fromText(text);
-  // cells from Excel, Word or a sheet here make a table (Excel also puts a picture of them on the clipboard)
+  // a table copied here, then cells from Excel, Word or a sheet here, before a word that could be
+  // SMILES: a one-cell table's word is the table's (review F553); Excel also puts a picture of them on the clipboard
+  if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   const html = await nativeFirst(['HTML Format']);
   const table = pastedTable(html ? fromCfHtml(html[1]) : null, text);
   if (table) return { kind: 'table', rows: table };
+  if (looksLikeChemistry(text)) return fromText(text);
   // a metafile with lines and text (a spectrum or chart from MestReNova or Excel) stays sharp, so it
   // beats a PNG of the same thing; a metafile that only wraps a photo, or can't be shown, does not
   if (emf && (emfToSvg(emf[1])?.vectors ?? 0) > 0) return { kind: 'picture', mime: 'image/x-emf', bytes: emf[1] };
@@ -934,9 +952,10 @@ export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
   if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
   // (a table copied here first: one cell's word would otherwise pass for a structure; review F553)
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
-  if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
+  if (looksLikeCdxml(text)) return fromText(text);
   const table = pastedTable(e.clipboardData?.getData('text/html'), text);
   if (table) return { kind: 'table', rows: table };
+  if (looksLikeChemistry(text)) return fromText(text);
   const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
   if (file) return picturePasted(new Uint8Array(await file.arrayBuffer()), file.type);
   if (text.trim()) return fromText(text, e.clipboardData?.getData('text/html'));

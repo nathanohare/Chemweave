@@ -463,7 +463,7 @@ const HEX_DIGIT = (() => {
   for (let i = 0; i < 6; i++) { t[65 + i] = 10 + i; t[97 + i] = 10 + i; }
   return t;
 })();
-function hexText(d: Uint8Array): string {
+export function hexText(d: Uint8Array): string {
   const parts: string[] = [];
   for (let i = 0; i < d.length; i += 8192) {
     let s = '';
@@ -473,7 +473,7 @@ function hexText(d: Uint8Array): string {
   return parts.join('');
 }
 /** Bytes from hex text, two digits each, as parseInt reads a pair (a bad first digit gives 0, a bad second the first alone). */
-function hexBytes(v: string): Uint8Array {
+export function hexBytes(v: string): Uint8Array {
   const out = new Uint8Array(v.length >> 1);
   const digit = (c: number) => (c < 128 ? HEX_DIGIT[c] : -1);
   for (let i = 0; i < out.length; i++) {

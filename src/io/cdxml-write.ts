@@ -1350,20 +1350,24 @@ class CdxmlWriter {
         const ax = ellipse ? ellipseAxes(ellipse) : { major: { x: r, y: 0 }, minor: { x: 0, y: r } };
         const frag = this.fragOfAtom.get(ring[0]);
         if (!frag) continue;
-        const old = [...have].find((g) => g.parentNode === frag && (([x, y]) => Math.hypot(x - c.x, y - c.y) < 0.3 * L)(pts(g.getAttribute('Center3D'))));
+        // the ring as it was read, where it was (to find its circle where it was, and to tell what changed)
+        const wasAtoms = ring.map((id) => this.orig<Atom>('a', id));
+        const was = wasAtoms.every(Boolean) ? circleIn(wasAtoms as Atom[]) : null;
+        const at = was?.center ?? c;
+        const old = [...have].find((g) => g.parentNode === frag && (([x, y]) => Math.hypot(x - at.x, y - at.y) < 0.3 * L)(pts(g.getAttribute('Center3D'))));
         if (old) {
           have.delete(old);
           const [x, y] = pts(old.getAttribute('Center3D'));
           const [mx, my] = pts(old.getAttribute('MajorAxisEnd3D')), [nx, ny] = pts(old.getAttribute('MinorAxisEnd3D'));
-          const near = (p: Vec, q: Vec) => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.y - q.y) < 0.01;
           // the ring's size or shape changed (scaled, or flattened into perspective): the circle is
           // drawn again at the size it has now (moved only, it keeps the size ChemDraw gave it). Told
           // from the ring as read where it was read, else from the circle's own axes (review F103)
-          const wasAtoms = ring.map((id) => this.orig<Atom>('a', id));
-          const was = wasAtoms.every(Boolean) ? circleIn(wasAtoms as Atom[]) : null;
           const wasAx = was && (was.ellipse ? ellipseAxes(was.ellipse) : { major: { x: was.radius, y: 0 }, minor: { x: 0, y: was.radius } });
           const len = (v: Vec) => Math.hypot(v.x, v.y);
-          const resized = wasAx ? !near(wasAx.major, ax.major) || !near(wasAx.minor, ax.minor)
+          // (the axes' lengths, and their direction for a real ellipse: a circle's axes may point anywhere)
+          const turned = (p: Vec, q: Vec) => Math.abs(p.x * q.y - p.y * q.x) > 0.01 * len(p) * len(q);
+          const resized = wasAx ? Math.abs(len(wasAx.major) - len(ax.major)) > 0.01 || Math.abs(len(wasAx.minor) - len(ax.minor)) > 0.01
+              || (len(ax.major) - len(ax.minor) > 0.01 && turned(wasAx.major, ax.major))
             : !Number.isFinite(mx) || !Number.isFinite(nx) || Math.abs(Math.hypot(mx - x, my - y) - len(ax.major)) > 0.01 || Math.abs(Math.hypot(nx - x, ny - y) - len(ax.minor)) > 0.01;
           if (resized) {
             old.setAttribute('Center3D', `${f2(c.x)} ${f2(c.y)} 0`);
@@ -1373,12 +1377,16 @@ class CdxmlWriter {
             this.changed = true;
             continue;
           }
-          if (Math.abs(x - c.x) < 0.01 && Math.abs(y - c.y) < 0.01) continue;
-          const dx = c.x - x, dy = c.y - y;
-          old.setAttribute('Center3D', `${f2(c.x)} ${f2(c.y)} 0`);
+          // moved with its ring by as much as the ring moved since it was read (a ring not moved
+          // keeps its circle where ChemDraw put it, even a little off the ring's middle; review
+          // of batch 03, F542); without the ring as read, to the ring's middle
+          const d = was ? { x: c.x - was.center.x, y: c.y - was.center.y } : { x: c.x - x, y: c.y - y };
+          if (Math.abs(d.x) < 0.01 && Math.abs(d.y) < 0.01) continue;
+          const dx = d.x, dy = d.y, nc = { x: x + dx, y: y + dy };
+          old.setAttribute('Center3D', `${f2(nc.x)} ${f2(nc.y)} 0`);
           if (Number.isFinite(mx)) old.setAttribute('MajorAxisEnd3D', `${f2(mx + dx)} ${f2(my + dy)} 0`);
           if (Number.isFinite(nx)) old.setAttribute('MinorAxisEnd3D', `${f2(nx + dx)} ${f2(ny + dy)} 0`);
-          old.setAttribute('BoundingBox', `${f2((Number.isFinite(mx) ? mx : x + r) + dx)} ${f2(c.y)} ${f2(c.x)} ${f2(c.y)}`);
+          old.setAttribute('BoundingBox', `${f2((Number.isFinite(mx) ? mx : x + r) + dx)} ${f2(nc.y)} ${f2(nc.x)} ${f2(nc.y)}`);
         } else {
           // as ChemDraw writes it: an s orbital drawn as a plain circle, its box from the rim to the centre
           frag.appendChild(this.el('graphic', {
