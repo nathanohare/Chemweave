@@ -12,6 +12,9 @@ import { DocBuilder, fromCp1252, headingId, styleIdOf, toCp1252 } from './doc-bu
 import type { Contents } from '../model';
 import type { DocStyle } from '../style';
 import { maxOf } from './min-max';
+import { coveringCell } from '../table';
+import { listMarkers } from '../text/paragraphs';
+import { dataUrl, fromDataUrl } from '../render/images';
 
 const TWIP = 20;
 const twip = (pt: number) => Math.round(pt * TWIP);
@@ -35,14 +38,43 @@ interface ParaState {
 /** Destinations whose text isn't the document's. */
 const SKIP = new Set(['info', 'header', 'footer', 'headerl', 'headerr', 'headerf', 'footerl', 'footerr', 'footerf', 'xmlnstbl', 'listtable', 'listoverridetable', 'rsidtbl', 'generator', 'themedata', 'colorschememapping', 'latentstyles', 'datastore', 'mmathPr', 'pgdsctbl', 'revtbl', 'filetbl', 'object', 'shp', 'shpinst', 'nonshppict', 'bkmkstart', 'bkmkend', 'annotation', 'atnid', 'atnauthor', 'pntext', 'pntxta', 'pntxtb', 'listtext', 'wgrffmtfilter', 'docvar', 'userprops', 'fchars', 'lchars', 'falt', 'panose', 'template', 'operator']);
 
+/** The Windows code page of each font character set (\\fcharsetN, RTF 1.9.1's font table). */
+const CHARSET_CP: Record<number, number> = {
+  0: 1252, 128: 932, 129: 949, 130: 1361, 134: 936, 136: 950, 161: 1253, 162: 1254, 163: 1258, 177: 1255, 178: 1256, 186: 1257, 204: 1251, 222: 874, 238: 1250, 77: 10000,
+};
+
+/** TextDecoder's names (the WHATWG Encoding Standard) for the code pages RTF names with \\ansicpgN. */
+function cpLabel(cp: number): string | null {
+  if (cp >= 1250 && cp <= 1258) return `windows-${cp}`;
+  return ({ 874: 'windows-874', 932: 'shift_jis', 936: 'gbk', 949: 'euc-kr', 950: 'big5', 10000: 'macintosh', 20866: 'koi8-r', 28591: 'iso-8859-1', 28592: 'iso-8859-2', 28595: 'iso-8859-5' } as Record<number, string>)[cp] ?? null;
+}
+
+const decoders = new Map<number, TextDecoder | null>();
+/** Bytes in a code page as text (cp1252 when the code page is one the browser can't decode). */
+export function fromCodePage(bytes: number[], cp: number): string {
+  if (cp !== 1252) {
+    if (!decoders.has(cp)) {
+      const label = cpLabel(cp);
+      let d: TextDecoder | null = null;
+      try { d = label ? new TextDecoder(label) : null; } catch { d = null; }
+      decoders.set(cp, d);
+    }
+    const d = decoders.get(cp);
+    if (d) return d.decode(new Uint8Array(bytes));
+  }
+  return bytes.map(fromCp1252).join('');
+}
+
 const SYMBOLS: Record<string, string> = {
   emdash: '—', endash: '–', bullet: '•', lquote: '‘', rquote: '’', ldblquote: '“', rdblquote: '”', emspace: '\u2003', enspace: '\u2002', qmspace: '\u2005', '~': '\u00a0', '-': '', _: '‑', zwj: '\u200d', zwnj: '\u200c',
 };
 
 /** Open an RTF file as a document. */
 export function readRtf(bytes: Uint8Array): { doc: DocText; warnings: string[] } {
+  // one character per byte, a block at a time (not one string append per byte)
   let src = '';
-  for (let i = 0; i < bytes.length; i++) src += String.fromCharCode(bytes[i]);
+  const CH = 0x8000;
+  for (let i = 0; i < bytes.length; i += CH) src += String.fromCharCode(...bytes.subarray(i, i + CH));
   if (!/^\s*\{\\rtf/.test(src)) throw new Error('Not an RTF file');
   return new RtfReader(src).read();
 }
@@ -54,6 +86,14 @@ class RtfReader {
   private b = new DocBuilder();
   private warnings = new Set<string>();
   private fonts = new Map<number, string>();
+  /** Each font's code page, from its character set (\fcharset). */
+  private fontCp = new Map<number, number>();
+  /** The file's code page for \'hh characters (\ansicpg; Windows-1252 when it says none). */
+  private cp = 1252;
+  /** The paragraph being read began after a line break (\line): a soft line of the one before. */
+  private soft = false;
+  /** A section break (\sect) was just read: its kind (\sbknone, no new page) may follow. */
+  private sectJust = false;
   private colors: (string | undefined)[] = [];
   private styles = new Map<number, string>();
   private st: CharState = { uc: 1, dest: 'text' };
@@ -68,7 +108,7 @@ class RtfReader {
   private styleNum = 0;
   private pict: { hex: string; type?: string; w?: number; h?: number; goalW?: number; goalH?: number; scaleX?: number; scaleY?: number } | null = null;
   /** A footnote being read: its runs, kept apart from the text. */
-  private note: { runs: TextRun[]; depth: number; end: boolean; ps: ParaState } | null = null;
+  private note: { runs: TextRun[]; depth: number; end: boolean; ps: ParaState; soft: boolean } | null = null;
   private field: { inst: string; depth: number } | null = null;
   // a table being read: rows of cells, and the cells' right edges
   private row: TableCell[] = [];
@@ -134,9 +174,13 @@ class RtfReader {
     if (!/[a-zA-Z]/.test(c)) {
       this.i++;
       if (c === '\'') {
-        const hex = s.slice(this.i, this.i + 2);
+        // a run of \'hh bytes together, as a character of a double-byte code page can take two
+        const bytes = [parseInt(s.slice(this.i, this.i + 2), 16)];
         this.i += 2;
-        this.chars(fromCp1252(parseInt(hex, 16)));
+        while (s.startsWith('\\\'', this.i)) { bytes.push(parseInt(s.slice(this.i + 2, this.i + 4), 16)); this.i += 4; }
+        // the text's code page is its font's character set's, else the file's
+        const cp = this.st.dest === 'text' ? this.fontCp.get(this.st.font ?? this.defaultFont) ?? this.cp : this.cp;
+        this.chars(fromCodePage(bytes.map((b) => (Number.isNaN(b) ? 0x3f : b)), cp));
       } else if (c === '\\' || c === '{' || c === '}') this.chars(c);
       else if (c === '\n' || c === '\r') this.par();
       else if (SYMBOLS[c] !== undefined) this.chars(SYMBOLS[c]);
@@ -165,6 +209,7 @@ class RtfReader {
     if (d === 'pict') { if (this.pict) this.pict.hex += t.replace(/[^0-9a-fA-F]/g, ''); return; }
     if (d === 'fldinst') { if (this.field) this.field.inst += t; return; }
     if (this.st.hidden) return;
+    this.sectJust = false;
     const look = this.look();
     if (this.note) { this.note.runs.push({ ...look, text: t }); return; }
     if (this.ps.intbl) { this.cell.runs.push({ ...look, text: t }); return; }
@@ -188,15 +233,18 @@ class RtfReader {
     return {
       ...(style ? { style } : {}), align: p.align, spaceBefore: p.spaceBefore, spaceAfter: p.spaceAfter, indent: p.indent, firstLine: p.firstLine, indentRight: p.indentRight,
       line: p.line, linePt: p.linePt, lineRule: p.lineRule, keepNext: p.keepNext, list: p.list, pageBreak: p.pageBreak,
+      ...(this.soft ? { soft: true } : {}),
     };
   }
 
-  private par(): void {
+  /** End the paragraph (\par); `soft` when it ends at a line break (\line), so the next one is its next line. */
+  private par(soft = false): void {
     if (this.st.dest !== 'text') return;
     if (this.note) { this.note.runs.push({ ...this.look(), text: '\n' }); return; }
-    if (this.ps.intbl) { this.cell.runs.push({ ...this.look(), text: '\n' }); this.cell.paras.push(this.paraStyle()); return; }
+    if (this.ps.intbl) { this.cell.runs.push({ ...this.look(), text: '\n' }); this.cell.paras.push(this.paraStyle()); this.soft = soft; return; }
     this.flushTable();
     this.b.endPara(this.paraStyle());
+    this.soft = soft;
   }
 
   private word(w: string, n: number | null): void {
@@ -219,11 +267,15 @@ class RtfReader {
       case 'fldrslt': st.dest = 'text'; return;
       case 'footnote': {
         // the note's text, kept apart; its mark (\chftn) is already in the text
-        this.note = { runs: [], depth: this.stack.length, end: false, ps: { ...this.ps } };
+        this.note = { runs: [], depth: this.stack.length, end: false, ps: { ...this.ps }, soft: this.soft };
         st.dest = 'text';
         return;
       }
+      // an endnote, which RTF writes as a footnote marked \ftnalt
+      case 'ftnalt': if (this.note) this.note.end = true; return;
       case 'deff': this.defaultFont = n ?? 0; return;
+      case 'ansicpg': this.cp = n ?? 1252; return;
+      case 'fcharset': if (st.dest === 'fonttbl' && n !== null && CHARSET_CP[n]) this.fontCp.set(this.fontNum, CHARSET_CP[n]); return;
       case 'f':
         if (st.dest === 'fonttbl') { if (this.name) this.endFont(); this.fontNum = n ?? 0; } else st.font = n ?? 0;
         return;
@@ -256,9 +308,14 @@ class RtfReader {
         return;
       }
       case 'par': this.par(); return;
-      case 'line': this.chars('\n'); return;
+      case 'line': this.par(true); return;
       case 'tab': this.chars('\t'); return;
       case 'page': if (st.dest === 'text') { if (this.b.hasText) this.par(); this.b.pendingBreak = true; } return;
+      // a section break ends its paragraph, and starts a new page unless the section says not (\sbknone)
+      case 'sect':
+        if (st.dest === 'text' && !this.note && !this.ps.intbl) { if (this.b.hasText) this.par(); this.flushTable(); this.b.pendingBreak = true; this.sectJust = true; }
+        return;
+      case 'sbknone': if (this.sectJust) this.b.pendingBreak = false; return;
       case 'pard': this.ps = { intbl: undefined }; return;
       case 'ql': this.ps.align = undefined; return;
       case 'qc': this.ps.align = 'center'; return;
@@ -340,11 +397,7 @@ class RtfReader {
     this.pict = null;
     if (!p) return;
     if (p.type !== 'image/png' && p.type !== 'image/jpeg') { this.warnings.add('Pictures in RTF\'s older picture formats (metafiles, bitmaps) were left out.'); return; }
-    const bytes = new Uint8Array(p.hex.length >> 1);
-    for (let k = 0; k < bytes.length; k++) bytes[k] = parseInt(p.hex.substr(k * 2, 2), 16);
-    let bin = '';
-    for (let k = 0; k < bytes.length; k++) bin += String.fromCharCode(bytes[k]);
-    const src = `data:${p.type};base64,${btoa(bin)}`;
+    const src = dataUrl(hexBytes(p.hex), p.type);
     const w = (p.goalW ?? (p.w ?? 100) * 0.75) * (p.scaleX ?? 1), h = (p.goalH ?? (p.h ?? 100) * 0.75) * (p.scaleY ?? 1);
     const o: DocObject = { kind: 'picture', src, w: Math.round(w * 100) / 100, h: Math.round(h * 100) / 100, ...(p.w && p.h ? { px: { w: p.w, h: p.h } } : {}) };
     const look = this.look();
@@ -359,6 +412,7 @@ class RtfReader {
     this.note = null;
     // the text's paragraph goes on as it was before the note
     this.ps = n.ps;
+    this.soft = n.soft;
     // the note's own mark at its start is shown by the note, not typed in it
     let runs = rt.normalizeRuns(n.runs);
     let text = rt.plainText(runs);
@@ -366,7 +420,7 @@ class RtfReader {
     runs = rt.sliceRuns(runs, lead, text.length);
     text = rt.plainText(runs);
     if (text.endsWith('\n')) runs = rt.sliceRuns(runs, 0, text.length - 1);
-    const o: DocObject = { kind: 'note', runs: runs.length ? runs : [{ ...this.look(), text: '' }], paras: fitParas([], paraCount(rt.plainText(runs))) };
+    const o: DocObject = { kind: 'note', runs: runs.length ? runs : [{ ...this.look(), text: '' }], paras: fitParas([], paraCount(rt.plainText(runs))), ...(n.end ? { end: true } : {}) };
     const look = this.look();
     if (this.ps.intbl) this.cell.runs.push({ ...look, sup: undefined, obj: this.b.reserve(o), text: '￼' });
     else this.b.object(o, { ...look, sup: undefined });
@@ -375,6 +429,7 @@ class RtfReader {
   private endCell(): void {
     this.row.push(finishCell(this.cell, this.paraStyle()));
     this.cell = { runs: [], paras: [] };
+    this.soft = false;
   }
 
   private endRow(): void {
@@ -399,6 +454,23 @@ class RtfReader {
   }
 }
 
+/** The value of each hex digit's character code (-1 for what isn't one). */
+const HEX_VALUE = (() => {
+  const v = new Int8Array(128).fill(-1);
+  for (let i = 0; i < 16; i++) { v['0123456789abcdef'.charCodeAt(i)] = i; v['0123456789ABCDEF'.charCodeAt(i)] = i; }
+  return v;
+})();
+
+/** Hex digits (only digits: the reader keeps no others) as bytes, in one pass. */
+export function hexBytes(hex: string): Uint8Array {
+  const out = new Uint8Array(hex.length >> 1);
+  for (let k = 0, j = 0; k < out.length; k++, j += 2) out[k] = (HEX_VALUE[hex.charCodeAt(j)] << 4) | HEX_VALUE[hex.charCodeAt(j + 1)];
+  return out;
+}
+
+/** Each byte's two hex digits. */
+const HEX2 = Array.from({ length: 256 }, (_, i) => i.toString(16).padStart(2, '0'));
+
 function finishCell(c: { runs: TextRun[]; paras: ParaStyle[] }, last: ParaStyle): TableCell {
   let runs = rt.normalizeRuns(c.runs);
   const text = rt.plainText(runs);
@@ -412,6 +484,10 @@ function finishCell(c: { runs: TextRun[]; paras: ParaStyle[] }, last: ParaStyle)
 export interface RtfDeps {
   /** A drawing's picture: PNG bytes and its size in points. */
   picture?(contents: Contents, style: DocStyle, frame?: { x: number; y: number; w: number; h: number }): Promise<{ png: Uint8Array; w: number; h: number } | null>;
+  /** A picture RTF can't hold (GIF, BMP, WebP...) as PNG; null when it can't be read. */
+  pictureToPng?(bytes: Uint8Array, mime: string): Promise<Uint8Array | null>;
+  /** A PNG of an SVG picture (w × h pixels). */
+  svgToPng?(svg: string, w: number, h: number): Promise<Uint8Array>;
 }
 
 /** Text for RTF: its special characters escaped, characters past ASCII as cp1252 or \uN. */
@@ -550,7 +626,7 @@ class RtfWriter {
       const inner = splitParagraphs(o.runs).map((rs) => rs.map((x) => (x.obj === undefined ? this.run(x, rs) : '')).join('')).join('\\par ');
       return `{${this.runProps({ ...r, sup: true, obj: undefined, text: '' })}\\chftn}{\\footnote${o.end ? '\\ftnalt' : ''}\\pard\\plain{\\super\\chftn} ${inner}}`;
     }
-    if (o.kind === 'picture') return this.picture(o.src, o.w * (o.scale ?? 1), o.h * (o.scale ?? 1), o.px);
+    if (o.kind === 'picture') return await this.picture(o.src, o.w * (o.scale ?? 1), o.h * (o.scale ?? 1), o.px);
     if (o.kind === 'drawing' && this.deps.picture) {
       const pic = await this.deps.picture(o.contents, this.t.drawingStyle, o.frame);
       if (pic) return this.pictureBytes(pic.png, 'png', pic.w * (o.scale ?? 1), pic.h * (o.scale ?? 1));
@@ -559,18 +635,35 @@ class RtfWriter {
     return '';
   }
 
-  private picture(src: string, w: number, h: number, px?: { w: number; h: number }): string {
-    const m = /^data:image\/(png|jpeg|jpg);base64,(.*)$/i.exec(src);
-    if (!m) return '';
-    const bin = atob(m[2]);
-    const bytes = new Uint8Array(bin.length);
-    for (let i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-    return this.pictureBytes(bytes, m[1].toLowerCase() === 'png' ? 'png' : 'jpeg', w, h, px);
+  /** A picture: PNG and JPEG as they are, others (GIF, BMP, WebP, SVG) as PNG when they can be made one. */
+  private async picture(src: string, w: number, h: number, px?: { w: number; h: number }): Promise<string> {
+    let got: { mime: string; bytes: Uint8Array };
+    try { got = fromDataUrl(src); } catch { return ''; }
+    const mime = got.mime.toLowerCase();
+    if (mime === 'image/png' || mime === 'image/jpeg' || mime === 'image/jpg') return this.pictureBytes(got.bytes, mime === 'image/png' ? 'png' : 'jpeg', w, h, px);
+    let png: Uint8Array | null = null;
+    try {
+      if (mime === 'image/svg+xml') {
+        const k = 300 / 72;
+        png = this.deps.svgToPng ? await this.deps.svgToPng(new TextDecoder().decode(got.bytes), Math.max(1, Math.round(w * k)), Math.max(1, Math.round(h * k))) : null;
+        px = undefined;
+      } else png = this.deps.pictureToPng ? await this.deps.pictureToPng(got.bytes, mime) : null;
+    } catch {
+      png = null;
+    }
+    return png ? this.pictureBytes(png, 'png', w, h, px) : '';
   }
 
   private pictureBytes(bytes: Uint8Array, kind: 'png' | 'jpeg', w: number, h: number, px?: { w: number; h: number }): string {
-    let hex = '';
-    for (let i = 0; i < bytes.length; i++) { hex += bytes[i].toString(16).padStart(2, '0'); if (i % 64 === 63) hex += '\n'; }
+    // two hex digits a byte, 64 bytes a line, joined once
+    const lines: string[] = [];
+    for (let i = 0; i < bytes.length; i += 64) {
+      const end = Math.min(bytes.length, i + 64);
+      let line = '';
+      for (let k = i; k < end; k++) line += HEX2[bytes[k]];
+      lines.push(line);
+    }
+    const hex = lines.join('\n') + (bytes.length % 64 === 0 && bytes.length ? '\n' : '');
     const pw = px?.w ?? Math.round(w / 0.75), ph = px?.h ?? Math.round(h / 0.75);
     return `{\\pict\\${kind}blip\\picw${pw}\\pich${ph}\\picwgoal${twip(w)}\\pichgoal${twip(h)}\n${hex}}`;
   }
@@ -581,22 +674,49 @@ class RtfWriter {
     return out;
   }
 
-  private async table(tb: TableData): Promise<string> {
+  /** Text above or below a table (its title, its footnotes), as paragraphs of their own. */
+  private async tableText(runs: TextRun[], k = 1): Promise<string> {
     let out = '';
-    for (const row of tb.rows) {
+    for (const rs of splitParagraphs(runs)) out += `\\pard\\plain\\ql ${await this.runs(k === 1 ? rs : rs.map((r) => (r.size ? { ...r, size: r.size * k } : r)))}\\par\n`;
+    return out;
+  }
+
+  private async table(tb: TableData): Promise<string> {
+    // its title above it and its footnotes below it, as Word's writer saves them (at 0.8 of the size)
+    let out = tb.title?.some((r) => r.text) ? await this.tableText(tb.title) : '';
+    for (let r = 0; r < tb.rows.length; r++) {
+      const row = tb.rows[r];
       let x = 0;
       out += '\\trowd\\trgaph108';
-      tb.cols.forEach((w) => { x += w; out += `\\clbrdrt\\brdrs\\clbrdrl\\brdrs\\clbrdrb\\brdrs\\clbrdrr\\brdrs\\cellx${twip(x)}`; });
+      // merged cells (RTF 1.9.1: \\clmgf / \\clmrg across, \\clvmgf / \\clvmrg down)
+      tb.cols.forEach((w, c) => {
+        x += w;
+        const o = coveringCell(tb, r, c);
+        const cell = row[c];
+        let merge = '';
+        if (o.r === r && o.c === c) {
+          if ((cell?.span ?? 1) > 1) merge += '\\clmgf';
+          if ((cell?.rowSpan ?? 1) > 1) merge += '\\clvmgf';
+        } else {
+          if (o.c < c) merge += '\\clmrg';
+          else if ((tb.rows[o.r]?.[o.c]?.span ?? 1) > 1) merge += '\\clmgf';
+          if (o.r < r) merge += '\\clvmrg';
+        }
+        out += `${merge}\\clbrdrt\\brdrs\\clbrdrl\\brdrs\\clbrdrb\\brdrs\\clbrdrr\\brdrs\\cellx${twip(x)}`;
+      });
       out += '\n';
-      for (const c of row) {
-        const paras = splitParagraphs(c.runs);
-        const ps = fitParas(c.paras, paras.length);
+      for (let c = 0; c < tb.cols.length; c++) {
+        const cell = row[c] ?? { runs: [{ text: '' }] };
+        const paras = splitParagraphs(cell.runs);
+        const ps = fitParas(cell.paras, paras.length);
         for (let i = 0; i < paras.length; i++) out += this.paraProps(ps[i], true) + (await this.runs(paras[i])) + (i < paras.length - 1 ? '\\par ' : '');
         out += '\\cell ';
       }
       out += '\\row\n';
     }
-    return out + '\\pard\\plain ';
+    out += '\\pard\\plain ';
+    if (tb.notes?.some((r) => r.text)) out += '\n' + await this.tableText(tb.notes, 0.8);
+    return out;
   }
 
   async body(): Promise<string> {
@@ -605,7 +725,8 @@ class RtfWriter {
     // a line after a line break (Shift+Enter) is a paragraph of its own here, with no space above it
     const paras = laidParas(fitParas(t.paras, paraCount(rt.plainText(t.runs))));
     let out = '';
-    let num = 0;
+    // each item's number or bullet as shown here (levels, Start At, restarts, numbering schemes)
+    const markers = listMarkers(paras);
     for (let p = 0; p < paras.length; p++) {
       const rs = runsOf[p] ?? [];
       const ps = paras[p];
@@ -614,10 +735,8 @@ class RtfWriter {
       const tb = only.length === 1 && only[0].obj !== undefined ? t.objects[only[0].obj] : undefined;
       if (tb?.kind === 'table') { out += await this.table(tb.table); continue; }
       let lead = '';
-      if (ps.list) {
-        num = ps.list === 'number' ? num + 1 : 0;
-        lead = `{\\*\\pn${ps.list === 'bullet' ? '\\pnlvlblt' : '\\pnlvlbody\\pndec'}}{\\listtext ${ps.list === 'bullet' ? rtfText(ps.bullet ?? '•') : `${num}.`}\\tab}`;
-      } else num = 0;
+      const marker = markers[p];
+      if (ps.list && marker !== null) lead = `{\\*\\pn${ps.list === 'bullet' ? '\\pnlvlblt' : '\\pnlvlbody\\pndec'}}{\\listtext ${rtfText(marker)}\\tab}`;
       const props = this.paraProps(ps.list ? { ...ps, indent: ps.indent ?? 18 * ((ps.level ?? 0) + 1), firstLine: ps.firstLine ?? -18 } : ps);
       out += `${props}${lead}${await this.runs(rs)}\\par\n`;
     }

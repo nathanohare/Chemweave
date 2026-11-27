@@ -29,7 +29,7 @@ export async function readDocumentFile(bytes: Uint8Array, name: string, deps: Do
 /** Save a document as its name says: .rtf, .odt, else .docx. */
 export async function writeDocumentFile(t: DocText, name: string, deps: DocxDeps): Promise<Uint8Array> {
   const ext = extOf(name);
-  if (ext === 'rtf') return writeRtf(t, { picture: deps.picture });
+  if (ext === 'rtf') return writeRtf(t, { picture: deps.picture, pictureToPng: deps.pictureToPng, svgToPng: deps.svgToPng });
   if (ext === 'odt') return writeOdt(t, { picture: deps.picture });
   return (await import('./docx-write')).writeDocx(t, deps);
 }

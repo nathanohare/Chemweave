@@ -33,7 +33,6 @@ const BASELINE: Record<string, number> = {
   'src/io/cdxml.ts': 1,
   'src/io/docx-read.ts': 10,
   'src/io/docx-write.ts': 1,
-  'src/io/odt.ts': 1,
   'src/io/pptx-keep.ts': 1,
   'src/io/xlsx-ole.ts': 3,
   'src/io/xlsx.ts': 1,

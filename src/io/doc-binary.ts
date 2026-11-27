@@ -16,7 +16,9 @@ export { isDoc } from './doc-sniff';
 /** Word's 16 standard colours (ico), by index. */
 const ICO = [undefined, '#000000', '#0000ff', '#00ffff', '#00ff00', '#ff00ff', '#ff0000', '#ffff00', '#ffffff', '#000080', '#008080', '#008000', '#800080', '#800000', '#808000', '#808080', '#c0c0c0'];
 
-interface Chp { bold?: boolean; italic?: boolean; strike?: boolean; underline?: boolean; smallCaps?: boolean; allCaps?: boolean; hidden?: boolean; size?: number; sub?: boolean; sup?: boolean; color?: string; font?: number; highlight?: string; deleted?: boolean; special?: boolean; istd?: number }
+/** The toggles a run or style can set to the opposite of its style's ([MS-DOC] ToggleOperand 0x81). */
+type Toggle = 'bold' | 'italic' | 'strike' | 'smallCaps' | 'allCaps' | 'hidden';
+interface Chp { flip?: Toggle[]; bold?: boolean; italic?: boolean; strike?: boolean; underline?: boolean; smallCaps?: boolean; allCaps?: boolean; hidden?: boolean; size?: number; sub?: boolean; sup?: boolean; color?: string; font?: number; highlight?: string; deleted?: boolean; special?: boolean; istd?: number }
 interface Pap { istd?: number; align?: Justify; spaceBefore?: number; spaceAfter?: number; indent?: number; firstLine?: number; indentRight?: number; line?: number; linePt?: number; lineRule?: 'exact' | 'atLeast'; inTable?: boolean; rowEnd?: boolean; pageBreak?: boolean; outline?: number; list?: boolean; level?: number; cols?: number[] }
 
 /** A sprm's operand size (its spra, the top 3 bits, says; a variable one gives its own). */
@@ -51,19 +53,36 @@ function* sprms(b: Uint8Array, from: number, to: number): Generator<[number, num
 /** The properties that are set (a sprm read sets its own; the others stay as the style has them). */
 const defined = (c: Chp): Chp => Object.fromEntries(Object.entries(c).filter(([, v]) => v !== undefined)) as Chp;
 
-const toggle = (v: number): boolean | undefined => (v === 0 ? false : v === 1 || v === 0x81 ? true : undefined);
+/**
+ * A toggle's operand ([MS-DOC] 2.9.320 ToggleOperand): 0 off, 1 on, 0x80 the same as the style
+ * (left unset), 0x81 the opposite of the style (noted in `flip`, worked out against the style).
+ */
+function toggle(c: Chp, k: Toggle, v: number): void {
+  c.flip = c.flip?.filter((x) => x !== k);
+  if (!c.flip?.length) delete c.flip;
+  if (v === 0x81) { c[k] = undefined; (c.flip ??= []).push(k); }
+  else c[k] = v === 0 ? false : v === 1 ? true : undefined;
+}
+
+/** Formatting set over what it is set on: its own values, and its 0x81 toggles the opposite of what is below. */
+function overlay(base: Chp, own: Chp): Chp {
+  const out: Chp = { ...base, ...defined(own) };
+  delete out.flip;
+  for (const k of own.flip ?? []) out[k] = !base[k];
+  return out;
+}
 
 function readChp(b: Uint8Array, from: number, to: number): Chp {
   const c: Chp = {};
   const i16 = (at: number) => ((b[at] | (b[at + 1] << 8)) << 16) >> 16;
   for (const [s, at] of sprms(b, from, to)) {
     switch (s) {
-      case 0x0835: c.bold = toggle(b[at]); break;
-      case 0x0836: c.italic = toggle(b[at]); break;
-      case 0x0837: case 0x2a53: c.strike = toggle(b[at]); break;
-      case 0x083a: c.smallCaps = toggle(b[at]); break;
-      case 0x083b: c.allCaps = toggle(b[at]); break;
-      case 0x083c: c.hidden = toggle(b[at]); break;
+      case 0x0835: toggle(c, 'bold', b[at]); break;
+      case 0x0836: toggle(c, 'italic', b[at]); break;
+      case 0x0837: case 0x2a53: toggle(c, 'strike', b[at]); break;
+      case 0x083a: toggle(c, 'smallCaps', b[at]); break;
+      case 0x083b: toggle(c, 'allCaps', b[at]); break;
+      case 0x083c: toggle(c, 'hidden', b[at]); break;
       case 0x0800: c.deleted = !!b[at]; break;
       case 0x0855: c.special = !!b[at]; break;
       case 0x2a3e: c.underline = b[at] !== 0; break;
@@ -105,7 +124,8 @@ function readPap(b: Uint8Array, from: number, to: number): Pap {
       case 0x244c: p.rowEnd = p.rowEnd || !!b[at]; break;
       case 0x2407: p.pageBreak = !!b[at]; break;
       case 0x2640: p.outline = b[at]; break;
-      case 0x460b: p.list = u16(at) > 0; break;
+      // (ilfo is signed: 0 or below, such as -2047 for numbering taken off, is no list)
+      case 0x460b: p.list = i16(at) > 0; break;
       case 0x260a: p.level = b[at]; break;
       case 0xd608: {
         // the table's cell edges (twips), with this row's end
@@ -134,6 +154,9 @@ function lookup<T>(runs: FcRun<T>[], fc: number): T | undefined {
   }
   return undefined;
 }
+
+/** No formatting of its own (one object, so what is worked out from it is kept once). */
+const NO_CHP: Chp = {};
 
 class DocReader {
   private wd: Uint8Array;
@@ -248,15 +271,26 @@ class DocReader {
     const got = this.resolved.get(istd);
     if (got) return got;
     const s = this.styleChp[istd];
-    const out = { ...(s.base !== 0x0fff && s.base !== istd ? this.styleLook(s.base, depth + 1) : {}), ...defined(s.chp) };
+    const out = overlay(s.base !== 0x0fff && s.base !== istd ? this.styleLook(s.base, depth + 1) : {}, s.chp);
     this.resolved.set(istd, out);
     return out;
   }
 
+  /** Each run's formatting worked out, by its paragraph's style (the same for every character of a run). */
+  private chpCache = new WeakMap<Chp, Map<number, Chp>>();
+
   /** A run's formatting: its paragraph style's, then its character style's, then its own. */
   private chpAt(c: Chp, para: Pap | undefined): Chp {
-    if (!this.styleChp.length) return c;
-    return { ...this.styleLook(para?.istd ?? 0), ...defined(this.styleLook(c.istd)), ...defined(c) };
+    if (!this.styleChp.length) return overlay({}, c);
+    const istd = para?.istd ?? 0;
+    let byStyle = this.chpCache.get(c);
+    if (!byStyle) { byStyle = new Map(); this.chpCache.set(c, byStyle); }
+    let got = byStyle.get(istd);
+    if (!got) {
+      got = overlay({ ...this.styleLook(istd), ...defined(this.styleLook(c.istd)) }, c);
+      byStyle.set(istd, got);
+    }
+    return got;
   }
 
   /** Each character of the text (cp 0 to `n`) with its offset in the WordDocument stream. */
@@ -268,7 +302,9 @@ class DocReader {
     if (t[at] !== 0x02) throw new Error('This Word document is damaged (its text could not be found).');
     const size = this.u32(t, at + 1);
     at += 5;
-    const count = (size - 4) / 12;
+    // (a damaged file can give any sizes: no more pieces than the table holds, no more text than the stream)
+    const count = Math.min((size - 4) / 12, Math.max(0, (Math.min(end, t.length) - at - 4) / 12));
+    n = Math.min(n, wd.length);
     const out: { ch: string; fc: number }[] = [];
     for (let i = 0; i < count && out.length < n; i++) {
       const cp0 = this.u32(t, at + 4 * i), cp1 = this.u32(t, at + 4 * (i + 1));
@@ -277,10 +313,13 @@ class DocReader {
       const start = packed ? (raw & ~0x40000000) / 2 : raw;
       for (let k = 0; k < cp1 - cp0 && out.length < n; k++) {
         const f = packed ? start + k : start + 2 * k;
+        // a piece that runs past the end of the stream stops there
+        if (f + (packed ? 1 : 2) > wd.length) break;
         const ch = packed ? fromCp1252(wd[f]) : String.fromCharCode(this.u16(wd, f));
         out.push({ ch, fc: f });
       }
     }
+    if (n > 0 && !out.length) throw new Error('This Word document is damaged (its text could not be found).');
     return out;
   }
 
@@ -324,11 +363,23 @@ class DocReader {
       const at = this.u32(t, ref.fc + 4 * i);
       const a = ccpText + this.u32(t, txt.fc + 4 * i), b = ccpText + this.u32(t, txt.fc + 4 * (i + 1));
       const runs: TextRun[] = [];
+      // fields as in the text: their codes left out, what they show kept (a link's text links)
+      const fields: { inCode: boolean; code: string; link?: string }[] = [];
       for (let cp = a; cp < b && cp < chars.length; cp++) {
         const { ch, fc } = chars[cp];
-        const c = this.chpAt(lookup(chp, fc) ?? {}, lookup(pap, fc));
-        if (ch === '\x02' || c.deleted || c.hidden) continue;
-        runs.push({ ...this.look(c), text: ch === '\r' ? '\n' : ch === '\x0b' ? ' ' : ch === '\x07' ? '\t' : ch });
+        const code = ch.charCodeAt(0);
+        if (code === 0x13) { fields.push({ inCode: true, code: '' }); continue; }
+        if (code === 0x14 && fields.length) { const f = fields[fields.length - 1]; f.inCode = false; f.link = hyperlinkOf(f.code); continue; }
+        if (code === 0x15 && fields.length) { fields.pop(); continue; }
+        const field = fields[fields.length - 1];
+        if (field?.inCode) { field.code += ch; continue; }
+        const c = this.chpAt(lookup(chp, fc) ?? NO_CHP, lookup(pap, fc));
+        if (c.deleted || c.hidden) continue;
+        if (code === 0x01 || code === 0x08) { this.pictures++; continue; }
+        const text = code === 0x0d ? '\n' : code === 0x0b ? ' ' : code === 0x07 || code === 0x09 ? '\t' : code === 0x1e ? '‑' : code < 0x20 ? '' : ch;
+        if (!text) continue;
+        const link = [...fields].reverse().find((f) => f.link)?.link;
+        runs.push({ ...this.look(c), ...(link ? { link } : {}), text });
       }
       let r = rt.normalizeRuns(runs);
       const text = rt.plainText(r);
@@ -340,7 +391,17 @@ class DocReader {
     return out;
   }
 
+  /** Pictures and drawn shapes left out (in the text and the notes). */
+  private pictures = 0;
+  private looks = new WeakMap<Chp, rt.RunStyle>();
+
   private look(c: Chp): rt.RunStyle {
+    let got = this.looks.get(c);
+    if (!got) { got = this.lookOf(c); this.looks.set(c, got); }
+    return got;
+  }
+
+  private lookOf(c: Chp): rt.RunStyle {
     return rt.cleanStyle({
       bold: c.bold || undefined, italic: c.italic || undefined, underline: c.underline || undefined, strike: c.strike || undefined, smallCaps: c.smallCaps || undefined, allCaps: c.allCaps || undefined,
       sub: c.sub || undefined, sup: c.sup || undefined, size: c.size ?? 10, font: (c.font !== undefined ? this.fonts[c.font] : undefined) || (this.defaultFont !== undefined ? this.fonts[this.defaultFont] : undefined) || this.fonts[0] || 'Times New Roman', color: c.color && c.color !== '#000000' ? c.color : undefined, highlight: c.highlight,
@@ -365,8 +426,14 @@ class DocReader {
     let rows: TableCell[][] = [];
     let cols: number[] = [];
     let cell: TextRun[] = [];
-    let pictures = 0;
+    // characters of one look, put in together (not one run each)
+    let pend: { text: string; look: rt.RunStyle; link?: string } | null = null;
+    const flushText = () => {
+      if (pend) this.b.text(pend.text, pend.link ? { ...pend.look, link: pend.link } : pend.look);
+      pend = null;
+    };
     const flushTable = () => {
+      flushText();
       if (!rows.length) return;
       const n = Math.max(cols.length, ...rows.map((r) => r.length));
       const widths = Array.from({ length: n }, (_, i) => cols[i] ?? 72);
@@ -384,7 +451,7 @@ class DocReader {
     };
     for (let cp = 0; cp < chars.length; cp++) {
       const { ch, fc } = chars[cp];
-      const c = this.chpAt(lookup(chp, fc) ?? {}, lookup(pap, fc));
+      const c = this.chpAt(lookup(chp, fc) ?? NO_CHP, lookup(pap, fc));
       const code = ch.charCodeAt(0);
       if (code === 0x13) { fields.push({ inCode: true, code: '' }); continue; }
       if (code === 0x14 && fields.length) {
@@ -398,8 +465,9 @@ class DocReader {
       if (field?.inCode) { field.code += ch; continue; }
       if (c.deleted) { this.warnings.add('Tracked deletions were left out (the text is as it will read).'); continue; }
       if (c.hidden && code !== 0x0d && code !== 0x07) continue;
-      const link = [...fields].reverse().find((f) => f.link)?.link;
-      const look = { ...this.look(c), ...(link ? { link } : {}) };
+      const link = fields.length ? [...fields].reverse().find((f) => f.link)?.link : undefined;
+      const base = this.look(c);
+      const look = link ? { ...base, link } : base;
       const p = code === 0x0d || code === 0x07 ? lookup(pap, fc) ?? {} : null;
       if (code === 0x07 && p) {
         // a cell's end, or (in a row's own paragraph) the row's
@@ -426,10 +494,10 @@ class DocReader {
           else { flushTable(); this.b.object(note, { ...look, sub: undefined, sup: true }); }
           continue;
         }
-        if (code === 0x01 || code === 0x08) { pictures++; continue; }
+        if (code === 0x01 || code === 0x08) { this.pictures++; continue; }
         if (code === 0x09) text = '\t';
         else if (code === 0x0b) text = ' ';
-        else if (code === 0x0c) { if (this.b.hasText) this.b.endPara(this.paraStyle(lookup(pap, fc) ?? {})); this.b.pendingBreak = true; continue; }
+        else if (code === 0x0c) { flushText(); if (this.b.hasText) this.b.endPara(this.paraStyle(lookup(pap, fc) ?? {})); this.b.pendingBreak = true; continue; }
         else if (code === 0x1e) text = '‑';
         else if (code === 0x1f) continue;
         else if (code < 0x20) continue;
@@ -439,12 +507,14 @@ class DocReader {
         cell.push({ ...look, text });
         continue;
       }
-      flushTable();
-      this.b.text(text, look);
+      if (rows.length) flushTable();
+      if (pend && pend.look === base && pend.link === link) pend.text += text;
+      else { flushText(); pend = { text, look: base, link }; }
     }
     if (cell.length) endCell();
     if (row.length) rows.push(row);
     flushTable();
+    const pictures = this.pictures;
     if (pictures) this.warnings.add(`${pictures} picture${pictures === 1 ? ' and shape was' : 's and shapes were'} left out: open the file in Word and save it as .docx to keep them.`);
   }
 }

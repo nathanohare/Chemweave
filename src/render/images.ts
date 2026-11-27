@@ -160,8 +160,13 @@ const BY_EXTENSION: Record<string, string> = {
  * Null when it can't be read.
  */
 export async function webpToPng(bytes: Uint8Array): Promise<Uint8Array | null> {
+  return bitmapToPng(bytes, 'image/webp');
+}
+
+/** A picture the browser can draw (WebP, GIF, BMP...) as PNG. Null when it can't be read. */
+export async function bitmapToPng(bytes: Uint8Array, mime: string): Promise<Uint8Array | null> {
   try {
-    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: 'image/webp' }));
+    const bmp = await createImageBitmap(new Blob([bytes as BlobPart], { type: mime }));
     // (a canvas element where there is no OffscreenCanvas)
     const c = typeof OffscreenCanvas !== 'undefined' ? new OffscreenCanvas(bmp.width, bmp.height) : Object.assign(document.createElement('canvas'), { width: bmp.width, height: bmp.height });
     (c.getContext('2d') as CanvasRenderingContext2D).drawImage(bmp, 0, 0);

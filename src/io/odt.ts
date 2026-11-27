@@ -13,6 +13,7 @@ import { fieldTexts, styleOf, type DocObject, type DocText } from '../document/d
 import { fitParas, laidParas, paraCount, splitParagraphs } from '../text/paragraphs';
 import { kid, kids, unzipPackage, ZipTooBigError, xml } from './ooxml';
 import { DocBuilder, headingId, styleIdOf } from './doc-build';
+import { isCovered } from '../table';
 
 const NS = {
   office: 'urn:oasis:names:tc:opendocument:xmlns:office:1.0',
@@ -42,7 +43,7 @@ export function points(v: string | null | undefined): number | null {
 
 interface TextProps { bold?: boolean; italic?: boolean; underline?: boolean; strike?: boolean; sub?: boolean; sup?: boolean; size?: number; font?: string; color?: string; highlight?: string; smallCaps?: boolean; allCaps?: boolean }
 interface ParaProps { align?: Justify; spaceBefore?: number; spaceAfter?: number; indent?: number; firstLine?: number; indentRight?: number; line?: number; linePt?: number; lineRule?: 'exact' | 'atLeast'; pageBreak?: boolean; keepNext?: boolean }
-interface OdStyle { family: string; parent?: string; display?: string; text: TextProps; para: ParaProps; listStyle?: string }
+interface OdStyle { name: string; family: string; parent?: string; display?: string; text: TextProps; para: ParaProps; listStyle?: string }
 
 const attr = (el: Element | null | undefined, ns: keyof typeof NS, name: string): string | null => el?.getAttributeNS(NS[ns], name) ?? null;
 
@@ -106,6 +107,10 @@ function paraProps(el: Element | null): ParaProps {
 class OdtReader {
   private b = new DocBuilder();
   private styles = new Map<string, OdStyle>();
+  /** Each table column style's width (style:column-width), read once with the styles. */
+  private columnWidths = new Map<string, string>();
+  /** Each style's look with what it inherits, worked out once. */
+  private resolvedCache = new Map<string, ReturnType<OdtReader['resolve']>>();
   private fonts = new Map<string, string>();
   /** List styles: whether each is numbered (by its first level). */
   private listKinds = new Map<string, 'bullet' | 'number'>();
@@ -135,8 +140,13 @@ class OdtReader {
     for (const s of Array.from(d.getElementsByTagNameNS(NS.style, 'style'))) {
       const name = attr(s, 'style', 'name');
       if (!name) continue;
+      const family = attr(s, 'style', 'family') ?? 'paragraph';
+      if (family === 'table-column') {
+        const w = attr(kid(s, 'table-column-properties'), 'style', 'column-width');
+        if (w) this.columnWidths.set(name, w);
+      }
       this.styles.set(name, {
-        family: attr(s, 'style', 'family') ?? 'paragraph', parent: attr(s, 'style', 'parent-style-name') ?? undefined, display: attr(s, 'style', 'display-name') ?? undefined,
+        name, family, parent: attr(s, 'style', 'parent-style-name') ?? undefined, display: attr(s, 'style', 'display-name') ?? undefined,
         text: textProps(kid(s, 'text-properties'), this.fonts), para: paraProps(kid(s, 'paragraph-properties')), listStyle: attr(s, 'style', 'list-style-name') ?? undefined,
       });
     }
@@ -163,6 +173,13 @@ class OdtReader {
 
   /** A style's look with what it inherits (its parents', nearest last). */
   private resolved(name: string | null | undefined): { text: TextProps; para: ParaProps; heading?: string; list?: string } {
+    const key = name ?? '';
+    let got = this.resolvedCache.get(key);
+    if (!got) { got = this.resolve(name); this.resolvedCache.set(key, got); }
+    return got;
+  }
+
+  private resolve(name: string | null | undefined): { text: TextProps; para: ParaProps; heading?: string; list?: string } {
     const chain: OdStyle[] = [];
     let cur = name ? this.styles.get(name) : undefined;
     for (let n = 0; cur && n < 20; n++) { chain.unshift(cur); cur = cur.parent ? this.styles.get(cur.parent) : undefined; }
@@ -170,7 +187,7 @@ class OdtReader {
     for (const s of chain) {
       Object.assign(out.text, s.text);
       Object.assign(out.para, s.para);
-      out.heading = styleIdOf(s.display) ?? styleIdOf(nameOf(s, this.styles)) ?? out.heading;
+      out.heading = styleIdOf(s.display) ?? styleIdOf(s.name) ?? out.heading;
       if (s.listStyle) out.list = s.listStyle;
     }
     return out;
@@ -209,19 +226,27 @@ class OdtReader {
     const base = { ...this.b.styleLook(ps), ...cleanText(look.text) };
     const runs: TextRun[] = [];
     this.inline(el, base, runs, undefined, !!into);
+    // a line break (text:line-break) starts the paragraph's next line: a soft paragraph of its own
+    const breaks = runs.filter((r) => r.text === '\n' && r.obj === undefined).length;
+    const { pageBreak: _pb, ...rest } = ps;
+    const softPs: ParaStyle = { ...rest, soft: true };
     if (into) {
-      if (into.runs.length) into.runs.push({ ...base, text: '\n' });
+      // (a paragraph after the first is after a line break, even when the first was empty)
+      if (into.paras.length) into.runs.push({ ...base, text: '\n' });
       into.runs.push(...runs);
       const { style: _s, ...cellPs } = ps;
-      into.paras.push(cellPs);
+      const { style: _t, ...cellSoft } = softPs;
+      into.paras.push(cellPs, ...Array.from({ length: breaks }, () => ({ ...cellSoft })));
       return;
     }
+    let cur = ps;
     for (const r of runs) {
       if (r.obj !== undefined) this.b.object(this.pending.get(r.obj)!, rt.styleOf(r));
+      else if (r.text === '\n') { this.b.endPara(cur); cur = softPs; }
       else this.b.text(r.text, rt.styleOf(r));
     }
     this.pending.clear();
-    this.b.endPara(ps);
+    this.b.endPara(cur);
   }
 
   /** Objects met in a paragraph's text (put in when the paragraph is), by a number of their own. */
@@ -250,7 +275,7 @@ class OdtReader {
         // (a damaged file can ask for any number of spaces: a thousand is more than any page holds)
         case 's': out.push({ ...look, ...(link ? { link } : {}), text: ' '.repeat(Math.min(1000, Math.max(1, Number(attr(c, 'text', 'c') ?? '1')))) }); break;
         case 'tab': out.push({ ...look, ...(link ? { link } : {}), text: '\t' }); break;
-        case 'line-break': out.push({ ...look, ...(link ? { link } : {}), text: ' ' }); break;
+        case 'line-break': out.push({ ...look, text: '\n' }); break;
         case 'note': {
           const body = kid(c, 'note-body');
           const inner = { runs: [] as TextRun[], paras: [] as ParaStyle[] };
@@ -284,7 +309,8 @@ class OdtReader {
     const collect = (e: Element) => { for (const k of kids(e)) { if (k.localName === 'table-column') colEls.push(k); else if (/^table-(header-)?columns$|^table-column-group$/.test(k.localName)) collect(k); } };
     collect(el);
     for (const c of colEls) {
-      const w = points(this.styleWidth(attr(c, 'table', 'style-name')));
+      const name = attr(c, 'table', 'style-name');
+      const w = points(name ? this.columnWidths.get(name) : null);
       const rep = Math.min(64, Number(attr(c, 'table', 'number-columns-repeated') ?? '1'));
       for (let i = 0; i < rep; i++) cols.push(w ?? 72);
     }
@@ -313,20 +339,6 @@ class OdtReader {
     this.b.table({ kind: 'table', table });
   }
 
-  private styleWidth(name: string | null): string | null {
-    if (!name) return null;
-    for (const d of ['content.xml', 'styles.xml']) {
-      const text = this.files[d] ? strFromU8(this.files[d]) : '';
-      const m = new RegExp(`<style:style[^>]*style:name="${name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}"[^>]*>\\s*<style:table-column-properties[^>]*style:column-width="([^"]+)"`).exec(text);
-      if (m) return m[1];
-    }
-    return null;
-  }
-}
-
-function nameOf(s: OdStyle, all: Map<string, OdStyle>): string | undefined {
-  for (const [k, v] of all) if (v === s) return k;
-  return undefined;
 }
 
 /** What a style sets (a switch set off as unset, so it overrides the paragraph style's), leaving out what it doesn't set. */
@@ -491,7 +503,10 @@ class OdtWriter {
     for (let r = 0; r < tb.rows.length; r++) {
       if (r === 0 && head) out += '<table:table-header-rows>';
       out += '<table:table-row>';
-      for (const c of tb.rows[r]) {
+      for (let k = 0; k < tb.cols.length; k++) {
+        // a place under a merged cell is a covered cell (OpenDocument 1.3, 9.1.5 <table:covered-table-cell>)
+        if (isCovered(tb, r, k)) { out += '<table:covered-table-cell/>'; continue; }
+        const c = tb.rows[r][k] ?? { runs: [{ text: '' }] };
         const paras = splitParagraphs(c.runs);
         const ps = fitParas(c.paras, paras.length);
         let inner = '';
@@ -512,25 +527,37 @@ class OdtWriter {
     // a line after a line break (Shift+Enter) is a paragraph of its own here, with no space above it
     const paras = laidParas(fitParas(t.paras, paraCount(rt.plainText(t.runs))));
     let out = '';
-    let list: 'bullet' | 'number' | null = null;
+    // the lists open, outermost first: a deeper level is a list inside the item above (each has an item open)
+    const open: ('bullet' | 'number')[] = [];
     let tables = 0;
-    const closeList = () => { if (list) { out += '</text:list>'; list = null; } };
+    const closeTo = (depth: number) => { while (open.length > depth) { out += '</text:list-item></text:list>'; open.pop(); } };
+    const closeList = () => closeTo(0);
+    const styleName = (k: 'bullet' | 'number') => (k === 'number' ? 'Numbering' : 'Bullets');
     for (let p = 0; p < paras.length; p++) {
       const rs = runsOf[p] ?? [];
       const ps = paras[p];
       const only = rs.filter((r) => r.text);
       const tb = only.length === 1 && only[0].obj !== undefined ? t.objects[only[0].obj] : undefined;
       if (tb?.kind === 'table') { closeList(); out += await this.table(tb.table, ++tables); continue; }
-      if ((ps.list ?? null) !== list) {
-        closeList();
-        if (ps.list) { out += `<text:list text:style-name="${ps.list === 'number' ? 'Numbering' : 'Bullets'}">`; list = ps.list; }
+      if (!ps.list) closeList();
+      else {
+        const depth = Math.max(0, Math.min(8, ps.level ?? 0)) + 1;
+        closeTo(depth);
+        // a list of another kind at this level starts a new list there
+        if (open.length === depth && open[depth - 1] !== ps.list) closeTo(depth - 1);
+        if (open.length === depth) out += '</text:list-item><text:list-item>';
+        while (open.length < depth) {
+          const k = open.length === depth - 1 ? ps.list : open[open.length - 1] ?? ps.list;
+          out += `<text:list text:style-name="${styleName(k)}"><text:list-item>`;
+          open.push(k);
+        }
       }
       const h = /^Heading(\d)$/.exec(ps.style ?? '');
       const parent = h ? `Heading_20_${h[1]}` : ps.style === 'Title' ? 'Title' : ps.style === 'Caption' ? 'Caption' : 'Standard';
       const name = this.paraStyle(ps, parent);
       const inner = await this.runs(rs);
       const el = h ? `<text:h text:style-name="${name}" text:outline-level="${h[1]}">${inner}</text:h>` : `<text:p text:style-name="${name}">${inner}</text:p>`;
-      out += ps.list ? `<text:list-item>${el}</text:list-item>` : el;
+      out += el;
     }
     closeList();
     return out;

@@ -70,6 +70,8 @@ export interface DocxDeps {
   picture(contents: Contents, style: DocStyle, frame?: FigureFrame): Promise<{ png: Uint8Array; svg?: string; w: number; h: number; x?: number; y?: number; /** The same picture as an EMF, for a ChemDraw object to show until it is opened. */ emf?: Uint8Array } | null>;
   /** A PNG of an SVG picture, for Word versions that can't show SVG (w × h pixels). */
   svgToPng?(svg: string, w: number, h: number): Promise<Uint8Array>;
+  /** A picture Word can't hold (WebP) as PNG; null when it can't be read. Without it such pictures are left out. */
+  pictureToPng?(bytes: Uint8Array, mime: string): Promise<Uint8Array | null>;
   /**
    * A picture with its sharpening and Remove Background worked in, as PNG (Word keeps those
    * worked in, with the original beside it). Without it they are left off.
@@ -99,8 +101,10 @@ const SVG_EXT = '{96DAC541-7B7A-43D3-8B79-37D633B846F1}';
 const NS_SVG = 'http://schemas.microsoft.com/office/drawing/2016/SVG/main';
 const MIME_EXT: Record<string, string> = {
   'image/png': 'png', 'image/jpeg': 'jpeg', 'image/gif': 'gif', 'image/bmp': 'bmp', 'image/x-emf': 'emf', 'image/x-wmf': 'wmf',
-  'image/svg+xml': 'svg', 'image/tiff': 'tiff', 'image/webp': 'png',
+  'image/svg+xml': 'svg', 'image/tiff': 'tiff',
 };
+/** Picture types Word can't show, saved as PNG instead (ECMA-376 lists no WebP; never the bytes relabelled). */
+const AS_PNG = new Set(['image/webp']);
 const EXT_TYPE: Record<string, string> = {
   png: 'image/png', jpeg: 'image/jpeg', gif: 'image/gif', bmp: 'image/bmp', emf: 'image/x-emf', wmf: 'image/x-wmf', svg: 'image/svg+xml', tiff: 'image/tiff',
 };
@@ -1448,7 +1452,7 @@ class DocxWriter {
     // Word 2016's newer chart, with a picture of it for older programs
     let fallback = '';
     try {
-      const { mime, bytes } = fromDataUrl(o.src);
+      const { mime, bytes } = await this.wordPicture(fromDataUrl(o.src));
       const ext = MIME_EXT[mime];
       if (ext && ext !== 'svg') {
         const blip = this.media(main, bytes, ext);
@@ -1471,7 +1475,7 @@ class DocxWriter {
   private async embedded(main: string, o: Extract<DocObject, { kind: 'picture' }>, e: Embedded, rPr: string): Promise<string> {
     let mime: string, bytes: Uint8Array;
     try {
-      ({ mime, bytes } = fromDataUrl(o.src));
+      ({ mime, bytes } = await this.wordPicture(fromDataUrl(o.src)));
     } catch {
       return '';
     }
@@ -1551,6 +1555,13 @@ class DocxWriter {
   private vmlNo = 8193;
   private oleTypes = new Set<string>();
 
+  /** A picture's bytes as Word can hold them: a WebP one as PNG (its type unknown, so left out, when it can't be made one). */
+  private async wordPicture(p: { mime: string; bytes: Uint8Array }): Promise<{ mime: string; bytes: Uint8Array }> {
+    if (!AS_PNG.has(p.mime)) return p;
+    const png = this.deps.pictureToPng ? await this.deps.pictureToPng(p.bytes, p.mime).catch(() => null) : null;
+    return png ? { mime: 'image/png', bytes: png } : { mime: '', bytes: p.bytes };
+  }
+
   private async picture(main: string, id: number, o: DocObject, rPr: string): Promise<string> {
     if (o.kind === 'picture' && o.chart) return this.chart(main, id, o, o.chart, rPr);
     if (o.kind === 'picture' && o.embed) return this.embedded(main, o, o.embed, rPr);
@@ -1594,7 +1605,7 @@ class DocxWriter {
     } else if (o.kind === 'picture') {
       let mime: string, bytes: Uint8Array;
       try {
-        ({ mime, bytes } = fromDataUrl(o.src));
+        ({ mime, bytes } = await this.wordPicture(fromDataUrl(o.src)));
       } catch {
         return '';
       }
