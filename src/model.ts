@@ -5,7 +5,7 @@
 import type { SectionBreak } from './document/document';
 import { Vec, Rect } from './geom';
 import { DocStyle, ACS_1996 } from './style';
-import { arrowPoints, gluePoint } from './objects';
+import { arrowPoints, gluePoint, paintedBox } from './objects';
 import { followPins } from './chem/pins';
 import { SYMBOLS } from './chem/elements';
 import type { EnergyData } from './design/energy';
@@ -2127,12 +2127,10 @@ export class Doc {
         if (x1 <= x2) this.dirtyRects.push({ x1: x1 - m, y1: y1 - m, x2: x2 + m, y2: y2 + m });
       }
     } else {
-      const sh = e as Shape;
-      // its glow, shadow and reflection reach past its box (and a turned shape's corners stick out)
-      const w = Math.abs(sh.x2 - sh.x1), h = Math.abs(sh.y2 - sh.y1);
-      const pad = 4 + Math.max(sh.glow?.size ?? 0, sh.shadow ? (sh.shadowSize ?? 4) + (sh.shadowBlur ?? 0) : 0) + (sh.rot ? Math.max(w, h) / 2 : 0);
-      const below = sh.reflection ? h * sh.reflection.size + sh.reflection.dist + (sh.rot ? Math.max(w, h) : 0) : 0;
-      this.dirtyRects.push({ x1: Math.min(sh.x1, sh.x2) - pad, y1: Math.min(sh.y1, sh.y2) - pad, x2: Math.max(sh.x1, sh.x2) + pad, y2: Math.max(sh.y1, sh.y2) + pad + below });
+      // its glow, shadow and reflection reach past its box (and a turned shape's corners stick out):
+      // all it paints, as the renderer finds what to draw in a tile (paintedBox)
+      const b = paintedBox(e as Shape);
+      this.dirtyRects.push({ x1: b.x1 - 4, y1: b.y1 - 4, x2: b.x2 + 4, y2: b.y2 + 4 });
     }
   }
 

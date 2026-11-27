@@ -95,6 +95,7 @@ import { SHOW_JUMPS, SHOW_TOOLS, cellOfLink, keyOfLink, linkSpans, normalizeLink
 import { openFileDialog, openManyBytesDialog, openBytesDialog, CSV, openAnyBytesDialog, stampOf, readRef, saveFileDialog, writeFile, showError, baseName, readPath, withExtension, setEmbeddedWriter, KEYMAP_FILE, SETTINGS_FILE, MOL, PDF, SDF, PICTURE, SVG, TIFF, EMF, EPS, PPTX, SLIDES_OPEN_ONLY, DOCX, PICTURE_EXTENSIONS, CHEMSI, pickFilePath, pathExists, type FileType } from './io/files';
 import { writeTiff } from './render/tiff';
 import { itemsToEps } from './render/eps';
+import { GLOW_TRANSPARENCY } from './render/shape-fx';
 import { Workspace, Tab, type SaveHow } from './workspace';
 import { AutoSaveClock } from './keep/autosave';
 import { sameStamp, holderText } from './keep/shared';
@@ -11148,7 +11149,7 @@ async function shapeEffect(cmd: string): Promise<boolean> {
   if (!shapes.length) { flash(WHY.shape); return false; }
   finishTyping();
   if (cmd === 'shape-fx:glow:options') {
-    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: 0.4 };
+    const g = shapes[0].glow ?? { color: shapes[0].fillColor ?? shapes[0].color ?? '#ffc000', size: 8, transparency: GLOW_TRANSPARENCY };
     const here = sameDrawing('The glow', 'applied');
     const v = await ask('Glow', [
       { name: 'color', label: 'Color', value: g.color, type: 'color' },
