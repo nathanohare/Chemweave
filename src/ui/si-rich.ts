@@ -260,12 +260,16 @@ export class SiRichBox {
     for (const s of this.el.querySelectorAll<HTMLElement>('[data-ref]')) if (!s.dataset.ref!.startsWith(STRUCT)) s.textContent = this.host.label(s.dataset.ref!);
   }
 
-  /** Put a link (a structure, a mention) where the caret is in the box, else at its end, and save. */
-  insertRef(ref: string): void {
+  /**
+   * Put a link (a structure, a mention) where the caret is in the box, else at its end, and save.
+   * `save` false: the caller saves it, in a step of its own (with the text given back, taken as
+   * saved), so leaving the box doesn't save it a second time.
+   */
+  insertRef(ref: string, save = true): string {
     const tmp = document.createElement('div');
     render(tmp, [{ runs: [{ text: '', ref }] }], this.host, false);
     const node = tmp.firstElementChild?.firstChild;
-    if (!node) return;
+    if (!node) return this.text;
     const sel = getSelection();
     const r = sel && sel.rangeCount ? sel.getRangeAt(0) : null;
     if (r && this.el.contains(r.startContainer)) {
@@ -279,7 +283,9 @@ export class SiRichBox {
       last.append(node);
     }
     this.empty();
+    if (!save) { this.last = this.text; if (this.timer) { clearTimeout(this.timer); this.timer = null; } return this.last; }
     this.commit();
+    return this.text;
   }
 
   /** Put a paragraph (a figure's) at `at`'s line: in place of an empty line, else after it (at the end with no caret); gives the text with it, taken as saved. */

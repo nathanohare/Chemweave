@@ -9,7 +9,7 @@ import {
   applyRefList, collectionAndInside, collectionsOf, newId, parseTags, tagsOf, type LibReference,
 } from '../library/library';
 import type { Library } from '../library/library-store';
-import { syncZotero, zoteroLibrary, type WebGet, type ZoteroLink } from '../library/online';
+import { applyZotero, fetchZotero, zoteroLibrary, type WebGet, type ZoteroLink, type ZoteroSync } from '../library/online';
 import type { HolderPanelContext, RefHolder } from './references-dialog';
 import { ask } from './ask';
 
@@ -243,8 +243,10 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
     ctx.flash('Reading your Zotero library…', 30000);
     try {
       await lib.load();
-      const r = await syncZotero(lib.now, link, host.get);
-      lib.change(() => r.lib);
+      const changes = await fetchZotero(link, host.get);
+      // brought into the library as it is now: edits made while Zotero was being read stay
+      let r!: ZoteroSync;
+      lib.change((now) => { r = applyZotero(now, changes, link); return r.lib; });
       await host.zotero.write({ ...link, version: r.version });
       ctx.refresh();
       ctx.flash(r.added || r.updated ? `From Zotero: ${r.added} new reference${r.added === 1 ? '' : 's'}, ${r.updated} brought up to date.` : 'Nothing new in Zotero since the last sync.', 6000);

@@ -323,6 +323,8 @@ async function resolve(project: SiProject, owner: SiSection | 'general', s: Impo
     if (!g || !s.figures.has(g.key)) { out.push(cite(line)); continue; }
     const fig = s.figures.get(g.key)!;
     if (fig.cut_below && fig.data) skip = [...fig.below_labels];
+    // (the short lines above a PDF caption are the figure's labels only when its picture was cut from above it: otherwise they are text)
+    if (fig.kind === 'cut' && !(fig.data && !fig.cut_below)) for (const l of fig.above_labels ?? []) out.push(cite(l));
     const caption = cite(g.caption.trim());
     if (!fig.keep) continue;
     if (fig.kind === 'table' && fig.table && Object.keys(fig.table).length) {
@@ -419,6 +421,8 @@ async function writeGps(project: SiProject, section: SiSection, gps: ImportedGP[
   // (a general procedure's name is its own in the whole project, as a new one's is)
   const elsewhere = new Set(project.dataSections.filter((s) => s !== section).flatMap((s) => project.generalProcedures(s).map((g) => low(g.name))));
   const out = new Map<string, string>();
+  // (names given by this import: a second procedure of the same name is told apart from one elsewhere)
+  const imported = new Set<string>();
   for (const g of gps) {
     if (have.has(low(g.name))) {
       result.notes.push(`${g.name} is already in this section, so it was not imported again; its compounds keep their own sentence.`);
@@ -427,11 +431,14 @@ async function writeGps(project: SiProject, section: SiSection, gps: ImportedGP[
     const gp = await project.addGeneralProcedure(section.id);
     const id = String(gp.id);
     let name = g.name.trim() || String(gp.name);
-    if (elsewhere.has(low(name))) {
+    if (imported.has(low(name))) {
+      result.notes.push(`This import has two general procedures named ${name}, so the second was named ${String(gp.name)}. You can rename it on its page.`);
+      name = String(gp.name);
+    } else if (elsewhere.has(low(name))) {
       result.notes.push(`The project already has a ${name} in another section, so the imported one was named ${String(gp.name)}. You can rename it on its page.`);
       name = String(gp.name);
     }
-    elsewhere.add(low(name));
+    imported.add(low(name));
     await project.updateGeneralProcedure(id, { name, title: g.title, sentence: citer.cite(g.sentence) });
     await project.writeGpText(id, citer.cite(g.text));
     out.set(g.key, id);
@@ -544,12 +551,13 @@ async function mergeCompound(project: SiProject, comp: SiCompound, c: ImportedCo
   if (c.name && !compoundName(comp)) { v.name = { text: c.name }; added.push('name'); }
   for (const [key, value] of Object.entries(values)) {
     const def = ALL_FIELDS.get(key)!;
-    if (fieldKeys(comp).includes(key) && project.fieldFilled(comp, def)) { kept.push(def.label); continue; }
+    // (a value typed in is kept even when its field was taken off the page: removing a field keeps its value)
+    if (project.fieldFilled(comp, def)) { kept.push(def.label); continue; }
     v[key] = value;
     added.push(key);
   }
   const proc = ALL_FIELDS.get('procedure')!;
-  if (fieldKeys(comp).includes('procedure') && project.fieldFilled(comp, proc)) {
+  if (project.fieldFilled(comp, proc)) {
     if (c.procedure || c.gp_sentence) kept.push(proc.label);
   } else {
     const linked = !!(c.gp_key && gpIds.has(c.gp_key));

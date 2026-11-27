@@ -65,6 +65,11 @@ export class JournalFolder implements SiFolder {
   maxHeldBytes = MAX_HELD_BYTES;
   /** Called when what Undo and Redo would do changes (for the Edit menu). */
   onChange: (() => void) | null = null;
+  /**
+   * Goes up each time a file is written, moved or put back, at the start and again at the end of
+   * it, so what was worked out from the folder is known to be current while this has not moved.
+   */
+  changes = 0;
 
   constructor(readonly inner: SiFolder) {}
 
@@ -166,13 +171,20 @@ export class JournalFolder implements SiFolder {
 
   /** One Undo or Redo at a time: a second one asked for meanwhile (Ctrl+Z held down) takes the next step when the first is done. */
   private async go(redo: boolean): Promise<string | null> {
-    while (this.busy) await this.busy;
+    this.changes++;
+    // (and for writes already begun: one finishing after the Undo would be written into the wrong step)
+    for (;;) {
+      while (this.busy) await this.busy;
+      if (!this.writing.size) break;
+      await Promise.allSettled([...this.writing]);
+    }
     if (this.depth > 0) throw new UndoError('Wait for the change being saved to finish, then try again.');
     let done!: () => void;
     this.busy = new Promise<void>((r) => { done = r; });
     try {
       return await this.goNow(redo);
     } finally {
+      this.changes++;
       this.busy = null;
       done();
     }
@@ -256,7 +268,8 @@ export class JournalFolder implements SiFolder {
 
   /** Move, written down in `into` (a step being put back), or in the step that is open. */
   private async moved(from: string, to: string, into?: UndoStep): Promise<void> {
-    await this.inner.move(from, to);
+    this.changes++;
+    try { await this.inner.move(from, to); } finally { this.changes++; }
     if (!(UNRECORDED.test(from) && UNRECORDED.test(to))) (into ?? this.record()).changes.push({ kind: 'move', from, to });
   }
 
@@ -290,16 +303,37 @@ export class JournalFolder implements SiFolder {
    * never deleted: it goes to the holding folder, so Undo puts it back.
    */
   async remove(rel: string): Promise<void> {
+    this.changes++;
     const path = norm(rel);
     if (UNRECORDED.test(path)) { await this.inner.remove(rel); return; }
     while (this.busy) await this.busy;
-    if (await this.inner.exists(path)) await this.moved(path, this.holding(path));
+    await this.tracked(async () => { if (await this.inner.exists(path)) await this.moved(path, this.holding(path)); });
   }
 
   private async wrote(rel: string, bytes: Uint8Array, write: () => Promise<void>): Promise<void> {
     const path = norm(rel);
-    if (UNRECORDED.test(path)) { await write(); return; }
+    this.changes++;
+    const counted = async (): Promise<void> => { try { await write(); } finally { this.changes++; } };
+    if (UNRECORDED.test(path)) { await counted(); return; }
     while (this.busy) await this.busy;
+    // (Undo and Redo wait for it, from reading what the file held to writing it down)
+    await this.tracked(() => this.wroteNow(path, bytes, counted));
+  }
+
+  /** Writes, moves and removals being made now: Undo and Redo wait for them, so none is written down in the wrong step. */
+  private readonly writing = new Set<Promise<void>>();
+
+  private async tracked(run: () => Promise<void>): Promise<void> {
+    const job = run();
+    this.writing.add(job);
+    try {
+      await job;
+    } finally {
+      this.writing.delete(job);
+    }
+  }
+
+  private async wroteNow(path: string, bytes: Uint8Array, write: () => Promise<void>): Promise<void> {
     // (read every time: the step may end while the file is being written, and the next step then needs what the file held)
     const before = await this.inner.readBytes(path).catch(() => null);
     await write();
@@ -321,17 +355,17 @@ export class JournalFolder implements SiFolder {
 
   async move(from: string, to: string): Promise<void> {
     while (this.busy) await this.busy;
-    await this.moved(norm(from), norm(to));
+    await this.tracked(() => this.moved(norm(from), norm(to)));
   }
 
   /** Emptying the Trash (or deleting one item from it) moves it to the holding folder, so it can be undone until the project closes. */
   async removeTrash(rel: string): Promise<void> {
+    this.changes++;
     const path = norm(rel);
     if (UNRECORDED.test(path)) { await this.inner.removeTrash(rel); return; }
     if (!isTrashPath(path)) throw new Error(`Only the project's Trash can be emptied this way (not ${rel}).`);
     while (this.busy) await this.busy;
-    if (!(await this.inner.exists(path))) return;
-    await this.moved(path, this.holding(path));
+    await this.tracked(async () => { if (await this.inner.exists(path)) await this.moved(path, this.holding(path)); });
   }
 }
 

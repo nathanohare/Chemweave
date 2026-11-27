@@ -22,8 +22,10 @@ export function parseHtmlTable(html: string): PastedRows | null {
   const rows: PastedRows = [];
   // cells a cell above reaches down into (rowspan), by row and column
   const below = new Map<string, true>();
-  [...table.querySelectorAll('tr')].forEach((tr, r) => {
-    if (tr.closest('table') !== table) return;
+  for (const tr of table.querySelectorAll('tr')) {
+    if (tr.closest('table') !== table) continue;
+    // (counted among this table's own rows only, not a table's inside a cell; review F603)
+    const r = rows.length;
     const row: PastedCell[] = [];
     let c = 0;
     for (const td of [...tr.children].filter((el) => el.tagName === 'TD' || el.tagName === 'TH')) {
@@ -39,7 +41,7 @@ export function parseHtmlTable(html: string): PastedRows | null {
       c += span;
     }
     rows.push(row);
-  });
+  }
   // Excel ends some rows early; rows of nothing at the end are dropped
   while (rows.length && rows[rows.length - 1].every((x) => !x.runs.some((t) => t.text.trim()))) rows.pop();
   return rows.length ? rows : null;

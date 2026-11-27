@@ -1933,6 +1933,8 @@ export class Doc {
       this.tx = null;
     }
     if (!tx.before.size) return;
+    // a change made after an undo: what was undone can't be redone over it any more (as commit does)
+    this.redoStack.length = 0;
     if (!last) {
       for (const key of tx.before.keys()) tx.after.set(key, this.snapshot(key));
       this.undoStack.push(tx);
@@ -2107,6 +2109,13 @@ export class Doc {
       const r = e as Arrow;
       const pad = r.sweep || r.bez ? Math.hypot(r.head.x - r.tail.x, r.head.y - r.tail.y) * (r.bez ? 1.5 : 1) : r.headWidth + 2;
       this.dirtyRects.push({ x1: Math.min(r.tail.x, r.head.x) - pad, y1: Math.min(r.tail.y, r.head.y) - pad, x2: Math.max(r.tail.x, r.head.x) + pad, y2: Math.max(r.tail.y, r.head.y) + pad });
+      // an arc bent far round (past about 250°) reaches further from its chord than that: its own points too
+      if (r.sweep || r.bez) {
+        let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
+        for (const q of arrowPoints(r, 24)) { x1 = Math.min(x1, q.x); y1 = Math.min(y1, q.y); x2 = Math.max(x2, q.x); y2 = Math.max(y2, q.y); }
+        const m = (r.headWidth || 0) + (r.lineWidth ?? 1) + 4;
+        if (x1 <= x2) this.dirtyRects.push({ x1: x1 - m, y1: y1 - m, x2: x2 + m, y2: y2 + m });
+      }
     } else {
       const sh = e as Shape;
       // its glow, shadow and reflection reach past its box (and a turned shape's corners stick out)
@@ -2147,6 +2156,10 @@ export class Doc {
         if (!this.adj.has(id)) this.adj.set(id, []);
         this.indexAtom(e as Atom);
         if ((e as Atom).multi) this.linkCentre(e as Atom);
+        // (an undo or redo that moves an atom back can make one of its bonds the longest)
+        if (was && ((e as Atom).x !== was.x || (e as Atom).y !== was.y)) {
+          for (const bid of this.adj.get(id) ?? []) { const bd = this.bonds.get(bid); if (bd) this.noteBondLength(bd); }
+        }
       } else {
         this.atoms.delete(id);
         this.unindexAtom(id);
@@ -2716,16 +2729,31 @@ export class Doc {
   }
 
   private boundsMemo: { version: number; box: Rect | null } | null = null;
+  private extentMemo = new WeakMap<Caption, { size: number; ts: unknown; box: Rect }>();
+
+  /**
+   * The room a caption takes, as bounds() counts it: its text measured (every line of it), at
+   * least the stored width when it has one.
+   */
+  captionExtent(c: Caption): Rect {
+    // (a guess past a short caption at the page's edge adds a page; each caption's layout is kept
+    // while it, the caption size and the text styles stay the same, so a drag doesn't lay out every one)
+    const size = this.style.captionSize, ts = this.textStyles;
+    let memo = this.extentMemo.get(c);
+    if (!memo || memo.size !== size || memo.ts !== ts) {
+      memo = { size, ts, box: layoutText(ts ? { ...c, single: PPT_SINGLE } : c, size, (t, s, _f, st) => arialWidth(t, s, st.includes('bold'))).box };
+      this.extentMemo.set(c, memo);
+    }
+    const b = memo.box;
+    const bottom = Math.max(c.y + 4, c.y + b.y2, c.fit && c.boxH ? c.y + b.y1 + c.boxH : -Infinity);
+    return { x1: c.x + Math.min(0, b.x1), y1: Math.min(c.y - 10, c.y + b.y1), x2: c.x + (c.width === undefined ? b.x2 : c.width), y2: bottom };
+  }
 
   private measureBounds(): Rect | null {
     let x1 = Infinity, y1 = Infinity, x2 = -Infinity, y2 = -Infinity;
     const grow = (x: number, y: number) => { if (x < x1) x1 = x; if (y < y1) y1 = y; if (x > x2) x2 = x; if (y > y2) y2 = y; };
     for (const a of this.atoms.values()) grow(a.x, a.y);
-    for (const c of this.captions.values()) {
-      // without a stored width, measure the text (a guess past a short caption at the page's edge adds a page)
-      const b = c.width === undefined ? layoutText(this.textStyles ? { ...c, single: PPT_SINGLE } : c, this.style.captionSize, (t, s, _f, st) => arialWidth(t, s, st.includes('bold'))).box : null;
-      grow(c.x + Math.min(0, b?.x1 ?? 0), c.y - 10); grow(c.x + (b ? b.x2 : c.width!), c.y + 4);
-    }
+    for (const c of this.captions.values()) { const b = this.captionExtent(c); grow(b.x1, b.y1); grow(b.x2, b.y2); }
     for (const r of this.arrows.values()) for (const p of arrowPoints(r, 12)) grow(p.x, p.y);
     for (const s of this.shapes.values()) { grow(s.x1, s.y1); grow(s.x2, s.y2); }
     if (x1 === Infinity) return null;

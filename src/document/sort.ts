@@ -21,7 +21,7 @@ export interface SortKey {
 
 export interface SortOptions {
   keys: SortKey[];
-  /** The first row (or paragraph) is a heading and stays where it is. */
+  /** The first row (or paragraph) is a heading and stays where it is. For a table, saying it isn't (false) sorts the table's heading rows too; left out, the table's own heading rows stay. */
   header?: boolean;
   /** What cuts a paragraph into fields (Word's Options > Separate fields at). */
   sep?: '\t' | ',' | string;
@@ -178,12 +178,13 @@ export function sortParagraphs(t: DocText, first: number, last: number, o: SortO
 
 /** A table's rows in order by their cells (a key's field is its column); the heading rows stay at the top. */
 export function sortTableRows(tb: TableData, o: SortOptions): TableData {
-  const head = Math.max(o.header ? 1 : 0, tb.head ?? 0);
+  // (the choice made wins: the table's heading rows stay unless it was said they aren't one)
+  const head = o.header === false ? 0 : Math.max(o.header ? 1 : 0, tb.head ?? 0);
   // rows with cells merged down can't be moved apart
   if (tb.rows.some((row) => row.some((c) => (c.rowSpan ?? 1) > 1))) return tb;
   const body = tb.rows.slice(head);
   const texts = body.map((row) => row.map((c) => sortText(c.runs)).join('\u0001'));
   const order = sortOrder(texts, { ...o, sep: '\u0001' });
   // (each row keeps its height)
-  return { ...tb, rows: [...tb.rows.slice(0, head), ...order.map((i) => body[i])], ...rowHeights(tb, (h) => h.splice(head, h.length - head, ...order.map((i) => h[head + i]))) };
+  return { ...tb, ...(o.header === false && tb.head ? { head: 0 } : {}), rows: [...tb.rows.slice(0, head), ...order.map((i) => body[i])], ...rowHeights(tb, (h) => h.splice(head, h.length - head, ...order.map((i) => h[head + i]))) };
 }

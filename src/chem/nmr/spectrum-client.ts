@@ -23,7 +23,9 @@ function start(): Worker | null {
       waiting.delete(m.id);
       if ('spec' in m) w.resolve(m.spec); else w.reject(new Error(m.error));
     };
-    worker.onerror = () => { for (const w of waiting.values()) w.reject(new Error('The spectrum simulation stopped unexpectedly. Try again.')); waiting.clear(); worker?.terminate(); worker = null; };
+    const w = worker;
+    // (undefined, not null: the next request starts a new worker; null is for "workers can't run here")
+    w.onerror = () => { for (const p of waiting.values()) p.reject(new Error('The spectrum simulation stopped unexpectedly. Try again.')); waiting.clear(); w.terminate(); if (worker === w) worker = undefined; };
   } catch {
     worker = null;
   }
