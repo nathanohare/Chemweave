@@ -18,7 +18,7 @@ vi.mock('../src/sheet/dashboard', async (orig) => {
 import { Workbook } from '../src/sheet/workbook';
 import { newTable } from '../src/sheet/table-styles';
 import { newDashboard, type ChartTile, type Tile, type TableTile, type Dashboard } from '../src/sheet/dashboard';
-import { chartOfColumns, resolveSource } from '../src/sheet/dashboard';
+import { chartOfColumns, resolveSource, newTileId } from '../src/sheet/dashboard';
 import { DashboardUi } from '../src/ui/dashboard-ui';
 import { DashboardView, type DashHost } from '../src/ui/dashboard-view';
 
@@ -69,6 +69,25 @@ describe('F690: Duplicate of a chart tile', () => {
   });
 });
 
+describe('F690: chart ids of copies, after charts made as the app makes them', () => {
+  it('are all different, however many copies are made and whichever counter the charts came from', () => {
+    const wb = workbook(6);
+    const res = resolveSource(wb, { table: 'T1' })!;
+    // dashboard charts take their ids from the tile counter (a new chart tile's chart, as the app makes it), so
+    // the first ones are 1, 2 and 3 here, just where a counter of sheet charts would start
+    const a: ChartTile = { id: newTileId(), kind: 'chart', x: 0, y: 0, w: 6, h: 5, chart: chartOfColumns(res, 'column', 'Name', ['Score'], 1) };
+    const b: ChartTile = { id: newTileId(), kind: 'chart', x: 6, y: 0, w: 6, h: 5, chart: chartOfColumns(res, 'line', 'Name', ['Score'], 2) };
+    const { dui, sheet } = ui(wb, { ...newDashboard(), tiles: [a, b] }, a);
+    for (let i = 0; i < 3; i++) {
+      dui.contextMenu(0, 0);
+      (menu.items as ([string, () => void] | null)[]).find((m) => m && m[0] === 'Duplicate')![1]();
+    }
+    const ids = sheet.dashboard!.tiles.filter((t): t is ChartTile => t.kind === 'chart').map((t) => t.chart.id);
+    expect(ids).toHaveLength(5);
+    expect(new Set(ids).size).toBe(5);
+  });
+});
+
 describe('F692: the Columns box', () => {
   it('keeps tiles inside the 24 columns it makes when more are typed', () => {
     const wb = workbook(3);
@@ -108,6 +127,17 @@ describe('F694: the columns of a table tile', () => {
     score.dispatchEvent(new Event('change'));
     expect(columnsOf()).toEqual(['Score']);
     expect(score.checked).toBe(true);
+  });
+});
+
+describe('F694: a table tile made with an empty list of columns', () => {
+  it('shows every column checked in the panel, as it shows every column', () => {
+    const wb = workbook(3);
+    const tile: TableTile = { id: 5, kind: 'table', x: 0, y: 0, w: 6, h: 4, source: { table: 'T1' }, columns: [] };
+    const { dui } = ui(wb, { ...newDashboard(), tiles: [tile] }, tile);
+    const section = document.createElement('div');
+    section.append(...dui.panel());
+    expect([...section.querySelectorAll<HTMLInputElement>('.cp-row input[type=checkbox]')].slice(0, 2).map((b) => b.checked)).toEqual([true, true]);
   });
 });
 

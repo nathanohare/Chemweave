@@ -174,6 +174,20 @@ describe('F168: Outline View, a slide added from a row', () => {
   });
 });
 
+describe('F168: text typed just before the slides change', () => {
+  it('is written onto its slide when the outline is made again under the caret', () => {
+    const { d, view, titles } = outline();
+    const el = titles()[1];
+    el.focus();
+    el.textContent = 'Two edited';
+    el.dispatchEvent(new Event('input', { bubbles: true }));
+    // the first slide is taken away (from the thumbnails) before the pause that writes it
+    d.remove([0]);
+    view.rebuild();
+    expect(slideOutline(d.docOf(0)).title).toBe('Two edited');
+  });
+});
+
 describe('F754: Shift+Tab on a body line', () => {
   it('makes the new slide and takes the lines off the old one in one Undo step', () => {
     const { d, bodies, key } = outline();

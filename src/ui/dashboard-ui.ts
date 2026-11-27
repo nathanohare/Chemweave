@@ -6,7 +6,7 @@ import type { SheetView } from './sheet-view';
 import type { SheetCharts } from './sheet-chart-ui';
 import { ask, Field } from './ask';
 import { addInfo, withInfo } from './info-tip';
-import { refText, readRef, CHART_NAMES, ChartKind, hasLevels, newChartId } from '../sheet/chart';
+import { refText, readRef, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
 import {
   Dashboard, Tile, TileKind, Source, Aggregate, KpiTile, TableTile, SlicerTile, GalleryTile, TextTile, ChartTile,
   AGGREGATE_NAMES, TILE_NAMES, resolveSource, sourceKey, sourceName, columnOf, newTileId, freeSpot, chartOfColumns,
@@ -117,7 +117,7 @@ export class DashboardUi {
         if (got.from !== 'new') {
           // (without the part an Excel file had for it, which is the sheet's chart's)
           const { file: _file, ...c } = existing[Number(got.from)].c;
-          this.add({ id: newTileId(), kind: 'chart', ...this.place('chart'), chart: { ...c, id: newChartId() } });
+          this.add({ id: newTileId(), kind: 'chart', ...this.place('chart'), chart: { ...c, id: newTileId() } });
           return;
         }
       }
@@ -177,7 +177,7 @@ export class DashboardUi {
         const got = await ask('Add Table', checks('c:', res.names, () => true), { ok: 'Add', note: 'Check the columns to show. Click a heading on the dashboard to sort by it.' });
         if (!got) return;
         const columns = picked(got, 'c:');
-        this.add({ ...base, kind: 'table', source: src, ...(columns.length < res.names.length ? { columns } : {}), title: sourceName(src) });
+        this.add({ ...base, kind: 'table', source: src, ...(columns.length && columns.length < res.names.length ? { columns } : {}), title: sourceName(src) });
         return;
       }
       case 'slicer': {
@@ -242,8 +242,8 @@ export class DashboardUi {
       ['Duplicate', () => {
         const d = this.dash!;
         const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile;
-        // (a chart's id is the key its drawn data is saved under in .xlsx, so the copy needs its own)
-        if (copy.kind === 'chart') copy.chart = { ...copy.chart, id: newChartId() };
+        // (a chart's id is the key its drawn data is saved under in .xlsx, so the copy needs its own; dashboard charts take their ids from the tile counter)
+        if (copy.kind === 'chart') copy.chart = { ...copy.chart, id: newTileId() };
         this.add(copy);
       }],
       ['Delete Tile', () => this.view.dash.remove(t.id)],
@@ -370,7 +370,7 @@ export class DashboardUi {
       }
       case 'table': {
         out.push(sourceRow(t.source, (s) => this.update(t.id, { source: s, columns: undefined, sortBy: undefined } as Partial<TableTile>)));
-        const shown = new Set(t.columns ?? res?.names ?? []);
+        const shown = new Set(t.columns?.length ? t.columns : res?.names ?? []);
         for (const [n] of names) {
           const box: HTMLElement = check(shown.has(n), (v) => {
             const next = (res?.names ?? []).filter((m) => (m === n ? v : shown.has(m)));

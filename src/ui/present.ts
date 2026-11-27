@@ -30,9 +30,11 @@ import { paintSlide } from '../deck/slide-view';
 const NOTES_KEY = 'chem-illustrator.rehearse-notes';
 /** How long the end of a rehearsal waits for the recordings to finish (ms). */
 const RECORDING_WAIT_MS = 5000;
-/** The wheel's travel (pixels) that is one step in the show, one notch of a mouse wheel. */
-const WHEEL_NOTCH = 100;
-/** After a step the wheel is let go for this long (ms), so one swipe is one step; a part notch is forgotten after the stale time. */
+/** The wheel's travel (pixels) that is one step in the show: less than one notch of any mouse wheel, more than a trackpad's first touch. */
+const WHEEL_STEP = 30;
+/** Wheel events closer together than this (ms) are one gesture (a trackpad swipe and its coasting), not separate notches. */
+const WHEEL_STREAM_MS = 40;
+/** After a step the wheel is let go for this long (ms), and as long again after each event of the same gesture; a part step is forgotten after the stale time. */
 const WHEEL_LOCK_MS = 250;
 const WHEEL_STALE_MS = 400;
 
@@ -236,12 +238,17 @@ export class Presenter {
     if ((e.target as Element | null)?.closest?.('.rehearse-notes, .show-bar, .rehearse-bar')) return;
     e.preventDefault();
     const now = performance.now();
-    // (the rest of a swipe just after a step is let go, as is part of a notch turned a while ago)
-    if (now < this.wheelLockUntil) { this.wheelSum = 0; return; }
-    if (now - this.wheelAt > WHEEL_STALE_MS) this.wheelSum = 0;
+    const gap = now - this.wheelAt, streaming = gap < WHEEL_STREAM_MS;
     this.wheelAt = now;
+    // (the rest of a swipe after a step is let go for as long as it goes on, as is part of a step turned a while ago)
+    if (now < this.wheelLockUntil) {
+      if (streaming) this.wheelLockUntil = now + WHEEL_LOCK_MS;
+      this.wheelSum = 0;
+      return;
+    }
+    if (gap > WHEEL_STALE_MS) this.wheelSum = 0;
     this.wheelSum += e.deltaMode === 1 ? e.deltaY * 34 : e.deltaMode === 2 ? e.deltaY * 800 : e.deltaY;
-    if (Math.abs(this.wheelSum) < WHEEL_NOTCH) return;
+    if (Math.abs(this.wheelSum) < WHEEL_STEP) return;
     const down = this.wheelSum > 0;
     this.wheelSum = 0;
     this.wheelLockUntil = now + WHEEL_LOCK_MS;
@@ -439,7 +446,8 @@ export class Presenter {
 
   private repeatSlide(): void {
     const r = this.rehearse;
-    if (!r) return;
+    // (not on the end screen: no slide is being timed there)
+    if (!r || r.i < 0) return;
     r.t0 = performance.now();
     if (r.paused !== null) r.paused = r.t0;
     if (r.rec) { void r.rec.finish(); r.rec.start(r.paused !== null); }
@@ -550,9 +558,14 @@ export class Presenter {
 
   private next(): void {
     if (this.rehearse?.countdown) { this.endCountdown?.(); return; }
-    if (this.blank === 'black' || this.blank === 'white') { this.blank = null; this.paint(); return; }
+    if (this.blank === 'black' || this.blank === 'white') { this.blank = null; this.paint(); this.timeShown(); return; }
     if (this.blank === 'end') { this.stop(); return; }
     this.player?.next();
+  }
+
+  /** A rehearsal times the slide showing again (it was not timed on the end screen, which ends its last slide). */
+  private timeShown(): void {
+    if (this.rehearse && this.player) this.slideShown(this.player.i);
   }
 
   private prev(): void {
@@ -561,7 +574,7 @@ export class Presenter {
       this.blank = null;
       this.paint();
       // back on the last slide from the end screen: its time starts again
-      if (fromEnd && this.player) this.slideShown(this.player.i);
+      if (fromEnd || this.rehearse) this.timeShown();
       return;
     }
     this.player?.prev();
@@ -593,8 +606,8 @@ export class Presenter {
     else if (['ArrowLeft', 'ArrowUp', 'Backspace', 'PageUp', 'p', 'P'].includes(k)) this.prev();
     else if (k === 'Home') this.go(this.player!.first);
     else if (k === 'End') this.go(this.player!.last);
-    else if (k === 'b' || k === 'B' || k === '.') { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); }
-    else if (k === 'w' || k === 'W' || k === ',') { this.blank = this.blank === 'white' ? null : 'white'; this.paint(); }
+    else if (k === 'b' || k === 'B' || k === '.') { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); if (!this.blank) this.timeShown(); }
+    else if (k === 'w' || k === 'W' || k === ',') { this.blank = this.blank === 'white' ? null : 'white'; this.paint(); if (!this.blank) this.timeShown(); }
     else if (k === 'g' || k === 'G') this.openGrid();
     else if (k === 'm' || k === 'M') this.toggleMap();
     else if (k === 'l' || k === 'L') this.lookRound();
@@ -741,7 +754,7 @@ export class Presenter {
     else item('Look Around Freely', 'L', () => this.lookRound(), !p.canLookRound);
     item(p.mapOn ? 'Hide the Map' : 'Show the Map', 'M', () => this.toggleMap(), !p.canLookRound);
     line();
-    item(this.blank === 'black' ? 'Back from Black' : 'Black Screen', 'B', () => { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); });
+    item(this.blank === 'black' ? 'Back from Black' : 'Black Screen', 'B', () => { this.blank = this.blank === 'black' ? null : 'black'; this.paint(); if (!this.blank) this.timeShown(); });
     item('End Show', 'Esc', () => this.stop());
     m.addEventListener('click', (e) => e.stopPropagation());
     m.addEventListener('pointerdown', (e) => e.stopPropagation());

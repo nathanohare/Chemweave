@@ -87,6 +87,9 @@ export class OutlineView {
   /** The slides the outline was last built from (to tell a change to one slide from a change to the list). */
   private built: readonly object[] = [];
 
+  /** The row typed in and not yet written onto its slide (written after a moment's pause, or when it is left). */
+  private pending: { slide: Deck['slides'][number]; title: OutlineBox; body: OutlineBox } | null = null;
+
   /** Are the rows made from these very slides, in this order? */
   private current(d: Deck): boolean {
     return d.slides.length === this.built.length && d.slides.every((s, k) => s === this.built[k]);
@@ -101,7 +104,14 @@ export class OutlineView {
     const d = this.hooks.deck();
     if (!this.shown || !d) return;
     if (!force && this.el.contains(document.activeElement) && this.current(d)) { this.mark(d.index); return; }
+    // what was typed a moment ago and not yet written goes onto its slide (found by the slide itself: its place may have changed)
+    const was = this.pending;
+    this.pending = null;
     clearTimeout(this.typing);
+    if (was) {
+      const k = d.slides.indexOf(was.slide);
+      if (k >= 0) this.commit(k, was.title, was.body);
+    }
     const scroll = this.el.scrollTop;
     this.built = d.slides.slice();
     this.el.replaceChildren(...d.slides.map((_s, i) => this.row(d, i)));
@@ -148,9 +158,9 @@ export class OutlineView {
       // (each line's tabs, for its level, have no look of their own)
       body.show(outlineText(o.body ?? []), (o.body ?? []).flatMap((l, k) => [...Array<undefined>(l.level).fill(undefined), ...(looks.body?.[k] ?? []), undefined]));
       body.spellcheck = true;
-      const commit = () => { clearTimeout(this.typing); this.commit(i, title, body); };
+      const commit = () => { clearTimeout(this.typing); if (this.pending?.title === title) this.pending = null; this.commit(i, title, body); };
       // what is typed goes onto the slide after a moment's pause (and when the box is left)
-      const soon = () => { clearTimeout(this.typing); this.typing = window.setTimeout(commit, 400); };
+      const soon = () => { clearTimeout(this.typing); this.pending = { slide: s, title, body }; this.typing = window.setTimeout(commit, 400); };
       for (const el of [title, body]) {
         el.addEventListener('input', soon);
         el.addEventListener('change', commit);

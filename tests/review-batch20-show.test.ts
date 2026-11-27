@@ -91,6 +91,23 @@ describe('F172: the wheel in the slide show', () => {
     p.stop();
   });
 
+  it('goes on one slide for a long swipe that keeps coasting', () => {
+    const f = fake();
+    // 1.2 s of small turns every 8 ms, then a longer fling that dies away over 1.5 s
+    for (let i = 0; i < 150; i++) { proto.wheelSlide.call(f, wheel(8)); now += 8; }
+    expect(f.next).toHaveBeenCalledTimes(1);
+    now += 1000;
+    const g = fake();
+    for (let t = 0; t < 1500; t += 16) { proto.wheelSlide.call(g, wheel(Math.max(1, Math.round(40 * Math.exp(-t / 400))))); now += 16; }
+    expect(g.next).toHaveBeenCalledTimes(1);
+  });
+
+  it('goes on a slide for a notch of a wheel that turns only a little (a line or two)', () => {
+    const f = fake();
+    for (let i = 0; i < 3; i++) { proto.wheelSlide.call(f, wheel(33)); now += 500; }
+    expect(f.next).toHaveBeenCalledTimes(3);
+  });
+
   it('goes on one slide for each notch of a mouse wheel, and back for the other way', () => {
     const f = fake();
     proto.wheelSlide.call(f, wheel(100)); now += 400;
@@ -165,6 +182,25 @@ describe('rehearsals', () => {
     const kept = (p.onRehearsed as ReturnType<typeof vi.fn>).mock.calls[0][0] as { times: Map<number, number>; total: number };
     expect(kept.times.get(0)).toBeCloseTo(5, 0);
     expect(kept.total).toBeCloseTo(5, 0);
+  });
+
+  it('F762: Repeat on the end screen records nothing, and a slide shown again from black is timed again', async () => {
+    const { p, started } = await rehearsal(deckOf(1), true);
+    await vi.advanceTimersByTimeAsync(0);
+    mic.open!(true);
+    await started;
+    wait(3);
+    priv(p).next();
+    const rec = (priv(p).rehearse as unknown as { rec: { start: () => void; finish: () => unknown } }).rec;
+    const starts = vi.spyOn(rec, 'start');
+    (p as unknown as { repeatSlide(): void }).repeatSlide();
+    expect(starts).not.toHaveBeenCalled();
+    // B, then B again: the slide comes back and its clock runs
+    (p as unknown as { onKey(e: unknown): void }).onKey({ key: 'b', preventDefault: noop, stopPropagation: noop, metaKey: false, ctrlKey: false, altKey: false, code: 'KeyB' });
+    (p as unknown as { onKey(e: unknown): void }).onKey({ key: 'b', preventDefault: noop, stopPropagation: noop, metaKey: false, ctrlKey: false, altKey: false, code: 'KeyB' });
+    wait(4);
+    expect(priv(p).elapsed()).toBeCloseTo(4, 0);
+    p.stop();
   });
 
   it('F763: a show stopped while the microphone opens leaves no rehearsal behind', async () => {
