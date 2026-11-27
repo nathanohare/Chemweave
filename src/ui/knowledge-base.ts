@@ -242,6 +242,12 @@ export class KnowledgeBaseWindow {
   async open(query = ''): Promise<void> {
     if (!this.loaded) await this.loadImported();
     if (this.d) { if (query) { this.search.value = query; this.searchChanged(); } this.search.focus(); return; }
+    // a new window starts with an empty search: nothing is left of the last one's structure or CAS search
+    this.searchToken++;
+    this.queryCanon = null;
+    this.containing = null;
+    this.lookingInside = false;
+    this.casCid = null;
     const d = (this.d = el('dialog', { className: 'refs-dialog kb-window' }));
     d.setAttribute('aria-label', 'Knowledge Base');
     d.addEventListener('keydown', (e) => {
@@ -487,8 +493,7 @@ export class KnowledgeBaseWindow {
     // not a structure after all: words, found as words
     if (!c) { this.showFound(); return; }
     for (const t of this.tables) for (const r of t.rows) if ((t.canonicalSmiles || CANONICAL_ROWS.has(r)) && typeof r.smiles === 'string') this.canon.set(r.smiles, r.smiles);
-    const todo = this.tables.flatMap((t) => t.rows.map((r) => r.smiles)).filter((s): s is string => typeof s === 'string' && !this.canon.has(s));
-    for (const s of todo) this.canon.set(s, await this.host.canonical(s));
+    await this.canonicalRows();
     if (token !== this.searchToken) return;
     this.queryCanon = c;
     this.lookingInside = !!this.host.contains;
@@ -500,6 +505,21 @@ export class KnowledgeBaseWindow {
     this.lookingInside = false;
     this.containing = new Set((hits ?? []).map((i) => all[i]));
     this.showFound();
+  }
+
+  /** The pass that works out every row's canonical SMILES (one at a time, shared by every search that wants it). */
+  private canonPass: Promise<void> | null = null;
+
+  private canonicalRows(): Promise<void> {
+    this.canonPass ??= (async () => {
+      try {
+        const todo = this.tables.flatMap((t) => t.rows.map((r) => r.smiles)).filter((s): s is string => typeof s === 'string' && !this.canon.has(s));
+        for (const s of new Set(todo)) if (!this.canon.has(s)) this.canon.set(s, await this.host.canonical(s));
+      } finally {
+        this.canonPass = null;
+      }
+    })();
+    return this.canonPass;
   }
 
   /** Show what a search found, moving to a table with matches when the one showing has none. */
@@ -854,6 +874,7 @@ export class KnowledgeBaseWindow {
     // row of a big table (Reagent Safety, Solubility) on each key typed took most of a second
     const body = el('tbody');
     let next = 0;
+    let looking = false;
     this.moreRows = (n = MORE_ROWS) => {
       const end = Math.min(items.length, next + n);
       for (; next < end; next++) {
@@ -864,7 +885,8 @@ export class KnowledgeBaseWindow {
         if (structure && (next === 0 || m.same !== rows[next - 1].same)) body.append(this.groupRow(span, m.same ? `This compound (${sameCount})` : `Containing it (${rows.length - sameCount})`));
         body.append(this.rowEl(t, m, cols, id));
       }
-      if (structure && next === rows.length && this.lookingInside) body.append(this.groupRow(span, 'Looking for compounds containing it…'));
+      // (once: scrolling asks for more rows again and again)
+      if (structure && next === rows.length && this.lookingInside && !looking) { looking = true; body.append(this.groupRow(span, 'Looking for compounds containing it…')); }
     };
     this.moreRows(FIRST_ROWS);
     const table = el('table', { className: 'refs-table kb-table' + (t.picture && !this.compact ? ' kb-pictures' : '') + (t.fit ? ' kb-fit' : '') + (this.compact ? ' kb-compact' : '') }, el('thead', {}, el('tr', {}, ...cols.map((c) => this.header(c, id, cols.map((x) => x.key))))), body);
@@ -1123,6 +1145,9 @@ export class KnowledgeBaseWindow {
     this.tables = this.tables.filter((x) => x !== t);
     await this.saveImported();
     this.current = this.tables[0];
+    // (the removed table's filters and sort mean nothing to the one now showing)
+    this.picked = {};
+    this.sort = null;
     this.showList();
     this.showTable();
   }

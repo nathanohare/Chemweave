@@ -320,13 +320,16 @@ export function rowAt(d: SpectrumData, ppm: number, tolerance: number): number |
   return best;
 }
 
+/** The style sheet a spectrum picture carries: it is drawn on its own, without the program's, on white paper with dark lines whatever the theme. */
+export function pictureStyle(svg: string): string {
+  const css = getComputedStyle(document.documentElement);
+  const ink = TRACE_ON_PAPER[/<svg[^>]*data-trace="blue"/.test(svg) ? 'blue' : 'maroon'];
+  return `<style>.sp-bg{fill:#fff}.sp-band{display:none}.sp-line{fill:none;stroke:${ink};stroke-width:1.5;stroke-linejoin:round}.sp-hot{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1.8}.sp-lab{font-size:10px;fill:#1d2527}.sp-tick{font-size:9.5px;fill:#5f6b6e}.sp-ax{stroke:#9aa5a7}.sp-lead{stroke:#9aa5a7;stroke-width:.6;fill:none}.sp-meas{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1}.sp-link{fill:none;stroke-width:1.4}.sp-ok{stroke:#3c9a5f;fill:#3c9a5f}.sp-warn{stroke:#d08a1e;fill:#d08a1e}.sp-bad{stroke:#c4483e;fill:#c4483e}.sp-info{stroke:#7b8a8f;fill:#7b8a8f}.sp-mark{stroke:none;font-size:10px;font-weight:600}text{font-family:system-ui,sans-serif}</style>`;
+}
+
 /** An SVG drawing as PNG bytes, with the theme variables filled in. */
 export async function svgToPng(svg: string, scale = 2): Promise<Uint8Array> {
-  const css = getComputedStyle(document.documentElement);
-  // pictures go on white paper with dark lines, whatever the theme
-  const ink = TRACE_ON_PAPER[/<svg[^>]*data-trace="blue"/.test(svg) ? 'blue' : 'maroon'];
-  const style = `<style>.sp-bg{fill:#fff}.sp-band{display:none}.sp-line{fill:none;stroke:${ink};stroke-width:1.5;stroke-linejoin:round}.sp-hot{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1.8}.sp-lab{font-size:10px;fill:#1d2527}.sp-tick{font-size:9.5px;fill:#5f6b6e}.sp-ax{stroke:#9aa5a7}.sp-meas{fill:none;stroke:${css.getPropertyValue('--accent').trim() || '#0e7c86'};stroke-width:1}.sp-link{fill:none;stroke-width:1.4}.sp-ok{stroke:#3c9a5f;fill:#3c9a5f}.sp-warn{stroke:#d08a1e;fill:#d08a1e}.sp-bad{stroke:#c4483e;fill:#c4483e}.sp-info{stroke:#7b8a8f;fill:#7b8a8f}.sp-mark{stroke:none;font-size:10px;font-weight:600}text{font-family:system-ui,sans-serif}</style>`;
-  const solid = svg.replace(/(<svg[^>]*>)/, `$1${style}`);
+  const solid = svg.replace(/(<svg[^>]*>)/, `$1${pictureStyle(svg)}`);
   const m = /viewBox="0 0 ([\d.]+) ([\d.]+)"/.exec(solid)!;
   const w = +m[1], h = +m[2];
   const img = new Image();
@@ -353,6 +356,8 @@ export interface SpectrumWindowHost {
   solvent?: { ids: readonly string[]; label(id: string): string; get(): string; set(id: string): void };
   /** Check Data…: opens the paste box for a measured list; optional. */
   checkData?(): void;
+  /** The window's quality setting was changed (the panel's list follows the rows that quality gives). */
+  qualityChanged?(): void;
   /** Opens Settings ▸ NMR Prediction; optional. */
   openSettings?(): void;
 }
@@ -442,17 +447,18 @@ export class SpectrumWindow {
         el.style.left = `${Math.max(0, Math.min(window.innerWidth - 80, ev.clientX - dx))}px`;
         el.style.top = `${Math.max(0, Math.min(window.innerHeight - 30, ev.clientY - dy))}px`;
       };
-      const up = () => { hd.removeEventListener('pointermove', move); hd.removeEventListener('pointerup', up); };
+      const up = () => { hd.removeEventListener('pointermove', move); hd.removeEventListener('pointerup', up); hd.removeEventListener('pointercancel', up); };
       hd.addEventListener('pointermove', move);
       hd.addEventListener('pointerup', up);
+      hd.addEventListener('pointercancel', up);
     });
     el.querySelector('.nmr-spec-mhz')!.addEventListener('change', (e) => { this.sf = Number((e.target as HTMLSelectElement).value); this.refresh(); });
-    el.querySelector('.nmr-spec-quality')!.addEventListener('change', (e) => { this.quality = (e.target as HTMLSelectElement).value as NmrQuality; this.refresh(); });
+    el.querySelector('.nmr-spec-quality')!.addEventListener('change', (e) => { this.quality = (e.target as HTMLSelectElement).value as NmrQuality; this.refresh(); host.qualityChanged?.(); });
     el.querySelector('.nmr-spec-solvent')?.addEventListener('change', (e) => sol?.set((e.target as HTMLSelectElement).value));
     el.querySelector('.nmr-spec-check')?.addEventListener('click', () => host.checkData?.());
     el.querySelector('.nmr-spec-gear')?.addEventListener('click', () => host.openSettings?.());
     el.querySelector('.nmr-spec-close')!.addEventListener('click', () => this.close());
-    el.querySelector('.nmr-spec-copy')!.addEventListener('click', () => void this.picture().then((p) => this.host.copyPicture(p)).then(() => this.host.flash('Copied the spectrum as a picture.'), () => this.host.flash('Copying was refused by the system.')));
+    el.querySelector('.nmr-spec-copy')!.addEventListener('click', () => void this.picture().then((p) => this.host.copyPicture(p).then(() => this.host.flash('Copied the spectrum as a picture.'), () => this.host.flash('Copying was refused by the system.')), () => this.host.flash('Couldn\'t create the picture.')));
     el.querySelector('.nmr-spec-put')!.addEventListener('click', () => void this.picture().then((p) => this.host.putOnCanvas(p), () => this.host.flash('Couldn\'t create the picture.')));
 
     // the wheel (and a trackpad's two-finger scroll and pinch) changes the peak height; sideways moves along
@@ -735,7 +741,8 @@ function drawPeakLabels(items: { ppm: number; row: number; lines: string[] }[], 
     .map((it) => ({ ...it, x: xs(it.ppm), lines: p.hover && it.row !== o.hotRow ? it.lines.slice(0, 1) : it.lines }))
     .filter((it) => it.lines.length && it.x >= 0 && it.x <= o.w)
     .sort((a, b) => a.x - b.x);
-  const font = `font-size="${p.size}"`;
+  // (as a style: the sheet's own size for these labels would win over an attribute)
+  const font = `style="font-size:${p.size}px"`;
   let s = '';
   if (p.place === 'upright') {
     let last = -Infinity;

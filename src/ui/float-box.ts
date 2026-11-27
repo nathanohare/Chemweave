@@ -12,7 +12,8 @@ export class FloatBox {
   /** Pinned down the right side of the window (dock). */
   docked = false;
 
-  constructor(title: string, private onPin: () => void) {
+  /** `onClose` is told whenever it is closed (by ×, Esc or close()), for a window that must stop what it is doing. */
+  constructor(title: string, private onPin: () => void, private onClose?: () => void) {
     this.el = document.createElement('div');
     this.el.className = 'float-box';
     this.el.hidden = true;
@@ -72,6 +73,7 @@ export class FloatBox {
 
   close(): void {
     this.el.hidden = true;
+    this.onClose?.();
   }
 
   /**

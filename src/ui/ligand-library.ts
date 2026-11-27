@@ -71,6 +71,8 @@ export class LigandLibraryWindow {
       const typing = e.target instanceof HTMLInputElement;
       if (typing && e.key !== 'ArrowDown' && e.key !== 'Enter') return;
       if (e.target instanceof HTMLButtonElement && e.key === 'Enter') return;
+      // a link (the PubChem record) or anything else in the details has its own Enter
+      if (e.key === 'Enter' && e.target instanceof Element && e.target.closest('a, .lig-details')) return;
       if (e.key === 'Enter' && this.current) { e.preventDefault(); this.use(true); }
       else if (e.key.startsWith('Arrow')) { e.preventDefault(); this.step(typing ? 'ArrowNone' : e.key); }
     });

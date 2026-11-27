@@ -13,6 +13,7 @@ import { qmBonds, skeletonMolfile } from '../chem/qm-bonds';
 import type { Contents } from '../model';
 import { popupMenu } from './popup-menu';
 import { RichField } from './rich-field';
+import { ask } from './ask';
 
 /** How the last diagram looked, so a new one starts the same way. */
 let lastLook: Pick<EnergyData, 'style' | 'values' | 'digits' | 'axis' | 'barrier' | 'overall' | 'quantity' | 'unit'> = { ...ENERGY_DEFAULTS, quantity: 'ΔG', unit: 'kcal/mol' };
@@ -268,7 +269,9 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           [has ? 'Edit Structure…' : 'Draw Structure…', () => void editIt()],
           ['Paste Structure', async () => { const got = await structure!.paste(); if ('error' in got) note(got.error); else set(got); }],
           ['From Name or SMILES…', async () => {
-            const text = prompt(`A name, SMILES or CAS number for ${who}`)?.trim();
+            // (a window of the program's own: the system's prompt() isn't there in the desktop app)
+            const typed = await ask('From Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS number', value: '' }], { ok: 'Draw', note: `A name, SMILES or CAS number for ${who}.` });
+            const text = typed?.text.trim();
             if (!text) return;
             const got = await structure!.fromText(text);
             if ('error' in got) note(got.error); else set(got);
@@ -501,7 +504,8 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       const note = $<HTMLParagraphElement>('.energy-import-note');
       const missing = new Set<string>();
       paths.forEach((_, j) => {
-        const cells = rows.map((r) => r[j]).filter((c) => c?.ehs);
+        // (an energy typed over a file's has no energy of the file's left on it: it stays as typed)
+        const cells = rows.map((r) => r[j]).filter((c) => c?.ehs && c.eh !== undefined);
         if (!cells.length) return;
         if (cells.some((c) => c.ehs![kind] === undefined)) { for (const c of cells) if (c.ehs![kind] === undefined) missing.add(c.label || '?'); return; }
         for (const c of cells) c.eh = c.ehs![kind];
@@ -607,8 +611,10 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     const relative = () => {
       const unit = $<HTMLSelectElement>('select[name=unit]').value;
       const k = HARTREE[unit] ?? HARTREE['kcal/mol'];
+      const kind = energyKind($<HTMLSelectElement>('select[name=quantity]').value);
       paths.forEach((_, j) => {
-        const ref = rows.find((r) => r[j]?.eh !== undefined)?.[j].eh;
+        // the pathway's first file is the zero, even when its energy was typed over (its file's energy is still kept)
+        const ref = rows.map((r) => r[j]?.eh ?? r[j]?.ehs?.[kind]).find((v) => v !== undefined);
         if (ref === undefined) return;
         for (const r of rows) if (r[j]?.eh !== undefined) r[j].g = String(Math.round((r[j].eh! - ref) * k * 100) / 100);
       });
@@ -669,22 +675,44 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
       redraw();
     });
     // 2-D structures: each geometry laid out flat by the chemistry engine (once; kept with the diagram)
+    // (kept by geometry, not on the cell: the table is read into new cells whenever anything is typed or pressed)
+    const layouts = new WeakMap<QmAtom[], Map<boolean, { run: Promise<void>; flat: NonNullable<Cell['flat']> | null }>>();
+    const layoutOf = (c: Cell) => {
+      const geom = c.geom!, ts = /‡/.test(c.label);
+      const own = layouts.get(geom) ?? new Map();
+      layouts.set(geom, own);
+      let e = own.get(ts);
+      if (!e) {
+        const made = { run: Promise.resolve(), flat: null as NonNullable<Cell['flat']> | null };
+        made.run = flatFor(geom, c.label, layout!).then((f) => { made.flat = f; if (!f) own.delete(ts); });
+        own.set(ts, made);
+        e = made;
+      }
+      return e;
+    };
     const ensureFlat = async () => {
       if (!layout) return;
       const all2d = $<HTMLSelectElement>('select[name=structures]').value === '2d';
+      const wanted = (c: Cell) => c.geom?.length && !c.flat && (c.view?.style ? c.view.style === '2d' : all2d);
       read();
-      const todo = rows.flat().filter((c) => c.geom?.length && !c.flat && (c.view?.style ? c.view.style === '2d' : all2d));
-      for (const c of todo) {
-        const f = await flatFor(c.geom!, c.label, layout);
-        if (f) c.flat = f;
-      }
+      for (const c of rows.flat().filter(wanted)) await layoutOf(c).run;
+      // (the table may have been read again meanwhile: each layout goes on the cells there now)
+      read();
+      for (const c of rows.flat()) if (wanted(c)) { const f = layouts.get(c.geom!)?.get(/‡/.test(c.label))?.flat; if (f) c.flat = f; }
     };
     $<HTMLSelectElement>('select[name=structures]').addEventListener('change', () => { void ensureFlat().then(redraw); });
     form.addEventListener('submit', async (e) => {
       e.preventDefault();
       await ensureFlat();
       const out = gather();
-      if (!out.paths.some((p) => p.points.some((q) => q.g !== null))) return;
+      if (!out.paths.some((p) => p.points.some((q) => q.g !== null))) {
+        const n = $<HTMLParagraphElement>('.energy-import-note');
+        n.hidden = false;
+        n.setAttribute('role', 'status');
+        n.textContent = 'Type an energy for at least one species to draw the diagram.';
+        table.querySelector<HTMLInputElement>('input[data-g]')?.focus();
+        return;
+      }
       const { style, values, digits, axis, barrier, overall, quantity, unit } = out;
       lastLook = { style, values, digits, axis, barrier, overall, quantity, unit };
       d.close();
