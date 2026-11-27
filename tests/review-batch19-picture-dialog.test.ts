@@ -57,7 +57,7 @@ describe('F759: Reset Picture and the background tolerance', () => {
     const { got, d, row, apply, button } = open();
     loaded({ naturalWidth: 200, naturalHeight: 100 });
     await tick();
-    const on = row('Remove background').querySelector<HTMLInputElement>('input[type=checkbox]')!;
+    const on = row('Remove Background').querySelector<HTMLInputElement>('input[type=checkbox]')!;
     const tolRange = row('How near counts').querySelector<HTMLInputElement>('input[type=range]')!;
     on.checked = true;
     on.dispatchEvent(new Event('change', { bubbles: true }));
