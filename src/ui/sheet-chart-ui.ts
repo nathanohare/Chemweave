@@ -2,7 +2,7 @@
 // and the panel on the right where every setting can be changed by hand, down to each series'
 // cell references, axis limits and fitted-line options.
 
-import { withInfo } from './info-tip';
+import { addInfo, withInfo } from './info-tip';
 import { askAltText } from './accessibility-pane';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
@@ -144,7 +144,7 @@ export class SheetCharts {
       null,
       [`${first?.showEq ? '✓ ' : ''}Show Equation`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, showEq: !s.fit.showEq } } : s)), !!first],
       [`${first?.showR2 ? '✓ ' : ''}Show R²`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, showR2: !s.fit.showR2 } } : s)), !!first],
-      ['Through the Origin', () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, intercept: s.fit.intercept === 0 ? undefined : 0 } } : s)), !!first && (first.kind === 'linear' || first.kind.startsWith('poly') || first.kind === 'hammett')],
+      [`${first?.intercept === 0 ? '✓ ' : ''}Through the Origin`, () => all((s) => (s.fit ? { ...s, fit: { ...s.fit, intercept: s.fit.intercept === 0 ? undefined : 0 } } : s)), !!first && (first.kind === 'linear' || first.kind.startsWith('poly') || first.kind === 'hammett')],
       null,
       ['More Options (each series)…', () => this.focusPanel()],
     ]);
@@ -423,12 +423,14 @@ export class SheetCharts {
     if (c.kind === 'histogram') {
       const b = c.bins ?? {};
       const setB = (q: Partial<Bins>) => this.patch((x) => { const bins = clean({ ...x.bins, ...q }); return clean({ ...x, bins: Object.keys(bins).length ? bins : undefined }); }, 'Bins');
-      out.push(row('Bin width', numberBox(b.width, (v) => setB({ width: v && v > 0 ? v : undefined }), 'auto')));
+      const widthRow = row('Bin width', numberBox(b.width, (v) => setB({ width: v && v > 0 ? v : undefined }), 'auto'));
+      addInfo(widthRow.firstElementChild, 'Each bin holds the numbers above its start, up to and including its end.');
+      out.push(widthRow);
       out.push(row('Or bins', numberBox(b.count, (v) => setB({ count: v && v >= 1 ? Math.round(v) : undefined }), 'auto', 'of them')));
       out.push(row('Overflow', numberBox(b.overflow, (v) => setB({ overflow: v }), 'none', 'and above in one bin')));
       out.push(row('Underflow', numberBox(b.underflow, (v) => setB({ underflow: v }), 'none', 'and below in one bin')));
       const h = histogram(chartData(this.view.wb!, this.sheet, c)[0]?.ys ?? [], b);
-      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}; each holds the numbers above its start, up to and including its end.`));
+      if (h.width) out.push(note(`Bins ${Number(h.width.toPrecision(4))} wide${b.width || b.count ? '' : ' (chosen by Scott\'s rule, as Excel does)'}.`));
     }
     if (c.kind === 'box') {
       const o = c.boxes ?? {};
@@ -448,11 +450,13 @@ export class SheetCharts {
     // treemaps and decomposition trees open up by clicks on the chart once it is selected
     const opened = c.path?.length ? c.path.join(' › ') : '';
     if (c.kind === 'treemap') {
-      out.push(row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill up')) : null));
-      out.push(note('Click a box of the chart to drill into it, and a step of the trail above it to go back up.'));
+      const drilled = row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill up')) : null);
+      addInfo(drilled.firstElementChild, 'Click a box of the chart to drill into it, and a step of the trail above it to go back up.');
+      out.push(drilled);
     } else if (c.kind === 'decomp') {
-      out.push(row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse tree')) : null));
-      out.push(note('Click a node of the chart to split it by the next level, and click it again to close it.'));
+      const expanded = row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse tree')) : null);
+      addInfo(expanded.firstElementChild, 'Click a node of the chart to split it by the next level, and click it again to close it.');
+      out.push(expanded);
     }
 
     // charts of levels have no axes, and their series are the levels
@@ -509,7 +513,7 @@ export class SheetCharts {
         out.push(row('Line style', select([['solid', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']], s.dash ?? 'solid', (v) => this.patchSeries(i, { dash: v === 'solid' ? undefined : (v as 'dash') }, 'Line style')),
           numberBox(s.lineWidth, (v) => this.patchSeries(i, { lineWidth: v }, 'Line width'), '2', 'px')));
       }
-      const remove = () => row('', button('Remove this series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove series')));
+      const remove = () => row('', button('Remove Series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove series')));
       if (c.kind !== 'box') out.push(row('Values shown', check(!!s.labels, (v) => this.patchSeries(i, { labels: v || undefined }, 'Data labels')),
         c.kind === 'scatter' ? check(!!s.labelX, (v) => this.patchSeries(i, { labelX: v || undefined, ...(v ? { labels: true } : {}) }, 'Data labels'), 'Show x (m/z)') : null));
       if (!FITTED.has(c.kind)) { if (c.series.length > 1 && c.kind !== 'pie') out.push(remove()); return; }
@@ -532,7 +536,7 @@ export class SheetCharts {
         out.push(row('Extend', numberBox(f.backward, (v) => setFit({ backward: v }), '0', 'back'), numberBox(f.forward, (v) => setFit({ forward: v }), '0', 'forward')));
         out.push(row('Color', colour(f.color ?? data[i]?.color ?? '#4472c4', (v) => setFit({ color: v })), f.color ? button('Auto', () => setFit({ color: undefined })) : null));
         out.push(row('Legend', check(f.legend !== false, (v) => setFit({ legend: v ? undefined : false }), 'List it')));
-        if (f.labelAt) out.push(row('Equation', button('Reset position (beside the line)', () => setFit({ labelAt: undefined }))));
+        if (f.labelAt) out.push(row('Equation', button('Reset Position', () => setFit({ labelAt: undefined }))));
         const fit = fits[i];
         if (fit) {
           const box = document.createElement('div');
@@ -549,7 +553,7 @@ export class SheetCharts {
           if (how[fit.kind]) box.append(note(how[fit.kind]!, 'muted small'));
           const btns = document.createElement('div');
           btns.className = 'cp-buttons';
-          btns.append(button('Copy equation', () => void navigator.clipboard?.writeText([fitEquation(fit, 6), ...fitResults(fit, 6), r2Text(fit, 5)].join('\n')).then(() => this.host.flash('Copied the equation.'), () => this.host.flash('This browser would not copy.'))));
+          btns.append(button('Copy Equation', () => void navigator.clipboard?.writeText([fitEquation(fit, 6), ...fitResults(fit, 6), r2Text(fit, 5)].join('\n')).then(() => this.host.flash('Copied the equation.'), () => this.host.flash('This browser would not copy.'))));
           if (fit.kind === 'linear' && f.intercept === undefined && s.x && c.kind === 'scatter' && !this.target) btns.append(button('Insert into Cells…', () => void this.fitToCells(i)));
           box.append(btns);
           out.push(box);
@@ -559,7 +563,7 @@ export class SheetCharts {
       }
       if (c.series.length > 1) out.push(remove());
     });
-    out.push(rowOf(button('Add series…', () => void this.addSeries()), button('Copy as picture', () => void this.copyPicture()), button('Delete chart', () => this.deleteChart())));
+    out.push(rowOf(button('Add Series…', () => void this.addSeries()), button('Copy as Picture', () => void this.copyPicture()), button('Delete Chart', () => this.deleteChart())));
     return out;
   }
 }

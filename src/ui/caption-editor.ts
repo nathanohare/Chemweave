@@ -438,7 +438,7 @@ export class CaptionEditor {
     };
     if (issue) {
       item(`${issue.message}: change to ${issue.fixed}`, () => this.ed.fix(issue.edits, 'fix'));
-      item('Leave as written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
+      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
     }
     if (word) {
       if (issue) menu.appendChild(d.createElement('hr'));

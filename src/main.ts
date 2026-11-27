@@ -8297,7 +8297,7 @@ function clearShowTimings(which: 'slide' | 'all'): void {
   const d = deckNow();
   if (!d) return;
   const ix = clearTargets(d, which);
-  if (!d.clearTimings(ix, which === 'all' ? 'Clear timings on all slides' : 'Clear timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
+  if (!d.clearTimings(ix, which === 'all' ? 'Clear Timings on All Slides' : 'Clear Timings')) { flash(which === 'all' ? 'No slide has a time to clear.' : 'This slide has no time to clear.'); return; }
   flash(which === 'all' ? 'Timings cleared: all slides advance on click.' : 'Timing cleared: the slide advances on click.');
 }
 
@@ -8360,7 +8360,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
           });
         } else flash('Nothing was recorded (the microphone gave no sound).');
       }
-      d.setTimings(r.times, r.recordings.size ? 'Record slide show timings' : 'Rehearse timings');
+      d.setTimings(r.times, r.recordings.size ? 'Record Slide Show Timings' : 'Rehearse Timings');
       // the whole show, with the times of slides not played this time (rehearsing from one slide)
       const whole = d.slides.reduce((n, s) => n + (s.hidden ? 0 : s.transition?.advanceAfter ?? 0), 0);
       flash(`Kept: the show takes ${clockText(Math.max(whole, r.total))}${r.recordings.size ? ', with narration on the slides' : ''}. Set Up Show ▸ Advance slides can turn the times off.`, 8000);
@@ -8405,7 +8405,7 @@ async function setUpShowCmd(): Promise<void> {
   if (!d || ws.active.mode !== 'slides') return;
   finishTyping();
   const got = await setUpShow(d.settings.show, d.settings.customShows ?? [], d.slides.length);
-  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set up show');
+  if (got && deckNow() === d) d.setSettings({ ...d.settings, show: got }, 'Set Up Show');
   showSlideState();
 }
 

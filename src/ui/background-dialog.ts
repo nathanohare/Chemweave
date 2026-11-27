@@ -4,7 +4,7 @@
 // or to every slide (Apply to All), and Reset Background gives the slides the master's again.
 // A preview shows the slide as it will look; nothing changes until Apply, and Undo puts it back.
 
-import { foldIntoInfo } from './info-tip';
+import { addInfo, foldIntoInfo } from './info-tip';
 import type { Image } from '../deck/deck';
 import {
   type Background, type GradientStop, type PatternId, type TileAlign, type TileMirror,
@@ -197,7 +197,8 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
       }
       const head = document.createElement('div');
       head.className = 'bg-stops-head muted';
-      head.textContent = 'Color stops: color, how far along the gradient, and transparency';
+      head.textContent = 'Color Stops';
+      addInfo(head, 'Each stop has a color, how far along the gradient it sits, and its transparency.');
       gradControls.append(head);
       gradient.stops.forEach((s, k) => {
         const put = (v: Partial<GradientStop>) => { gradient = { ...gradient, stops: gradient.stops.map((x, j) => (j === k ? { ...x, ...v } : x)) }; draw(); };
@@ -319,7 +320,8 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
     hideBox.type = 'checkbox';
     hideBox.checked = hide;
     hideBox.addEventListener('change', () => { hide = hideBox.checked; draw(); });
-    const hideRow = row(grid, 'Hide background graphics', hideBox, unit('(the template\'s shapes and the logo)'));
+    const hideRow = row(grid, 'Hide background graphics', hideBox);
+    addInfo(hideRow.querySelector('span'), 'The template\'s shapes and the logo.');
     hideRow.classList.add('bg-hide');
 
     const chosen = (): Background | null => (kind === 'solid' ? solid : kind === 'gradient' ? gradient : kind === 'picture' ? picture : pattern);
@@ -342,7 +344,7 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
     const ok = document.createElement('button');
     ok.type = 'submit';
     ok.className = 'primary';
-    ok.textContent = o.design ? 'Apply' : o.count > 1 ? `Apply to ${o.count} slides` : 'Apply to this slide';
+    ok.textContent = o.design ? 'Apply' : o.count > 1 ? `Apply to ${o.count} slides` : 'Apply to This Slide';
     const spacer = document.createElement('span');
     spacer.className = 'bg-spacer';
     buttons.append(reset, all, spacer, cancel, ok);

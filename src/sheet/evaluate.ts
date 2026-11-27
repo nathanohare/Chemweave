@@ -151,7 +151,7 @@ function nameValue(name: string, host: EvalHost): Arg {
   if (local !== undefined) return local;
   const defined = host.name?.(name);
   if (defined !== undefined) return defined;
-  return ERR.name(`"${name}" is not a name, function or cell this program knows (Formulas > Name Manager lists the names)`);
+  return ERR.name(`"${name}" is not a name, function or cell Chemweave knows (Formulas ▸ Name Manager lists the names)`);
 }
 
 /** A host that also knows some names (LET's, or a LAMBDA's parameters). */
@@ -828,7 +828,7 @@ function call(name: string, argNodes: Node[], host: EvalHost): Arg {
     // a LAMBDA given a name in the Name Manager
     const named = host.name?.(name);
     if (named instanceof LambdaValue) return applyLambda(named, argNodes.map((a) => evalNode(a, host)));
-    return ERR.name(`${name} is not a function this program knows`);
+    return ERR.name(`${name} is not a function Chemweave knows`);
   }
   if (argNodes.length < def.min || argNodes.length > def.max) {
     return ERR.value(def.min === def.max ? `${name} needs ${def.min} argument${def.min === 1 ? '' : 's'}` : `${name} needs ${def.min} to ${def.max} arguments`);

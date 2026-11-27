@@ -474,7 +474,7 @@ export function partName(doc: Doc, part: Part | undefined): string {
 function colourName(hex: string): string {
   const v = parseInt(hex.replace('#', ''), 16);
   const r = (v >> 16) & 255, g = (v >> 8) & 255, b = v & 255;
-  const names: [string, number, number, number][] = [['yellow', 255, 230, 128], ['green', 158, 217, 168], ['blue', 169, 200, 255], ['pink', 242, 167, 195], ['orange', 246, 179, 138], ['teal', 26, 163, 163], ['red', 230, 80, 80], ['purple', 180, 140, 220], ['grey', 190, 190, 190]];
+  const names: [string, number, number, number][] = [['yellow', 255, 230, 128], ['green', 158, 217, 168], ['blue', 169, 200, 255], ['pink', 242, 167, 195], ['orange', 246, 179, 138], ['teal', 26, 163, 163], ['red', 230, 80, 80], ['purple', 180, 140, 220], ['gray', 190, 190, 190]];
   let best = '', d = Infinity;
   for (const [n, R, G, B] of names) { const e = (r - R) ** 2 + (g - G) ** 2 + (b - B) ** 2; if (e < d) { d = e; best = n; } }
   return d < 2500 ? best : hex.toUpperCase();

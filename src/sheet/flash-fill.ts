@@ -224,6 +224,6 @@ function describeAtom(a: Atom): string {
   const name = a.cut === 'whole' ? 'text' : a.cut === 'words' ? 'word' : a.cut === 'alnum' ? 'part' : 'run';
   const nth = (x: number) => (x >= 0 ? ORD[x] ?? `${x + 1}th` : x === -1 ? 'last' : `${ORD[-x - 1] ?? `${-x}th`} from last`);
   const what = a.cut === 'whole' ? 'the text' : a.from === a.to ? `the ${nth(a.from)} ${name}` : `${name}s ${nth(a.from)} to ${nth(a.to)}`;
-  const ch = a.change === 'same' ? '' : a.change === 'initial' ? ', first letter' : a.change === 'initial-upper' ? ', first letter in capitals' : `, ${a.change === 'proper' ? 'capitalised' : `in ${a.change}case`}`;
+  const ch = a.change === 'same' ? '' : a.change === 'initial' ? ', first letter' : a.change === 'initial-upper' ? ', first letter in capitals' : `, ${a.change === 'proper' ? 'capitalized' : `in ${a.change}case`}`;
   return `${what}${ch} of column ${a.col + 1}`;
 }

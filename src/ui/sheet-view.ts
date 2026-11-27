@@ -188,6 +188,27 @@ type Drag =
   | { kind: 'object'; pointer: number; id: number; how: Handle; x0: number; y0: number; orig: SheetObject; moved: boolean };
 
 type Handle = 'move' | 'n' | 's' | 'e' | 'w' | 'ne' | 'nw' | 'se' | 'sw' | 'start' | 'end';
+/** A box on the grid, in pixels. */
+export interface TintBox { x: number; y: number; w: number; h: number }
+
+/**
+ * The boxes that make up `outer` without `hole` (up to four, none empty), so a selection's tint can
+ * be drawn round the active cell and leave it untinted. A hole that is not inside `outer` is
+ * clipped to it; one that misses it leaves `outer` whole.
+ */
+export function tintPieces(outer: TintBox, hole: TintBox): TintBox[] {
+  const hx1 = Math.max(outer.x, hole.x), hy1 = Math.max(outer.y, hole.y);
+  const hx2 = Math.min(outer.x + outer.w, hole.x + hole.w), hy2 = Math.min(outer.y + outer.h, hole.y + hole.h);
+  if (hx2 <= hx1 || hy2 <= hy1) return outer.w > 0 && outer.h > 0 ? [outer] : [];
+  const out: TintBox[] = [
+    { x: outer.x, y: outer.y, w: outer.w, h: hy1 - outer.y }, // above the hole
+    { x: outer.x, y: hy2, w: outer.w, h: outer.y + outer.h - hy2 }, // below it
+    { x: outer.x, y: hy1, w: hx1 - outer.x, h: hy2 - hy1 }, // left of it
+    { x: hx2, y: hy1, w: outer.x + outer.w - hx2, h: hy2 - hy1 }, // right of it
+  ];
+  return out.filter((b) => b.w > 0 && b.h > 0);
+}
+
 /** Anything floating over the cells: a corner cell and offset, and a size, in pixels at 100%. */
 type Floating = { at: Chart['at']; w: number; h: number };
 
@@ -2083,17 +2104,13 @@ export class SheetView {
     }
     const one = !sel.more?.length && (range.r1 === range.r2 && range.c1 === range.c2 || !!(s.mergeAt(sel.active.r, sel.active.c) && sameRange(s.mergeAt(sel.active.r, sel.active.c)!, range)));
     if (!one) {
+      // the active cell (or its merged cell) is left out of the tint, as Excel leaves it white
+      const m = s.mergeAt(sel.active.r, sel.active.c);
+      const ar = m ?? { r1: sel.active.r, c1: sel.active.c, r2: sel.active.r, c2: sel.active.c };
       ctx.save();
       ctx.globalAlpha = 0.12;
       ctx.fillStyle = accent;
-      ctx.fillRect(x1, y1, x2 - x1, y2 - y1);
-      ctx.restore();
-      // the active cell stays white
-      const m = s.mergeAt(sel.active.r, sel.active.c);
-      const ar = m ?? { r1: sel.active.r, c1: sel.active.c, r2: sel.active.r, c2: sel.active.c };
-      ctx.fillStyle = 'rgba(255,255,255,0)';
-      ctx.save();
-      ctx.globalCompositeOperation = 'destination-out';
+      for (const t of tintPieces({ x: x1, y: y1, w: x2 - x1, h: y2 - y1 }, { x: X(ar.c1), y: Y(ar.r1), w: X(ar.c2 + 1) - X(ar.c1), h: Y(ar.r2 + 1) - Y(ar.r1) })) ctx.fillRect(t.x, t.y, t.w, t.h);
       ctx.restore();
       ctx.strokeStyle = accent;
       ctx.lineWidth = 1;
