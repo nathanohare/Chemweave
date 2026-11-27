@@ -142,9 +142,15 @@ interface Styles {
   rowHeights: Map<string, number>;
 }
 
-/** The automatic styles a content.xml (and styles.xml) defines: cell looks, column widths, row heights. */
+/**
+ * The automatic styles a content.xml (and styles.xml) defines: cell looks, column widths, row heights.
+ * A cell style is laid over its parent's (style:parent-style-name, OpenDocument 1.3 Part 3, 16.2:
+ * LibreOffice saves ce1, ce2... with only what differs from a named style such as Heading 1 or Accent).
+ */
 function readStyles(docs: (Document | null)[]): Styles {
   const out: Styles = { cells: new Map(), colWidths: new Map(), rowHeights: new Map() };
+  // each cell style's own settings (false or null: set off here, over the parent's) and its parent
+  const own = new Map<string, { s: Record<string, unknown>; parent: string | null }>();
   for (const doc of docs) {
     if (!doc) continue;
     for (const st of Array.from(doc.getElementsByTagNameNS(STYLE, 'style'))) {
@@ -159,25 +165,41 @@ function readStyles(docs: (Document | null)[]): Styles {
         const h = lengthPx(p?.getAttributeNS(STYLE, 'row-height') ?? null);
         if (h !== null && p?.getAttributeNS(STYLE, 'use-optimal-row-height') === 'false') out.rowHeights.set(name, h);
       } else if (family === 'table-cell') {
-        const s: CellStyle = {};
+        const s: Record<string, unknown> = {};
         const t = kid(st, 'text-properties');
-        if (t?.getAttributeNS(FO, 'font-weight') === 'bold') s.bold = true;
-        if (t?.getAttributeNS(FO, 'font-style') === 'italic') s.italic = true;
+        const fw = t?.getAttributeNS(FO, 'font-weight');
+        if (fw === 'bold') s.bold = true; else if (fw === 'normal') s.bold = false;
+        const fs = t?.getAttributeNS(FO, 'font-style');
+        if (fs === 'italic') s.italic = true; else if (fs === 'normal') s.italic = false;
         const ul = t?.getAttributeNS(STYLE, 'text-underline-style');
-        if (ul && ul !== 'none') s.underline = true;
+        if (ul) s.underline = ul !== 'none';
         const col = t?.getAttributeNS(FO, 'color');
-        if (col && /^#[0-9a-f]{6}$/i.test(col) && col.toLowerCase() !== '#000000') s.color = col.toLowerCase();
+        if (col && /^#[0-9a-f]{6}$/i.test(col)) s.color = col.toLowerCase() !== '#000000' ? col.toLowerCase() : null;
         const c = kid(st, 'table-cell-properties');
         const bg = c?.getAttributeNS(FO, 'background-color');
-        if (bg && /^#[0-9a-f]{6}$/i.test(bg)) s.fill = bg.toLowerCase();
-        if (c?.getAttributeNS(FO, 'wrap-option') === 'wrap') s.wrap = true;
+        if (bg && /^#[0-9a-f]{6}$/i.test(bg)) s.fill = bg.toLowerCase(); else if (bg === 'transparent') s.fill = null;
+        const wo = c?.getAttributeNS(FO, 'wrap-option');
+        if (wo === 'wrap') s.wrap = true; else if (wo === 'no-wrap') s.wrap = false;
         const va = c?.getAttributeNS(STYLE, 'vertical-align');
         if (va === 'top' || va === 'bottom') s.valign = va; else if (va === 'middle') s.valign = 'middle';
         const al = kid(st, 'paragraph-properties')?.getAttributeNS(FO, 'text-align');
         if (al === 'center') s.align = 'center'; else if (al === 'end' || al === 'right') s.align = 'right'; else if (al === 'start' || al === 'left') s.align = 'left';
-        out.cells.set(name, s);
+        own.set(name, { s, parent: st.getAttributeNS(STYLE, 'parent-style-name') || null });
       }
     }
+  }
+  // the parent's settings first, then the style's own (a loop of parents is cut where it repeats)
+  const resolved = (name: string, seen: Set<string>): Record<string, unknown> => {
+    const o = own.get(name);
+    if (!o || seen.has(name)) return {};
+    seen.add(name);
+    return { ...(o.parent ? resolved(o.parent, seen) : {}), ...o.s };
+  };
+  for (const name of own.keys()) {
+    const all = resolved(name, new Set());
+    const s: CellStyle = {};
+    for (const [k, v] of Object.entries(all)) if (v !== false && v !== null) (s as Record<string, unknown>)[k] = v;
+    out.cells.set(name, s);
   }
   return out;
 }
@@ -255,30 +277,42 @@ export function readOds(bytes: Uint8Array): { book: Workbook; warnings: string[]
       for (const row of rowsOf(t)) {
         const rn = Math.min(Number(tAttr(row, 'number-rows-repeated') ?? 1) || 1, MAX_ROWS - r);
         const cells = kids(row).filter((k) => k.localName === 'table-cell' || k.localName === 'covered-table-cell');
-        // a run of rows that are only room (LibreOffice ends a sheet with a million of them)
-        const empty = cells.every((cell) => !cell.firstElementChild && !oAttr(cell, 'value-type') && !tAttr(cell, 'formula'));
-        if (empty && rn > 1) { r += rn; continue; }
+        // each cell read once for all the row's copies: its columns, what it holds and its look
+        let col = 0;
+        const read = cells.map((cell) => {
+          const at = col;
+          const cn = Math.min(Number(tAttr(cell, 'number-columns-repeated') ?? 1) || 1, MAX_COLS - col);
+          col += cn;
+          const input = cell.localName === 'covered-table-cell' ? undefined : cellInput(cell);
+          const style = styles.cells.get(tAttr(cell, 'style-name') ?? colStyle[at] ?? '');
+          const shown = style && Object.keys(style).length ? style : undefined;
+          return { cell, at, cn, input, shown };
+        });
         const h = styles.rowHeights.get(tAttr(row, 'style-name') ?? '');
-        for (let k = 0; k < Math.min(rn, 1000); k++) {
-          if (h !== undefined) s.setRowHeight(r + k, h);
-          if (tAttr(row, 'visibility') === 'collapse') s.setRowHidden(r + k, true);
-          let col = 0;
-          for (const cell of cells) {
-            const cn = Math.min(Number(tAttr(cell, 'number-columns-repeated') ?? 1) || 1, MAX_COLS - col);
-            const input = cell.localName === 'covered-table-cell' ? undefined : cellInput(cell);
-            const style = styles.cells.get(tAttr(cell, 'style-name') ?? colStyle[col] ?? '');
-            const shown = style && Object.keys(style).length ? style : undefined;
-            if (input !== undefined || (shown && cn <= 256)) {
-              for (let j = 0; j < (input !== undefined ? cn : Math.min(cn, 256)); j++) {
-                const fmt = input?.numFmt;
-                const st = fmt ? { ...shown, numFmt: fmt } : shown;
-                s.setCell(r + k, col + j, { input: input?.text || undefined, style: st });
-              }
-            }
-            const cs = Number(tAttr(cell, 'number-columns-spanned') ?? 1), rs = Number(tAttr(cell, 'number-rows-spanned') ?? 1);
-            if (k === 0 && cell.localName === 'table-cell' && (cs > 1 || rs > 1)) merges.push({ r1: r, c1: col, r2: r + rs - 1, c2: col + cs - 1 });
-            col += cn;
+        const hidden = tAttr(row, 'visibility') === 'collapse';
+        // every copy of the run gets its height and hiding (LibreOffice ends a sheet with a million
+        // plain rows, which have neither)
+        if (h !== undefined || hidden) {
+          for (let k = 0; k < rn; k++) {
+            if (h !== undefined) s.setRowHeight(r + k, h);
+            if (hidden) s.setRowHidden(r + k, true);
           }
+        }
+        // values and formulas go in every copy; a look on cells that hold nothing in the first 1000
+        const holds = read.some((x) => x.input !== undefined);
+        const looks = read.some((x) => x.shown && x.input === undefined && x.cn <= 256);
+        const copies = holds ? rn : looks ? Math.min(rn, 1000) : 0;
+        for (let k = 0; k < copies; k++) {
+          for (const { input, shown, at, cn } of read) {
+            if (input === undefined && (!shown || cn > 256 || k >= 1000)) continue;
+            const fmt = input?.numFmt;
+            const st = fmt ? { ...shown, numFmt: fmt } : shown;
+            for (let j = 0; j < (input !== undefined ? cn : Math.min(cn, 256)); j++) s.setCell(r + k, at + j, { input: input?.text || undefined, style: st });
+          }
+        }
+        for (const { cell, at } of read) {
+          const cs = Number(tAttr(cell, 'number-columns-spanned') ?? 1), rs = Number(tAttr(cell, 'number-rows-spanned') ?? 1);
+          if (cell.localName === 'table-cell' && (cs > 1 || rs > 1)) merges.push({ r1: r, c1: at, r2: r + rs - 1, c2: at + cs - 1 });
         }
         r += rn;
       }
