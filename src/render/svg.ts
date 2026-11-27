@@ -3,6 +3,7 @@
 import { Item, Seg, ImageItem, parseColor } from './vector';
 import { EmfBox } from './emf';
 import { showableSrc } from './images';
+import { cssString } from './css-string';
 
 const n = (v: number): string => String(Math.round(v * 100) / 100);
 
@@ -22,9 +23,6 @@ function paint(attr: 'fill' | 'stroke', colour: string): string {
   const hex = '#' + [r, g, b].map((v) => Math.max(0, Math.min(255, Math.round(v))).toString(16).padStart(2, '0')).join('');
   return `${attr}="${hex}"${a < 1 ? ` ${attr}-opacity="${n(Math.max(0, a))}"` : ''}`;
 }
-
-/** Text for inside a quoted CSS string (a font name with an apostrophe, O'Brien Sans): CSS 2.1 §4.3.7 and §4.1.3: a quote or backslash goes in after a backslash. */
-const cssString = (t: string): string => t.replace(/\\/g, '\\\\').replace(/'/g, "\\'");
 
 let clipCount = 0;
 

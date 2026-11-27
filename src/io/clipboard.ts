@@ -31,7 +31,7 @@ import { measureText } from '../render/renderer';
 import { fitPasted, typicalBondLength } from './fit-drawing';
 
 export { fitPasted, typicalBondLength };
-import { recordPicture, pictureEmf, pictureSvg, pictureCanvas, canvasPng, canvasDib } from '../render/picture';
+import { recordPicture, pictureEmf, pictureEmfWithPictures, pictureSvg, pictureCanvas, canvasPng, canvasDib } from '../render/picture';
 import { emfToSvg } from '../render/emf-read';
 import type { Item } from '../render/vector';
 import { itemsToEmf, withDrawing, drawingInEmf, type EmfBox } from '../render/emf';
@@ -579,7 +579,9 @@ export async function copyDrawing(doc: Doc, sel: Selection | null): Promise<stri
   if (nativeClipboard) {
     const { canvas, dpi } = pictureCanvas(part, pic);
     const enc = new TextEncoder();
-    const emf = withDrawing(pictureEmf(pic), own);
+    // (photos and other pictures in the drawing go in the EMF too: an Office paste, and a pasted object's
+    // picture, shows the metafile when there is one rather than the bitmap beside it)
+    const emf = withDrawing(await pictureEmfWithPictures(pic), own);
     // the structures as text too, for an ELN, a search box or a text editor (after the pictures,
     // so Word and PowerPoint still paste the picture)
     const smiles = table ? null : await structureSmiles(part);

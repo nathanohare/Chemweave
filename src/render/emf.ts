@@ -59,10 +59,10 @@ export interface EmfPixels { w: number; h: number; rgba: Uint8Array | Uint8Clamp
 
 /**
  * Turn recorded drawing items into an EMF file. `box` is the picture area in points. Pictures
- * are drawn from `pictures` (their pixels, by their src); without it they are left out, for
- * the clipboard, where a PNG copy goes with the EMF.
+ * are drawn as `pictures` places them (itemsToEmfWithPictures reads their pixels); without it,
+ * or for a picture it has nothing for, they are left out.
  */
-export function itemsToEmf(items: Item[], box: EmfBox, pictures?: ReadonlyMap<string, EmfPixels | null>): Uint8Array {
+export function itemsToEmf(items: Item[], box: EmfBox, pictures?: (it: ImageItem) => PlacedPicture | null | undefined): Uint8Array {
   const out = new Bytes();
   const W = Math.max(1, box.x2 - box.x1), H = Math.max(1, box.y2 - box.y1);
   const X = (x: number) => (x - box.x1) * UNIT;
@@ -171,9 +171,7 @@ export function itemsToEmf(items: Item[], box: EmfBox, pictures?: ReadonlyMap<st
 
   // a picture as a 32-bit bitmap with its see-through parts, drawn by EMR_ALPHABLEND ([MS-EMF]
   // 2.3.1.1: AlphaFormat AC_SRC_ALPHA, so the colours are premultiplied by their alpha)
-  const image = (it: ImageItem, px: EmfPixels) => {
-    const pic = placed(it, px);
-    if (!pic) return;
+  const image = (pic: PlacedPicture) => {
     const { w, h, rgba } = pic.pixels;
     const bmiSize = 40, bitsSize = w * h * 4, fixed = 108;
     const dx = X(pic.x), dy = Y(pic.y), dw = Math.max(1, Math.round(pic.w * UNIT)), dh = Math.max(1, Math.round(pic.h * UNIT));
@@ -202,11 +200,10 @@ export function itemsToEmf(items: Item[], box: EmfBox, pictures?: ReadonlyMap<st
 
   for (const [idx, it] of items.entries()) {
     if (it.kind === 'image') {
-      // (the clipboard's copy: the pictures go with the PNG copy beside it)
-      const px = pictures?.get(it.src);
-      if (!px) continue;
+      const pic = pictures?.(it);
+      if (!pic) continue;
       clipTo(it.clip);
-      image(it, px);
+      image(pic);
       continue;
     }
     clipTo(it.clip);
@@ -310,52 +307,80 @@ export function itemsToEmf(items: Item[], box: EmfBox, pictures?: ReadonlyMap<st
   return out.bytes();
 }
 
-/** A picture's pixels async-read first, then the EMF with them (File ▸ Export ▸ Export Picture). */
+/** Where a picture goes in the EMF (points) and the pixels drawn there. */
+export interface PlacedPicture { pixels: EmfPixels; x: number; y: number; w: number; h: number }
+
+/**
+ * The EMF with its pictures (File ▸ Export ▸ Export Picture, a copy on Windows, the picture kept
+ * with a ChemDraw object): each picture's pixels read, then made no sharper than PICTURE_DPI where
+ * it is drawn before the next is read, so a big photo doesn't stay in memory at its own size.
+ */
 export async function itemsToEmfWithPictures(items: Item[], box: EmfBox, pixels: (src: string) => Promise<EmfPixels | null>): Promise<Uint8Array> {
-  const got = new Map<string, EmfPixels | null>();
-  for (const it of items) if (it.kind === 'image' && !got.has(it.src)) got.set(it.src, await pixels(it.src).catch(() => null));
-  return itemsToEmf(items, box, got);
+  const got = new Map<ImageItem, PlacedPicture | null>();
+  // (the last picture's pixels kept for the next item, the same picture again; no others)
+  let lastSrc = '', lastPx: EmfPixels | null = null;
+  for (const it of items) {
+    if (it.kind !== 'image') continue;
+    if (!lastSrc || lastSrc !== it.src) { lastSrc = it.src; lastPx = null; lastPx = await pixels(it.src).catch(() => null); }
+    got.set(it, lastPx ? placed(it, lastPx) : null);
+  }
+  lastPx = null;
+  return itemsToEmf(items, box, (it) => got.get(it));
 }
 
-/** At most this many pixels in a picture made for the EMF (a turned, flipped or rounded one). */
+/** Pictures in an EMF are made no sharper than this where they are drawn (print quality). */
+export const PICTURE_DPI = 300;
+/** At most this many pixels in one picture made for the EMF. */
 const MOST_PIXELS = 16e6;
 
 /**
  * The pixels to draw for a picture, and where (in points): as they are when the picture shows
- * them whole, else made again for its box (cropped, flipped, rounded and turned as the screen
- * shows it, see-through outside), so every EMF reader draws it the same with a plain bitmap.
+ * them whole at no more than PICTURE_DPI, else made again for its box (cropped, flipped, rounded
+ * and turned as the screen shows it, see-through outside, and made smaller by averaging), so
+ * every EMF reader draws it the same with a plain bitmap.
  */
-export function placed(it: ImageItem, px: EmfPixels): { pixels: EmfPixels; x: number; y: number; w: number; h: number } | null {
-  if (!(px.w > 0 && px.h > 0) || px.rgba.length < px.w * px.h * 4) return null;
+export function placed(it: ImageItem, px: EmfPixels, dpi = PICTURE_DPI): PlacedPicture | null {
+  if (!(px.w > 0 && px.h > 0) || px.rgba.length < px.w * px.h * 4 || !(it.w > 0 && it.h > 0)) return null;
   const c = it.crop ?? { l: 0, t: 0, r: 0, b: 0 };
-  const plain = !(c.l || c.t || c.r || c.b) && !it.rot && !it.flipH && !it.flipV && !it.radius;
-  if (plain) return { pixels: px, x: it.x, y: it.y, w: it.w, h: it.h };
   const fw = Math.max(0.01, 1 - c.l - c.r), fh = Math.max(0.01, 1 - c.t - c.b);
-  // the turned box, and pixels as close together as the picture's own
+  // the picture's own pixels a point, and the most kept
+  const own = Math.max((px.w * fw) / it.w, (px.h * fh) / it.h);
   const a = ((it.rot ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
   const bw = Math.abs(it.w * cos) + Math.abs(it.h * sin), bh = Math.abs(it.w * sin) + Math.abs(it.h * cos);
-  let k = Math.max((px.w * fw) / Math.max(1e-6, it.w), (px.h * fh) / Math.max(1e-6, it.h));
-  k = Math.min(k, Math.sqrt(MOST_PIXELS / Math.max(1e-6, bw * bh)));
+  const k = Math.min(own, dpi / 72, Math.sqrt(MOST_PIXELS / Math.max(1e-6, bw * bh)));
+  const plain = !(c.l || c.t || c.r || c.b) && !it.rot && !it.flipH && !it.flipV && !it.radius;
+  if (plain && k >= own - 1e-9) return { pixels: px, x: it.x, y: it.y, w: it.w, h: it.h };
   const W = Math.max(1, Math.round(bw * k)), H = Math.max(1, Math.round(bh * k));
   const rgba = new Uint8Array(W * H * 4);
   const r = Math.min(it.radius ?? 0, it.w / 2, it.h / 2);
+  // made smaller: each pixel the average of up to 3 × 3 samples of the picture
+  const ss = Math.max(1, Math.min(3, Math.ceil(own / k - 1e-9)));
+  const n = ss * ss;
   for (let y = 0; y < H; y++) {
     for (let x = 0; x < W; x++) {
-      // this pixel's middle, from the picture's middle, turned back and flipped back
-      const ox = (x + 0.5) / k - bw / 2, oy = (y + 0.5) / k - bh / 2;
-      let lx = ox * cos + oy * sin, ly = -ox * sin + oy * cos;
-      if (it.flipH) lx = -lx;
-      if (it.flipV) ly = -ly;
-      const u = lx + it.w / 2, v = ly + it.h / 2;
-      if (u < 0 || v < 0 || u >= it.w || v >= it.h) continue;
-      if (r > 0) {
-        // outside a rounded corner
-        const qx = Math.max(0, Math.abs(lx) - (it.w / 2 - r)), qy = Math.max(0, Math.abs(ly) - (it.h / 2 - r));
-        if (qx * qx + qy * qy > r * r) continue;
+      let R = 0, G = 0, B = 0, A = 0;
+      for (let sy0 = 0; sy0 < ss; sy0++) {
+        for (let sx0 = 0; sx0 < ss; sx0++) {
+          // this sample, from the picture's middle, turned back and flipped back
+          const ox = (x + (sx0 + 0.5) / ss) / k - bw / 2, oy = (y + (sy0 + 0.5) / ss) / k - bh / 2;
+          let lx = ox * cos + oy * sin, ly = -ox * sin + oy * cos;
+          if (it.flipH) lx = -lx;
+          if (it.flipV) ly = -ly;
+          const u = lx + it.w / 2, v = ly + it.h / 2;
+          if (u < 0 || v < 0 || u >= it.w || v >= it.h) continue;
+          if (r > 0) {
+            // outside a rounded corner
+            const qx = Math.max(0, Math.abs(lx) - (it.w / 2 - r)), qy = Math.max(0, Math.abs(ly) - (it.h / 2 - r));
+            if (qx * qx + qy * qy > r * r) continue;
+          }
+          const sx = Math.min(px.w - 1, Math.floor((c.l + (u / it.w) * fw) * px.w)), sy = Math.min(px.h - 1, Math.floor((c.t + (v / it.h) * fh) * px.h));
+          const from = (sy * px.w + sx) * 4, al = px.rgba[from + 3];
+          R += px.rgba[from] * al; G += px.rgba[from + 1] * al; B += px.rgba[from + 2] * al; A += al;
+        }
       }
-      const sx = Math.min(px.w - 1, Math.floor((c.l + (u / it.w) * fw) * px.w)), sy = Math.min(px.h - 1, Math.floor((c.t + (v / it.h) * fh) * px.h));
-      const from = (sy * px.w + sx) * 4, to = (y * W + x) * 4;
-      rgba[to] = px.rgba[from]; rgba[to + 1] = px.rgba[from + 1]; rgba[to + 2] = px.rgba[from + 2]; rgba[to + 3] = px.rgba[from + 3];
+      if (!A) continue;
+      const to = (y * W + x) * 4;
+      rgba[to] = Math.round(R / A); rgba[to + 1] = Math.round(G / A); rgba[to + 2] = Math.round(B / A); rgba[to + 3] = Math.round(A / n);
     }
   }
   return { pixels: { w: W, h: H, rgba }, x: it.x + it.w / 2 - bw / 2, y: it.y + it.h / 2 - bh / 2, w: bw, h: bh };

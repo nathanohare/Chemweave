@@ -8,6 +8,7 @@
 // records sit in comments, and "dual" files, which is what Windows programs write, repeat
 // everything as ordinary records; the EMF+ is played (emf-plus.ts) only when those draw nothing.
 
+import { cssFamily } from './css-string';
 import { zlibSync } from 'fflate';
 import { playEmfPlus } from './emf-plus';
 
@@ -384,6 +385,12 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     if (mode === 1) return addClip(d, rule);
     return s.clip; // (no such mode: the clip as it was)
   };
+  /** A clip that shows nothing: a clipPath with no children (SVG 1.1 §14.3.5, the union of none). */
+  const emptyClip = (): string => {
+    const id = `emfclip${++clipIds}`;
+    defs.push(`<clipPath id="${id}"/>`);
+    return id;
+  };
   const rectPath = (l: number, t: number, r: number, b: number) => `M${P(l, t)}L${P(r, t)}L${P(r, b)}L${P(l, b)}Z`;
   const deviceRect = (l: number, t: number, r: number, b: number) => `M${num(l)} ${num(t)}L${num(r)} ${num(t)}L${num(r)} ${num(b)}L${num(l)} ${num(b)}Z`;
   /** A rectangle far bigger than the picture, in device pixels. */
@@ -394,12 +401,13 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
   let path: string[] = [];
   // text drawn inside a path bracket: its letters' outlines belong to the path (GDI's BeginPath
   // takes ExtTextOut), drawn by the FillPath or StrokePath that ends it, with that paint in PAINT's place
-  let pathTexts: string[] = [];
+  let pathTexts: { el: string; clip: string | null; color: string }[] = [];
   const PAINT = '\u0000';
+  /** The held letters drawn with `paint` (null: not drawn), each cut by the clip it was written under. */
   const pathText = (paint: string | null) => {
     const held = pathTexts;
     pathTexts = [];
-    if (paint) for (const el of held) put(el.replace(PAINT, paint));
+    if (paint) for (const t of held) put(t.el.replace(PAINT, paint), t.clip);
   };
   let cp: [number, number] = [0, 0];
   const lineFrom = (pts: [number, number][], start: [number, number] | null): string => {
@@ -576,9 +584,10 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
     }
     const anchor = hasDx || h === 0 ? '' : ` text-anchor="${h === 6 ? 'middle' : 'end'}"`;
     const deco = [f.underline ? 'underline' : '', f.strike ? 'line-through' : ''].filter(Boolean).join(' ');
-    const family = [...new Set([symbol ? 'Arial' : f.face || 'Arial', 'Arial', 'Helvetica', 'sans-serif'])].join(', ');
+    // (the face's name quoted: a name with an apostrophe or a comma stays one name)
+    const family = [...new Set([symbol ? 'Arial' : f.face || 'Arial', 'Arial', 'Helvetica'])].map(cssFamily).concat('sans-serif').join(', ');
     // (no advances: the anchor places it, so the estimated offset isn't taken off as well)
-    const putText = (el: string, clip: string | null, held: boolean) => { if (held) pathTexts.push(el); else put(el, clip); };
+    const putText = (el: string, clip: string | null, held: boolean) => { if (held) pathTexts.push({ el, clip, color: s.textColor }); else put(el, clip); };
     putText(`<text transform="${tf}" x="${hasDx ? xs : anchor ? '0' : num(start)}" y="${num(base)}" font-family="${esc(family)}"` +
       ` font-size="${num(size)}"${f.weight >= 600 ? ' font-weight="bold"' : ''}${f.italic ? ' font-style="italic"' : ''}` +
       `${deco ? ` text-decoration="${deco}"` : ''}${anchor} ${inPath ? PAINT : `fill="${s.textColor}"`} xml:space="preserve">${esc(chars.join(''))}</text>`, s.clip, inPath);
@@ -729,8 +738,12 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
       case 67: { // SelectClipPath
         const d = path.join('');
         if (d) s.clip = combineClip(d, s.fillRule, u32(o + 8));
-        path = [];
+        // letters as the clip (picture- or gradient-filled text): their outlines can't be a clip
+        // here, so the letters are drawn in their text colour rather than lost
+        const held = pathTexts;
         pathTexts = [];
+        for (const t of held) put(t.el.replace(PAINT, `fill="${t.color}"`), t.clip);
+        path = [];
         break;
       }
       // ---- regions
@@ -748,9 +761,11 @@ function readEmf(bytes: Uint8Array): EmfSvg | null {
       case 75: { // ExtSelectClipRgn
         const len = u32(o + 8), mode = u32(o + 12);
         const d = regionRects(o + 16, len);
-        // (RGN_COPY with no region: the default clip, [MS-EMF] 2.3.2.2 and ExtSelectClipRgn)
-        if (mode === 5 && !d) s.clip = s.metaClip;
+        // (RGN_COPY with no region data: the default clip, [MS-EMF] 2.3.2.2 and ExtSelectClipRgn;
+        // a region that is there but holds no rectangles is empty: ANDed or copied, nothing shows)
+        if (mode === 5 && len === 0) s.clip = s.metaClip;
         else if (d) s.clip = combineClip(d, 'nonzero', mode);
+        else if (len >= 32 && (mode === 1 || mode === 5)) s.clip = emptyClip();
         break;
       }
       // ---- the coordinate mapping

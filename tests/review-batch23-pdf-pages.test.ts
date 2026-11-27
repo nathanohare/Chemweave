@@ -47,14 +47,17 @@ afterEach(() => { vi.restoreAllMocks(); });
 const A4 = { w: 595, h: 842 };
 
 describe('every page of a PDF (F894)', () => {
-  it('keeps the pages that drew when one page fails', async () => {
+  it('keeps the pages that drew when one page fails, the failed one marked in its place', async () => {
     const { pdfPages } = await import('../src/render/pdf-page');
     pdf.pages = [A4, A4, A4];
     pdf.broken = new Set([2]);
     const got = await pdfPages(new Uint8Array([1, 2, 3]));
     expect(got).not.toBeNull();
-    expect(got!.length).toBe(2);
+    // page 3 is still the third: its number, and the settings kept for it, stay its own
+    expect(got!.map((p) => !!p.failed)).toEqual([false, true, false]);
     expect(got!.every((p) => p.of === 3)).toBe(true);
+    expect(decodeURIComponent(got![1].src)).toContain('Page 2 could not be drawn');
+    expect([got![1].w, got![1].h]).toEqual([595, 842]);
     // every page's memory let go, the failed one's too
     expect(pdf.cleaned.sort()).toEqual([1, 2, 3]);
   });
@@ -98,11 +101,25 @@ describe('PDFs kept for the live preview (F202, F895)', () => {
     const { pdfPagesKept } = await import('../src/render/pdf-page');
     let drawn = 0;
     const draw = async () => { drawn++; return [{ src: 'data:image/png;base64,AAAA', w: 10, h: 10, of: 1 }]; };
-    const files = Array.from({ length: 60 }, (_, i) => new Uint8Array([i, 7, 7, 7]));
-    for (const f of files) await pdfPagesKept(f, 1, draw);
+    // (each compile reads every file afresh: new arrays with the same bytes)
+    const file = (i: number) => new Uint8Array([i, 7, 7, 7]);
+    for (let i = 0; i < 60; i++) await pdfPagesKept(file(i), 1, draw);
     expect(drawn).toBe(60);
-    for (const f of files) await pdfPagesKept(f, 1, draw);
+    for (let i = 0; i < 60; i++) await pdfPagesKept(file(i), 1, draw);
     expect(drawn).toBe(60);
+    // a different file of the same length is drawn
+    await pdfPagesKept(new Uint8Array([0, 7, 7, 8]), 1, draw);
+    expect(drawn).toBe(61);
+  });
+
+  it('draws a PDF again when one of its pages could not be drawn last time', async () => {
+    const { pdfPagesKept, failedPage } = await import('../src/render/pdf-page');
+    let drawn = 0;
+    const draw = async () => { drawn++; return [failedPage(1, A4, 1)]; };
+    await pdfPagesKept(new Uint8Array([90, 91]), 1, draw);
+    await new Promise((ok) => setTimeout(ok, 0));
+    await pdfPagesKept(new Uint8Array([90, 91]), 1, draw);
+    expect(drawn).toBe(2);
   });
 
   it('tries a PDF again after drawing it failed', async () => {

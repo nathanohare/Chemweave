@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'vitest';
 import { unzlibSync } from 'fflate';
 import type { Item, ImageItem } from '../src/render/vector';
-import { itemsToEmf, itemsToEmfWithPictures, type EmfPixels } from '../src/render/emf';
+import { itemsToEmf, itemsToEmfWithPictures, placed, PICTURE_DPI, type EmfPixels } from '../src/render/emf';
 import { emfToSvg, decodeDib } from '../src/render/emf-read';
 import { itemsToEps } from '../src/render/eps';
 import { writePdf, type PdfImage } from '../src/io/pdf';
@@ -132,7 +132,7 @@ describe('EMF export keeps pictures (F199)', () => {
   const pic: ImageItem = { kind: 'image', src: SRC, x: 10, y: 20, w: 40, h: 20 };
 
   it('draws a picture as an EMR_ALPHABLEND bitmap when its pixels are given', () => {
-    const emf = itemsToEmf([pic], BOX, new Map([[SRC, px]]));
+    const emf = itemsToEmf([pic], BOX, (it) => placed(it, px));
     const r = records(emf).find((x) => x.type === 114)!;
     expect(r).toBeTruthy();
     const dv = new DataView(emf.buffer, emf.byteOffset + r.at);
@@ -147,7 +147,7 @@ describe('EMF export keeps pictures (F199)', () => {
     expect(Array.from(new Uint8Array(emf.buffer, emf.byteOffset + r.at + bits, 8))).toEqual([0, 0, 255, 255, 128, 0, 0, 128]);
   });
 
-  it('leaves pictures out of the clipboard copy, which has a PNG beside it', () => {
+  it('leaves a picture out when it has no pixels for it', () => {
     expect(records(itemsToEmf([pic], BOX)).some((x) => x.type === 114)).toBe(false);
   });
 
@@ -162,6 +162,49 @@ describe('EMF export keeps pictures (F199)', () => {
     expect(left[2]).toBeGreaterThan(200);
     expect(left[3]).toBeLessThan(200);
     expect(right).toEqual([255, 0, 0, 255]);
+  });
+});
+
+describe('pictures made again for the EMF (F199, round 2)', () => {
+  const rgbaAt = (p: EmfPixels, x: number, y: number) => Array.from(p.rgba.slice((y * p.w + x) * 4, (y * p.w + x) * 4 + 4));
+  const RED = [255, 0, 0, 255], GREEN = [0, 255, 0, 255], BLUE = [0, 0, 255, 255], WHITE = [255, 255, 255, 255];
+
+  it('turns a picture clockwise: its left edge goes to the top', () => {
+    // red on the left, blue on the right, 40 × 20 points, turned 90 degrees
+    const got = placed({ kind: 'image', src: SRC, x: 0, y: 0, w: 40, h: 20, rot: 90 }, { w: 2, h: 1, rgba: new Uint8Array([...RED, ...BLUE]) })!;
+    expect([got.pixels.w, got.pixels.h]).toEqual([1, 2]);
+    expect(rgbaAt(got.pixels, 0, 0)).toEqual(RED);
+    expect(rgbaAt(got.pixels, 0, 1)).toEqual(BLUE);
+    // its box turned about its middle (20, 10): 20 wide and 40 high
+    expect([got.x, got.y, got.w, got.h].map((v) => Math.round(v * 1e6) / 1e6)).toEqual([10, -10, 20, 40]);
+  });
+
+  it('keeps only the part a cropped picture shows', () => {
+    // red, green, blue, white; a quarter cut off each side: green and blue show
+    const got = placed({ kind: 'image', src: SRC, x: 0, y: 0, w: 20, h: 10, crop: { l: 0.25, t: 0, r: 0.25, b: 0 } }, { w: 4, h: 1, rgba: new Uint8Array([...RED, ...GREEN, ...BLUE, ...WHITE]) })!;
+    expect([got.pixels.w, got.pixels.h]).toEqual([2, 1]);
+    expect(rgbaAt(got.pixels, 0, 0)).toEqual(GREEN);
+    expect(rgbaAt(got.pixels, 1, 0)).toEqual(BLUE);
+  });
+
+  it('makes the corners of a rounded picture see-through', () => {
+    // a 10-point square with corners of radius 5: a circle
+    const got = placed({ kind: 'image', src: SRC, x: 0, y: 0, w: 10, h: 10, radius: 5 }, { w: 10, h: 10, rgba: new Uint8Array(400).fill(255) })!;
+    expect(rgbaAt(got.pixels, 0, 0)[3]).toBe(0);
+    expect(rgbaAt(got.pixels, 5, 5)).toEqual(WHITE);
+  });
+
+  it('keeps no more than 300 pixels an inch of where the picture is drawn', () => {
+    // 1200 × 1200 pixels drawn one inch (72 points) square: 300 × 300 kept, the colour kept
+    const big = { w: 1200, h: 1200, rgba: new Uint8Array(1200 * 1200 * 4).fill(255) };
+    for (let i = 0; i < big.rgba.length; i += 4) big.rgba[i] = 0;
+    const got = placed({ kind: 'image', src: SRC, x: 0, y: 0, w: 72, h: 72 }, big)!;
+    expect(PICTURE_DPI).toBe(300);
+    expect([got.pixels.w, got.pixels.h]).toEqual([300, 300]);
+    expect(rgbaAt(got.pixels, 150, 150)).toEqual([0, 255, 255, 255]);
+    // a small picture keeps its own pixels
+    const small = { w: 2, h: 1, rgba: new Uint8Array([...RED, ...BLUE]) };
+    expect(placed({ kind: 'image', src: SRC, x: 0, y: 0, w: 72, h: 36 }, small)!.pixels).toBe(small);
   });
 });
 
@@ -322,6 +365,53 @@ describe('reading EMF pictures (F877 to F882)', () => {
   });
 });
 
+/** An EMR_EXTTEXTOUTW record body ([MS-EMF] 2.3.5.8, EmrText 2.2.5): "Hi" at (500, 250), no advances. */
+function hiText(): Uint8Array {
+  const text = new Uint8Array(68 + 4);
+  const dv = new DataView(text.buffer);
+  [0, 0, 100, 100, 1, 0, 0].forEach((v, i) => dv.setInt32(i * 4, v, true));
+  [500, 250, 2, 76, 0, 0, 0, -1, -1, 0].forEach((v, i) => dv.setInt32(28 + i * 4, v, true));
+  dv.setUint16(68, 0x48, true); dv.setUint16(70, 0x69, true);
+  return text;
+}
+
+describe('reading EMF pictures, round 2', () => {
+  it('shows nothing through a clip region that is there but holds no rectangles (F881)', () => {
+    // RegionData ([MS-EMF] 2.2.24) with nCount 0, copied in (RGN_COPY): an empty clip, unlike a
+    // record with no region data at all, which sets the default clip ([MS-EMF] 2.3.2.2)
+    const r = new DataView(new ArrayBuffer(8 + 32));
+    r.setUint32(0, 32, true); r.setUint32(4, 5, true);
+    [32, 1, 0, 0, 0, 0, 0, 0].forEach((v, i) => r.setInt32(8 + i * 4, v, true));
+    const svg = emfToSvg(new Emf().raw(75, new Uint8Array(r.buffer)).rec(43, 0, 0, 400, 100).bytes())!.svg;
+    const id = /<clipPath id="(emfclip\d+)"\/>/.exec(svg)?.[1];
+    expect(id).toBeTruthy();
+    expect(svg).toContain(`<g clip-path="url(#${id})"><path d="M0 0L400 0L400 100L0 100Z"`);
+  });
+
+  it('keeps letters that were made a clip path, rather than losing them', () => {
+    // BeginPath, the text, EndPath, SelectClipPath (RGN_COPY): text outlines as a clip (picture-filled text)
+    const svg = emfToSvg(new Emf().rec(24, 0x0000ff).rec(59).raw(84, hiText()).rec(60).rec(67, 5).bytes())!.svg;
+    expect(svg).toMatch(/<text [^>]*fill="#ff0000"[^>]*>Hi<\/text>/);
+  });
+
+  it('draws outlined letters cut by the clip they were written under', () => {
+    // a clip, the text in a path bracket, the clip reset (RGN_COPY, no region), then StrokePath
+    const svg = emfToSvg(new Emf().rec(30, 0, 0, 100, 100).rec(59).raw(84, hiText()).rec(60).rec(75, 0, 5).rec(64).bytes())!.svg;
+    expect(svg).toMatch(/<g clip-path="url\(#emfclip\d+\)">(<rect [^>]*>)?<text [^>]*fill="none" stroke=[^>]*>Hi<\/text><\/g><\/svg>$/);
+  });
+
+  it('quotes the font name, so one with an apostrophe stays one name (F914)', () => {
+    // EMR_EXTCREATEFONTINDIRECTW: ihFont, then LogFont ([MS-EMF] 2.2.13): height, width, escapement,
+    // orientation, weight, italic/underline/strike-out/charset, precisions, quality, pitch, FaceName
+    const font = new Uint8Array(4 + 92);
+    const dv = new DataView(font.buffer);
+    dv.setUint32(0, 1, true); dv.setInt32(4, -20, true); dv.setInt32(20, 400, true);
+    [..."O'Brien Sans"].forEach((ch, i) => dv.setUint16(32 + i * 2, ch.charCodeAt(0), true));
+    const svg = emfToSvg(new Emf().raw(82, font).rec(37, 1).raw(84, hiText()).bytes())!.svg;
+    expect(svg).toContain(`font-family="'O\\'Brien Sans', 'Arial', 'Helvetica', sans-serif"`);
+  });
+});
+
 // ---------------------------------------------------------------- EMF+ record numbers
 
 /** An EMF+ record ([MS-EMFPLUS] 2.3): Type, Flags, Size, DataSize, then its data. */
@@ -407,14 +497,20 @@ function unlzw(b: Uint8Array): Uint8Array {
 }
 
 describe('TIFF LZW (F915)', () => {
-  it('ends every strip with an end code a strict reader reads, at every table size', () => {
-    // pseudo-random bytes (a fixed linear congruential sequence, Numerical Recipes' constants):
-    // nearly every byte adds a table entry, so the lengths run through 511, 1023, 2047 and 4094 entries
-    let x = 12345;
-    const data = Uint8Array.from({ length: 5000 }, () => { x = (Math.imul(x, 1664525) + 1013904223) >>> 0; return x >>> 24; });
-    for (let n = 1; n <= data.length; n++) {
+  // Bytes in which no two neighbours ever come twice: block k runs j·(2k + 1) mod 256 for j = 0 to
+  // 255, so each pair's difference names its block, and the joins between blocks differ too. The
+  // writer then misses on every byte and adds one table entry each, so after n bytes the table
+  // ends at 257 + n entries: n = 254, 766, 1790 and 3836 put the end code just where the reader
+  // widens its codes (511, 1023 and 2047 entries) or the writer must start a new table (4094).
+  const data = Uint8Array.from({ length: 4200 }, (_, i) => ((i & 255) * (2 * (i >> 8) + 1)) & 255);
+  const lengths = [1, 2, 3, 100, 4100, 4200, ...[254, 766, 1790, 3836].flatMap((n) => [n - 2, n - 1, n, n + 1, n + 2])];
+
+  it('ends every strip with an end code a strict reader reads, where the code width changes', () => {
+    for (const n of lengths) {
       const part = data.subarray(0, n);
-      expect(Array.from(unlzw(lzw(part))), `${n} bytes`).toEqual(Array.from(part));
+      const back = unlzw(lzw(part));
+      expect(back.length, `${n} bytes`).toBe(n);
+      expect(back.every((v, i) => v === part[i]), `${n} bytes`).toBe(true);
     }
   });
 });
