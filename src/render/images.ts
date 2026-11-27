@@ -269,3 +269,29 @@ function svgSize(t: string): { w: number; h: number } | null {
   if (shape) return { w: vw, h: vh };
   return null;
 }
+
+/** A picture's pixels read through the browser, at most 16 million of them (for a PDF, an EPS or an EMF); null when it can't be read. */
+export async function imagePixels(src: string): Promise<{ w: number; h: number; rgba: Uint8ClampedArray } | null> {
+  const { mime } = fromDataUrl(src);
+  if (mime === 'image/x-wmf' || mime === 'image/tiff') return null;
+  let img: HTMLImageElement;
+  try {
+    img = await loadImage(src);
+  } catch {
+    return null;
+  }
+  let w = img.naturalWidth || 300, h = img.naturalHeight || 150;
+  // a drawing in SVG (or a Windows metafile, shown as SVG) has no pixels of its own: make plenty so it prints sharply
+  if (mime === 'image/svg+xml' || mime === 'image/x-emf') { const k = 3000 / Math.max(w, h); w *= k; h *= k; }
+  const k = Math.min(1, Math.sqrt(16e6 / (w * h)));
+  w = Math.max(1, Math.round(w * k));
+  h = Math.max(1, Math.round(h * k));
+  const c = document.createElement('canvas');
+  c.width = w;
+  c.height = h;
+  const g = c.getContext('2d')!;
+  g.drawImage(img, 0, 0, w, h);
+  const rgba = g.getImageData(0, 0, w, h).data;
+  c.width = c.height = 0;   // (its memory freed now)
+  return { w, h, rgba };
+}

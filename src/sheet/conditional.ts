@@ -6,7 +6,7 @@
 // and a rule marked "stop" keeps the rules below it off the cells it matches.
 
 import type { Range } from './refs';
-import { keyOf, inRange } from './refs';
+import { keyOf, inRange, MAX_ROWS, MAX_COLS } from './refs';
 import { Value, isError, compareValues, sigFigs15 } from './values';
 
 /** How one end (or the middle) of a scale or bar is set. */
@@ -167,12 +167,27 @@ const truthy = (v: Value): boolean => v === true || (typeof v === 'number' && v 
 
 // ---------------------------------------------------------------- working it out
 
-/** The cells of a list of ranges, cut to the cells in use. */
-function* cellsOf(ranges: Range[], lastRow: number, lastCol: number): Generator<[number, number]> {
+/**
+ * The largest range given cell by cell whose empty cells past the ones in use a rule that can
+ * mark an empty cell looks at: Blanks and "does not contain" only read each cell's value, so
+ * they take large ranges; a formula rule works its formula out for every cell (on every edit),
+ * so it takes small ones only, and a larger one stops at the cells in use as before.
+ */
+const EMPTY_CELLS_CHEAP = 200000;
+const EMPTY_CELLS_FORMULA = 10000;
+
+/**
+ * The cells of a list of ranges, cut to the cells in use. With `empties` (the most cells, for a
+ * rule that can mark an empty cell), a range given cell by cell (A1:E10, not whole rows or
+ * columns) no larger than that is taken whole, so its empty cells past the last one in use count too.
+ */
+function* cellsOf(ranges: Range[], lastRow: number, lastCol: number, empties = 0): Generator<[number, number]> {
   const seen = new Set<number>();
   for (const r of ranges) {
-    for (let row = r.r1; row <= Math.min(r.r2, lastRow); row++) {
-      for (let col = r.c1; col <= Math.min(r.c2, lastCol); col++) {
+    const whole = !empties || r.r2 >= MAX_ROWS - 1 || r.c2 >= MAX_COLS - 1 || (r.r2 - r.r1 + 1) * (r.c2 - r.c1 + 1) > empties;
+    const r2 = whole ? Math.min(r.r2, lastRow) : r.r2, c2 = whole ? Math.min(r.c2, lastCol) : r.c2;
+    for (let row = r.r1; row <= r2; row++) {
+      for (let col = r.c1; col <= c2; col++) {
         const k = keyOf(row, col);
         if (seen.has(k)) continue;
         seen.add(k);
@@ -190,7 +205,10 @@ export function workOutLooks(rules: CondFormat[], host: CfHost, lastRow: number,
   const out = new Map<number, CellLook>();
   const stopped = new Set<number>();
   for (const cf of rules) {
-    const cells = [...cellsOf(cf.ranges, lastRow, lastCol)];
+    const rule0 = cf.rule;
+    const empties = (rule0.kind === 'blank' && !rule0.not) || (rule0.kind === 'text' && rule0.op === 'notContains' && rule0.text !== '') ? EMPTY_CELLS_CHEAP
+      : rule0.kind === 'formula' ? EMPTY_CELLS_FORMULA : 0;
+    const cells = [...cellsOf(cf.ranges, lastRow, lastCol, empties)];
     if (!cells.length) continue;
     const values = cells.map(([r, c]) => host.value(r, c));
     const nums = values.map(numOf);
@@ -285,8 +303,11 @@ export function workOutLooks(rules: CondFormat[], host: CfHost, lastRow: number,
       const look = lookFor(i);
       if (!look) return;
       const had = out.get(k);
-      // earlier rules win where both set the same thing
-      out.set(k, had ? { ...look, ...had } : { ...look });
+      // earlier rules win where both set the same thing (a thing an earlier rule left unset,
+      // such as a data bar's hideValue with Show Bar Only off, doesn't take a later rule's)
+      const merged: CellLook = { ...look };
+      if (had) for (const [name, v] of Object.entries(had)) if (v !== undefined) (merged as Record<string, unknown>)[name] = v;
+      out.set(k, merged);
       if (cf.stop) stopped.add(k);
     });
   }

@@ -6,7 +6,7 @@
 // Written from the published PDF 1.7 specification (ISO 32000-1).
 
 import { zlibSync } from 'fflate';
-import { Item, Seg, ClipBox, parseColor } from '../render/vector';
+import { Item, Seg, ClipBox, VecPath, parseColor } from '../render/vector';
 import { EmbeddedFont, TrueType, subsetTag, type PdfFontSource } from './pdf-fonts';
 import { hasKana, type FallbackFile, type PdfFallbackSource } from './pdf-fallback';
 import { visualText } from '../text/bidi';
@@ -297,8 +297,9 @@ function latin1(s: string): Uint8Array {
 
 /** A link's address as a PDF string: 7-bit ASCII (anything else percent-encoded, as URIs are written). */
 function uriString(uri: string): string {
-  // (u: a character outside the first plane is one character, not two halves encodeURIComponent can't take)
-  const ascii = uri.replace(/[^\x20-\x7e]/gu, (ch) => encodeURIComponent(ch));
+  // (u: a character outside the first plane is one character, not two halves encodeURIComponent can't take;
+  // half of one on its own, from a broken paste, can't be percent-encoded at all: U+FFFD in its place)
+  const ascii = uri.replace(/[^\x20-\x7e]/gu, (ch) => encodeURIComponent(/^[\ud800-\udfff]$/.test(ch) ? '\ufffd' : ch));
   return pdfString([...ascii].map((ch) => ch.charCodeAt(0)));
 }
 
@@ -514,6 +515,12 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
         if (paint.a <= 0 || !it.text) continue;
         ops.push('q');
         clipOps(it.clip);
+        // see-through letters: their fill and outline through a graphics state's /ca and /CA (ISO 32000-1 §8.4.5)
+        if (paint.a < 1) {
+          const g = alphaRef(paint.a, paint.a);
+          usedStates.add(g);
+          ops.push(`/${g} gs`);
+        }
         ops.push(`${paint.v} rg`);
         // turned text (degrees anticlockwise): along the line, and up from it, on the page
         const a = ((it.angle ?? 0) * Math.PI) / 180, cos = Math.cos(a), sin = Math.sin(a);
@@ -568,7 +575,12 @@ export async function writePdf(pages: PdfPage[], opts: PdfOptions): Promise<Uint
           const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
           ops.push(`1 0 0 1 ${num(cx)} ${num(cy)} cm ${it.flipH ? -1 : 1} 0 0 ${it.flipV ? -1 : 1} 0 0 cm 1 0 0 1 ${num(-cx)} ${num(-cy)} cm`);
         }
-        ops.push(`${num(it.x)} ${num(it.y)} ${num(it.w)} ${num(it.h)} re W n`);
+        if (it.radius) {
+          // rounded corners: the clip a rounded rectangle (lines and Bézier corners) rather than re
+          const p = new VecPath();
+          p.roundRect(it.x, it.y, it.w, it.h, it.radius);
+          ops.push(`${pathOps(p.segs)} W n`);
+        } else ops.push(`${num(it.x)} ${num(it.y)} ${num(it.w)} ${num(it.h)} re W n`);
         if (n) {
           usedImages.add(n);
           // the picture's top row goes at the top

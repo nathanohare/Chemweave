@@ -183,16 +183,28 @@ const isSubtotalRow = (s: Sheet, r: number, R: Range) => {
 
 /** Remove All: the subtotal rows go, and the outline with them. Returns the table's block afterwards. */
 export function removeSubtotals(s: Sheet, R: Range): Range {
+  // the rows the outline folded away: those inside a group whose rows are all hidden. A hidden
+  // row inside an open group (or in none) was hidden by hand, and stays hidden
+  const folded = new Set<number>();
+  for (const g of outlineGroups(s, 'row')) {
+    if (!g.collapsed || g.to < R.r1 || g.from > R.r2 + 1) continue;
+    for (let r = g.from; r <= g.to; r++) folded.add(r);
+  }
   let r2 = R.r2;
   for (let r = R.r2; r > R.r1; r--) {
     if (!isSubtotalRow(s, r, R)) continue;
     s.deleteRows(r, 1);
     r2--;
+    // the rows below move up with it
+    const moved = [...folded].filter((x) => x !== r).map((x) => (x > r ? x - 1 : x));
+    folded.clear();
+    for (const x of moved) folded.add(x);
   }
   const out = { ...R, r2 };
   for (let r = out.r1; r <= out.r2 + 1; r++) {
-    if (s.rowLevels.has(r)) s.setRowLevel(r, 0);
-    if (s.hiddenRows.has(r) && !s.filter) s.setRowHidden(r, false);
+    if (!s.rowLevels.has(r)) continue;
+    s.setRowLevel(r, 0);
+    if (folded.has(r) && s.hiddenRows.has(r) && !s.filter) s.setRowHidden(r, false);
   }
   return out;
 }

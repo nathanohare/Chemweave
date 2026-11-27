@@ -39,9 +39,9 @@ export interface EmfPlusOut {
 /** One picture held by an Object record. */
 type Img = { href: string; w: number; h: number };
 
-/** The record type numbers played. */
+/** The record type numbers played ([MS-EMFPLUS] 2.1.1.1 RecordType). */
 const R = {
-  Header: 0x4001, EndOfFile: 0x4002, Clear: 0x4009, ResetClip: 0x4023, Object: 0x4008,
+  Header: 0x4001, EndOfFile: 0x4002, Clear: 0x4009, ResetClip: 0x4031, SetCompositingMode: 0x4023, Object: 0x4008,
   DrawImage: 0x401a, DrawImagePoints: 0x401b, Save: 0x4025, Restore: 0x4026,
   BeginContainer: 0x4027, BeginContainerNoParams: 0x4028, EndContainer: 0x4029,
   SetWorldTransform: 0x402a, ResetWorldTransform: 0x402b, MultiplyWorldTransform: 0x402c,
@@ -283,6 +283,7 @@ export function playEmfPlus(chunks: Uint8Array[], frame: [number, number, number
         }
         case R.SetPageTransform: unit = flags & 0xff; scale = f32(o) || 1; break;
         case R.ResetClip: clip = null; break;
+        case R.SetCompositingMode: break; // (how colours mix: drawn over as usual; it leaves the clip alone)
         case R.SetClipRect: {
           if (dataSize < 16) break;
           const mode = (flags >> 8) & 0x0f;

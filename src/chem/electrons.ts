@@ -19,7 +19,7 @@
 // Electron Count): a ligand's type, the oxidation state, the complex's charge and the count expected.
 
 import { Doc, isMetalAtom, type ElectronCountSettings, outsideValence, radicalElectrons, type Atom, type Bond } from '../model';
-import { SYMBOLS, elementNumber, lowestValence, tablePosition, valenceOfBonds } from './elements';
+import { SYMBOLS, elementNumber, isMetal, lowestValence, tablePosition, valenceOfBonds } from './elements';
 import { labelDonates, labelGraph } from './labels';
 import { metalCarbonyl } from './hapto';
 import { ligandByAbbr } from './ligands';
@@ -169,14 +169,14 @@ export function roman(n: number): string {
  * metal and its ligands, or null when the label isn't one metal followed by ligands.
  */
 function metalLabelParts(label: string): { z: number; ligands: string[] } | null {
-  const m = /^([A-Z][a-z]?)(.*)$/.exec(label.trim());
+  // L and Ln written before the metal ("LnPd", "L2Pd", "(L)nPd") aren't counted
+  const m = /^([A-Z][a-z]?)(.*)$/.exec(label.trim().replace(/^(?:\(L\)|L)[nₙ\d₀-₉_]*\s*(?=[A-Z])/, ''));
   if (!m) return null;
   const z = elementNumber(m[1]);
   if (z === undefined) return null;
   const ligands: string[] = [];
   const re = /\(([^()]+)\)(\d*)|([A-Z][a-z]?)(\d*)/y;
   let rest = m[2];
-  // L and Ln written before the metal ("LnPd") aren't counted
   while (rest.length) {
     re.lastIndex = 0;
     const t = re.exec(rest);
@@ -187,6 +187,16 @@ function metalLabelParts(label: string): { z: number; ligands: string[] } | null
     rest = rest.slice(t[0].length);
   }
   return { z, ligands };
+}
+
+/**
+ * The metal a label starts with, read as isMetalLabel reads it (past "[", "L" or "Ln"): its atomic
+ * number, or null when it starts with no metal (a generic M, a group).
+ */
+function labelMetal(label: string): number | null {
+  const sym = /^\[?(?:\(?L\)?[nₙ\d₀-₉_]*)?\]?\s*\[?([A-Z][a-z]?)/.exec(label.trim())?.[1];
+  const z = sym === undefined ? undefined : elementNumber(sym);
+  return z !== undefined && isMetal(z) ? z : null;
 }
 
 /** The class of a ligand written as a label, bonded to the metal by one bond of `order`. */
@@ -244,14 +254,24 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
 
   // ligands written into a metal's own label (PdCl2, Pd(PPh3)4)
   const groups = new Map<number, number>();
+  /** The element each labelled metal is (its label's, not the atom's own number, which a label may leave at C). */
+  const metalZ = new Map<number, number>();
   for (const m of metals) {
     const a = doc.atoms.get(m)!;
     let z = a.z;
     if (a.label) {
       const parts = metalLabelParts(a.label);
-      if (!parts) { notes.get(m)!.push(`The label ${a.label} isn't read for its ligands.`); continue; }
-      z = parts.z;
-      for (const lig of parts.ligands) {
+      if (parts) z = parts.z;
+      else {
+        // a label that can't be read for its ligands but starts with a metal ([Pd], Pd-X) is counted
+        // from its drawn bonds, with a note saying so; one that names no metal (M, [M], MLn) is left out
+        const lead = labelMetal(a.label);
+        if (lead === null) continue;
+        z = lead;
+        notes.get(m)!.push(`The label ${a.label} isn't read for its ligands.`);
+      }
+      metalZ.set(m, z);
+      for (const lig of parts?.ligands ?? []) {
         const c = labelClass(lig, 1, 0);
         add(m, { name: lig, l: c.l, x: c.x, z: 0, hapto: c.hapto });
         xSoFar.set(m, xSoFar.get(m)! + c.x);
@@ -377,7 +397,7 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     const oxidation = settings.ox ?? autoOxidation;
     const dn = group - oxidation;
     const exp = expectedCount({ group, dn, l, x, z });
-    const symbol = a.label ? (metalLabelParts(a.label) ? SYMBOLS[metalLabelParts(a.label)!.z] : a.label) : SYMBOLS[a.z];
+    const symbol = a.label ? (metalZ.has(m) ? SYMBOLS[metalZ.get(m)!] : a.label) : SYMBOLS[a.z];
     const cls = `M${l ? 'L' + (l > 1 ? sub(l) : '') : ''}${x ? 'X' + (x > 1 ? sub(x) : '') : ''}${z ? 'Z' + (z > 1 ? sub(z) : '') : ''}`;
     out.push({
       metal: m, symbol, group, l, x, z, mm, charge: q, oxidation, dn,

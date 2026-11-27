@@ -81,7 +81,10 @@ export function toggleSmartFormat(anchor: HTMLElement, o: FormatPopOptions): voi
     box.value = fmt[key] !== undefined ? String(fmt[key]) : '';
     box.disabled = disabled;
     box.setAttribute('aria-label', `${label} (points)`);
+    // (a number typed and not yet applied, for close() to apply: a click outside takes the box away before it can say it changed)
+    box.addEventListener('input', () => { box.dataset.pending = '1'; });
     box.addEventListener('change', () => {
+      delete box.dataset.pending;
       const v = Number(box.value);
       if (box.value.trim() === '' || !isFinite(v) || v < 0) { delete fmt[key]; box.value = ''; } else fmt[key] = Math.min(500, v);
       changed();
@@ -163,6 +166,7 @@ export function toggleSmartFormat(anchor: HTMLElement, o: FormatPopOptions): voi
   setTimeout(() => document.addEventListener('pointerdown', outside, true), 0);
   pop.addEventListener('keydown', key);
   function close() {
+    for (const box of pop.querySelectorAll<HTMLInputElement>('input[data-pending]')) box.dispatchEvent(new Event('change'));
     document.removeEventListener('pointerdown', outside, true);
     pop.remove();
     if (open?.el === pop) open = null;

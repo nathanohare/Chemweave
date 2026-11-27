@@ -8,7 +8,7 @@
 import type { Value } from './values';
 import { ERR, isError, maxOf, minOf } from './values';
 import type { CellStyle } from './workbook';
-import type { Range } from './refs';
+import { quoteSheet, type Range } from './refs';
 
 export type PivotFn = 'sum' | 'count' | 'average' | 'max' | 'min' | 'product' | 'countNums' | 'stdDev' | 'stdDevp' | 'var' | 'varp';
 export type ShowAs = 'normal' | 'percentOfTotal' | 'percentOfRow' | 'percentOfCol';
@@ -268,13 +268,42 @@ export function layoutPivot(pt: PivotTable, src: PivotSource): PivotReport | str
   const rowLines = linesFor(rowFields, onRows, true);
   const colLines = linesFor(colFields, onCols, false);
 
-  // the records under a line: those whose items match its path
-  const matching = (recs: Value[][], fields: number[], path: string[]) => (path.length ? recs.filter((r) => path.every((t, i) => itemText(r[fields[i]] ?? null) === t)) : recs);
+  // the records under a line: those whose items match its path. Each record's items are read
+  // once, giving it a key for each depth on each axis (Cu, then Cu␁DMF…), and the records are
+  // grouped by row key; a pair of lines then looks only through its row line's own records
+  const SEP = '\u0001';
+  const keysFor = (fields: number[]) => {
+    const keys = new Map<Value[], string[]>();
+    const groups = new Map<string, Value[][]>([['', records]]);
+    for (const rec of records) {
+      const list = [''];
+      let k = '';
+      fields.forEach((f, i) => {
+        k = i ? k + SEP + itemText(rec[f] ?? null) : itemText(rec[f] ?? null);
+        list.push(k);
+        let g = groups.get(k + SEP + i);
+        if (!g) groups.set(k + SEP + i, (g = []));
+        g.push(rec);
+      });
+      keys.set(rec, list);
+    }
+    return { keys, groups };
+  };
+  const rowKeys = keysFor(rowFields), colKeys = keysFor(colFields);
+  const groupOf = (at: typeof rowKeys, path: string[]) => (path.length ? at.groups.get(path.join(SEP) + SEP + (path.length - 1)) ?? [] : records);
   const cache = new Map<string, Value[][]>();
   const recsFor = (rl: Line, cl: Line) => {
-    const key = `${rl.path.join('\u0001')}\u0002${cl.path.join('\u0001')}`;
+    const key = `${rl.path.join(SEP)}\u0002${cl.path.join(SEP)}`;
     let got = cache.get(key);
-    if (!got) cache.set(key, (got = matching(matching(records, rowFields, rl.path), colFields, cl.path)));
+    if (!got) {
+      const rows = groupOf(rowKeys, rl.path);
+      if (!cl.path.length) got = rows;
+      else {
+        const want = cl.path.join(SEP), depth = cl.path.length;
+        got = rows.length < records.length ? rows.filter((r) => colKeys.keys.get(r)![depth] === want) : groupOf(colKeys, cl.path);
+      }
+      cache.set(key, got);
+    }
     return got;
   };
   const valueAt = (rl: Line, cl: Line): Value => {
@@ -417,7 +446,7 @@ export function newPivotName(used: string[]): string {
  * (again without totals) is a series. References are to cells, as Excel's PivotCharts keep them.
  */
 export function pivotChartSeries(rep: PivotReport, at: { row: number; col: number }, sheet: string, pt: PivotTable): { name: string; x: string; y: string }[] {
-  const q = /^[A-Za-z_][\w.]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`;
+  const q = quoteSheet(sheet);
   const col = (c: number) => { let s = '', n = c + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   // compact form: every line but the grand total, so an outer field's own line (Cu above its
   // solvents, in the same column) is a category too, where the item lines alone would start
@@ -425,15 +454,26 @@ export function pivotChartSeries(rep: PivotReport, at: { row: number; col: numbe
   const compact = pt.layout === 'compact';
   const items = rep.rowLines.map((l, i) => ({ l, i })).filter((x) => (compact ? x.l.kind !== 'grand' : x.l.kind === 'item'));
   if (!items.length || !pt.values.length) return [];
-  // the lines in one run (a chart series is one block of cells)
-  const r1 = at.row + rep.body.row + items[0].i, r2 = at.row + rep.body.row + items[items.length - 1].i;
+  // the item lines as runs of rows next to each other: one run is one block of cells; in the
+  // tabular and outline forms subtotal and outer-group lines sit between the runs, so the series
+  // is a union of the runs, (A5:A6,A8:A9), as Excel writes one over cells apart
+  const runs: [number, number][] = [];
+  for (const { i } of items) {
+    const r = at.row + rep.body.row + i;
+    const last = runs[runs.length - 1];
+    if (last && last[1] === r - 1) last[1] = r; else runs.push([r, r]);
+  }
+  const refOf = (c: number) => {
+    const parts = runs.map(([r1, r2]) => `${q}!$${col(c)}$${r1 + 1}:$${col(c)}$${r2 + 1}`);
+    return parts.length === 1 ? `=${parts[0]}` : `=(${parts.join(',')})`;
+  };
   const labelCol = at.col + (pt.layout === 'compact' ? 0 : rep.labelCols - 1);
   const out: { name: string; x: string; y: string }[] = [];
   rep.colLines.forEach((cl, j) => {
     if (cl.kind !== 'item') return;
     const c = at.col + rep.body.col + j;
     const name = [...cl.path, ...(cl.value !== undefined && pt.values.length > 1 ? [valueCaption(pt.values[cl.value])] : [])].join(' - ') || valueCaption(pt.values[0]);
-    out.push({ name, x: `=${q}!$${col(labelCol)}$${r1 + 1}:$${col(labelCol)}$${r2 + 1}`, y: `=${q}!$${col(c)}$${r1 + 1}:$${col(c)}$${r2 + 1}` });
+    out.push({ name, x: refOf(labelCol), y: refOf(c) });
   });
   return out;
 }

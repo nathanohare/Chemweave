@@ -18,7 +18,7 @@ import { SchemeClip, DEFAULT_CHANGE_COLORS } from '../morph/scheme-clip';
 import { Renderer } from '../render/renderer';
 import { addInfo, infoIcon, withInfo } from './info-tip';
 import { encodeMp4, mp4Codec } from '../morph/mp4';
-import { saveFileDialog, openFileDialog, writeFile, showError, withExtension, type FileType } from '../io/files';
+import { saveFileDialog, openFileDialog, writeFile, showError, withExtension, type FileType, type FileRef } from '../io/files';
 import { zipSync } from 'fflate';
 import { WHY } from '../editor/can-run';
 
@@ -649,7 +649,10 @@ export class AnimateDialog {
       return;
     }
     this.morphs = morphs.map((m) => (Object.keys(m).length ? m : undefined));
-    morphs.forEach((_, i) => { const a = this.plan.arrows[i]; if (a !== null) this.hooks.setMorph(a, this.morphs[i]); });
+    // every step's pairing in one undoable step (each hook call joins the one open edit)
+    this.hooks.doc().edit('Import Animation Pairing', () => {
+      morphs.forEach((_, i) => { const a = this.plan.arrows[i]; if (a !== null) this.hooks.setMorph(a, this.morphs[i]); });
+    });
     this.rebuild();
     const bad = this.steps.filter((s) => s.error).length;
     this.say(bad ? `Read ${got.name}, but ${bad} step${bad > 1 ? 's' : ''} could not use it.` : `Read the pairing from ${got.name}.`, bad > 0);
@@ -665,8 +668,7 @@ export class AnimateDialog {
       pairs: [...s.map.nmap].map(([a, b]) => [Number(a), Number(b)] as [number, number]),
       exact: true,
     }));
-    await writeFile(target.ref, target.name, writeMapping(this.hooks.doc(), full), MAPPING).catch((e) => showError(String(e)));
-    this.say(`Saved ${target.name}.`);
+    if (await this.write(target, writeMapping(this.hooks.doc(), full), MAPPING)) this.say(`Saved ${target.name}.`);
   }
 
   /** Frames at the chosen width, one at a time. */
@@ -705,8 +707,19 @@ export class AnimateDialog {
       if (i - shown > 8) { shown = i; await tick(); }
       return f.at(i);
     }, gifDelayMs(this.timing.fps));
-    await writeFile(target.ref, target.name, bytes, GIF).catch((e) => showError(String(e)));
-    this.say(`Saved ${target.name} (${f.w} × ${f.h}, ${(bytes.length / 1024).toFixed(0)} KB).`);
+    if (await this.write(target, bytes, GIF)) this.say(`Saved ${target.name} (${f.w} × ${f.h}, ${(bytes.length / 1024).toFixed(0)} KB).`);
+  }
+
+  /** Write a file; false (after showing why, and saying so in the status line) when it could not be written. */
+  private async write(target: { ref: FileRef; name: string }, bytes: Uint8Array | string, type: FileType): Promise<boolean> {
+    try {
+      await writeFile(target.ref, target.name, bytes, type);
+      return true;
+    } catch (e) {
+      await showError(String(e));
+      this.say(`${target.name} was not saved.`, true);
+      return false;
+    }
   }
 
   /** The clip as an MP4 at the chosen width (even sizes, as video needs), with its first frame; null when this system can't encode video. */
@@ -748,8 +761,7 @@ export class AnimateDialog {
     try {
       const v = await this.video();
       if (!v) return;
-      await writeFile(target.ref, target.name, v.mp4, MP4).catch((e) => showError(String(e)));
-      this.say(`Saved ${target.name} (${v.w} × ${v.h}, ${this.clip.seconds.toFixed(1)} s, ${(v.mp4.length / 1024).toFixed(0)} KB).`);
+      if (await this.write(target, v.mp4, MP4)) this.say(`Saved ${target.name} (${v.w} × ${v.h}, ${this.clip.seconds.toFixed(1)} s, ${(v.mp4.length / 1024).toFixed(0)} KB).`);
     } catch (e) {
       this.say(`The video could not be made: ${(e as Error).message}`, true);
     }
@@ -800,8 +812,7 @@ export class AnimateDialog {
       files[`${stem}_${String(i).padStart(4, '0')}.png`] = [new Uint8Array(await blob.arrayBuffer()), { level: 0 }];
     }
     const bytes = zipSync(files);
-    await writeFile(target.ref, target.name, bytes, ZIP).catch((e) => showError(String(e)));
-    this.say(`Saved ${f.n} frames in ${target.name}.`);
+    if (await this.write(target, bytes, ZIP)) this.say(`Saved ${f.n} frames in ${target.name}.`);
   }
 
   private say(text: string, bad = false): void {

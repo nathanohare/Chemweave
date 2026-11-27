@@ -153,7 +153,7 @@ export class AnimationUI {
     trDur.addEventListener('change', () => { const v = Number(trDur.value); if (v > 0) this.setTransition({ dur: v }); else this.refresh(); });
     const afterOn = this.$<HTMLInputElement>('#tr-after-on'), after = this.$<HTMLInputElement>('#tr-after');
     afterOn.addEventListener('change', () => this.setTransition({ advanceAfter: afterOn.checked ? Number(after.value) || 5 : undefined }));
-    after.addEventListener('change', () => { const v = Number(after.value); this.setTransition({ advanceAfter: v >= 0 ? v : undefined }); });
+    after.addEventListener('change', () => { const v = Number(after.value); this.setTransition({ advanceAfter: v > 0 ? v : undefined }); });
     ribbon.querySelector('[data-tr="apply-all"]')!.addEventListener('click', () => {
       const deck = hooks.deck();
       if (!deck) return;
@@ -349,7 +349,9 @@ export class AnimationUI {
     if (!pt) return false;
     const doc = this.hooks.doc();
     const parts = slideParts(doc);
-    const to = selectedParts(parts, this.hooks.selection()).filter((p) => p !== pt.from);
+    // not the object the animations came from: its Part is a new object on every call, so it is told by its target
+    const fromKey = targetKey(targetOf(pt.from));
+    const to = selectedParts(parts, this.hooks.selection()).filter((p) => targetKey(targetOf(p)) !== fromKey);
     if (!to.length) return false;
     const kept = this.anims().filter((a) => !to.includes(partOf(parts, a.target)!));
     const added = to.flatMap((p, k) => pt.anims.map((a, j) => {
@@ -664,7 +666,11 @@ export class AnimationUI {
     const pickedPart = picked ? partOf(parts, picked.target) : undefined;
     if (picked && (!chosen.length || (pickedPart && chosen.length === 1 && chosen[0] === pickedPart))) {
       const fresh = newAnim(picked.target, effect, exit);
-      anims[this.picked!] = { ...fresh, start: picked.start, delay: picked.delay, dur: effect === 'appear' ? 0 : picked.dur || fresh.dur, ...(fresh.from ? { from: picked.from ?? fresh.from } : {}) };
+      anims[this.picked!] = {
+        ...fresh, start: picked.start, delay: picked.delay, dur: effect === 'appear' ? 0 : picked.dur || fresh.dur, ...(fresh.from ? { from: picked.from ?? fresh.from } : {}),
+        // what sets it off and (for text) whether it comes in a paragraph at a time stay as they were
+        ...(picked.trigger ? { trigger: picked.trigger } : {}), ...(picked.byPara && picked.target.kind === 'caption' ? { byPara: true } : {}),
+      };
       this.setAnims(anims, `${animName(anims[this.picked!])} animation`);
       return;
     }
@@ -894,8 +900,9 @@ export class AnimationUI {
     // motion paths, from the middle of what moves: dotted, green where they start and red where they end
     const size = this.hooks.deck()?.size ?? { w: 960, h: 540 };
     const held = new Map<Part, { x: number; y: number }>();
+    const pickedNow = this.current();
     ctx.save();
-    for (const a of anims) {
+    for (const [ai, a] of anims.entries()) {
       if (a.effect !== 'path') continue;
       const p = partOf(parts, a.target);
       const b = p && selectionBox(doc, p.sel, POINTS);
@@ -905,7 +912,7 @@ export class AnimationUI {
       const pts = pathPoints(a.path ?? 'M 0 0 E').map((q) => ({ x: cx + q.x * size.w, y: cy + q.y * size.h }));
       const end = pts[pts.length - 1];
       held.set(p, { x: end.x - (b.x1 + b.x2) / 2, y: end.y - (b.y1 + b.y2) / 2 });
-      const picked = this.current().includes(anims.indexOf(a));
+      const picked = pickedNow.includes(ai);
       ctx.lineWidth = (picked ? 2 : 1.2) * k;
       ctx.strokeStyle = picked ? '#2f6fdf' : '#5b6b84';
       ctx.setLineDash([4 * k, 3 * k]);
