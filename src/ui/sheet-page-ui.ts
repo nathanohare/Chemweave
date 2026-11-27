@@ -23,11 +23,14 @@ export interface PageHost {
 const PAPER_KEYS = Object.keys(SHEET_PAPERS) as PaperName[];
 
 /** Ranges as typed (A1:D20, $1:$2, A:B), several split by commas. */
-function readRanges(text: string): Range[] | null {
+export function readRanges(text: string, only?: 'rows' | 'cols'): Range[] | null {
   const out: Range[] = [];
   for (const part of text.split(',').map((p) => p.trim().replace(/^.*!/, '')).filter(Boolean)) {
     const R = readBlock(part);
-    if (!R || R.c1 < 0 || R.c2 < 0) return null;
+    if (!R || R.r1 < 0 || R.c1 < 0 || R.r2 < 0 || R.c2 < 0) return null;
+    // print titles are whole rows ($1:$2) or whole columns ($A:$B), not blocks of cells and not the other kind
+    if (only === 'rows' && !(R.c1 === 0 && R.c2 === MAX_COLS - 1)) return null;
+    if (only === 'cols' && !(R.r1 === 0 && R.r2 === MAX_ROWS - 1)) return null;
     out.push(R);
   }
   return out;
@@ -191,8 +194,8 @@ export class SheetPage {
       { name: 'cols', label: 'Columns to repeat at left', value: colsText(ps?.titleCols), placeholder: '$A:$A', help: 'Columns printed at the left of every page, such as compound numbers.' },
     ], { ok: 'Set' });
     if (!got) return;
-    const rows = got.rows.trim() ? readRanges(got.rows) : [];
-    const cols = got.cols.trim() ? readRanges(got.cols) : [];
+    const rows = got.rows.trim() ? readRanges(got.rows, 'rows') : [];
+    const cols = got.cols.trim() ? readRanges(got.cols, 'cols') : [];
     if (!rows || !cols) { this.host.flash('Type rows like $1:$2 and columns like $A:$B.'); return; }
     this.set('Print titles', {
       titleRows: rows[0] ? [rows[0].r1, rows[0].r2] : undefined,
@@ -233,8 +236,8 @@ export class SheetPage {
     if (!got) return;
     const num = (k: string, d: number, lo: number, hi: number) => { const x = Number(got[k]); return Number.isFinite(x) && got[k].trim() !== '' ? Math.min(hi, Math.max(lo, x)) : d; };
     const area = got.area.trim() ? readRanges(got.area) : [];
-    const rows = got.rows.trim() ? readRanges(got.rows) : [];
-    const cols = got.cols.trim() ? readRanges(got.cols) : [];
+    const rows = got.rows.trim() ? readRanges(got.rows, 'rows') : [];
+    const cols = got.cols.trim() ? readRanges(got.cols, 'cols') : [];
     if (!area || !rows || !cols) { this.host.flash('Type blocks like A1:F40, rows like $1:$2 and columns like $A:$B.'); return; }
     const margins = { left: num('left', m.left, 0, 10), right: num('right', m.right, 0, 10), top: num('top', m.top, 0, 10), bottom: num('bottom', m.bottom, 0, 10), header: num('header', m.header, 0, 10), footer: num('footer', m.footer, 0, 10) };
     const sameMargins = (Object.keys(margins) as (keyof typeof margins)[]).every((k) => Math.abs(margins[k] - DEFAULT_MARGINS[k]) < 1e-6);

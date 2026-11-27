@@ -121,7 +121,7 @@ export class SheetFormatting {
         ...PRESET_BARS.map((b) => [`${b.name}, solid`, () => this.add(barRule(b.color, false), 'Data bars'), true, barPic(b.color, false)] as MenuItem),
         null,
         ['Custom…', () => void this.ruleDialog(barRule('#638ec6', true))],
-      ]), [...PRESET_BARS.map((b) => barRule(b.color, true)), null, ...PRESET_BARS.map((b) => barRule(b.color, false))])],
+      ]), [...PRESET_BARS.map((b) => barRule(b.color, true)), ...PRESET_BARS.map((b) => barRule(b.color, false))])],
       ['Color Scales ▸', () => this.liveMenu(popupMenu(x, y, [
         ...PRESET_SCALES.map((p) => [p.name, () => this.add(scaleRule(p.colors), 'Color scale'), true, scalePic(p.colors)] as MenuItem),
         null,
@@ -144,11 +144,12 @@ export class SheetFormatting {
       { name: 'fill', label: 'Fill', type: 'color', value: '#ffeb9c' },
       { name: 'nofill', label: 'No fill', type: 'checkbox', value: 'false' },
       { name: 'color', label: 'Text color', type: 'color', value: '#9c5700' },
+      { name: 'nocolor', label: 'No text color', type: 'checkbox', value: 'false' },
       { name: 'bold', label: 'Bold', type: 'checkbox', value: 'false' },
       { name: 'italic', label: 'Italic', type: 'checkbox', value: 'false' },
     ]);
     if (!got) return null;
-    return { ...(got.nofill === 'true' ? {} : { fill: got.fill }), color: got.color, ...(got.bold === 'true' ? { bold: true } : {}), ...(got.italic === 'true' ? { italic: true } : {}) };
+    return { ...(got.nofill === 'true' ? {} : { fill: got.fill }), ...(got.nocolor === 'true' ? {} : { color: got.color }), ...(got.bold === 'true' ? { bold: true } : {}), ...(got.italic === 'true' ? { italic: true } : {}) };
   }
 
   private async highlight(kind: CfOp | 'text' | 'duplicates' | 'blank'): Promise<void> {
@@ -248,10 +249,13 @@ export class SheetFormatting {
       { name: 'fill', label: 'Fill', type: 'color', value: l?.fill ?? '#ffc7ce' },
       { name: 'nofill', label: 'No fill', type: 'checkbox', value: String(!!l && !l.fill) },
       { name: 'color', label: 'Text color', type: 'color', value: l?.color ?? '#9c0006' },
+      { name: 'nocolor', label: 'No text color', type: 'checkbox', value: String(!!l && !l.color) },
       { name: 'bold', label: 'Bold', type: 'checkbox', value: String(!!l?.bold) },
       { name: 'italic', label: 'Italic', type: 'checkbox', value: String(!!l?.italic) },
     ];
-    const lookOf = (g: Record<string, string>): CfLook => ({ ...(g.nofill === 'true' ? {} : { fill: g.fill }), color: g.color, ...(g.bold === 'true' ? { bold: true } : {}), ...(g.italic === 'true' ? { italic: true } : {}) });
+    // (what the window doesn't set, an underline, stays as the rule had it)
+    const oldLook = (existing?.rule as { look?: CfLook } | undefined)?.look;
+    const lookOf = (g: Record<string, string>): CfLook => ({ ...(g.nofill === 'true' ? {} : { fill: g.fill }), ...(g.nocolor === 'true' ? {} : { color: g.color }), ...(oldLook?.underline ? { underline: true } : {}), ...(g.bold === 'true' ? { bold: true } : {}), ...(g.italic === 'true' ? { italic: true } : {}) });
     const opOptions = [
       { value: 'gt', label: 'greater than' }, { value: 'ge', label: 'greater than or equal to' }, { value: 'lt', label: 'less than' },
       { value: 'le', label: 'less than or equal to' }, { value: 'eq', label: 'equal to' }, { value: 'ne', label: 'not equal to' },
@@ -431,11 +435,14 @@ export class SheetFormatting {
     };
     const move = (step: number) => {
       if (picked === null) return;
-      const all = this.sheet.condFormats.slice();
-      const i = all.findIndex((x) => x.id === picked);
-      const j = i + step;
-      if (i < 0 || j < 0 || j >= all.length) return;
-      [all[i], all[j]] = [all[j], all[i]];
+      // next to the rule shown above (below) it, whatever rules for other cells lie between them in the sheet's list
+      const shown = rules();
+      const k = shown.findIndex((x) => x.id === picked);
+      const beside = shown[k + step];
+      if (k < 0 || !beside) return;
+      const all = this.sheet.condFormats.filter((x) => x.id !== picked);
+      const j = all.findIndex((x) => x.id === beside.id);
+      all.splice(step < 0 ? j : j + 1, 0, this.sheet.condFormats.find((x) => x.id === picked)!);
       this.host.edit('Reorder rules', (s) => s.setCondFormats(all));
       render();
     };
@@ -561,14 +568,18 @@ export class SheetFormatting {
     this.host.edit(label, (s) => s.setTables(s.tables.map((x) => (x.id === t.id ? { ...x, ...patch } : x))));
   }
 
-  /** Turn the totals row on or off: a row under the table with a sum for each column of numbers. */
+  /**
+   * Turn the totals row on or off: a row under the table with a sum for each column of numbers.
+   * Only the table's own columns make room for it (the cells under the table move down, or back
+   * up); whatever is beside the table stays where it is.
+   */
   toggleTotals(t: TableDef): void {
     const on = !t.totals;
     this.host.edit(on ? 'Totals row' : 'No totals row', (s) => {
       const R = t.range;
       if (on) {
         const row = R.r2 + 1;
-        s.insertRows(row, 1);
+        shiftColumns(s, row, R.c1, R.c2, 1);
         s.setInput(row, R.c1, 'Total');
         for (let col = R.c1 + 1; col <= R.c2; col++) {
           let numbers = false;
@@ -581,7 +592,8 @@ export class SheetFormatting {
         const cur = s.tables.find((x) => x.id === t.id)!;
         const row = cur.range.r2;
         s.setTables(s.tables.map((x) => (x.id === t.id ? { ...x, totals: false, range: { ...cur.range, r2: row - 1 } } : x)));
-        s.deleteRows(row, 1);
+        s.clear({ r1: row, c1: cur.range.c1, r2: row, c2: cur.range.c2 }, 'all');
+        shiftColumns(s, row + 1, cur.range.c1, cur.range.c2, -1);
       }
     });
   }
@@ -603,6 +615,16 @@ export class SheetFormatting {
       s.setTables(s.tables.filter((x) => x.id !== t.id));
     });
   }
+}
+
+/**
+ * The cells of some columns, from a row down, moved down (or up) by one row: the others stay where
+ * they are, and formulas that pointed at the cells moved follow them.
+ */
+export function shiftColumns(s: Sheet, from: number, c1: number, c2: number, by: 1 | -1): void {
+  const last = Math.max(s.lastRow, s.lastDataRow);
+  if (from > last) return;
+  s.move({ r1: from, c1, r2: last, c2 }, { row: from + by, col: c1 });
 }
 
 /** The parts of range a outside range b. */

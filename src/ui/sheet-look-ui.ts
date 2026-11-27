@@ -7,7 +7,7 @@ import { textAnglePic } from './select-gallery';
 import { popupMenu } from './sheet-view';
 import type { SheetView } from './sheet-view';
 import { ask } from './ask';
-import { growToMerges, type Sheet, type CellStyle, type Workbook } from '../sheet/workbook';
+import { growToMerges, SMALL_BLOCK, type Sheet, type CellStyle, type Workbook } from '../sheet/workbook';
 import { CELL_STYLES, cellStyleNamed, cellStylePatch, cellStyleBorders, type CellStyleGroup } from '../sheet/cell-styles';
 import { WORKBOOK_THEMES, DEFAULT_THEME, themeOf, themePalette, mixTheme, sameTheme, type WorkbookTheme } from '../sheet/themes';
 import { rowOf, colOf } from '../sheet/refs';
@@ -92,15 +92,16 @@ export class SheetLook {
         if (typeof patch !== 'function') { s.patchStyle(R, patch); continue; }
         // per cell (an indent goes up from each cell's own)
         const keys = s.keysIn(R);
-        if (!keys.length || keys.length > 20000) { s.patchStyle(R, patch(s.styleAt(R.r1, R.c1) ?? {})); continue; }
+        const first = patch(s.styleAt(R.r1, R.c1) ?? {});
+        if (!keys.length) { s.patchStyle(R, first); continue; }
         for (const k of keys) {
           const r = rowOf(k), c = colOf(k);
           s.patchStyle({ r1: r, c1: c, r2: r, c2: c }, patch(s.styleAt(r, c) ?? {}));
         }
-        // empty cells in the block take the first cell's
-        if (keys.length < (R.r2 - R.r1 + 1) * (R.c2 - R.c1 + 1)) {
-          const first = patch(s.styleAt(R.r1, R.c1) ?? {});
-          for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 499); r++) for (let c = R.c1; c <= Math.min(R.c2, R.c1 + 99); c++) if (!s.cell(r, c)) s.patchStyle({ r1: r, c1: c, r2: r, c2: c }, first);
+        // empty cells in the block take the first cell's (as the other looks do: those of a block that isn't bigger than a small one)
+        const area = (R.r2 - R.r1 + 1) * (R.c2 - R.c1 + 1);
+        if (keys.length < area && area <= SMALL_BLOCK) {
+          for (let r = R.r1; r <= R.r2; r++) for (let c = R.c1; c <= R.c2; c++) if (!s.cell(r, c)) s.patchStyle({ r1: r, c1: c, r2: r, c2: c }, first);
         }
       }
     });

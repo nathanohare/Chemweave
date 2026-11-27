@@ -16,7 +16,7 @@ import type { DocStyle } from '../style';
 import { ACS_1996 } from '../style';
 import { Chart, mapChartRefs } from './chart';
 import { Dashboard, mapDashboardRefs } from './dashboard';
-import { type RefToken, Node, parseFormula, shiftFormula, shiftTree, adjustFormula, renameSheetInFormula, formulaRefs, SheetChange, normalizeFormula, FormulaSyntaxError, moveRefs, tokenize, type Token } from './formula';
+import { type RefToken, Node, parseFormula, shiftFormula, shiftTree, adjustFormula, renameSheetInFormula, formulaRefs, SheetChange, normalizeFormula, FormulaSyntaxError, moveRefs, qualifyRefs, tokenize, type Token } from './formula';
 import { evaluate, evaluateArg, tidyValue, EvalHost, VOLATILE_FUNCTIONS } from './evaluate';
 import { Arg, isBlock, isMulti, rowsOf } from './args';
 import { DefinedName, resolveName } from './names';
@@ -194,6 +194,9 @@ export interface ColumnDef {
 
 export type CompareOp = '<' | '<=' | '>' | '>=' | '=' | '<>';
 
+/** The values a filter lets through, as sets (see Sheet.passes). */
+const allowedSets = new WeakMap<string[], Set<string>>();
+
 export type Condition =
   /** Only rows whose cell shows one of these texts ('' for empty cells). */
   | { kind: 'values'; allowed: string[] }
@@ -354,7 +357,8 @@ interface Entry {
 let nextSheetUid = 1;
 
 /** Selections up to this many cells keep formatting in their empty cells too. */
-const SMALL_BLOCK = 10000;
+/** A block of this many cells or fewer is formatted cell by cell, empty ones too (a bigger one only where cells are in use). */
+export const SMALL_BLOCK = 10000;
 
 export class Sheet {
   readonly uid = nextSheetUid++;
@@ -926,6 +930,23 @@ export class Sheet {
     return this.paste(at, { ...block, origin: null }, what);
   }
 
+  /**
+   * Cut and Paste onto another sheet of the workbook: the block goes to `dest` as it is, its old
+   * place is emptied, and formulas anywhere that pointed at its cells point at them in their new
+   * place (with the sheet's name). The block's own formulas keep pointing at the cells they did.
+   */
+  moveTo(from: Range, dest: Sheet, at: { row: number; col: number }, what: 'all' | 'values' | 'formats' = 'all'): Range {
+    if (dest === this) return this.move(from, at, what);
+    const dr = at.row - from.r1, dc = at.col - from.c1;
+    const block = this.copy(from);
+    this.clear(from, 'all');
+    const follow = (f: string, home: string) => moveRefs(f, home, this.name, from, dr, dc, dest.name);
+    // (a formula that moves to another sheet names the sheet its other references are on)
+    block.cells = block.cells.map((line) => line.map((c) => (c?.input?.startsWith('=') ? { ...c, input: qualifyRefs(follow(c.input, this.name), this.name) } : c)));
+    this.wb.rewriteAllFormulas(follow);
+    return dest.paste(at, { ...block, origin: null }, what);
+  }
+
   /** The cells of a range, for Copy (property columns give their formulas). */
   copy(r: Range): CellBlock {
     const cells: (Cell | undefined)[][] = [];
@@ -1299,7 +1320,12 @@ export class Sheet {
   passes(row: number, col: number, cond: Condition): boolean | null {
     const v = this.value(row, col);
     switch (cond.kind) {
-      case 'values': return cond.allowed.includes(this.shownText(row, col));
+      case 'values': {
+        // (a long list of values is looked up in a set, kept for as long as the list is the one in the filter)
+        let set = allowedSets.get(cond.allowed);
+        if (!set) { set = new Set(cond.allowed); allowedSets.set(cond.allowed, set); }
+        return set.has(this.shownText(row, col));
+      }
       case 'contains': return this.shownText(row, col).toLowerCase().includes(cond.text.toLowerCase());
       case 'compare': {
         const one = (op: CompareOp, want: number | string): boolean => {
