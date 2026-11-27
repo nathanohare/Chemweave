@@ -68,9 +68,10 @@ export const STATIONARY_PHASES = ['SiO₂', 'Et₃N-deactivated SiO₂', 'Al₂O
 
 const SUP: Record<string, string> = { 0: '⁰', 1: '¹', 2: '²', 3: '³', 4: '⁴', 5: '⁵', 6: '⁶', 7: '⁷', 8: '⁸', 9: '⁹' };
 
-/** "13C" → "¹³C" for showing; anything not starting with digits is unchanged. */
+/** "13C" → "¹³C" for showing; anything not starting with a mass number and an element ("2D NMR") is unchanged. */
 export function nucleusLabel(nucleus: string): string {
-  const m = /^\d*/.exec(nucleus)![0];
+  // (an element symbol after the number, ending the text or followed by "{…}": not the "D" of "2D NMR")
+  const m = /^(\d+)[A-Z][a-z]?(?=$|[^A-Za-z\s])/.exec(nucleus)?.[1] ?? '';
   return [...m].map((d) => SUP[d]).join('') + nucleus.slice(m.length);
 }
 

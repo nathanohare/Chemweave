@@ -141,6 +141,13 @@ export interface HrmsSpecies {
 /** The structure's formula can't be worked out (MolFacts.error): said in the HRMS field, never a warning of its own (SI Assistant has none). */
 export class StructureError extends ChemError {}
 
+/**
+ * How the HRMS field names a salt's piece chosen as M: "frag:" and its SMILES (as SI Assistant
+ * stores it), or, for a piece of a structure too large for the engine to write SMILES for, its
+ * place among the pieces ("frag:#1"), so each piece can still be chosen.
+ */
+const pieceKey = (p: { smiles: string; drawn?: number }, k: number): string => (p.smiles ? `frag:${p.smiles}` : `frag:#${p.drawn ?? k}`);
+
 /** M for the HRMS field: the typed formula, else the chosen piece of a salt, else the whole structure; null without a structure. Throws StructureError when the structure's formula can't be worked out. */
 export function hrmsSpecies(facts: MolFacts | null, value: Json): HrmsSpecies | null {
   const formula = partText(value.formula).trim();
@@ -154,7 +161,7 @@ export function hrmsSpecies(facts: MolFacts | null, value: Json): HrmsSpecies | 
   }
   if (facts.pieces.length <= 1) return { info: facts.info, manual: false, choices: null, key: '', automatic: null };
   const choices: [string, string, MolInfo][] = [['whole', `Whole structure (${chem.speciesLabel(facts.info)})`, facts.info]];
-  for (const p of facts.pieces) choices.push([`frag:${p.smiles}`, chem.speciesLabel(p.info), p.info]);
+  facts.pieces.forEach((p, k) => choices.push([pieceKey(p, k), chem.speciesLabel(p.info), p.info]));
   const automatic = choices[1 + chem.mainSpecies(facts.pieces)];
   let key = String(value.species ?? '');
   let chosen = choices.find((c) => c[0] === key);
@@ -195,8 +202,7 @@ export function saltIonLabel(facts: MolFacts | null, value: Json, adduct: string
   const key = sp.key || sp.automatic?.[0] || '';
   if (!key.startsWith('frag:')) return null;
   if ([...a.delta.values()].some((n) => n !== 0) || a.multimer !== 1 || a.radical || !sp.info.charge || a.charge !== sp.info.charge) return null;
-  const chosen = key.slice('frag:'.length);
-  const me = facts.pieces.find((x) => x.smiles === chosen);
+  const me = facts.pieces.find((x, k) => pieceKey(x, k) === key);
   if (!me || (me.copies ?? 1) !== 1) return null;   // (two copies of M: which one is the ion is not clear)
   const others = facts.pieces.filter((x) => x !== me).sort((x, y) => (x.drawn ?? 0) - (y.drawn ?? 0));
   if (!others.length || others.some((x) => !x.smiles)) return null;

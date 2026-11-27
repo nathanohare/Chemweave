@@ -54,7 +54,7 @@ const BASELINE: Record<string, number> = {
   'src/si/nmr.ts': 3,
   'src/si/py.ts': 3,
   'src/si/si-import-pdf.ts': 1,
-  'src/si/si-import-spectra.ts': 6,
+  'src/si/si-import-spectra.ts': 5,
   'src/si/spectra.ts': 1,
   'src/text/chemtext.ts': 5,
   'tests/cdxml-write.test.ts': 1,

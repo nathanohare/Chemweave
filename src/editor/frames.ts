@@ -83,7 +83,8 @@ export function thingsInside(doc: Doc, r: Rect, m: Measure, skip?: number): Pick
     if (b.x1 < r.x1 - tol || b.y1 < r.y1 - tol || b.x2 > r.x2 + tol || b.y2 > r.y2 + tol) continue;
     // a frame inside a frame stays a thing of its own
     if (u.shapes.length && doc.shapes.get(u.shapes[0])?.frame) continue;
-    out.atoms.push(...u.atoms.slice(0, 1));
+    // every atom, so any that is left keeps the structure in the frame
+    out.atoms.push(...u.atoms);
     out.captions.push(...u.captions);
     out.arrows.push(...u.arrows);
     out.shapes.push(...u.shapes);

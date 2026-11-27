@@ -32,8 +32,16 @@ export interface CompileProgress {
   close(): void;
 }
 
-/** Wait for the window to be painted (the work goes on after). */
-const painted = (): Promise<void> => new Promise((r) => { requestAnimationFrame(() => setTimeout(r, 0)); });
+/**
+ * Wait for the window to be painted (the work goes on after). A window that is hidden (minimized,
+ * or another tab) paints nothing and its frames never come, so a short timer ends the wait as well.
+ */
+const painted = (): Promise<void> => new Promise((r) => {
+  // (a hidden window is not waited for at all: its timers are slowed to about a second)
+  if (document.hidden) { r(); return; }
+  const t = setTimeout(r, 50);
+  requestAnimationFrame(() => setTimeout(() => { clearTimeout(t); r(); }, 0));
+});
 
 export function compileProgress(title: string, steps: string[]): CompileProgress {
   const d = el('dialog', 'ask si-progress');

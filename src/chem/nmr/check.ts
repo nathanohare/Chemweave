@@ -84,17 +84,26 @@ export interface CheckResult {
 const NUM = String.raw`-?\d+(?:\.\d+)?`;
 const DASH = String.raw`\s*[-–—−]\s*`;
 
+/**
+ * What ends a peak list: another nucleus's NMR list, or the data an SI paragraph goes on with
+ * (HRMS, MS, IR, a melting point, an optical rotation, Rf, an elemental analysis).
+ */
+const LIST_END = /\b(\d{1,3}[A-Z][a-z]?)(?:\s*\{[^}]*\})?\s*NMR\b|\b(?:HRMS|HR-?MS|LRMS|ESI-?MS|MS|FT-?IR|IR|UV|Anal\.|Rf|Rƒ|R_f)\b|\b[Mm]\.?[Pp]\.?\s*[:=]?\s*-?\d|\[α\]/g;
+
 /** Splits pasted text into 1H and 13C lists (an SI paragraph often holds both). */
 export function parsePeakLists(text: string): MeasuredList[] {
   const t = text.replace(/ /g, ' ').replace(/[¹]H/g, '1H').replace(/[¹][³]C/g, '13C');
   const marks: { at: number; nuc: CheckNucleus }[] = [];
   const re = /\b(1H|13C)(?:\s*\{1H\})?\s*NMR|δ\s*([HC])\b/g;
   for (let m: RegExpExecArray | null; (m = re.exec(t));) marks.push({ at: m.index, nuc: m[1] ? (m[1] as CheckNucleus) : m[2] === 'H' ? '1H' : '13C' });
+  // where a list stops short of the next 1H or 13C mark: another nucleus's list (19F, 31P NMR) or
+  // the rest of the paragraph (HRMS, IR, mp, [α]D, Rf), whose numbers aren't shifts
+  const stops = [...t.matchAll(LIST_END)].filter((m) => !m[1] || (m[1] !== '1H' && m[1] !== '13C')).map((m) => m.index!);
   // merge marks that follow each other closely ("1H NMR ... δH" is one list)
   const blocks: { nuc: CheckNucleus; text: string }[] = [];
-  if (!marks.length) blocks.push({ nuc: guessNucleus(t), text: t });
+  if (!marks.length) blocks.push({ nuc: guessNucleus(t), text: t.slice(0, stops.find((x) => x > 0) ?? t.length) });
   marks.forEach((m, k) => {
-    const end = k + 1 < marks.length ? marks[k + 1].at : t.length;
+    const end = Math.min(k + 1 < marks.length ? marks[k + 1].at : t.length, stops.find((x) => x > m.at) ?? t.length);
     const last = blocks[blocks.length - 1];
     if (last && last.nuc === m.nuc && !/\d+\.\d+/.test(last.text.replace(/\([^)]*MHz[^)]*\)/g, ''))) last.text += t.slice(m.at, end);
     else blocks.push({ nuc: m.nuc, text: t.slice(m.at, end) });
@@ -110,7 +119,8 @@ function guessNucleus(t: string): CheckNucleus {
 function parseBlock(text: string, nuc: CheckNucleus): MeasuredList {
   const out: MeasuredList = { nuc, peaks: [] };
   // header: (400 MHz, CDCl3)
-  const head = /\(([^)]*?)(\d{2,4})\s*MHz([^)]*)\)/i.exec(text);
+  // (one level of brackets inside it: (400 MHz, (CD3)2SO))
+  const head = /\(((?:[^()]|\([^()]*\))*?)(\d{2,4})\s*MHz((?:[^()]|\([^()]*\))*)\)/i.exec(text);
   if (head) {
     out.sf = Number(head[2]);
     const sol = /(CDCl3|CD2Cl2|DMSO-d6|\(CD3\)2SO|CD3OD|methanol-d4|acetone-d6|\(CD3\)2CO|C6D6|benzene-d6|CD3CN|acetonitrile-d3|D2O|THF-d8|toluene-d8|pyridine-d5)/i.exec(head[1] + head[3]);

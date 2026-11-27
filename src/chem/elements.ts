@@ -145,7 +145,7 @@ export function isMetal(z: number): boolean {
 }
 
 // Symbols that also stand for groups when written as a label (Ac acetyl, Pr propyl, Np naphthyl…)
-const GROUP_LIKE = new Set(['Ac', 'Pr', 'Np', 'Am', 'Cm', 'Pm', 'Es', 'No', 'Bk', 'Ts']);
+export const GROUP_LIKE: ReadonlySet<string> = new Set(['Ac', 'Pr', 'Np', 'Am', 'Cm', 'Pm', 'Es', 'No', 'Bk', 'Ts']);
 
 /**
  * Does label text stand for a metal (with or without its ligands): Pd, PdCl2, Pd(PPh3)4, LnPd,
