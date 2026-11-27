@@ -6,6 +6,7 @@
 // (they come back when the values change). The commands are on the contextual Manuscript Check
 // tab of the ribbon.
 
+import { markFilesTaken } from './window-drop';
 import type { SiCompound, SiProject } from '../si/project';
 import type { MolFacts } from '../si/chem';
 import {
@@ -89,7 +90,7 @@ export class SiManuscriptPage {
       if (!files.length) return;
       // (the window's own drop handler opens files as documents: not for files added here)
       e.preventDefault();
-      e.stopPropagation();
+      markFilesTaken(e);
       void Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))).then((got) => this.add(got));
     });
     this.draw();

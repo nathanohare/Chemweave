@@ -5,6 +5,7 @@
 // preview shows the pages as they print: a PDF's pages fill the text width, a picture prints at
 // its own size, shrunk to fit.
 
+import { markFilesTaken } from './window-drop';
 import type { SiProject, SiSection } from '../si/project';
 import { fingerprint, type PdfPageReader } from '../render/pdf-page';
 import { addInfo } from './info-tip';
@@ -208,7 +209,7 @@ export class SiAttachmentPage {
       if (!f) return;
       // (the window's own drop handler opens files or places pictures: not for a file dropped here, even when refused)
       e.preventDefault();
-      e.stopPropagation();
+      markFilesTaken(e);
       if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
       void f.arrayBuffer().then((b) => this.use(f.name, new Uint8Array(b)));
     });

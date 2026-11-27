@@ -95,8 +95,11 @@ export class Library {
   private listeners = new Set<() => void>();
   /** Why the last read or save failed (said in the windows), or ''. */
   problem = '';
+  /** A save failed: changes here are still to be written (tried again a while later, and on closing). */
+  private unsaved = false;
 
-  constructor(public place: LibraryPlace, private delayMs = 800) {}
+  /** `retryMs`: how long after a failed save it is tried again. */
+  constructor(public place: LibraryPlace, private delayMs = 800, private retryMs = 30_000) {}
 
   get loaded(): boolean { return this.loading !== null; }
 
@@ -177,16 +180,24 @@ export class Library {
         const there: LibraryData | null = text ? parseLibrary(text) : null;
         const mine = this.data;
         const merged = pruneDeleted(there ? mergeLibraries(there, mine) : mine);
-        await this.place.write(libraryText(merged));
-        // what came from elsewhere shows here too
-        const grew = there && (merged.references.length !== mine.references.length || merged.compounds.length !== mine.compounds.length || merged.collections.length !== mine.collections.length);
+        const text2 = libraryText(merged);
+        await this.place.write(text2);
+        // what came from elsewhere shows here too: new items, and items changed on another computer
+        const came = !!there && text2 !== libraryText(pruneDeleted(mine));
         // a change made while the file was written stays (its own save, queued by change(), writes it)
         this.data = this.data === mine ? merged : mergeLibraries(this.data, merged);
+        const hadProblem = this.problem !== '';
         this.problem = '';
-        if (grew) this.tell();
+        this.unsaved = false;
+        if (came || hadProblem) this.tell();
       } catch (e) {
+        const was = this.problem;
         this.problem = `Your library could not be saved: ${e instanceof Error ? e.message : String(e)}`;
-        this.tell();
+        // tried again later (a cloud folder still syncing), and on closing, unless a change saves it first
+        this.unsaved = true;
+        if (!this.timer) this.timer = setTimeout(() => { this.timer = null; void this.saveNow(); }, this.retryMs);
+        // (the windows are redrawn when there is something new to say, not at each try)
+        if (this.problem !== was) this.tell();
       }
     });
     return this.saving;
@@ -194,7 +205,8 @@ export class Library {
 
   /** Save anything waiting (before the app closes). */
   async flush(): Promise<void> {
-    if (this.timer) await this.saveNow();
+    await this.saving;
+    if (this.timer || this.unsaved) await this.saveNow();
     await this.saving;
   }
 }

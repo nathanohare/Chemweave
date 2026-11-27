@@ -7,6 +7,7 @@
 // Structures are drawn with the drawing tools (Edit Structure); compounds go to and come from
 // the Compound Library; references come from My Library.
 
+import { markFilesTaken } from './window-drop';
 import { chargeDigitEdits, chargeNote } from '../text/charge-digits';
 import { fieldLabelNodes } from './field-label';
 import { MentionTip } from './si-mention-tip';
@@ -4719,6 +4720,7 @@ export class SiMode {
       const files = [...(e.dataTransfer?.files ?? [])];
       if (!files.length) return;
       e.preventDefault();
+      markFilesTaken(e);
       void this.addReports(c, files);
     });
     box.addEventListener('paste', (e) => {
@@ -4767,6 +4769,7 @@ export class SiMode {
       const files = [...(e.dataTransfer?.files ?? [])];
       if (!files.length) return;
       e.preventDefault();
+      markFilesTaken(e);
       void this.addStored(c, files);
     });
     box.addEventListener('paste', (e) => {

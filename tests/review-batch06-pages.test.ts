@@ -3,6 +3,7 @@
 // The SI tab's own pages and windows, each on its own (src/ui/si-*.ts), for the faults found in the
 // full code review (batch 06): each test does what the finding's steps say.
 import { beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { filesTaken } from '../src/ui/window-drop';
 import { SiAttachmentPage } from '../src/ui/si-attachment';
 import { SiManuscriptPage, newManuscriptState } from '../src/ui/si-manuscript';
 import { SiFrontPage } from '../src/ui/si-front';
@@ -74,12 +75,10 @@ describe('a file dropped on the Attachment preview (F225)', () => {
       const sec = p.sections.find((s) => s.type === 'file') ?? (readOnly ? p.section('s-972b3c47') : await p.addSection('file', 'Att'));
       const page = new SiAttachmentPage({ project: p, section: sec, flash, pickFiles: async () => [], pdfPages: async () => null, redraw: () => {} });
       document.body.append(page.el);
-      const onWindow = vi.fn();
-      window.addEventListener('drop', onWindow);
       const e = drop(page.el.querySelector('.si-attach-stage')!, 'x.png');
-      window.removeEventListener('drop', onWindow);
+      // (the window's drop handler skips a drop whose files a part of the page took)
       expect(e.defaultPrevented).toBe(true);
-      expect(onWindow).not.toHaveBeenCalled();
+      expect(filesTaken(e)).toBe(true);
     });
   }
 });
@@ -139,12 +138,9 @@ describe('the Manuscript Check page', () => {
 
   it('files dropped on it are not also opened by the window’s drop handler (F227)', async () => {
     const { page } = await manuscript();
-    const onWindow = vi.fn();
-    window.addEventListener('drop', onWindow);
     const e = drop(page.el, 'manuscript.pdf', PDF('x'));
-    window.removeEventListener('drop', onWindow);
     expect(e.defaultPrevented).toBe(true);
-    expect(onWindow).not.toHaveBeenCalled();
+    expect(filesTaken(e)).toBe(true);
     await tick(200);
   });
 

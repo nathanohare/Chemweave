@@ -18,10 +18,24 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 
 export const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=';
 
-/** PubMed ids in text: "31234567", "PMID: 31234567", a pubmed.ncbi.nlm.nih.gov link, several at once. */
+/**
+ * PubMed ids in text: "31234567", "PMID: 31234567", "PMIDs 31234567 and 31234568", "PubMed ID
+ * 31234567", a pubmed.ncbi.nlm.nih.gov or ncbi.nlm.nih.gov/pubmed link (or ?pmid=), several at once.
+ * Text that marks its ids gives only those (and the ids listed straight after a mark), so a pasted
+ * citation's year, volume and pages aren't taken for ids. Unmarked text gives a list of bare
+ * numbers, or else only the numbers long enough to be a PMID (7 to 9 digits).
+ */
 export function parsePmids(text: string): string[] {
   const out: string[] = [];
-  for (const m of text.matchAll(/(?:pubmed\.ncbi\.nlm\.nih\.gov\/|PMID:?\s*)?\b(\d{1,9})\b/gi)) if (!out.includes(m[1])) out.push(m[1]);
+  const add = (id: string) => { if (!out.includes(id)) out.push(id); };
+  const marked = /(?:pubmed\.ncbi\.nlm\.nih\.gov\/|ncbi\.nlm\.nih\.gov\/pubmed\/|[?&]pmid=|\bPMIDs?\b[:#]?\s*|\bPub[Mm]ed\s+IDs?\b[:#]?\s*)(\d{1,9}(?:\s*(?:,|;|&|\band\b)?\s*\d{1,9}\b)*)/gi;
+  for (const m of text.matchAll(marked)) for (const id of m[1].match(/\d{1,9}/g) ?? []) add(id);
+  if (out.length) return out;
+  // no marks: ids alone, separated by commas, semicolons, "and", spaces or new lines
+  // (only trailing punctuation goes: a number in brackets, such as a year, means the text is not a list)
+  const parts = text.split(/[\s,;]+|\band\b/).map((p) => p.replace(/[.:]+$/, '')).filter(Boolean);
+  if (parts.length && parts.every((p) => /^\d{1,9}$/.test(p))) parts.forEach(add);
+  else for (const p of parts) { const bare = p.replace(/^[([]+|[)\]]+$/g, ''); if (/^\d{7,9}$/.test(bare)) add(bare); }
   return out;
 }
 
@@ -37,7 +51,8 @@ export function fromPubmed(uid: string, d: Json): LibReference {
   const ids = arr(d.articleids) as Json[];
   const doi = str(ids.find((x) => str(x.idtype) === 'doi')?.value);
   const year = /\b(\d{4})\b/.exec(str(d.pubdate) || str(d.epubdate))?.[1] ?? '';
-  const authors = (arr(d.authors) as Json[]).filter((a) => str(a.authtype) !== 'CollectiveName' || str(a.name)).map((a) => pubmedAuthor(str(a.name))).filter(Boolean);
+  // (a group's name, PubMed's CollectiveName, stays as it is: "ATLAS Collaboration CERN" is no one's initials)
+  const authors = (arr(d.authors) as Json[]).map((a) => (str(a.authtype) === 'CollectiveName' ? str(a.name).trim() : pubmedAuthor(str(a.name)))).filter(Boolean);
   const title = str(d.title).replace(/\.$/, '');
   const r = cleanLibRef({ ...cleanRef({ type: 'article', authors, title, journal: str(d.source), year, volume: str(d.volume), issue: str(d.issue), pages: str(d.pages), doi }), pmid: uid });
   return r;
@@ -75,11 +90,11 @@ export interface ZoteroLink {
   version: number;
 }
 
-/** "123456", "users/123456" or "groups/98765" as the library's path; null when it isn't one. */
+/** "123456", "users/123456", "groups/98765" or a group's link (zotero.org/groups/98765/its-name/items) as the library's path; null when it isn't one. */
 export function zoteroLibrary(text: string): string | null {
   const t = text.trim().replace(/^https?:\/\/(?:www\.)?zotero\.org\//, '').replace(/\/+$/, '');
   if (/^\d+$/.test(t)) return `users/${t}`;
-  const m = /^(users|groups)\/(\d+)$/.exec(t);
+  const m = /^(users|groups)\/(\d+)(?:\/|$)/.exec(t);
   return m ? `${m[1]}/${m[2]}` : null;
 }
 
@@ -100,16 +115,19 @@ export function fromZotero(item: Json, collections: Map<string, string>, known?:
     volume: str(d.volume), issue: str(d.issue), pages: str(d.pages), doi: str(d.DOI) || (/\bDOI:\s*(\S+)/i.exec(str(d.extra))?.[1] ?? ''),
     url: str(d.url), publisher: type === 'thesis' ? str(d.university) : str(d.publisher),
   });
-  const zTags = (arr(d.tags) as Json[]).map((t) => str(t.tag)).filter(Boolean);
+  const zTags = [...new Set((arr(d.tags) as Json[]).map((t) => str(t.tag)).filter(Boolean))];
   const cols = arr(d.collections).map(str).map((k) => collections.get(k)).filter((x): x is string => !!x);
-  // tags and collections added here stay; Zotero's are brought up to date
+  // tags and collections added here stay; Zotero's are brought up to date (a tag taken off there
+  // goes here too: the tags brought in last time are known, so the rest were added here)
   const keptCols = (known?.collections ?? []).filter((c) => !c.startsWith('z-'));
+  const wasZotero = known?.zotero?.tags;
+  const keptTags = (known?.tags ?? []).filter((t) => !wasZotero || !wasZotero.includes(t) || zTags.includes(t));
   return cleanLibRef({
     ...known, ...base,
-    tags: [...new Set([...(known?.tags ?? []), ...zTags])],
+    tags: [...new Set([...keptTags, ...zTags])],
     collections: [...new Set([...keptCols, ...cols])],
     abstract: str(d.abstractNote) || known?.abstract,
-    zotero: { key: str(item.key), version: Number(item.version) || 0, library: '' },
+    zotero: { key: str(item.key), version: Number(item.version) || 0, library: '', tags: zTags },
     added: known?.added ?? Date.now(), modified: Date.now(),
   });
 }
@@ -145,33 +163,60 @@ async function zoteroAll(base: string, link: ZoteroLink, query: string, get: Web
 /** What a sync changed. */
 export interface ZoteroSync { lib: LibraryData; added: number; updated: number; version: number }
 
-/**
- * Bring in what is new or changed in Zotero since the last sync: items (not notes or the
- * attachments themselves) become references, Zotero's collections become collections. A
- * reference brought in before is updated in place (its PDF and the tags added here stay).
- */
-export async function syncZotero(lib: LibraryData, link: ZoteroLink, get: WebGet, now = Date.now()): Promise<ZoteroSync> {
-  const cols = zoteroCollections(await zoteroAll('collections', link, '', get), now);
+/** What Zotero has that is new or changed since the last sync, as read from it. */
+export interface ZoteroChanges { collections: Json[]; items: Json[] }
+
+/** Read what is new or changed in Zotero since the last sync (the slow part: pages over the network). */
+export async function fetchZotero(link: ZoteroLink, get: WebGet): Promise<ZoteroChanges> {
+  const collections = await zoteroAll('collections', link, '', get);
   const items = await zoteroAll('items', link, `&itemType=${encodeURIComponent('-attachment || note || annotation')}${link.version ? `&since=${link.version}` : ''}`, get);
+  return { collections, items };
+}
+
+/**
+ * Bring what was read from Zotero into the library as it is now (call it at the moment of the
+ * change, so edits made while Zotero was being read stay): items (not notes or the attachments
+ * themselves) become references, Zotero's collections become collections. A reference brought in
+ * before is updated in place (its PDF and the tags added here stay).
+ */
+export function applyZotero(lib: LibraryData, got: ZoteroChanges, link: ZoteroLink, now = Date.now()): ZoteroSync {
+  const cols = zoteroCollections(got.collections, now);
   const colIds = new Map(cols.map((c) => [c.id.slice(2), c.id]));
   const byKey = new Map(lib.references.filter((r) => r.zotero?.key).map((r) => [r.zotero!.key, r]));
+  /** Zotero items already counted in this sync (paging can list an item twice when it changes between pages). */
+  const counted = new Set<string>();
   let added = 0, updated = 0, version = link.version;
   const refs = lib.references.slice();
-  for (const item of items) {
+  for (const item of got.items) {
     version = Math.max(version, Number(item.version) || 0);
-    const known = byKey.get(str(item.key));
-    const r = fromZotero(item, colIds, known);
-    r.zotero = { key: str(item.key), version: Number(item.version) || 0, library: link.library };
-    if (known) { refs[refs.indexOf(known)] = r; updated++; }
-    else {
-      // the same paper already in the library (by DOI): it becomes the Zotero item's
-      const same = r.doi ? refs.find((x) => !x.zotero && x.doi.toLowerCase() === r.doi.toLowerCase()) : undefined;
-      if (same) { refs[refs.indexOf(same)] = { ...r, id: same.id, pdf: same.pdf, tags: [...new Set([...(same.tags ?? []), ...(r.tags ?? [])])], added: same.added }; updated++; }
-      else { refs.push(r); added++; }
+    const key = str(item.key);
+    const known = byKey.get(key);
+    // the same paper already in the library (by DOI): it becomes the Zotero item's, keeping what it had here
+    const doi = known ? '' : fromZotero(item, colIds).doi.toLowerCase();
+    const same = doi ? refs.find((x) => !x.zotero && x.doi.toLowerCase() === doi) : undefined;
+    const was = known ?? same;
+    const r = fromZotero(item, colIds, was);
+    r.zotero = { ...r.zotero!, key, version: Number(item.version) || 0, library: link.library };
+    const at = was ? refs.indexOf(was) : -1;
+    if (at >= 0) refs[at] = r;
+    else refs.push(r);
+    byKey.set(key, r);
+    if (!counted.has(key)) {
+      counted.add(key);
+      if (was) updated++; else added++;
     }
   }
   const known = new Map(lib.collections.map((c) => [c.id, c]));
-  const collections = lib.collections.filter((c) => !c.id.startsWith('z-') || cols.some((x) => x.id === c.id)).map((c) => cols.find((x) => x.id === c.id) ?? c);
+  const gone = lib.collections.filter((c) => c.id.startsWith('z-') && !cols.some((x) => x.id === c.id));
+  const collections = lib.collections.filter((c) => !gone.includes(c)).map((c) => cols.find((x) => x.id === c.id) ?? c);
   for (const c of cols) if (!known.has(c.id)) collections.push(c);
-  return { lib: { ...lib, references: refs, collections }, added, updated, version };
+  // collections Zotero no longer has are marked deleted, so the next save's merge doesn't bring them back
+  const deleted = { ...lib.deleted };
+  for (const c of gone) deleted[c.id] = Math.max(now, c.modified);
+  return { lib: { ...lib, references: refs, collections, deleted }, added, updated, version };
+}
+
+/** Read Zotero and bring what changed into `lib` (see fetchZotero and applyZotero). */
+export async function syncZotero(lib: LibraryData, link: ZoteroLink, get: WebGet, now = Date.now()): Promise<ZoteroSync> {
+  return applyZotero(lib, await fetchZotero(link, get), link, now);
 }
