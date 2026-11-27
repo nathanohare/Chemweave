@@ -2,8 +2,12 @@
 
 import { popupHost } from './popup-host';
 
+/** Takes the menu showing now away, with everything it listens to. */
+let dismissShown: (() => void) | null = null;
+
 /** A small menu at a point: [label, action, enabled?] items, null for a line. */
 export function popupMenu(x: number, y: number, items: ([string, () => void, boolean?, string?] | null)[]): HTMLDivElement {
+  dismissShown?.();
   document.querySelector('.popup-menu')?.remove();
   // where the keys went before (a document's caret, a sheet's cell): Escape goes back there
   const back = document.activeElement;
@@ -18,7 +22,7 @@ export function popupMenu(x: number, y: number, items: ([string, () => void, boo
     b.textContent = it[0];
     if (it[3]) { const ic = document.createElement('span'); ic.className = 'pm-ic'; ic.innerHTML = it[3]; b.prepend(ic); }
     b.disabled = it[2] === false;
-    b.addEventListener('click', () => { m.remove(); it[1](); });
+    b.addEventListener('click', () => { dismiss(); it[1](); });
     m.append(b);
   }
   // inside a window open over the page (the top layer), so it shows over that window
@@ -32,20 +36,28 @@ export function popupMenu(x: number, y: number, items: ([string, () => void, boo
   };
   place();
   addEventListener('resize', place);
-  const close = (e: Event) => {
-    if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-    if (e instanceof PointerEvent && m.contains(e.target as Node)) return;
+  // (however the menu goes away, it stops listening: a later Escape belongs to whatever the item opened)
+  function dismiss(): void {
     m.remove();
     document.removeEventListener('pointerdown', close, true);
     document.removeEventListener('keydown', close, true);
+    removeEventListener('resize', place);
+    if (dismissShown === dismiss) dismissShown = null;
+  }
+  dismissShown = dismiss;
+  function close(e: Event): void {
+    if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+    if (e instanceof PointerEvent && m.contains(e.target as Node)) return;
+    dismiss();
     if (e instanceof KeyboardEvent) {
       // Escape only closes the menu: it doesn't also reach the page underneath
       e.preventDefault();
       e.stopPropagation();
       if (back instanceof HTMLElement && back.isConnected) back.focus({ preventScroll: true });
     }
-  };
+  }
   setTimeout(() => {
+    if (!m.isConnected) return;
     document.addEventListener('pointerdown', close, true);
     document.addEventListener('keydown', close, true);
   });

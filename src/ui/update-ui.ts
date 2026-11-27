@@ -94,8 +94,8 @@ export class UpdateUI {
       return b;
     };
     button('Install and Restart', () => void this.install(r, bar, row), true);
-    button('Later', () => box.remove());
-    button('Skip This Version', () => { this.host.skip(r.version); box.remove(); });
+    button('Later', () => { box.remove(); this.box = null; });
+    button('Skip This Version', () => { this.host.skip(r.version); box.remove(); this.box = null; });
     box.append(h, p, bar, row);
     document.body.append(box);
     this.box = box;
@@ -134,7 +134,8 @@ export class UpdateUI {
 
   /** The card in the corner with the notes, opened from the status-bar note or the Help menu. */
   private showWhatsNew(found: { version: string; notes: string }[], now: string): void {
-    if (this.box) return;
+    // (a card taken off the page some other way doesn't count as showing)
+    if (this.box?.isConnected) return;
     const box = document.createElement('div');
     box.className = 'update-box whats-new';
     box.setAttribute('role', 'status');

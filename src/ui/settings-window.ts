@@ -135,8 +135,9 @@ export class SettingsWindow {
     d.addEventListener('keydown', (e) => {
       if (e.key !== 'Escape' || e.defaultPrevented) return;
       const t = e.target as HTMLElement | null;
-      // (but a list that is open, a colour palette or a key being recorded takes it first)
-      if (t?.closest('select, [aria-expanded="true"], .colour-pop, .recording')) return;
+      // (but a list that is open, a colour palette or a key being recorded takes it first; so does the
+      // "Apply your changes?" question, whose own Esc is Keep Editing: closing from here would never answer it)
+      if (t?.closest('select, [aria-expanded="true"], .colour-pop, .recording, .sw-unapplied')) return;
       e.preventDefault();
       e.stopPropagation();
       void this.close();

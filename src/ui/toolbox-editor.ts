@@ -218,11 +218,13 @@ export class ToolboxEditor {
     const st = this.hooks.get();
     const name = boxTitle(st, this.box, this.hooks.title(this.box));
     if (KEEP.includes(this.box)) return;
+    // (the toolbox deleted, not the one shown after it: only the app's own can be restored)
+    const own = isOwnBox(this.box);
     this.change((s) => withoutBox(s, this.box));
     this.box = 'custom' === this.box || !boxIds(this.hooks.get()).includes('custom') ? 'main' : 'custom';
     this.folder = null;
     this.draw();
-    this.say(`Deleted ${name}. Undo brings it back${isOwnBox(this.box) ? '' : ', and so does Restore Deleted Toolboxes for the app’s own'}.`);
+    this.say(`Deleted ${name}. Undo brings it back${own ? '' : ', and so does Restore Deleted Toolboxes for the app’s own'}.`);
   }
 
   private reset(): void {
@@ -293,8 +295,9 @@ export class ToolboxEditor {
       const answer = await choose(`Make it ${cols} × ${rows}?`,
         `A ${cols} × ${rows} grid has ${cols * rows} cells, too few for ${one ? 'this button' : `these ${lost.length} buttons`}: ${list}.\n\nMake it ${cols} × ${rows} anyway, taking ${one ? 'it' : 'them'} out? (Undo brings ${one ? 'it' : 'them'} back.)`,
         [`Take ${one ? 'It' : 'Them'} Out`, 'Cancel'], 1);
-      // the grid changed, or another toolbox was picked, while the question was up
-      if (answer !== 0 || this.folder !== folder || this.box !== box || this.grid() !== g) { this.draw(); return; }
+      // the grid changed, or another toolbox was picked, while the question was up (what is in it is compared:
+      // a grid not stored yet is made afresh by every call, so the object itself is never the same)
+      if (answer !== 0 || this.folder !== folder || this.box !== box || gridKey(this.grid()) !== gridKey(g)) { this.draw(); return; }
     }
     this.setGrid(resized(g, cols, rows));
     this.say(`The grid is ${cols} × ${rows} now${lost.length ? `; took out ${lost.length}` : ''}.`);
@@ -728,6 +731,12 @@ export class ToolboxEditor {
     return ic;
   }
 }
+
+/** A grid's contents as text, to tell whether one has changed (the same grid is not always the same object). */
+function gridKey(g: Grid): string {
+  return JSON.stringify([g.cols, g.rows, g.cells, g.lines ?? []]);
+}
+
 /** Up to two letters for a command with no icon of its own. */
 export function initials(label: string): string {
   const words = label.replace(/[^\p{L}\p{N} ]/gu, ' ').trim().split(/\s+/).filter(Boolean);

@@ -634,6 +634,11 @@ export class DocumentMode {
     return this.file ? this.file.ed.text.slice(0, max) : '';
   }
 
+  /** The last step of Undo in what is being typed in now, to tell whether anything was done since (the Assistant's Undo). */
+  undoMark(): object | undefined {
+    return this.file ? this.ed.lastStep : undefined;
+  }
+
   /**
    * The Assistant: write text in place of the selection, or after it (on a paragraph of its
    * own), as one step of Undo. False when the text can't be typed in (Read Mode).

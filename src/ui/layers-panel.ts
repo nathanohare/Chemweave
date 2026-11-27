@@ -32,6 +32,8 @@ export interface LayersHooks {
   pick?(what: Picked): void;
   /** Slides: what is selected now. */
   picked?(): Picked;
+  /** A drag on the page is under way: the list waits and is made once, when it is dropped. */
+  dragging?(): boolean;
 }
 
 /** What the Selection Pane selects: shapes, text boxes, the atoms of structures, arrows. */
@@ -139,6 +141,7 @@ export class LayersPanel {
     const doc = this.doc;
     if (!doc || this.section.hidden) return;
     if (this.list.querySelector('input')) return; // renaming
+    if (this.hooks.dragging?.()) return; // (the key is not updated: the list is made when the drag ends)
     const sel = this.hooks.selected();
     const now = this.pane ? this.hooks.picked?.() : undefined;
     const key = `${doc.version}|${sel.join(',')}|${now ? JSON.stringify(now) : ''}`;
@@ -309,7 +312,8 @@ export class LayersPanel {
   private drag(e: PointerEvent, row: HTMLElement, s: Shape, from: number, order: Shape[]): void {
     if (e.button !== 0) return;
     e.preventDefault();
-    const rows = [...this.list.querySelectorAll<HTMLElement>('.layer')];
+    // (the shapes' rows only: the Selection Pane's text, structure and arrow rows above them are not in `order`)
+    const rows = [...this.list.querySelectorAll<HTMLElement>('.layer[data-id]')];
     const startY = e.clientY;
     let to = from;
     let moved = false;

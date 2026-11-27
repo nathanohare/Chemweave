@@ -41,6 +41,23 @@ function buttonIcon(b: Element | null | undefined): string | undefined {
 
 const keyOf = (b: HTMLElement) => (b.dataset.cmd ? `cmd:${b.dataset.cmd}` : b.dataset.sh ? `sh:${b.dataset.sh}` : b.dataset.doc ? `doc:${b.dataset.doc}` : '');
 
+/**
+ * A tab's groups with `keys` (the ones showing, in their new order) and the hidden groups among
+ * `all` that are not in `keys` kept where they were: each stays right after the group it followed
+ * (a hidden one that began the tab stays at its start).
+ */
+export function withHiddenKept(all: readonly string[], keys: readonly string[], hidden: ReadonlySet<string>): string[] {
+  const after = new Map<string | null, string[]>();
+  let last: string | null = null;
+  for (const x of all) {
+    if (hidden.has(x) && !keys.includes(x)) after.set(last, [...(after.get(last) ?? []), x]);
+    else if (keys.includes(x)) last = x;
+  }
+  const out = [...(after.get(null) ?? [])];
+  for (const k of keys) out.push(k, ...(after.get(k) ?? []));
+  return out;
+}
+
 export class RibbonEditor {
   private d: HTMLDialogElement | null = null;
   private ribbon = 'slides';
@@ -400,8 +417,7 @@ export class RibbonEditor {
     const tab = this.tab;
     const hidden = new Set(this.prefs().hiddenGroups ?? []);
     const all = this.layout()[tab] ?? [];
-    const kept = all.filter((x) => hidden.has(x) && !keys.includes(x));
-    this.change((p) => this.setGroups(tab, [...keys, ...kept], { ...p, hiddenGroups: (p.hiddenGroups ?? []).filter((x) => !keys.includes(x)) }));
+    this.change((p) => this.setGroups(tab, withHiddenKept(all, keys, hidden), { ...p, hiddenGroups: (p.hiddenGroups ?? []).filter((x) => !keys.includes(x)) }));
   }
 
   private remove(i: number): void {

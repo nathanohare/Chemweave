@@ -113,9 +113,16 @@ export class FloatBox {
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       head.setPointerCapture(e.pointerId);
       const move = (m: PointerEvent) => this.place(m.clientX - dx, m.clientY - dy);
-      const up = () => { head.removeEventListener('pointermove', move); head.removeEventListener('pointerup', up); };
+      // (a pointer the system takes away, a touch gesture for one, ends the drag too)
+      const up = () => {
+        head.removeEventListener('pointermove', move);
+        head.removeEventListener('pointerup', up);
+        head.removeEventListener('pointercancel', up);
+        try { head.releasePointerCapture(e.pointerId); } catch { /* already let go */ }
+      };
       head.addEventListener('pointermove', move);
       head.addEventListener('pointerup', up);
+      head.addEventListener('pointercancel', up);
     });
   }
 }
