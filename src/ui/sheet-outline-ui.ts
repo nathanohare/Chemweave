@@ -16,7 +16,7 @@ export interface OutlineHost {
   edit(label: string, fn: (s: Sheet) => void, after?: () => Range): void;
   flash(msg: string, ms?: number): void;
   /** The table around the selection: its cells and header row. */
-  table(): { data: Range; header: number | null } | null;
+  table(at?: { range: Range; active: { r: number; c: number } }): { data: Range; header: number | null } | null;
 }
 
 export class SheetOutline {
@@ -143,6 +143,7 @@ export class SheetOutline {
   /** Data > Subtotal. */
   subtotal(): void {
     const s = this.view.sheet;
+    const here = { range: { ...this.view.sel.range }, active: { ...this.view.sel.active } };
     const t = this.host.table();
     if (!s || !t) { this.host.flash('Click in a table of data first (with a header row).'); return; }
     // Subtotal always reads the first row as the headings, as Excel does; when none was found
@@ -166,8 +167,8 @@ export class SheetOutline {
     // the window floats beside the sheet, so it may be used after another sheet is showing
     const stillHere = () => {
       if (this.view.sheet !== s) return `Go back to ${s.name} to add subtotals there (the window was opened on it).`;
-      // (and the table may have grown or moved while it stayed open)
-      return JSON.stringify(this.host.table()) === JSON.stringify(t) ? null : 'The table has changed since this window was opened. Close it and open Subtotal again.';
+      // (and the table may have grown or moved while it stayed open: looked for where it was found, not where the selection is now)
+      return JSON.stringify(this.host.table(here)) === JSON.stringify(t) ? null : 'The table has changed since this window was opened. Close it and open Subtotal again.';
     };
     w.actions('OK', () => {
       const away = stillHere();

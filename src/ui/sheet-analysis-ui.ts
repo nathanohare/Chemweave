@@ -673,7 +673,8 @@ export class SheetAnalysis {
       st.onClose = () => {
         if (kept) return;
         // (when something else was done since, the cell is put back as a step of its own)
-        if (!preview.retract()) this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), { sheet: sh, sel: b.range });
+        // (and only while the cell still holds the answer: a value typed since is the person's)
+        if (!preview.retract() && sh.cell(b.range.r1, b.range.c1)?.input === String(+res.x.toPrecision(15))) this.wb.edit('Goal Seek (canceled)', () => sh.setCell(b.range.r1, b.range.c1, { ...was }), { sheet: sh, sel: b.range });
         this.view.refresh();
       };
       st.actions('OK', () => { kept = true; });
@@ -859,7 +860,8 @@ export class SheetAnalysis {
     // model, the answer and the Answer Report together)
     const wb = this.wb, v = this.view;
     const was = run.built.vars.map((k) => ({ k, cell: s.cells.get(k) }));
-    const restore = () => { for (const { k, cell } of was) s.setCell(rowOf(k), colOf(k), { ...cell }); };
+    // (a cell is put back only while it still holds the answer: a value typed since is the person's)
+    const restore = () => { run.built.vars.forEach((k, i) => { if (s.cells.get(k)?.input === String(+run.result.x[i].toPrecision(15))) s.setCell(rowOf(k), colOf(k), { ...was[i].cell }); }); };
     let showing = false, finished = false;
     let preview: ReturnType<Workbook['preview']> | null = null;
     /** Take the preview back; false when something else was done since, so it stays as a step. */
@@ -892,6 +894,8 @@ export class SheetAnalysis {
       finished = true;
       const wantKeep = keep.get() === 'keep';
       // the report reads the values as they will stand, so it is made while the sheet shows them
+      // (the answer is shown again first when it was undone while this window stayed open)
+      if (wantKeep && preview && !preview.applied()) takeBack();
       show(wantKeep);
       const rows = report.checked ? answerReport(s, m, run, new Date()) : null;
       // the preview gives way to the one step of the run (if it can't, because something was done since, it stays as a step of its own)

@@ -115,17 +115,20 @@ describe('F248: Freeze Panes far down a long sheet', () => {
 
 describe('F248: Freeze header row (Sheet mode) far down a long sheet', () => {
   it('refuses to freeze 204 rows too, and still freezes a few', () => {
-    stubBrowser();
-    const { mode, wb, flashes } = rig();
-    const s = wb.sheets[0];
-    wb.edit('fill', () => { for (let r = 0; r < 500; r++) s.setInput(r, 0, String(r)); });
-    mode.view.selectCell(204, 0);
-    (mode as unknown as { freezeHeader(): void }).freezeHeader();
-    expect(s.frozen.rows).toBe(0);
-    expect(flashes.at(-1)).toContain('Freezing here would fill the window');
-    mode.view.selectCell(3, 0);
-    (mode as unknown as { freezeHeader(): void }).freezeHeader();
-    expect(s.frozen.rows).toBe(3);
+    try {
+      stubBrowser();
+      const { mode, wb, flashes } = rig();
+      const s = wb.sheets[0];
+      wb.edit('fill', () => { for (let r = 0; r < 500; r++) s.setInput(r, 0, String(r)); });
+      mode.view.selectCell(204, 0);
+      (mode as unknown as { freezeHeader(): void }).freezeHeader();
+      expect(s.frozen.rows).toBe(0);
+      expect(flashes.at(-1)).toContain('would fill the window with frozen rows');
+      expect(flashes.at(-1)).not.toContain('Scroll');
+      mode.view.selectCell(3, 0);
+      (mode as unknown as { freezeHeader(): void }).freezeHeader();
+      expect(s.frozen.rows).toBe(3);
+    } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 });
 
@@ -290,6 +293,23 @@ describe('F1051 to F1053: Subtotal', () => {
     expect(d.textContent).toContain('No header row was found, so row 1 is read as the headings');
     const names = [...d.querySelectorAll('select')[0].querySelectorAll('option')].map((o) => o.textContent);
     expect(names).toEqual(['Solvent', 'Note', 'Yield']);
+  });
+
+  it('F1053: OK after the selection moved off the table still works (the table is looked for where the window was opened)', async () => {
+    stubBrowser();
+    try {
+      const { mode, wb } = rig();
+      const s = wb.sheets[0];
+      wb.edit('fill', () => [['Solvent', 'Yield'], ['THF', '10'], ['THF', '20'], ['DMF', '30']].forEach((row, r) => row.forEach((v, c) => s.setInput(r, c, v))));
+      mode.view.selectCell(1, 0);
+      (mode as unknown as { outline: SheetOutline }).outline.subtotal();
+      const d = lastDialog();
+      for (const l of d.querySelectorAll('fieldset label')) if (l.textContent === 'Yield') l.querySelector('input')!.checked = true;
+      mode.view.selectCell(10, 5);
+      await submit(d);
+      expect(d.querySelector('.tool-error')?.textContent ?? '').toBe('');
+      expect(wb.undoLabel).toBe('Subtotal');
+    } finally { vi.unstubAllGlobals(); vi.restoreAllMocks(); }
   });
 
   it('F1052: the numeric column is ticked though its first data row is blank', () => {

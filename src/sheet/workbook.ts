@@ -1740,18 +1740,22 @@ export class Workbook {
    * any other, with a way to take it back as if it had never been made, leaving nothing to undo or
    * redo. `made` is false when the change altered nothing, so there is no step to take back.
    */
-  preview<T>(label: string, fn: () => T, before?: Place): { result: T; made: boolean; retract(): boolean } {
+  preview<T>(label: string, fn: () => T, before?: Place): { result: T; made: boolean; applied(): boolean; retract(): boolean } {
     const top = this.undoList[this.undoList.length - 1];
     const result = this.edit(label, fn, before);
     const entry = this.undoList[this.undoList.length - 1];
     const made = entry !== undefined && entry !== top;
     return {
       result, made,
+      // still made (not undone meanwhile)
+      applied: () => !made || this.undoList.includes(entry),
       retract: () => {
         if (!made) return true;
         if (this.tx) return false;
-        // undone meanwhile (Ctrl+Z while its window stayed open): only the step to redo is left to drop
-        if (this.redoList[this.redoList.length - 1] === entry) { this.redoList.pop(); return true; }
+        // undone meanwhile (Ctrl+Z while its window stayed open): only the step to redo is left to drop,
+        // with the steps made on top of it (they sit under it in the list, having been undone before it)
+        const at = this.redoList.indexOf(entry);
+        if (at >= 0) { this.redoList.splice(0, at + 1); return true; }
         // something else was done since: the step stays, and the caller puts the cells back by hand
         if (this.undoList[this.undoList.length - 1] !== entry) return false;
         this.undoList.pop();

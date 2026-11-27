@@ -301,7 +301,7 @@ export class SheetMode {
     this.compounds = new SheetCompounds({ view: this.view, flash: (m, ms) => this.host.flash(m, ms), edit: (label, fn) => this.edit(label, fn), editSheet: (s, label, fn) => this.editSheet(s, label, fn) });
     const basic = { view: this.view, edit: (label: string, fn: (s: Sheet) => void) => this.edit(label, fn), flash: (m: string, ms?: number) => this.host.flash(m, ms) };
     this.look = new SheetLook(basic);
-    this.outline = new SheetOutline({ ...basic, edit: (label, fn, after) => this.edit(label, fn, after), table: () => (this.view.sheet ? this.tableAt() : null) });
+    this.outline = new SheetOutline({ ...basic, edit: (label, fn, after) => this.edit(label, fn, after), table: (at) => (this.view.sheet ? this.tableAt(at) : null) });
     this.sparks = new SheetSparklines(basic);
     this.views = new SheetViews({ ...basic, formulaBar: () => { this.showFormulaBar(); this.showRibbonState(); } });
     this.dashUi = new DashboardUi({ view: this.view, charts: this.charts, flash: (m, ms) => this.host.flash(m, ms) });
@@ -1465,11 +1465,12 @@ export class SheetMode {
   }
 
   /** The table around the active cell: its rows of data (without headers) and columns. */
-  private tableAt(): { data: Range; header: number | null } | null {
+  private tableAt(at?: { range: Range; active: { r: number; c: number } }): { data: Range; header: number | null } | null {
     const v = this.view;
     const s = v.sheet!;
-    const { r, c } = v.sel.active;
-    const R = v.sel.range;
+    // (the selection now, or one remembered from before)
+    const { r, c } = (at ?? v.sel).active;
+    const R = (at ?? v.sel).range;
     if (s.filter && inRange({ ...s.filter.range, r2: s.filterRows()!.r2 }, r, c)) {
       const rows = s.filterRows()!;
       return { data: { r1: rows.r1, c1: s.filter.range.c1, r2: rows.r2, c2: s.filter.range.c2 }, header: s.filter.range.r1 };
@@ -1582,7 +1583,7 @@ export class SheetMode {
     const t = this.tableAt();
     const rows = t?.header !== null && t?.header !== undefined ? t.header + 1 : Math.max(1, v.sel.active.r);
     // (as Freeze Panes: rows counted from row 1 must leave room in the window to scroll)
-    if (!v.roomToFreeze(rows, s.frozen.cols)) { this.host.flash('Freezing here would fill the window with frozen rows. Scroll to the top, or select a cell nearer the top, and try again.', 8000); return; }
+    if (!v.roomToFreeze(rows, s.frozen.cols)) { this.host.flash(`Freezing rows 1–${rows} would fill the window with frozen rows. Try Split, or Freeze Top Row, instead.`, 8000); return; }
     v.keepPlaceForFreeze();
     this.edit('Freeze header row', (sh) => { sh.setSplit(null); sh.setFrozen(rows, sh.frozen.cols); });
     this.host.flash(`Rows 1–${rows} stay in view as you scroll.`);

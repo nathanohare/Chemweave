@@ -203,6 +203,30 @@ describe('F243: Goal Seek and Solver take one undo step, and Cancel leaves none'
     expect(wb.canUndo()).toBe(false);
   });
 
+  it('Cancel after two Ctrl+Z (the answer and the step before it) leaves redo only the earlier step', async () => {
+    const { wb, ui, state } = model();
+    wb.edit('Note', () => wb.sheets[0].setInput(5, 5, 'note'));
+    await submit(goalSeekOn(ui, state));
+    await wait(5);
+    wb.undo();
+    wb.undo();
+    button(open(), 'Cancel').click();
+    expect(wb.canRedo()).toBe(true);
+    wb.redo();
+    expect(wb.sheets[0].cell(5, 5)?.input).toBe('note');
+    expect(wb.canRedo()).toBe(false);
+    expect(wb.sheets[0].value(0, 0)).toBe(2);
+  });
+
+  it('Cancel leaves a value typed into the changing cell while the status showed', async () => {
+    const { wb, ui, state } = model();
+    await submit(goalSeekOn(ui, state));
+    await wait(5);
+    wb.edit('Type', () => wb.sheets[0].setInput(0, 0, '7'));
+    button(open(), 'Cancel').click();
+    expect(wb.sheets[0].cell(0, 0)?.input).toBe('7');
+  });
+
   it('Cancel after Ctrl+Z on the preview leaves nothing to redo', async () => {
     const { wb, ui, state } = model();
     await submit(goalSeekOn(ui, state));
@@ -241,6 +265,29 @@ describe('F243: Goal Seek and Solver take one undo step, and Cancel leaves none'
     expect(w.wb.sheets.filter((s) => s.name.startsWith('Answer Report')).length).toBe(2);
     w.wb.undo();
     expect(w.wb.sheets.filter((s) => s.name.startsWith('Answer Report')).length).toBe(1);
+  });
+
+  it('Solver: Ctrl+Z while the results show, then OK with an Answer Report: the report is of the answer that is kept', async () => {
+    const { wb, results } = await solve();
+    wb.undo();
+    expect(wb.sheets[0].value(0, 0)).toBe(1);
+    [...results.querySelectorAll<HTMLInputElement>('input[type=checkbox]')][0].checked = true;
+    button(results, 'OK').click();
+    expect(wb.sheets.find((x) => x.name === 'Sheet1')!.value(0, 0)).toBeCloseTo(3, 2);
+    const report = wb.sheets.find((x) => x.name.startsWith('Answer Report'))!;
+    // y = 10 - (x - 3)^2 is 10 at its top: the report's final objective value (it was 6 at x = 1)
+    const finals = [...report.values.values()].filter((v): v is number => typeof v === 'number');
+    expect(finals.some((v) => Math.abs(v - 10) < 0.01)).toBe(true);
+    expect(finals.some((v) => Math.abs(v - 3) < 0.01)).toBe(true);
+  });
+
+  it('Solver: Restore leaves a value typed into a variable cell while the results showed', async () => {
+    const { wb, results } = await solve();
+    wb.edit('Type', () => wb.sheets[0].setInput(0, 0, '7'));
+    const radios = [...results.querySelectorAll<HTMLInputElement>('input[type=radio]')];
+    radios[1].checked = true; radios[1].dispatchEvent(new Event('change'));
+    button(results, 'Cancel').click();
+    expect(wb.sheets[0].cell(0, 0)?.input).toBe('7');
   });
 
   it('Solver: switching Keep and Restore and pressing Cancel leaves only the model step, and the cell as it was', async () => {
