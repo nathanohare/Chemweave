@@ -41,8 +41,11 @@ export function grammarIssues(text: string): GrammarIssue[] {
     out.push({ start, end: start + m[2].length, message: `Space before “${m[3]}”`, fix: '' });
   }
   // "a" or "an" before the wrong sound
-  for (const m of text.matchAll(notAfter(/(a|an|A|An)\s+([\p{L}][\p{L}\d\-]*)/gu, /[\p{L}\-]/u))) {
+  // (not after a letter, hyphen, digit or closing bracket: the A of "Figure 1A" or "(4)A" is a label)
+  for (const m of text.matchAll(notAfter(/(a|an|A|An)\s+([\p{L}][\p{L}\d\-]*)/gu, /[\p{L}\-\d)\]]/u))) {
     const art = m[1], next = m[2];
+    // a capital A inside a sentence is a label ("Compound A is", "Ring A of"), not the article
+    if (art === 'A' && !/(?:^|[.!?]["'”’)]*\s+|\n)$/.test(text.slice(0, m.index!))) continue;
     if (/^[A-Z]{2,}/.test(next) && !AN_WORDS.test(next)) {
       // an abbreviation said letter by letter: "an FTIR", "a DFT study" go by the letter's sound
       const vowelSound = /^[AEFHILMNORSX]/.test(next);

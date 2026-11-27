@@ -307,7 +307,7 @@ const STEREO_PREFIX = /(?:^|[\s([{\[–—])\(((?:\d{0,3}[RSEZ]\*?)(?:,\s?\d{0,3
 /** A compound number in parentheses: (4), (4a), (12b), (4a,b), (4a–c), (3,4). Not years (2019) or amounts (5%). */
 const NUMBER_IN_BRACKETS = /(?:^|[\s[{–—])\((\d{1,3}[a-z]?(?:\s?[,–]\s?(?:\d{1,3}[a-z]?|[a-z]))*)$/;
 /** A compound number after "compound" or "compounds": compound 4, compounds 4a. */
-const NUMBER_AFTER_WORD = /\b[Cc]ompounds?\s(\d{1,3}[a-z]?)$/;
+const NUMBER_AFTER_WORD = /\b[Cc]ompounds?\s(\d{1,3}[a-z]?)(\.?)$/;
 
 /**
  * As a key ends a word: the letters of stereodescriptors in italics as a name goes on after them
@@ -326,8 +326,15 @@ export function nameFormats(text: string, end: number, opts: { stereo: boolean; 
     }
   }
   if (opts.numbers) {
-    const m = key === ')' ? NUMBER_IN_BRACKETS.exec(upto) : NUMBER_AFTER_WORD.exec(upto);
-    if (m) out.push({ start: end - m[1].length, end, bold: true });
+    // ("compound 4-nitrophenol", "compound 2.5": a hyphen, dash or slash goes on into a name, and a
+    // dot into a number, so the 4 is a locant there: a number a sentence ends on, "compound 4.", is
+    // bolded by the key after the dot)
+    const goesOn = key === '-' || key === '–' || key === '/' || key === '.';
+    const m = key === ')' ? NUMBER_IN_BRACKETS.exec(upto) : goesOn ? null : NUMBER_AFTER_WORD.exec(upto);
+    if (m) {
+      const to = end - (m[2]?.length ?? 0);
+      out.push({ start: to - m[1].length, end: to, bold: true });
+    }
   }
   return out;
 }

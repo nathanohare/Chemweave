@@ -680,6 +680,12 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       // "(methylenedioxy)phenylboronic" breaks in "methylenedioxy")
       const m = (f.boxes ? /^([(\[{"'\u201c\u2018]*)(\p{L}+)(\S*)\s*$/u : /^()(\p{L}+)([^\p{L}\d\s]*)\s*$/u).exec(pText.slice(w.start, w.end));
       if (!m || m[2].length < 5 || (!hy.caps && m[2] === m[2].toUpperCase())) return null;
+      // (a name with digits after its letters, such as triethylamine-d15, is never broken, though it
+      // is several words here, split after its hyphen: from the word on to the next space is looked
+      // at; a locant in front, as in 4-methoxybenzaldehyde, doesn't stop it)
+      let tb = w.end;
+      while (tb < pText.length && !/\s/.test(pText[tb])) tb++;
+      if (/\d/.test(pText.slice(w.start, tb))) return null;
       const at0 = w.start + m[1].length;
       // the word in one plain piece of text (not a formula, figure or field)
       const s = segAt(at0);
@@ -693,23 +699,45 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
       }
       return null;
     };
+    /** The rest of a word after a break at `at`. */
+    const restOf = (w: Word, at: number): Word => {
+      let be = w.end;
+      while (be > at && pText[be - 1] === ' ') be--;
+      return { start: at, end: w.end, body: widthOf(at, be), spaces: w.spaces };
+    };
     for (let w of words) {
-      const lineRoom = (pLines.length ? room : room - firstLine) - cut.left - cut.right;
-      // a word fits when it and the space after it do (ChemDraw counts that space too; Word doesn't)
-      // (the spaces between the words already on the line may be squeezed; counting the space before
-      // this word as well matched Word's line ends less well: 283 against 307 of 504 lines)
-      const give = cur ? squeeze * cur.spc : 0;
-      if (cur && cur.full + w.body + trailing(w) - give > lineRoom + 1e-6) {
-        const hb = hyphenBreak(w, lineRoom - cur.full + give, lineRoom - cur.full);
-        if (hb) {
-          // the start of the word, and a hyphen, end this line; the rest starts the next
-          cur.end = hb.at;
-          cur.width = cur.full + hb.width;
-          emit(hb.hyphen);
-          let be = w.end;
-          while (be > hb.at && pText[be - 1] === ' ') be--;
-          w = { start: hb.at, end: w.end, body: widthOf(hb.at, be), spaces: w.spaces };
-        } else emit();
+      // (a loop: the rest of a broken word starts a line and may still be too wide for it; pushed:
+      // the word was moved whole to a new line)
+      let pushed = false;
+      for (;;) {
+        const lineRoom = (pLines.length ? room : room - firstLine) - cut.left - cut.right;
+        // a word fits when it and the space after it do (ChemDraw counts that space too; Word doesn't)
+        // (the spaces between the words already on the line may be squeezed; counting the space before
+        // this word as well matched Word's line ends less well: 283 against 307 of 504 lines)
+        const give = cur ? squeeze * cur.spc : 0;
+        if (cur && cur.full + w.body + trailing(w) - give > lineRoom + 1e-6) {
+          const hb = hyphenBreak(w, lineRoom - cur.full + give, lineRoom - cur.full);
+          if (hb) {
+            // the start of the word, and a hyphen, end this line; the rest starts the next
+            cur.end = hb.at;
+            cur.width = cur.full + hb.width;
+            emit(hb.hyphen);
+            w = restOf(w, hb.at);
+          } else { emit(); pushed = true; }
+          continue;
+        }
+        if (!pushed && !cur && w.body + trailing(w) > lineRoom + 1e-6) {
+          // the rest of a broken word, or the first word of the paragraph, wider than its line: broken
+          // at the last point that fits (a word moved whole to a new line stays whole, as it always has)
+          const hb = hyphenBreak(w, lineRoom);
+          if (hb) {
+            cur = { start: w.start, end: hb.at, width: hb.width, full: hb.width, spc: 0 };
+            emit(hb.hyphen);
+            w = restOf(w, hb.at);
+            continue;
+          }
+        }
+        break;
       }
       if (!cur) cur = { start: w.start, end: w.end, width: w.body, full: w.body + w.spaces, spc: 0 };
       else { cur.spc += cur.full - cur.width; cur.end = w.end; cur.width = cur.full + w.body; cur.full += w.body + w.spaces; }
@@ -746,6 +774,7 @@ function layoutPlain(f: TextFrame, defaultSize: number, measure: Measure): TextL
             if (s.strike) g.strike = true;
             if (s.spacing) g.spacing = s.spacing;
             if (s.fx) g.fx = s.fx;
+            if (s.look) g.look = s.look;
             pieces.push(g);
             x += w;
           }
@@ -929,7 +958,8 @@ export function pieceX(lay: TextLayout, g: Glyphs, k: number): number {
   if (k <= 0 || g.hidden) return 0;
   if (k >= g.text.length) return g.w;
   const t = g.text.slice(0, k);
-  let w = lay.measure(t, g.size, g.family, g.style);
+  // (soft hyphens have no width, as in the piece's own: segWidth)
+  let w = lay.measure(unshy(t), g.size, g.family, g.style);
   if (g.spacing) w += g.spacing * k;
   if (g.spread) for (const ch of t) if (ch === ' ') w += g.spread;
   return w;

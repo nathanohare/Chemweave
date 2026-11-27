@@ -49,8 +49,11 @@ export function withFx(ctx: CanvasRenderingContext2D, fx: TextFx, size: number):
     if (!fx.noFill) ctx.fillText(text, x, y);
     if (stroke) {
       // the fill's shadow is enough: the outline doesn't cast another
+      // (and the next piece, drawn with the same settings, casts its own shadow again)
+      const was = ctx.shadowColor;
       if (fx.shadow && !fx.noFill) ctx.shadowColor = 'transparent';
       ctx.strokeText(text, x, y);
+      if (fx.shadow && !fx.noFill) ctx.shadowColor = was;
     }
   };
 }
