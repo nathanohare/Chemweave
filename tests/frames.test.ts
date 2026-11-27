@@ -72,8 +72,8 @@ describe('frames', () => {
     let far = 0;
     doc.edit('More', () => { far = doc.addAtom(200, 200).id; });
     const inside = thingsInside(doc, { x1: -1, y1: -1, x2: 21, y2: 11 }, POINTS, frame);
-    expect(inside.atoms).toHaveLength(1);
-    expect(ids).toContain(inside.atoms[0]);
+    // every atom of the structure inside (so any one left keeps it in the frame), none from outside
+    expect([...inside.atoms].sort((a, b) => a - b)).toEqual([...ids].sort((a, b) => a - b));
     expect(inside.atoms).not.toContain(far);
   });
 

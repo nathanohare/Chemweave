@@ -524,7 +524,7 @@ export class SiTableEditor {
     const at = { ...this.sel };
     const p = await this.host.readClipboard().catch(() => null);
     if (p?.kind === 'table') { await this.change(() => pasteCells(this.t!, at.r, at.c, pastedCells(p.rows))); return; }
-    await this.put(at, p ? await this.pics.fromPasted(p) : await this.pics.fromClipboard());
+    await this.put(at, p ? await this.pics.fromRead(p) : await this.pics.fromClipboard());
   }
 
   private pasteEvent(e: ClipboardEvent): void {

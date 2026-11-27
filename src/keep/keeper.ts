@@ -10,9 +10,9 @@ import { keepStore, type KeepStore } from './store';
 import { Recovery, BEAT_MS, type Copyable, type Session } from './recovery';
 import { Versions, type Version } from './versions';
 import { AutoSaveClock } from './autosave';
-import type { KeepPrefs } from './prefs';
+import { parseKeepPrefs, type KeepPrefs } from './prefs';
 import { sameStamp, lockPath, lockText, parseLock, officeOwnerPaths, parseOfficeOwner, holderText, oneDriveConflictPath, inOneDrive, type Holder } from './shared';
-import { notice, closeNotice, closeNotices, choose, recoverDialog, versionDialog, optionsDialog, when } from '../ui/keep-ui';
+import { notice, closeNotice, choose, recoverDialog, versionDialog, optionsDialog, when } from '../ui/keep-ui';
 
 export interface KeeperHost {
   ws: Workspace;
@@ -21,6 +21,8 @@ export interface KeeperHost {
   flash(msg: string, ms?: number): void;
   /** A tab's name, unsaved mark or AutoSave switch changed: show it. */
   refresh(): void;
+  /** Every tab with unsaved changes has a recovery copy of it as it is now (after a round of copies). */
+  allKept?(): void;
 }
 
 const desktop = isTauri();
@@ -37,6 +39,16 @@ function versionKey(ref: FileRef, name: string): string | null {
   if (ref.kind === 'path') return ref.path;
   if (ref.kind === 'handle') return `browser:${ref.handle.name || name}`;
   return null;
+}
+
+/** A modal window is open (one opened with showModal(); tool windows opened with show() stay open beside the work). */
+function modalOpen(): boolean {
+  for (const d of document.querySelectorAll('dialog[open]')) {
+    // (src/ui/modal-guard.ts marks every modal window; :modal where the browser knows it)
+    if (d.classList.contains('is-modal')) return true;
+    try { if (d.matches(':modal')) return true; } catch { /* an older browser */ }
+  }
+  return false;
 }
 
 function sameRef(a: FileRef, b: FileRef): boolean {
@@ -60,6 +72,13 @@ export class Keeper {
   private paused = new Set<number>();
   /** Changed-on-disk notices shown, by tab: the disk's stamp they were about. */
   private told = new Map<number, string>();
+  /**
+   * Writes of each tab's file under way now (an AutoSave and a Save can overlap): the file changes
+   * under the disk checks, so they leave it alone. Counted up in beforeWrite, down in written().
+   */
+  private writing = new Map<number, number>();
+  /** Writes started, by tab: a disk check that began before a write isn't trusted after it. */
+  private writes = new Map<number, number>();
   private saving = false;
   private pointerDown = false;
   /** When the last key, wheel turn or pointer press came: a big drawing takes a moment to save, so not in the middle of typing or panning. */
@@ -160,9 +179,12 @@ export class Keeper {
 
   // ---------------------------------------------------------------- the timer
 
-  /** Something is being dragged, or a window is open: not the moment to save. */
+  /**
+   * Something is being dragged, or a modal window is open: not the moment to save. Tool windows
+   * (Symbol, a sheet's PivotTable fields) stay open beside the work, so they don't count.
+   */
   private busy(): boolean {
-    return this.pointerDown || Date.now() - this.lastInput < 400 || !!document.querySelector('dialog[open]');
+    return this.pointerDown || Date.now() - this.lastInput < 400 || modalOpen();
   }
 
   private async tick(): Promise<void> {
@@ -183,6 +205,7 @@ export class Keeper {
       if (now - this.lastCopy >= p.recoveryMinutes * 60_000 && !this.busy()) {
         this.lastCopy = this.lastBeat = now;
         await this.copyNow().catch(() => {});
+        if (this.workKept()) this.host.allKept?.();
       } else if (now - this.lastBeat >= BEAT_MS) {
         this.lastBeat = now;
         await this.recovery.beat().catch(() => {});
@@ -266,9 +289,12 @@ export class Keeper {
     if (ref.kind === 'none') return 'go';
     const p = this.prefs;
     // saving over a file someone or something else has changed since it was opened or saved here
-    if (sameRef(tab.ref, ref) && tab.stamp && p.changedOnDisk !== 'ignore') {
+    if (sameRef(tab.ref, ref) && tab.stamp && p.changedOnDisk !== 'ignore' && !this.isWriting(tab)) {
+      const writes = this.writes.get(tab.id) ?? 0;
       const disk = await stampOf(ref);
-      if (disk && !sameStamp(disk, tab.stamp)) {
+      // (another save of this tab started meanwhile: the stamp may be its half-written file)
+      const ours = this.isWriting(tab) || (this.writes.get(tab.id) ?? 0) !== writes;
+      if (disk && !ours && !sameStamp(disk, tab.stamp)) {
         if (how === 'autosaved') {
           this.paused.add(tab.id);
           await this.changedOnDisk(tab, disk);
@@ -287,12 +313,28 @@ export class Keeper {
       if (was && was.length) await this.versions.add(key, was, 'before', { keep: p.versionsKeep, days: p.versionsDays, ext: extensionOf(name) }).catch(() => {});
       else this.versions.saw(key);
     }
+    // the file is being written from here until written(): not "changed on disk"
+    this.writing.set(tab.id, (this.writing.get(tab.id) ?? 0) + 1);
+    this.writes.set(tab.id, (this.writes.get(tab.id) ?? 0) + 1);
     return 'go';
+  }
+
+  /** The write beforeWrite let go has ended, saved or not. */
+  written(tab: Tab): void {
+    const n = (this.writing.get(tab.id) ?? 0) - 1;
+    if (n > 0) this.writing.set(tab.id, n);
+    else this.writing.delete(tab.id);
+  }
+
+  private isWriting(t: Tab): boolean {
+    return (this.writing.get(t.id) ?? 0) > 0;
   }
 
   saved(tab: Tab, data: Uint8Array, how: SaveHow, was: FileRef): void {
     const p = this.prefs;
     if (how === 'saved') { this.paused.delete(tab.id); closeNotice(`autosave-${tab.id}`); }
+    // a changed-on-disk notice this save has settled (the file is now what the tab holds): AutoSave goes on
+    else if (this.told.has(tab.id)) this.paused.delete(tab.id);
     this.told.delete(tab.id);
     closeNotice(`disk-${tab.id}`);
     const key = versionKey(tab.ref, tab.name);
@@ -328,17 +370,23 @@ export class Keeper {
     this.paused.delete(tab.id);
     this.told.delete(tab.id);
     this.auto.done(tab.id);
-    closeNotices(`disk-${tab.id}`);
-    closeNotices(`lock-${tab.id}`);
-    closeNotices(`onedrive-${tab.id}`);
-    closeNotices(`autosave-${tab.id}`);
+    this.writing.delete(tab.id);
+    this.writes.delete(tab.id);
+    // (exact keys: closing tab 1 must not close tab 12's notices)
+    closeNotice(`disk-${tab.id}`);
+    closeNotice(`lock-${tab.id}`);
+    closeNotice(`onedrive-${tab.id}`);
+    closeNotice(`autosave-${tab.id}`);
   }
 
   // ---------------------------------------------------------------- changed on disk
 
   private async checkDisk(t: Tab): Promise<void> {
-    if (t.ref.kind === 'none' || !t.stamp || this.prefs.changedOnDisk === 'ignore') return;
+    if (t.ref.kind === 'none' || !t.stamp || this.prefs.changedOnDisk === 'ignore' || this.isWriting(t)) return;
+    const writes = this.writes.get(t.id) ?? 0;
     const disk = await stampOf(t.ref);
+    // this app wrote the file meanwhile (or is writing it): the stamp read may be from half way through
+    if (this.isWriting(t) || (this.writes.get(t.id) ?? 0) !== writes) return;
     if (!this.ws.tabs.includes(t) || sameStamp(disk, t.stamp)) return;
     if (!disk) {
       if (t.ref.kind !== 'path') return;
@@ -559,10 +607,13 @@ export class Keeper {
         return;
       }
     }
-    let opened = 0;
+    let opened = 0, unread = 0;
     for (const s of left) {
       const mine = r.picked.filter((x) => x.session === s).map((x) => x.tab);
+      // only the copies that are open in a tab now go: one that couldn't be read or opened stays to be tried again
+      let done = mine;
       if (r.action === 'reopen') {
+        done = [];
         for (const t of mine) {
           const bytes = await this.recovery.read(s.session, t.file);
           if (!bytes) continue;
@@ -570,13 +621,15 @@ export class Keeper {
           const ref: FileRef = t.path && desktop && !taken ? { kind: 'path', path: t.path } : { kind: 'none' };
           const stem = t.name.replace(/\.[^.]*$/, ''), ext = t.name.slice(stem.length);
           const tab = await this.ws.openAs(bytes, t.file, { name: taken ? `${stem} (recovered)${ext}` : t.name, ref, dirty: true, stamp: ref.kind === 'path' ? t.stamp : null });
-          if (tab) opened++;
+          if (tab) { opened++; done.push(t); }
         }
+        unread += mine.length - done.length;
       }
-      await this.recovery.forget(s, mine.map((t) => t.file)).catch(() => {});
-      if (atStart && s.tabs.length && mine.length < s.tabs.length) await this.recovery.markOffered(s).catch(() => {});
+      if (done.length) await this.recovery.forget(s, done.map((t) => t.file)).catch(() => {});
+      if (atStart && s.tabs.length && done.length < s.tabs.length) await this.recovery.markOffered(s).catch(() => {});
     }
-    if (r.action === 'reopen') this.host.flash(opened ? `Recovered ${opened} file${opened === 1 ? '' : 's'}, not saved yet: Save keeps ${opened === 1 ? 'it' : 'them'} (files that had been saved go back to where they were).` : 'The copies couldn’t be read.', 8000);
+    const kept = unread ? ` ${unread === 1 ? 'One copy' : `${unread} copies`} couldn’t be opened; ${unread === 1 ? 'it is' : 'they are'} kept, and File ▸ Versions and Recovery ▸ Recover Unsaved Work can try again.` : '';
+    if (r.action === 'reopen') this.host.flash((opened ? `Recovered ${opened} file${opened === 1 ? '' : 's'}, not saved yet: Save keeps ${opened === 1 ? 'it' : 'them'} (files that had been saved go back to where they were).` : 'The copies couldn’t be read.') + kept, 8000);
     else this.host.flash('Deleted the copies.');
   }
 
@@ -627,7 +680,11 @@ export class Keeper {
         ? { keep: p.versionsKeep, days: p.versionsDays }
         : { keep: (await this.versions.list(key)).length + 1, days: 0 };
       await this.versions.add(key, data, 'restored', { ...limits, ext: extensionOf(tab.name) });
-    } catch { /* the version is still restored */ }
+    } catch (e) {
+      // what the tab has now couldn't be kept, so restoring would lose it: the tab stays as it is
+      this.host.flash(`The version wasn’t restored: what ${tab.name} has now couldn’t be kept as a version first (${e instanceof Error ? e.message : String(e)}). Save it, or save a copy with Save As, and try again.`, 10000);
+      return false;
+    }
     const t = await this.ws.openAs(bytes, withExtension(v.file, extensionOf(v.file) || extensionOf(tab.name)), { name: tab.name, ref: tab.ref, dirty: true, stamp: tab.stamp, replace: tab });
     if (t) this.host.flash(`Restored the version from ${when(v.at)}. ${this.autoOn(t) ? 'AutoSave saves it shortly.' : 'Save to keep it.'}`, 6000);
     return !!t;
@@ -638,8 +695,10 @@ export class Keeper {
   async optionsCommand(): Promise<void> {
     let where = 'the app’s data folder';
     try { where = await (desktop ? invoke<string>('keep_folder') : Promise.resolve('this browser’s storage for the page')); } catch { /* the plain words */ }
-    const next = await optionsDialog(this.prefs, where, desktop);
-    if (!next) return;
+    const typed = await optionsDialog(this.prefs, where, desktop);
+    if (!typed) return;
+    // held to the same limits as when the settings are read (2 s at least between AutoSaves, a day at least for copies)
+    const next = parseKeepPrefs(typed);
     this.host.setPrefs(next);
     this.lastCopy = next.recoveryMinutes ? Date.now() - next.recoveryMinutes * 60_000 : this.lastCopy;
     this.lastLocks = 0;

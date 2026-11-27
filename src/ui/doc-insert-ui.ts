@@ -38,6 +38,18 @@ const hasDate = (pic: string) => /[dMy]/.test(pic.replace(/'[^']*'/g, ''));
 /** The colors a cover page can take (the first is the default, and the gallery's pictures'). */
 export const COVER_ACCENTS: [string, string][] = [['#1f4e79', 'Dark blue'], ['#2e75b6', 'Blue'], ['#0c7c59', 'Green'], ['#8b1e3f', 'Burgundy'], ['#404040', 'Charcoal'], ['#c55a11', 'Orange']];
 
+/**
+ * A paragraph's text from `start` to `end` as the Cross-reference list shows it: every object
+ * character (a caption's number, a field, a picture) is replaced by what `shownAt` gives for its
+ * offset, or by nothing. Replaced one place at a time, so the first object on the line is never
+ * mistaken for the caption's own, and a text with a `$` in it is never taken for a pattern.
+ */
+export function captionLine(text: string, start: number, end: number, shownAt: (offset: number) => string | undefined): string {
+  let out = '';
+  for (let i = start; i < end; i++) out += text[i] === OBJECT_CHAR ? (shownAt(i) ?? '') : text[i];
+  return out;
+}
+
 export class DocInsertUI {
   constructor(private host: DocInsertHost) {}
 
@@ -82,7 +94,7 @@ export class DocInsertUI {
     const marks = bookmarksOf(f.t).filter((b) => !b.name.startsWith('_')).map((b) => b.name);
     const got = await ask('Field', [
       { name: 'code', label: 'Field', value: 'date', options: FIELD_LIST.map((x) => ({ value: x.code, label: `${x.name}: ${x.help}` })) },
-      { name: 'format', label: 'Date format (date fields)', value: 'M/d/yyyy', suggestions: DATE_FORMATS },
+      { name: 'format', label: 'Date format (date fields)', value: '', placeholder: 'Word\'s own for the field', suggestions: DATE_FORMATS },
       { name: 'target', label: 'Bookmark (bookmark fields)', value: marks[0] ?? '', suggestions: marks },
     ], { ok: 'Insert', note: 'A field shows calculated content that updates automatically. It\'s saved as a Word field, so Word updates it too.' });
     this.host.focus();
@@ -255,13 +267,14 @@ export class DocInsertUI {
     const shown = fieldTexts(f.t);
     const at = objectOffsets(f.t.runs);
     const text = f.ed.text;
+    const shownByOffset = new Map([...at.entries()].map(([id, o]) => [o, shown.get(id)]));
     const short = (s: string) => (s.length > 70 ? s.slice(0, 68) + '…' : s);
     const targets: { value: string; label: string }[] = [];
     const caps = [...at.entries()].filter(([id]) => { const o = f.t.objects[id]; return o?.kind === 'seq' && o.name !== COMPOUND; }).sort((a, b) => a[1] - b[1]);
     for (const [id, off] of caps) {
       const start = text.lastIndexOf('\n', off - 1) + 1;
       const end = text.indexOf('\n', off);
-      targets.push({ value: `c:${id}`, label: `Caption: ${short(text.slice(start, end < 0 ? text.length : end).replace(OBJECT_CHAR, shown.get(id) ?? ''))}` });
+      targets.push({ value: `c:${id}`, label: `Caption: ${short(captionLine(text, start, end < 0 ? text.length : end, (o) => shownByOffset.get(o)))}` });
     }
     for (const h of tocEntries(f.t, 9)) targets.push({ value: `h:${h.para}`, label: `Heading: ${short(h.text)}` });
     for (const b of bookmarksOf(f.t).filter((x) => !x.name.startsWith('_'))) targets.push({ value: `b:${b.name}`, label: `Bookmark: ${b.name}` });

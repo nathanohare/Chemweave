@@ -311,7 +311,8 @@ export async function optionsDialog(p: KeepPrefs, where: string, desktop: boolea
   [...document.querySelectorAll('dialog.ask')].pop()?.classList.add('keep-options');
   const r = await pending;
   if (!r) return null;
-  const num = (k: string, d: number) => { const v = Number(r[k]); return isFinite(v) ? v : d; };
+  // (a field left empty keeps what it had; the keeper holds the numbers to their limits)
+  const num = (k: string, d: number) => { const t = String(r[k] ?? '').trim(); const v = Number(t); return t && isFinite(v) ? v : d; };
   return {
     autoSave: r.autoSave === 'true',
     autoSaveSeconds: num('autoSaveSeconds', p.autoSaveSeconds),

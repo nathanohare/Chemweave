@@ -4,7 +4,7 @@
 // numbered or not. The text is ordinary text afterwards, to move and edit.
 
 import { withInfo } from './info-tip';
-import { CITE_PRESETS, citeFormat, preferredStyle } from '../document/cite-styles';
+import { CITE_PRESETS, citeFormat, knownStyle, preferredStyle } from '../document/cite-styles';
 import { describe, shortLabel, type Reference } from '../document/references';
 import { REF_FORMS, referenceRuns, type RefForm } from '../deck/slide-refs';
 import { showDialog } from './dialog-host';
@@ -66,7 +66,7 @@ export function chooseRefsToInsert(groups: RefGroup[], byDoi: () => Promise<Refe
           box.addEventListener('change', () => {
             const i = picked.indexOf(r);
             if (box.checked && i < 0) picked.push(r); else if (!box.checked && i >= 0) picked.splice(i, 1);
-            if (box.checked && g.style && g.style in CITE_PRESETS && picked.length === 1) styleSel.value = g.style;
+            if (box.checked && knownStyle(g.style) && picked.length === 1) styleSel.value = g.style;
             show();
           });
           l.append(box, el('span', '', describe(r)));

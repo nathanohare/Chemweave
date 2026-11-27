@@ -9,7 +9,7 @@
 
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
-import { editParas, fitParas, paraCount } from '../text/paragraphs';
+import { cleanPara, editParas, fitParas, paraCount } from '../text/paragraphs';
 
 export type RevKind = 'ins' | 'del';
 
@@ -136,43 +136,76 @@ export function trackedReplace<T extends Revisable>(t: T, start: number, end: nu
  * partly inside the range is decided for the part inside.
  */
 export function decide<T extends Revisable>(t: T, accept: boolean, start = 0, end = Infinity): T {
-  t = { ...t, paras: fitParas(t.paras, paraCount(rt.plainText(t.runs))) };
+  const text = rt.plainText(t.runs);
+  const paras = fitParas(t.paras, paraCount(text));
   // formatting changes first (they don't move the text)
-  t = { ...t, runs: decideFormatting(t.runs, accept, start, end) };
-  const n = rt.plainText(t.runs).length;
-  const ps = pieces(t.runs, Math.max(0, start), Math.min(n, end)).filter((p) => p.rev);
-  // marks taken off first (offsets don't change), then text taken away from the end back
-  const goes = (p: { rev: Revision | null }) => (p.rev!.kind === 'del') === accept;
-  for (const p of ps) {
-    if (goes(p)) continue;
-    const len = rt.plainText(t.runs).length;
-    const mid = rt.sliceRuns(t.runs, p.start, p.end).map((r) => ({ ...r, rev: undefined }));
-    t = { ...t, runs: rt.normalizeRuns([...rt.sliceRuns(t.runs, 0, p.start), ...mid, ...rt.sliceRuns(t.runs, p.end, len)]) };
+  const runs = decideFormatting(t.runs, accept, start, end);
+  if (!runs.some((r) => r.rev)) return { ...t, runs, paras };
+  // one walk over the runs: a change kept loses its mark, one decided against goes (deleted text
+  // when accepting, inserted text when rejecting); a change only partly inside is cut at the edge
+  const lo = Math.max(0, start), hi = Math.min(text.length, end);
+  const out: TextRun[] = [];
+  const gone: [number, number][] = [];
+  let at = 0;
+  for (const r of runs) {
+    const len = r.text.length;
+    const a = Math.max(lo, at), b = Math.min(hi, at + len);
+    const rev = b > a ? parseRev(r.rev) : null;
+    if (!rev) { out.push(r); at += len; continue; }
+    if (a > at) out.push({ ...r, text: r.text.slice(0, a - at) });
+    if ((rev.kind === 'del') === accept) gone.push([a, b]);
+    else { const { rev: _r, ...rest } = r; out.push({ ...rest, text: r.text.slice(a - at, b - at) }); }
+    if (at + len > b) out.push({ ...r, text: r.text.slice(b - at) });
+    at += len;
   }
-  for (const p of [...ps].reverse()) if (goes(p)) t = cut(t, p.start, p.end);
-  return t;
+  return { ...t, runs: rt.normalizeRuns(out), paras: joinCutParas(paras, text, gone) };
+}
+
+/**
+ * The paragraphs' styles once the text in each of `gone` (in order, not overlapping) is taken
+ * away, as cutting each from the end back does (text/paragraphs.ts editParas): paragraphs that a
+ * cut joins take the style of the first, which also takes the index entries and marked citations
+ * of the last.
+ */
+function joinCutParas(paras: ParaStyle[], text: string, gone: [number, number][]): ParaStyle[] {
+  if (!gone.length) return paras;
+  // each cut's first and last paragraph, in one walk over the line breaks
+  const ends: [number, number][] = [];
+  let para = 0, nl = text.indexOf('\n');
+  const paraOf = (x: number) => { while (nl >= 0 && nl < x) { para++; nl = text.indexOf('\n', nl + 1); } return para; };
+  for (const [a, b] of gone) { const pa = paraOf(a); ends.push([pa, paraOf(b)]); }
+  const ps: (ParaStyle | null)[] = [...paras];
+  for (let i = ends.length - 1; i >= 0; i--) {
+    const [a, b] = ends[i];
+    if (b <= a) continue;
+    const base = ps[a]!, last = ps[b];
+    ps[a] = last && (last.xe || last.ta) ? cleanPara({ ...base, xe: [...(base.xe ?? []), ...(last.xe ?? [])], ta: [...(base.ta ?? []), ...(last.ta ?? [])] }) : base;
+    for (let q = a + 1; q <= b; q++) ps[q] = null;
+  }
+  return ps.filter((p): p is ParaStyle => p !== null);
 }
 
 /** Text inside a document's objects: text boxes and table cells. */
 type InnerText = { runs: TextRun[]; paras?: ParaStyle[] };
 type WithObjects = Revisable & { objects: Record<number, { kind: string; runs?: TextRun[]; paras?: ParaStyle[]; table?: { rows: InnerText[][] } }> };
 
-/** Every piece of text in a document: its own, then each text box's and table cell's. */
+/** Every piece of text in a document's objects: each text box's, footnote's and endnote's, and table cell's. */
 function innerTexts(t: WithObjects): InnerText[] {
   const out: InnerText[] = [];
   for (const o of Object.values(t.objects)) {
-    if (o.kind === 'textbox' && o.runs) out.push(o as InnerText);
+    // (footnotes and endnotes are tracked like the text: editNote)
+    if ((o.kind === 'textbox' || o.kind === 'note') && o.runs) out.push(o as InnerText);
     else if (o.kind === 'table' && o.table) for (const row of o.table.rows) out.push(...row);
   }
   return out;
 }
 
-/** How many changes the document has, with those in text boxes and table cells. */
+/** How many changes the document has, with those in text boxes, notes and table cells. */
 export function countChanges(t: WithObjects): number {
   return changesIn(t.runs).length + innerTexts(t).reduce((n, x) => n + changesIn(x.runs).length, 0);
 }
 
-/** Accept (or reject) every change in the document, in text boxes and table cells too. */
+/** Accept (or reject) every change in the document, in text boxes, notes and table cells too. */
 export function decideEverywhere<T extends WithObjects>(t: T, accept: boolean): T {
   const inner = <X extends InnerText>(x: X): X => {
     if (!changesIn(x.runs).length) return x;
@@ -181,7 +214,7 @@ export function decideEverywhere<T extends WithObjects>(t: T, accept: boolean): 
   };
   const objects: WithObjects['objects'] = {};
   for (const [k, o] of Object.entries(t.objects)) {
-    if (o.kind === 'textbox' && o.runs) objects[+k] = inner(o as typeof o & InnerText);
+    if ((o.kind === 'textbox' || o.kind === 'note') && o.runs) objects[+k] = inner(o as typeof o & InnerText);
     else if (o.kind === 'table' && o.table) objects[+k] = { ...o, table: { ...o.table, rows: o.table.rows.map((row) => row.map(inner)) } };
     else objects[+k] = o;
   }
@@ -262,10 +295,15 @@ export function trackFormatting(before: TextRun[], after: TextRun[], start: numb
   for (const r of after) { at += r.text.length; cuts.add(at); }
   const marks = [...cuts].filter((x) => x >= start && x <= end).sort((x, y) => x - y);
   const mid: TextRun[] = [];
+  // each stretch between two cuts lies in one run of each: walk both lists once
+  let bi = 0, bAt = 0, ai = 0, aAt = 0;
   for (let i = 0; i + 1 < marks.length; i++) {
     const a = marks[i], b = marks[i + 1];
-    const was = rt.sliceRuns(before, a, b)[0];
-    for (const r of rt.sliceRuns(after, a, b)) {
+    while (bi < before.length && bAt + before[bi].text.length <= a) bAt += before[bi++].text.length;
+    while (ai < after.length && aAt + after[ai].text.length <= a) aAt += after[ai++].text.length;
+    const was = bi < before.length ? before[bi] : undefined;
+    const here = ai < after.length ? [{ ...after[ai], text: after[ai].text.slice(a - aAt, b - aAt) }] : [];
+    for (const r of here) {
       if (!was || r.obj !== undefined || parseRev(r.rev)?.kind === 'ins') { mid.push(r); continue; }
       const first = parseFmt(was.fmt)?.old ?? lookOf(rt.styleOf(was));
       const same = rt.sameStyle(first, lookOf(rt.styleOf(r)));

@@ -160,18 +160,17 @@ function num(el: Element, name: string, def: number): number {
 /** A line of text runs (a subscript drawn smaller and lower), its baseline starting at p. */
 function textEl(p: V, runs: { text: string; size: number; sub: boolean; color?: string }[], color: string, anchor = 'start', extra = ''): string {
   const size = runs[0]?.size ?? 7.5;
-  const spans = runs.map((r) => {
-    const s = r.sub ? r.size * 0.75 : r.size;
-    return `<tspan${s !== size ? ` font-size="${f(s)}"` : ''}${r.sub ? ` dy="${f(r.size * 0.2)}"` : ''}${r.color && r.color !== color ? ` fill="${r.color}"` : ''}>${esc(r.text)}</tspan>`;
-  });
-  // (a subscript's drop is undone for the run after it)
+  // (dy moves from where the run before left off: a subscript drops to its place below the
+  // baseline from wherever the text is, so one straight after another stays level with it, and
+  // the run after a subscript goes back up; review F551)
   let out = '', down = 0;
-  runs.forEach((r, i) => {
-    let s = spans[i];
-    if (!r.sub && down) { s = s.replace('<tspan', `<tspan dy="${f(-down)}"`); down = 0; }
-    if (r.sub) down += r.size * 0.2;
-    out += s;
-  });
+  for (const r of runs) {
+    const s = r.sub ? r.size * 0.75 : r.size;
+    const want = r.sub ? r.size * 0.2 : 0;
+    const dy = want - down;
+    down = want;
+    out += `<tspan${Math.abs(dy) > 1e-9 ? ` dy="${f(dy)}"` : ''}${s !== size ? ` font-size="${f(s)}"` : ''}${r.color && r.color !== color ? ` fill="${r.color}"` : ''}>${esc(r.text)}</tspan>`;
+  }
   return `<text x="${f(p.x)}" y="${f(p.y)}" font-family="Arial, Helvetica, sans-serif" font-size="${f(size)}" fill="${color}" text-anchor="${anchor}"${extra}>${out}</text>`;
 }
 

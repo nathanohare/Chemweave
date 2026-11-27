@@ -21,7 +21,7 @@ import * as rt from '../richtext';
 import type { Move, TextEditing } from '../text/editing';
 import type { ObjectLook, TextLook } from '../format-painter';
 import { BRUSH, IBEAM } from '../editor/cursors';
-import { offsetAt, caretPos, selectionRects } from '../text/layout';
+import { offsetAt, caretPos, selectionRects, wordAt } from '../text/layout';
 import type { Rect } from '../geom';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
 import { pastedTable, tableHtml, tableTsv } from '../io/table-clip';
@@ -65,7 +65,7 @@ import { traceImage } from './trace';
 import { OriginalNotes } from './doc-original-notes';
 import { openMakeEditableWindow } from './make-editable-dialog';
 import type { StyleChoice } from '../recognise/editable';
-import { shownSize } from '../document/doc-layout';
+import { shownSize, type DocLayout } from '../document/doc-layout';
 import { editChart, chartPoints } from './chart-editor';
 import { aspectCrop, pictureFormat } from './picture-dialog';
 import { loadImage } from '../render/images';
@@ -257,6 +257,8 @@ interface DocPlace {
   perRow?: number;
   sideways?: boolean;
   split?: { zoom: number; top: number; left: number };
+  /** Read Mode: the page being read (the scroll above is the reading layout's, not the normal one's). */
+  readPage?: number;
 }
 
 /** The view commands: View > Views. */
@@ -471,6 +473,7 @@ export class DocumentMode {
     });
     this.nav = new DocNav($('#doc-pane'), {
       text: () => this.file?.t ?? null,
+      file: () => this.file,
       caretPara: () => { const f = this.file; return f ? paraAt(f.ed.text, f.ed.start) : 0; },
       goToPara: (p) => this.goToPara(p),
       goToHit: (hit) => this.goToHit(hit),
@@ -640,7 +643,7 @@ export class DocumentMode {
     const ed = this.ed;
     if (!replace) {
       ed.setCaret(ed.end);
-      if (ed.text.length && ed.text[ed.end - 1] !== '\n') text = '\n' + text;
+      if (ed.end > 0 && ed.text[ed.end - 1] !== '\n') text = '\n' + text;
     }
     ed.pastePlain(text);
     return true;
@@ -874,7 +877,7 @@ export class DocumentMode {
       case 'table-painter': this.tables.setPainting(!this.tables.painting); break;
       case 'table-gridlines':
         this.view.gridlines = !this.view.gridlines;
-        if (this.split) this.split.view.gridlines = this.view.gridlines;
+        for (const x of this.views) x.gridlines = this.view.gridlines;
         this.updateRibbon();
         this.redraw();
         break;
@@ -1202,7 +1205,7 @@ export class DocumentMode {
     else this.view.setZoom(ACTUAL);
     this.paraCountWas = paraCount(f.ed.text);
     this.showViewKind();
-    if (f.view.kind === 'read') this.startReading();
+    if (f.view.kind === 'read') this.startReading(st?.readPage);
     // a document opened with structures that aren't figures: offer to make them figures (once)
     if (!st) this.figureOffer.opened(f);
     this.blink ??= setInterval(() => {
@@ -1234,6 +1237,7 @@ export class DocumentMode {
       zoom: was?.zoom ?? main.zoom, top: main.scroller.scrollTop, left: main.scroller.scrollLeft,
       screen: t.document.view, perRow: was?.perRow ?? main.perRow, sideways: was?.sideways ?? main.sideways,
       split: sp ? { zoom: sp.zoom, top: sp.scroller.scrollTop, left: sp.scroller.scrollLeft } : undefined,
+      ...(this.reading ? { readPage: this.readPage } : {}),
     } satisfies DocPlace;
     this.stopReading();
     t.document.listener = () => {};
@@ -1725,7 +1729,9 @@ export class DocumentMode {
 
   private contextMenu(offset: number, clientX: number, clientY: number): boolean {
     this.closeMenu();
-    const c = this.checks();
+    // (the spelling and chemistry checks, and tracked changes, are about the body's text: not offered in a box's)
+    const inBox = !!this.file?.box;
+    const c = inBox ? { spell: [] as [number, number][], issues: [] as Issue[] } : this.checks();
     const near = (a: number, b: number) => offset >= a && offset <= b;
     const word = c.spell.find(([a, b]) => near(a, b));
     const issue = c.issues.find((i) => near(i.start, i.end));
@@ -1772,7 +1778,7 @@ export class DocumentMode {
       line();
     }
     // a tracked change here (Review tab)
-    const change = this.file ? changesIn(this.file.t.runs).find((x) => x.start <= offset && offset <= x.end) : undefined;
+    const change = this.file && !inBox ? changesIn(this.file.t.runs).find((x) => x.start <= offset && offset <= x.end) : undefined;
     if (change) {
       const what = `${changeName(change.kind)} by ${change.author || 'unknown'}`;
       const pick = (accept: boolean) => () => { if (ed.collapsed || ed.end <= change.start || ed.start >= change.end) ed.select(change.start, change.start); this.decideChange(accept); };
@@ -1926,12 +1932,13 @@ export class DocumentMode {
     menu.setAttribute('role', 'menu');
     const grid = document.createElement('div');
     grid.className = 'hl-grid';
-    const cur = this.file?.ed.currentStyle().highlight;
+    // the text being typed in (a table cell, a text box or a note too), as the Text Highlight Color button
+    const cur = this.file?.textEd.currentStyle().highlight;
     const use = (c: string | undefined) => {
       this.closeMenu();
       if (c) this.highlighter = c;
       this.paintHighlighter();
-      this.file?.ed.setStyle({ highlight: c });
+      if (this.file) this.setTextStyle({ highlight: c });
       this.focus();
     };
     for (const [name, c] of Object.entries(WORD_HIGHLIGHTS)) {
@@ -2037,7 +2044,8 @@ export class DocumentMode {
     const moves: Record<string, Move> = isMac && e.metaKey
       ? { ArrowLeft: 'lineStart', ArrowRight: 'lineEnd', ArrowUp: 'textStart', ArrowDown: 'textEnd' }
       : { ArrowLeft: word ? 'wordLeft' : 'left', ArrowRight: word ? 'wordRight' : 'right', ArrowUp: 'up', ArrowDown: 'down', Home: e.ctrlKey ? 'textStart' : 'lineStart', End: e.ctrlKey ? 'textEnd' : 'lineEnd' };
-    if (moves[e.key] && !e.altKey) {
+    // (Alt is the browser's own keys on Windows and Linux; on a Mac, Option is the word key, as in Word)
+    if (moves[e.key] && (!e.altKey || (isMac && word && !e.metaKey && !e.ctrlKey && (e.key === 'ArrowLeft' || e.key === 'ArrowRight')))) {
       return run(() => {
         const before = ed.collapsed ? ed.focus : -1;
         ed.move(moves[e.key], shift);
@@ -2052,6 +2060,10 @@ export class DocumentMode {
       if (e.key === 'Tab' && this.indexes.nextField(shift)) return run(() => {});
       const form = this.indexes.pickedForm();
       if (form !== null && (e.key === ' ' || e.key === 'Enter' || e.key === 'F2')) return run(() => void this.indexes.fill(form));
+    }
+    if (!ctrl && isMac && e.altKey && !e.ctrlKey) {
+      if (e.key === 'Backspace') return run(() => ed.backspace(true));
+      if (e.key === 'Delete') return run(() => ed.deleteForward(true));
     }
     if (!ctrl && !e.altKey) {
       switch (e.key) {
@@ -2252,6 +2264,8 @@ export class DocumentMode {
     }
     if (own && !plain) { this.pasteOwn(own); return; }
     const got = await this.host.readPaste(e);
+    // from a menu (no paste event): the clipboard's text is still what was copied here last
+    if (!e && !plain && this.file === f && this.clip && got.text && got.text.replace(/\r\n?/g, '\n') === this.clip.text) { this.pasteOwn(this.clip); return; }
     const ed = f.textEd;
     // the picture copied here last (copied as a PNG): the copy, with its crop, look and chart
     const cp = this.clipPicture, gp = got.picture;
@@ -2479,6 +2493,10 @@ export class DocumentMode {
       const v = new DocView(host);
       v.file = this.file;
       this.setupView(v);
+      // the new pane looks as the first one does now (View Gridlines, hidden white space, crop marks)
+      v.gridlines = main.gridlines;
+      v.hideSpace = main.hideSpace;
+      v.cropMarks = main.cropMarks;
       this.wirePointer(v);
       this.split = { view: v, host, bar };
       bar.addEventListener('pointerdown', (e) => {
@@ -2489,9 +2507,18 @@ export class DocumentMode {
           const below = Math.max(60, Math.min(pane.height - 100, pane.bottom - ev.clientY - 28));
           host.style.flexBasis = `${below}px`;
         };
-        const up = () => { bar.removeEventListener('pointermove', move); bar.removeEventListener('pointerup', up); this.focus(); };
+        // (a cancelled pointer or lost capture ends the drag as a release does)
+        const up = () => {
+          bar.removeEventListener('pointermove', move);
+          bar.removeEventListener('pointerup', up);
+          bar.removeEventListener('pointercancel', up);
+          bar.removeEventListener('lostpointercapture', up);
+          this.focus();
+        };
         bar.addEventListener('pointermove', move);
         bar.addEventListener('pointerup', up);
+        bar.addEventListener('pointercancel', up);
+        bar.addEventListener('lostpointercapture', up);
       });
       bar.addEventListener('dblclick', () => this.setSplit(false));
       main.resize();
@@ -2506,6 +2533,7 @@ export class DocumentMode {
       if (this.view === sp.view) this.activate(main);
       this.views = this.views.filter((x) => x !== sp.view);
       sp.view.file = null;
+      sp.view.destroy();
       sp.bar.remove();
       sp.host.remove();
       this.split = null;
@@ -2516,14 +2544,15 @@ export class DocumentMode {
 
   // Read Mode: the pages two at a time, filling the window with nothing else, turned with the keys or the wheel
 
-  private startReading(): void {
+  private startReading(at?: number): void {
     const f = this.file;
     if (!f) return;
     this.setSplit(false);
     const v = this.views[0];
     this.activate(v);
     this.readWas ??= { zoom: v.zoom, perRow: v.perRow, sideways: v.sideways };
-    const page = v.currentPage();
+    // (coming back to this tab: the page that was being read, not what the scroll says)
+    const page = at !== undefined ? Math.max(0, Math.min(f.layout().pages.length - 1, at)) : v.currentPage();
     this.reading = true;
     document.body.classList.add('doc-reading');
     document.querySelector<HTMLElement>('#doc-readbar')!.hidden = false;
@@ -2767,13 +2796,15 @@ export class DocumentMode {
     if (!got || this.file !== f) return;
     if ('remove' in got) { ed.removeLink(); return; }
     let link = got.link;
-    // a heading gets a hidden bookmark for the link to find it by
-    if (link.startsWith('#heading:')) {
-      const placed = placeLink(f.t, link);
-      link = placed.link;
-      f.ed.update({ ...f.t, paras: placed.t.paras }, 'Bookmark');
-    }
-    ed.setLink(link, got.text);
+    // a heading gets a hidden bookmark for the link to find it by (the bookmark and the link are one step of Undo)
+    f.ed.together(() => {
+      if (link.startsWith('#heading:')) {
+        const placed = placeLink(f.t, link);
+        link = placed.link;
+        f.ed.update({ ...f.t, paras: placed.t.paras }, 'Bookmark');
+      }
+      ed.setLink(link, got.text);
+    });
   }
 
   /** Go to a place in the document a link points to (#name); false when there is no such bookmark. */
@@ -2853,6 +2884,16 @@ export class DocumentMode {
       if (d?.kind === 'inline') this.dropInline(d.id, d.to);
       if ((d?.kind === 'text' || d?.kind === 'box') && this.painter && this.file && !this.reading) this.painter(this.ed);
     }));
+    // (a pointer the system takes over, a palm or a gesture: the drag ends where it is, with no drop)
+    s.addEventListener('pointercancel', (e) => {
+      const d = this.dragging;
+      if (!d) return;
+      this.dragging = null;
+      try { s.releasePointerCapture(e.pointerId); } catch { /* not captured */ }
+      if (d.kind === 'offer') this.figureOffer.up();
+      if (d.kind === 'figure') { this.view.sketch = null; this.view.redraw(); }
+      if (d.kind === 'inline') this.redraw();
+    });
     // (what is double-clicked is on the screen: nothing it does scrolls the window)
     s.addEventListener('dblclick', (e) => this.stayPut(() => {
       const f = this.file;
@@ -2936,7 +2977,16 @@ export class DocumentMode {
       // in a footnote: typing there, so the menu is about it
       const hit = this.objectAt(e.clientX, e.clientY);
       if (hit !== null && hit !== b?.id && this.file.t.objects[hit]?.kind === 'note') this.startBox(hit, p);
-      const o = offsetAt(this.file.layout().text, p.x, p.y);
+      // a box typed in stays only when the pointer is in it: on the body's text, the menu is about the body (as a click there leaves the box)
+      const box = this.file.box;
+      if (box) {
+        const inside = box.hf ? !!this.view.hfAt(e.clientX, e.clientY)
+          : box.cell ? !!cell && cell.id === box.id && cell.r === box.cell.r && cell.c === box.cell.c : this.objectAt(e.clientX, e.clientY) === box.id;
+        if (!inside) this.stopBox();
+      }
+      // (the offset in the text the pointer is on: the box's, when it is in one)
+      const into = this.file.box ? this.file.box.ed.layout() : this.file.layout().text;
+      const o = offsetAt(into, p.x, p.y);
       if (this.contextMenu(o, e.clientX, e.clientY)) e.preventDefault();
     });
   }
@@ -3070,7 +3120,7 @@ export class DocumentMode {
       if (o && other && (other.left || other.top)) {
         const obj = f.t.objects[picked];
         if (obj.kind === 'drawing') {
-          this.dragging = { kind: 'resize', id: picked, w0: o.w, h0: o.h, scale0: obj.scale ?? 1, x0: o.x + o.w, ...other, ...(obj.float ? { float: obj.float } : {}) };
+          this.dragging = { kind: 'resize', id: picked, w0: o.w, h0: o.h, scale0: obj.scale ?? 1, x0: other.left ? o.x + o.w : o.x, ...other, ...(obj.float ? { float: obj.float } : {}) };
           s.setPointerCapture(e.pointerId);
           return;
         }
@@ -3705,6 +3755,16 @@ export class DocumentMode {
   }
 
   /**
+   * Where a page's left margin is in the layout's coordinates: a floating figure's x is measured
+   * from there (its page's own setup, and the middle-of-the-widest-page shift of a narrower one),
+   * not from the document's first page setup.
+   */
+  private pageLeft(lay: DocLayout, page: number): number {
+    const pg = lay.pages[page];
+    return pg ? pg.x + pg.setup.left : this.file!.t.page.left;
+  }
+
+  /**
    * Wrap Text: in line with the text, or floating with text round it (square, top and bottom),
    * or behind or in front of the text. A figure taken out of its line stays where it was shown.
    */
@@ -3723,7 +3783,7 @@ export class DocumentMode {
     const para = at !== undefined ? paraAt(f.ed.text, at) : 0;
     const [el, et] = lookExtentOf(o);
     const top = lay.paraTops[para];
-    const x = placed ? placed.x - el - f.t.page.left : 0;
+    const x = placed ? placed.x - el - this.pageLeft(lay, placed.page) : 0;
     const y = placed && top ? placed.y - et - top.y : 0;
     this.setFloat(id, { wrap, x, y });
   }
@@ -3806,7 +3866,7 @@ export class DocumentMode {
       kind: 'textbox', geo, runs: [{ ...runStyleOf(N), text: '' }], paras: [{ align: 'center' }], w: rd(w), h: rd(h),
       ...(look.filled ? { fill: look.fillColor ?? look.color ?? '#000000' } : {}),
       ...(look.lineWidth ? { look: { frame: look.lineWidth, frameColor: look.color ?? '#000000' } } : {}),
-      float: { wrap: 'square', x: rd(r.x1 - f.t.page.left), y: rd(top ? r.y1 - top.y : 0) },
+      float: { wrap: 'square', x: rd(r.x1 - this.pageLeft(lay, top?.page ?? 0)), y: rd(top ? r.y1 - top.y : 0) },
     };
     ed.update({ ...f.t, objects: { ...f.t.objects, [id]: shape } } as DocText, 'Insert shape');
     ed.replace(start, start, [objectRun(id, ed.typingStyle())], undefined, null);
@@ -3863,7 +3923,7 @@ export class DocumentMode {
     const fig: DocObject = {
       kind: 'drawing', contents: { atoms: [], bonds: [], captions: [], arrows: [], shapes: [] },
       frame: { x: 0, y: 0, w: rd(w), h: rd(h) },
-      float: { wrap: 'square', x: rd(r.x1 - f.t.page.left), y: rd(top ? r.y1 - top.y : 0) },
+      float: { wrap: 'square', x: rd(r.x1 - this.pageLeft(lay, top?.page ?? 0)), y: rd(top ? r.y1 - top.y : 0) },
     };
     ed.update({ ...f.t, objects: { ...f.t.objects, [id]: fig } } as DocText, 'Insert figure');
     ed.replace(start, start, [objectRun(id, ed.typingStyle())], undefined, null);
@@ -3968,8 +4028,9 @@ export class DocumentMode {
       case 'doc-all-caps': ed.toggle('allCaps'); break;
       case 'change-case': {
         // Word's Shift+F3: UPPERCASE, then lowercase, then Capitalize Each Word
-        const [a, b] = ed.collapsed ? [ed.start, ed.start] : [ed.start, ed.end];
-        const text = ed.text.slice(a, b || a);
+        // (with nothing selected: the word at the caret, which is what changes)
+        const [a, b] = ed.collapsed ? wordAt(ed.text, ed.start) : [ed.start, ed.end];
+        const text = ed.text.slice(a, b);
         const letters = text.replace(/[^\p{L}]/gu, '');
         ed.changeCase(letters && letters === letters.toUpperCase() ? 'lower' : letters && letters === letters.toLowerCase() ? 'title' : 'upper');
         break;
@@ -4004,7 +4065,7 @@ export class DocumentMode {
       case 'doc-raise-charges': chargeNote.text = ''; applyFormat(ed, { kind: 'charges' }); if (chargeNote.text) this.host.flash(chargeNote.text, 6000); break;
       case 'doc-highlight': {
         const on = ed.currentStyle().highlight;
-        ed.setStyle({ highlight: on && on === this.highlighter ? undefined : this.highlighter });
+        this.setTextStyle({ highlight: on && on === this.highlighter ? undefined : this.highlighter });
         break;
       }
       case 'doc-highlight-menu': this.highlightMenu(); return true;
@@ -5161,8 +5222,10 @@ export class DocumentMode {
     ], { ok: 'Insert', note: 'Edit this table in place, as in Word: click a cell to type, Tab moves to the next cell, and the Table tab adds rows and columns. Cells can hold structures and pictures.' });
     this.focus();
     if (!got || this.file !== f) return;
-    const rows = Math.max(1, Math.min(500, Math.round(Number(got.rows) || 4)));
-    const cols = Math.max(1, Math.min(60, Math.round(Number(got.cols) || 3)));
+    // (a number typed, 0 too, stays within 1 and the most; nothing typed, or not a number, is the box's own 4 and 3)
+    const count = (v: string, usual: number, most: number) => { const n = v.trim() === '' ? NaN : Number(v); return Math.max(1, Math.min(most, Number.isFinite(n) ? Math.round(n) : usual)); };
+    const rows = count(got.rows, 4, 500);
+    const cols = count(got.cols, 3, 60);
     this.lastTableKind = got.kind;
     if (inCell && host && got.kind !== 'drawing' && f.box?.cell) {
       // as wide as the cell inside its margins, the columns sharing it
@@ -5313,7 +5376,9 @@ export class DocumentMode {
       return { value: String(id), label: `${shown.get(id)}${before ? `: …${before} ${shown.get(id)}` : ''}` };
     });
     // the number the new compound would get: one more than the compounds before the caret
-    const next = compounds.filter(([, off]) => off < ed.start).length + 1;
+    // (typing in a table cell: the place is the table's)
+    const here = f.box?.cell ? at.get(f.box.id) ?? ed.start : ed.start;
+    const next = compounds.filter(([, off]) => off < here).length + 1;
     const got = await ask('Compound Number', [{
       name: 'which', label: 'Compound', value: 'new',
       options: [{ value: 'new', label: `A new compound (${next})` }, ...options],
@@ -5324,11 +5389,12 @@ export class DocumentMode {
     });
     this.focus();
     if (!got || this.file !== f) return;
-    const before = ed.typingStyle();
+    // (the text typed in: the table cell's, when it is being typed in)
+    const before = f.textEd.typingStyle();
     if (got.which === 'new') this.insertObject({ kind: 'seq', name: COMPOUND }, 'Insert compound number', { bold: true });
     else this.insertObject({ kind: 'ref', target: Number(got.which) }, 'Insert compound number', { bold: true });
     // what is typed next looks as it did before the number
-    ed.setStyle({ bold: before.bold });
+    f.textEd.setStyle({ bold: before.bold });
   }
 
   // ---------------------------------------------------------------- references
@@ -5360,10 +5426,11 @@ export class DocumentMode {
       ed.setCaret(ed.end);
       return;
     }
-    const before = ed.typingStyle();
+    // (the text typed in: the table cell's, when it is being typed in)
+    const before = f.textEd.typingStyle();
     this.insertObject({ kind: 'cite', refs }, 'Insert citation', { sup: citeSuper(formatOf(f.t)) || undefined, sub: undefined });
     // what is typed next looks as it did before the citation
-    ed.setStyle({ sup: before.sup });
+    f.textEd.setStyle({ sup: before.sup });
   }
 
   /**

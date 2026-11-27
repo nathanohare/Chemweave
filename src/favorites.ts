@@ -29,6 +29,15 @@ export function withFavorite(list: FormatFavorite[], f: FormatFavorite): FormatF
   return [...list, f].slice(-FAVORITES_MAX);
 }
 
+/**
+ * A favorite renamed, keeping its place; a message instead when another favorite already has the
+ * new name (never removed in its place: there is no undo for favorites).
+ */
+export function renamedFavorite(list: FormatFavorite[], from: string, to: string): FormatFavorite[] | string {
+  if (to !== from && list.some((x) => x.name === to)) return `There is already a favorite named “${to}”. Choose another name, or delete that one first.`;
+  return list.map((x) => (x.name === from ? { ...x, name: to } : x));
+}
+
 
 // ---------------------------------------------------------------- in a spreadsheet's cells
 

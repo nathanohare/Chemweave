@@ -32,8 +32,10 @@ export interface FileIndex {
 
 export const emptyIndex = (): FileIndex => ({ version: 1, files: {} });
 
-/** Files the index remembers at most (the least recently read are let go). */
-export const INDEX_MAX_FILES = 5000;
+/** Files the index remembers at most (the least recently used are let go): as many as one search reads (src/ui/find-in-files.ts). */
+export const INDEX_MAX_FILES = 20000;
+/** SMILES checked for containing the query in one call to the chemistry engine. */
+const CONTAINS_BATCH = 500;
 /** Atoms remembered for each structure (enough to select it; a polymer drawn huge is cut). */
 const MAX_ATOMS = 400;
 
@@ -121,9 +123,28 @@ export interface SearchResult {
 export async function searchFiles(files: { path: string; size: number; modified: number }[], query: string, mode: SearchMode, ix: FileIndex, deps: SearchDeps): Promise<SearchResult> {
   const out: SearchResult = { hits: [], read: 0, failed: [], stopped: false };
   let done = 0;
+  // structures waiting for the 'contains' check: many files' at once, in one call to the engine
+  let waiting: { path: string; s: IndexedStructure }[] = [];
+  const check = async () => {
+    if (!waiting.length) return;
+    const list = waiting;
+    waiting = [];
+    const inside = await deps.contains(query, list.map((w) => w.s.smiles!));
+    list.forEach((w, i) => {
+      const exact = w.s.smiles === query;
+      if (!(exact || inside[i])) return;
+      const h: Hit = { path: w.path, structure: w.s, exact };
+      out.hits.push(h);
+      deps.hit?.(h);
+    });
+  };
   for (const f of files) {
     if (deps.stopped?.()) { out.stopped = true; break; }
     let entry = freshEntry(ix, f);
+    // (used now: kept in the index ahead of files not searched lately)
+    if (entry) entry.read = Date.now();
+    // (a file to read takes a while: what is found so far is shown first)
+    else await check();
     if (!entry) {
       try {
         const found = await deps.found(await deps.read(f.path), f.path);
@@ -137,18 +158,20 @@ export async function searchFiles(files: { path: string; size: number; modified:
     }
     if (entry.error) out.failed.push({ path: f.path, why: entry.error });
     const withSmiles = entry.structures.filter((s) => s.smiles);
-    if (withSmiles.length) {
-      const exact = withSmiles.map((s) => s.smiles === query);
-      const inside = mode === 'contains' ? await deps.contains(query, withSmiles.map((s) => s.smiles!)) : exact;
-      withSmiles.forEach((s, i) => {
-        if (!(exact[i] || inside[i])) return;
-        const h: Hit = { path: f.path, structure: s, exact: exact[i] };
+    if (mode === 'contains') {
+      for (const s of withSmiles) waiting.push({ path: f.path, s });
+      if (waiting.length >= CONTAINS_BATCH) await check();
+    } else {
+      for (const s of withSmiles) {
+        if (s.smiles !== query) continue;
+        const h: Hit = { path: f.path, structure: s, exact: true };
         out.hits.push(h);
         deps.hit?.(h);
-      });
+      }
     }
     done++;
     deps.progress?.(done, files.length, f.path);
   }
+  await check();
   return out;
 }

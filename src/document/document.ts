@@ -768,6 +768,22 @@ export function runStyleOf(s: NamedStyle): rt.RunStyle {
   return rt.cleanStyle({ font: s.font, size: s.size, bold: s.bold, italic: s.italic, color: s.color });
 }
 
+/** Word's kept settings that say which of the file's lists a list paragraph is in (io/docx-read.ts, docx-write.ts). */
+const LIST_WPX = ['num', 'nk', 'nl', 'ni', 'nv', 'nr', 'nd'];
+
+/**
+ * Of a paragraph's kept Word settings (ParaStyle.wpx), only those naming its list: the rest are
+ * its own formatting (contextual spacing, an outline level, text direction...), which a style
+ * applied or Clear All Formatting replaces.
+ */
+function listWpx(wpx: string | undefined): string | undefined {
+  if (!wpx) return undefined;
+  let raw: Record<string, string>;
+  try { raw = JSON.parse(wpx) as Record<string, string>; } catch { return undefined; }
+  const kept = Object.fromEntries(Object.entries(raw).filter(([k]) => LIST_WPX.includes(k)));
+  return Object.keys(kept).length ? JSON.stringify(kept) : undefined;
+}
+
 /** A paragraph in a style: the style's spacing, indents and alignment, keeping its list, level and page break. */
 export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle): ParaStyle {
   // (lines and shading the paragraph had from its old style give way to the new style's; its own stay)
@@ -775,7 +791,11 @@ export function paraFromStyle(s: NamedStyle, keep: ParaStyle, was?: NamedStyle):
   const ownShade = keep.shade && !(was && keep.shade.toLowerCase() === (was.shade ?? '').toLowerCase()) ? keep.shade : undefined;
   return cleanPara({
     list: keep.list, level: keep.level, cont: keep.cont, pageBreak: keep.pageBreak, colBreak: keep.colBreak, section: keep.section, noLineNumbers: keep.noLineNumbers,
-    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet, border: was ? ownBorder ?? s.border : s.border ?? keep.border, shade: was ? ownShade ?? s.shade : s.shade ?? keep.shade,
+    marks: keep.marks, tabs: keep.tabs, scheme: keep.scheme, bullet: keep.bullet,
+    // what the paragraph is or holds, not its look: index and authority marks, its content
+    // control, a Shift+Enter line, its list numbering, a frame, Word's kept settings
+    xe: keep.xe, ta: keep.ta, cc: keep.cc, soft: keep.soft, clear: keep.clear, frame: keep.frame, wpx: keep.list ? listWpx(keep.wpx) : undefined,
+    startAt: keep.startAt, numLook: keep.numLook, numType: keep.numType, noHyphen: keep.noHyphen, border: was ? ownBorder ?? s.border : s.border ?? keep.border, shade: was ? ownShade ?? s.shade : s.shade ?? keep.shade,
     style: s.id === 'Normal' ? undefined : s.id,
     align: s.align === 'left' ? undefined : s.align,
     spaceBefore: s.spaceBefore, spaceAfter: s.spaceAfter,
@@ -838,12 +858,21 @@ function mapParagraphRuns(runs: TextRun[], f: (r: TextRun, para: number) => Text
 
 /** Give paragraphs `first` to `last` a named style (Normal, Heading 1…). */
 export function setParaStyle(t: DocText, first: number, last: number, id: string): DocText {
-  const to = t.styles[id];
-  if (!to) return t;
+  if (!t.styles[id]) return t;
+  return setParaStyles(t, (p) => (p < first || p > last ? null : id));
+}
+
+/**
+ * Give each paragraph the named style `pick` names for it (null or an unknown id: left as it
+ * is), all in one pass over the text.
+ */
+export function setParaStyles(t: DocText, pick: (para: number, ps: ParaStyle) => string | null): DocText {
   const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
+  const to = paras.map((ps, i) => { const id = pick(i, ps); return id ? t.styles[id] ?? null : null; });
+  if (!to.some(Boolean)) return t;
   const from = paras.map((p) => styleOf(t, p));
-  const runs = mapParagraphRuns(t.runs, (r, p) => (p < first || p > last ? r : restyleRun(r, from[p], to)));
-  return { ...t, runs, paras: paras.map((p, i) => (i < first || i > last ? p : paraFromStyle(to, p, from[i]))) };
+  const runs = mapParagraphRuns(t.runs, (r, p) => { const s = to[p]; return s ? restyleRun(r, from[p], s) : r; });
+  return { ...t, runs, paras: paras.map((p, i) => { const s = to[i]; return s ? paraFromStyle(s, p, from[i]) : p; }) };
 }
 
 /** Change a named style: every paragraph in it changes too (except what was formatted by hand). */
@@ -899,9 +928,7 @@ export function newParaStyle(t: DocText, name: string, para: number, look: rt.Ru
 /** Delete a style made here: its paragraphs go back to Normal (and its text to the paragraph's look). */
 export function deleteStyle(t: DocText, id: string): DocText {
   if (t.styles[id] && !STANDARD_STYLES.has(id)) {
-    const paras = fitParas(t.paras, paraCount(rt.plainText(t.runs)));
-    let out = t;
-    paras.forEach((p, i) => { if (p.style === id) out = setParaStyle(out, i, i, 'Normal'); });
+    const out = setParaStyles(t, (_p, ps) => (ps.style === id ? 'Normal' : null));
     const { [id]: _, ...rest } = out.styles;
     // (those based on it: on Normal)
     const styles = Object.fromEntries(Object.entries(rest).map(([k, s]) => [k, s.basedOn === id ? { ...s, basedOn: undefined } : s]));
@@ -1029,7 +1056,8 @@ export function clearFormatting(t: DocText, start: number, end: number, first: n
       if (b > a || (start === end && p >= first && p <= last)) {
         const st = keepStyle ? styleOf(t, paras[p]) : styleOf(t, undefined);
         const plain: TextRun = { ...runStyleOf(st), text: '' } as TextRun;
-        for (const k of ['obj', 'rev', 'cmt', 'link', 'formula'] as const) if (r[k] !== undefined) (plain as unknown as Record<string, unknown>)[k] = r[k];
+        // (and what the text is or belongs to: its field or citation, its content control, its language, a tracked format change)
+        for (const k of ['obj', 'rev', 'fmt', 'cmt', 'link', 'formula', 'field', 'cite', 'cc', 'lang', 'noProof'] as const) if (r[k] !== undefined) (plain as unknown as Record<string, unknown>)[k] = r[k];
         // a link keeps its link look
         if (r.link) { plain.color = r.color; plain.underline = r.underline; }
         const lo = start === end ? 0 : a - at, hi = start === end ? piece.length : b - at;
@@ -1041,7 +1069,7 @@ export function clearFormatting(t: DocText, start: number, end: number, first: n
   }
   let next: DocText = { ...t, runs: rt.normalizeRuns(out) };
   if (!keepStyle) {
-    const ps = fitParas(next.paras, paras.length).map((q, i) => (i < first || i > last ? q : paraFromStyle(styleOf(t, undefined), { ...q, list: undefined, level: undefined, cont: undefined, tabs: undefined, border: undefined, shade: undefined } as ParaStyle)));
+    const ps = fitParas(next.paras, paras.length).map((q, i) => (i < first || i > last ? q : paraFromStyle(styleOf(t, undefined), { ...q, list: undefined, level: undefined, cont: undefined, tabs: undefined, border: undefined, shade: undefined, startAt: undefined, numLook: undefined, numType: undefined } as ParaStyle)));
     next = { ...next, paras: ps.map((q, i) => (i < first || i > last ? q : cleanPara({ ...q, pageBreak: paras[i].pageBreak, colBreak: paras[i].colBreak, section: paras[i].section, marks: paras[i].marks }))) };
   }
   return next;

@@ -83,6 +83,20 @@ const tokenOf = (o: object): number => {
  * of them), form fields' entries. Objects no longer in the text are left out.
  */
 function canon(t: DocText, how: { comments?: boolean; rejected?: boolean; forms?: boolean }): string {
+  // (a document is never changed in place, and the text before one keystroke is the text after
+  // the last: the last two worked out are kept, no more, as each is the whole document)
+  const key = `${how.comments ? 'c' : ''}${how.rejected ? 'r' : ''}${how.forms ? 'f' : ''}`;
+  const known = canons.find((c) => c.t === t && c.key === key);
+  if (known) return known.out;
+  const out = canonOf(t, how);
+  canons.unshift({ t, key, out });
+  canons.length = Math.min(canons.length, 2);
+  return out;
+}
+
+const canons: { t: DocText; key: string; out: string }[] = [];
+
+function canonOf(t: DocText, how: { comments?: boolean; rejected?: boolean; forms?: boolean }): string {
   let x = how.rejected ? decideEverywhere(t, false) : t;
   // comments' marks off the text, and the runs they split joined up again
   if (how.comments) {
