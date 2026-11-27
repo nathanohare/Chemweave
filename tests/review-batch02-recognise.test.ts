@@ -48,6 +48,16 @@ describe('F827: a capital I is a letter', () => {
     fill(q, 20, 20, 21, 38); // a line 19 px long: a bond, not a letter
     expect(glyphAt(q, [20.5, 29], 7, 20)).toBeNull();
   });
+
+  it('takes a stem as tall as the other letters, and not a short stub', () => {
+    const p = blank(60, 60);
+    fill(p, 20, 20, 21, 28); // I: 9 tall, as tall as the labels' letters
+    expect(glyphAt(p, [20.5, 24], 7, 20, 9)).toMatchObject({ w: 2, h: 9 });
+    const q = blank(60, 60);
+    fill(q, 20, 20, 20, 24); // a 1 × 5 px stub (a hash of a hashed bond) among 9 px letters
+    expect(glyphAt(q, [20, 22], 7, 20)).toMatchObject({ w: 1, h: 5 }); // (with nothing to go by)
+    expect(glyphAt(q, [20, 22], 7, 20, 9)).toBeNull();
+  });
 });
 
 describe('F828: a reader that stops after it is ready', () => {
@@ -81,9 +91,20 @@ describe('F829: reading an AI model’s answer', () => {
     expect(parseAiAnswer('Here it is: CCO.').smiles).toBe('CCO');
     expect(parseAiAnswer('Sorry, there is no structure.').smiles).toBe('');
   });
+
+  it('takes no short English word for a SMILES', () => {
+    for (const w of ['No', 'In', 'Is', 'On', 'So', 'No.', 'Is it?']) expect(parseAiAnswer(w).smiles).toBe('');
+    expect(parseAiAnswer('It is CO.').smiles).toBe('CO');
+  });
   it('reads JSON whose backslash wasn’t doubled', () => {
     expect(parseAiAnswer('{"smiles": "C/C=C\\C", "note": ""}')).toEqual({ smiles: 'C/C=C\\C', note: '' });
     expect(parseAiAnswer('{"smiles": "C/C=C\\\\C", "note": "ok"}')).toEqual({ smiles: 'C/C=C\\C', note: 'ok' });
+  });
+
+  it('keeps a lone backslash that JSON read as a control character', () => {
+    // "\n1" in the answer is a stereo bond before ring closure 1, not a new line
+    expect(parseAiAnswer('{"smiles": "C/C=C\\n1ccccc1", "note": ""}').smiles).toBe('C/C=C\\n1ccccc1');
+    expect(parseAiAnswer('{"smiles": "F/C=C\\F", "note": ""}').smiles).toBe('F/C=C\\F');
   });
 });
 
@@ -99,6 +120,14 @@ describe('F830, F831, F832: caption words', () => {
     expect(chemWord('TBDPSCI')).toBe('TBDPSCl');
     expect(chemWord('CICO,Et')).toBe('ClCO2Et');
   });
+
+  it('still puts Cl before S, P or Si with more after them', () => {
+    // chlorosulfonic acid ClSO3H (CAS 7790-94-5), chlorodiphenylphosphine ClPPh2 (CAS 1079-66-9),
+    // chlorotrimethylsilane ClSiMe3 (CAS 75-77-4)
+    expect(chemWord('CISO3H')).toBe('ClSO3H');
+    expect(chemWord('CIPPh2')).toBe('ClPPh2');
+    expect(chemWord('CISiMe3')).toBe('ClSiMe3');
+  });
   it('gives O for a nought only after a group’s subscript', () => {
     expect(chemWord('S10')).toBe('S10');
     expect(chemWord('C10H21')).toBe('C10H21');
@@ -107,5 +136,15 @@ describe('F830, F831, F832: caption words', () => {
     expect(chemWord('Ac20')).toBe('Ac2O');
     expect(chemWord('(Boc)20')).toBe('(Boc)2O');
     expect(chemWord('CH30H')).toBe('CH3OH');
+  });
+
+  it('still gives O after an element or group with a 2, and none in a formula of C and H', () => {
+    // Boc2O, di-tert-butyl dicarbonate (CAS 24424-99-5); silver(I) oxide Ag2O (CAS 20667-12-3);
+    // copper(I) oxide Cu2O (CAS 1317-39-1); caesium oxide Cs2O (CAS 20281-00-9); sodium oxide Na2O
+    // (CAS 1313-59-3); nitrous oxide N2O (CAS 10024-97-2); diphenyl ether Ph2O (CAS 101-84-8)
+    for (const w of ['Boc', 'Ag', 'Cu', 'Cs', 'Na', 'N', 'Ph']) expect(chemWord(`${w}20`)).toBe(`${w}2O`);
+    // 1-decene C10H20 (CAS 872-05-9) and 1-nonanol C9H20O (CAS 143-08-8) are real formulas
+    expect(chemWord('C10H20')).toBe('C10H20');
+    expect(chemWord('C9H20O')).toBe('C9H20O');
   });
 });

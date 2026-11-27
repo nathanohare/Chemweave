@@ -21,6 +21,13 @@ describe('F030: the proposal is the last fenced JSON block', () => {
     expect(parseAnswer(text).actions).toEqual([{ type: 'structure', smiles: 'CC(=O)O', replace: false }]);
     expect(parseAnswer('x\n```json\n{not json}\n```').actions).toEqual([]);
   });
+
+  it('reads Windows line ends, tags such as c++ or JSON5, and skips a block holding only a number', () => {
+    const json = '{"actions":[{"type":"text","text":"x","replace":false}]}';
+    expect(parseAnswer(`A:\r\n\`\`\`c++\r\nint x;\r\n\`\`\`\r\n\`\`\`JSON5\r\n${json}\r\n\`\`\``).actions).toEqual([{ type: 'text', text: 'x', replace: false }]);
+    expect(parseAnswer(`\`\`\`json\n${json}\n\`\`\`\nThe count:\n\`\`\`\n2\n\`\`\``).actions).toEqual([{ type: 'text', text: 'x', replace: false }]);
+    expect(parseAnswer('```\n2\n```').actions).toEqual([]);
+  });
 });
 
 describe('F342: an answer cut at the length limit says so', () => {

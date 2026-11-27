@@ -130,6 +130,8 @@ export async function readWithAi(prefs: AiPrefs, png: string): Promise<ReadResul
 }
 
 const count = (w: string, c: string) => w.split(c).length - 1;
+/** JSON's control-character escapes, by the character they make. */
+const CONTROL: Record<string, string> = { '\n': 'n', '\t': 't', '\r': 'r', '\b': 'b', '\f': 'f' };
 
 /** The SMILES and note in a model's answer (JSON, perhaps in a code block or with words round it). */
 export function parseAiAnswer(text: string): { smiles: string; note: string } {
@@ -137,7 +139,10 @@ export function parseAiAnswer(text: string): { smiles: string; note: string } {
   if (json) {
     try {
       const o = JSON.parse(json) as { smiles?: unknown; note?: unknown };
-      return { smiles: typeof o.smiles === 'string' ? o.smiles.trim() : '', note: typeof o.note === 'string' ? o.note.trim() : '' };
+      // a single backslash before n, t, r, b or f is JSON's control character, but in a SMILES it
+      // was a stereo bond ("C/C=C\n1…" read as a new line): put the backslash back
+      const smiles = typeof o.smiles === 'string' ? o.smiles.trim().replace(/[\n\t\r\b\f]/g, (c) => '\\' + CONTROL[c]) : '';
+      return { smiles, note: typeof o.note === 'string' ? o.note.trim() : '' };
     } catch { /* not JSON after all */ }
   }
   // JSON the parser refuses, most often a stereo bond's backslash not doubled ("C/C=C\C")
@@ -149,8 +154,11 @@ export function parseAiAnswer(text: string): { smiles: string; note: string } {
   // words round a SMILES: a word that only a SMILES would be (brackets, bonds, ring numbers, or
   // organic atoms only: CCO), never a plain English word ("The", "Here")
   const words = text.trim().split(/\s+/).map((w) => w.replace(/^[`'"“‘]+|[`'"”’,;:]+$/g, '').replace(/\.$/, ''));
-  const smiles = (w: string) => /^[A-Za-z0-9@+\-[\]()=#$/\\%.:*]+$/.test(w) && /[A-Za-z]/.test(w)
-    && (/[0-9()=#@[\]/\\]/.test(w) || /^(?:Cl|Br|[BCNOSPFI])(?:Cl|Br|[BCNOSPFI]|[bcnops])*$/.test(w)) && w.length > 1
+  const smiles = (w: string) => /^[A-Za-z0-9@+\-[\]()=#$/\\%.:*]+$/.test(w) && /[A-Za-z]/.test(w) && w.length > 1
     && count(w, '(') === count(w, ')') && count(w, '[') === count(w, ']');
-  return { smiles: words.find(smiles) ?? '', note: '' };
+  // first a word with a SMILES's own marks (ring numbers, brackets, bonds); then one of capital
+  // organic atoms only (CCO, ClCCl), so "No", "In", "Is", "On" and "So" are never taken
+  const marked = words.find((w) => smiles(w) && /[0-9()=#@[\]/\\]/.test(w));
+  const plain = words.find((w) => smiles(w) && /^(?:Cl|Br|[BCNOSPFI])+$/.test(w));
+  return { smiles: marked ?? plain ?? '', note: '' };
 }

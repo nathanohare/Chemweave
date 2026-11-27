@@ -186,15 +186,18 @@ export class Library {
         const came = !!there && text2 !== libraryText(pruneDeleted(mine));
         // a change made while the file was written stays (its own save, queued by change(), writes it)
         this.data = this.data === mine ? merged : mergeLibraries(this.data, merged);
+        const hadProblem = this.problem !== '';
         this.problem = '';
         this.unsaved = false;
-        if (came) this.tell();
+        if (came || hadProblem) this.tell();
       } catch (e) {
+        const was = this.problem;
         this.problem = `Your library could not be saved: ${e instanceof Error ? e.message : String(e)}`;
         // tried again later (a cloud folder still syncing), and on closing, unless a change saves it first
         this.unsaved = true;
         if (!this.timer) this.timer = setTimeout(() => { this.timer = null; void this.saveNow(); }, this.retryMs);
-        this.tell();
+        // (the windows are redrawn when there is something new to say, not at each try)
+        if (this.problem !== was) this.tell();
       }
     });
     return this.saving;

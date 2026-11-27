@@ -9,7 +9,7 @@
 //   F631: the skin permeability estimate was refused for neutral nitro compounds (charges written apart).
 
 import { describe, expect, it } from 'vitest';
-import { badges, codeIs, lethalByRoute, netCharge, oralLd50, rate, skinKp, type SafetyRecord } from '../src/kb/safety';
+import { badges, chargesApartOnly, codeIs, lethalByRoute, oralLd50, rate, skinKp, type SafetyRecord } from '../src/kb/safety';
 import { compactRecord } from '../src/kb/pubchem-safety';
 import { explainPieces } from '../src/kb/glossary';
 import { HAMMETT, joinedBy } from '../src/kb/hammett';
@@ -92,15 +92,35 @@ describe('F630: the lowest dose is compared in mg/kg', () => {
   });
 });
 
-describe('F631: a neutral nitro compound gets a skin estimate', () => {
-  it('counts the net charge, not each charged atom', () => {
-    expect(netCharge('C1=CC=C(C=C1)[N+](=O)[O-]')).toBe(0);
-    expect(netCharge('[NH4+]')).toBe(1);
-    expect(netCharge('C[N+](C)(C)C')).toBe(1);
+describe('F631: a neutral nitro compound gets a skin estimate, a zwitterion none', () => {
+  it('takes a nitro group or N-oxide written with its charges apart as neutral, and nothing else', () => {
+    expect(chargesApartOnly('C1=CC=C(C=C1)[N+](=O)[O-]')).toBe(true);
+    // pyridine N-oxide, written with its charges apart
+    expect(chargesApartOnly('C1=CC=[N+](C=C1)[O-]')).toBe(true);
+    expect(chargesApartOnly('[NH4+]')).toBe(false);
+    expect(chargesApartOnly('C[N+](C)(C)C')).toBe(false);
+    // glycine as its zwitterion: an ion in water, not a neutral molecule
+    expect(chargesApartOnly('C(C(=O)[O-])[NH3+]')).toBe(false);
     // nitrobenzene: SMILES, MW 123.11 g/mol and XLogP3 1.9 as PubChem gives them (CID 7416)
     const pnb = base({ smiles: 'C1=CC=C(C=C1)[N+](=O)[O-]', mw: 123.11, xlogp: 1.9 });
     expect(skinKp(pnb)).not.toBeNull();
-    // a quaternary ammonium ion still gets none
+    // a quaternary ammonium ion and a zwitterion still get none (glycine: MW 75.07, XLogP3 -3.2, PubChem CID 750)
     expect(skinKp(base({ smiles: 'C[N+](C)(C)C', mw: 74.1, xlogp: -2 }))).toBeNull();
+    expect(skinKp(base({ smiles: 'C(C(=O)[O-])[NH3+]', mw: 75.07, xlogp: -3.2 }))).toBeNull();
+  });
+});
+
+describe('The safety script can load the PubChem reader', () => {
+  // scripts/kb/build-safety.mjs loads src/kb/pubchem-safety.ts in Node itself, which can't follow
+  // an import of another .ts file written without its ending: only type imports may be there
+  it('has only type imports, and loads in Node as the script loads it', async () => {
+    const { readFileSync } = await import('node:fs');
+    const { execFileSync } = await import('node:child_process');
+    const text = readFileSync(`${process.cwd()}/src/kb/pubchem-safety.ts`, 'utf8');
+    const imports = text.split('\n').filter((l) => /^\s*import\b/.test(l));
+    expect(imports.filter((l) => !/^\s*import type\b/.test(l))).toEqual([]);
+    const out = execFileSync(process.execPath, ['--input-type=module', '-e', "const m = await import('./src/kb/pubchem-safety.ts'); console.log(Object.keys(m).sort().join(','))"], { cwd: process.cwd(), encoding: 'utf8' });
+    expect(out).toMatch(/\bcompactRecord\b.*\bsafetyRecordFrom\b/);
+    expect(out).toMatch(/\blowerDose\b/);
   });
 });

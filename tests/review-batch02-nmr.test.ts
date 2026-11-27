@@ -29,6 +29,13 @@ describe('F144: a peak list ends where the paragraph goes on to other data', () 
     expect(h.peaks.map((p) => p.value)).toEqual([7.30, 2.10]);
   });
 
+  it('ends at a melting point written M.p. or Mp', () => {
+    for (const mp of ['M.p.', 'Mp', 'm.p.']) {
+      const [c] = parsePeakLists(`13C NMR (101 MHz, CDCl3) δ 171.6, 60.8, 14.3. ${mp} 102-103 °C.`);
+      expect(c.peaks.map((p) => p.value)).toEqual([171.6, 60.8, 14.3]);
+    }
+  });
+
   it('still reads both lists of one paragraph', () => {
     const lists = parsePeakLists('1H NMR (400 MHz, CDCl3) δ 4.12 (q, J = 7.1 Hz, 2H), 1.25 (t, J = 7.1 Hz, 3H); 13C NMR (101 MHz, CDCl3) δ 171.1, 60.4, 14.2; IR (neat) 1735 cm-1.');
     expect(lists.map((l) => [l.nuc, l.peaks.length])).toEqual([['1H', 2], ['13C', 3]]);

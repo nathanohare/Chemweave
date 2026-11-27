@@ -21,6 +21,8 @@ export interface KeeperHost {
   flash(msg: string, ms?: number): void;
   /** A tab's name, unsaved mark or AutoSave switch changed: show it. */
   refresh(): void;
+  /** Every tab with unsaved changes has a recovery copy of it as it is now (after a round of copies). */
+  allKept?(): void;
 }
 
 const desktop = isTauri();
@@ -70,8 +72,11 @@ export class Keeper {
   private paused = new Set<number>();
   /** Changed-on-disk notices shown, by tab: the disk's stamp they were about. */
   private told = new Map<number, string>();
-  /** Tabs whose file this app is writing now: their file changes under the disk check, so it leaves them alone. */
-  private writing = new Set<number>();
+  /**
+   * Writes of each tab's file under way now (an AutoSave and a Save can overlap): the file changes
+   * under the disk checks, so they leave it alone. Counted up in beforeWrite, down in written().
+   */
+  private writing = new Map<number, number>();
   /** Writes started, by tab: a disk check that began before a write isn't trusted after it. */
   private writes = new Map<number, number>();
   private saving = false;
@@ -200,6 +205,7 @@ export class Keeper {
       if (now - this.lastCopy >= p.recoveryMinutes * 60_000 && !this.busy()) {
         this.lastCopy = this.lastBeat = now;
         await this.copyNow().catch(() => {});
+        if (this.workKept()) this.host.allKept?.();
       } else if (now - this.lastBeat >= BEAT_MS) {
         this.lastBeat = now;
         await this.recovery.beat().catch(() => {});
@@ -283,9 +289,12 @@ export class Keeper {
     if (ref.kind === 'none') return 'go';
     const p = this.prefs;
     // saving over a file someone or something else has changed since it was opened or saved here
-    if (sameRef(tab.ref, ref) && tab.stamp && p.changedOnDisk !== 'ignore') {
+    if (sameRef(tab.ref, ref) && tab.stamp && p.changedOnDisk !== 'ignore' && !this.isWriting(tab)) {
+      const writes = this.writes.get(tab.id) ?? 0;
       const disk = await stampOf(ref);
-      if (disk && !sameStamp(disk, tab.stamp)) {
+      // (another save of this tab started meanwhile: the stamp may be its half-written file)
+      const ours = this.isWriting(tab) || (this.writes.get(tab.id) ?? 0) !== writes;
+      if (disk && !ours && !sameStamp(disk, tab.stamp)) {
         if (how === 'autosaved') {
           this.paused.add(tab.id);
           await this.changedOnDisk(tab, disk);
@@ -305,19 +314,24 @@ export class Keeper {
       else this.versions.saw(key);
     }
     // the file is being written from here until written(): not "changed on disk"
-    this.writing.add(tab.id);
+    this.writing.set(tab.id, (this.writing.get(tab.id) ?? 0) + 1);
     this.writes.set(tab.id, (this.writes.get(tab.id) ?? 0) + 1);
     return 'go';
   }
 
   /** The write beforeWrite let go has ended, saved or not. */
   written(tab: Tab): void {
-    this.writing.delete(tab.id);
+    const n = (this.writing.get(tab.id) ?? 0) - 1;
+    if (n > 0) this.writing.set(tab.id, n);
+    else this.writing.delete(tab.id);
+  }
+
+  private isWriting(t: Tab): boolean {
+    return (this.writing.get(t.id) ?? 0) > 0;
   }
 
   saved(tab: Tab, data: Uint8Array, how: SaveHow, was: FileRef): void {
     const p = this.prefs;
-    this.writing.delete(tab.id);
     if (how === 'saved') { this.paused.delete(tab.id); closeNotice(`autosave-${tab.id}`); }
     // a changed-on-disk notice this save has settled (the file is now what the tab holds): AutoSave goes on
     else if (this.told.has(tab.id)) this.paused.delete(tab.id);
@@ -336,7 +350,6 @@ export class Keeper {
   }
 
   autoSaveFailed(tab: Tab, message: string): void {
-    this.writing.delete(tab.id);
     this.paused.add(tab.id);
     notice(`autosave-${tab.id}`, `AutoSave couldn’t save ${tab.name}`, `${message}\nAutoSave waits until you save it yourself (Ctrl+S). Your changes are still here, and in the recovery copies.`, [
       { label: 'Save As…', run: () => void this.ws.saveAs(tab), main: true },
@@ -369,11 +382,11 @@ export class Keeper {
   // ---------------------------------------------------------------- changed on disk
 
   private async checkDisk(t: Tab): Promise<void> {
-    if (t.ref.kind === 'none' || !t.stamp || this.prefs.changedOnDisk === 'ignore' || this.writing.has(t.id)) return;
+    if (t.ref.kind === 'none' || !t.stamp || this.prefs.changedOnDisk === 'ignore' || this.isWriting(t)) return;
     const writes = this.writes.get(t.id) ?? 0;
     const disk = await stampOf(t.ref);
     // this app wrote the file meanwhile (or is writing it): the stamp read may be from half way through
-    if (this.writing.has(t.id) || (this.writes.get(t.id) ?? 0) !== writes) return;
+    if (this.isWriting(t) || (this.writes.get(t.id) ?? 0) !== writes) return;
     if (!this.ws.tabs.includes(t) || sameStamp(disk, t.stamp)) return;
     if (!disk) {
       if (t.ref.kind !== 'path') return;

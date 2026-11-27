@@ -56,17 +56,25 @@ beforeEach(() => {
 });
 
 describe('F031: only modal windows hold AutoSave off', () => {
-  it('a tool window open beside the work is not a reason to wait; a modal window is', () => {
+  it('a tool window open beside the work is not a reason to wait; a modal window is', async () => {
+    // (jsdom has no dialogs that open: the browser's show() and showModal() as they leave a window)
+    const proto = HTMLDialogElement.prototype as unknown as { show(): void; showModal(): void; close(): void };
+    proto.show = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    proto.showModal = function (this: HTMLDialogElement) { this.setAttribute('open', ''); };
+    proto.close = function (this: HTMLDialogElement) { this.removeAttribute('open'); this.dispatchEvent(new Event('close')); };
+    // the app's own wrapper round showModal(), as src/main.ts loads it first
+    await import('../src/ui/modal-guard');
     const { keeper } = keeperWith([]);
     const tool = document.createElement('dialog');
-    tool.setAttribute('open', ''); // as show() leaves it
     document.body.append(tool);
+    tool.show();
     expect(priv(keeper).busy()).toBe(false);
     const modal = document.createElement('dialog');
-    modal.setAttribute('open', '');
-    modal.classList.add('is-modal'); // as src/ui/modal-guard.ts marks a showModal() window
     document.body.append(modal);
+    modal.showModal();
     expect(priv(keeper).busy()).toBe(true);
+    modal.close();
+    expect(priv(keeper).busy()).toBe(false);
   });
 });
 
@@ -92,6 +100,23 @@ describe('F032: the app writing the file is not a change on disk', () => {
     await priv(keeper).checkDisk(tab);
     expect(keeper.isPaused(tab)).toBe(true);
     expect(hasNotice('disk-1')).toBe(true);
+  });
+});
+
+describe('F032: a save while another save of the tab is being written', () => {
+  it('doesn’t take the half-written file for a change made elsewhere, until both have ended', async () => {
+    const tab = tabOf(1);
+    const { keeper } = keeperWith([tab]);
+    expect(await keeper.beforeWrite(tab, tab.ref, tab.name, 'autosaved')).toBe('go');
+    fileStamp.now = { modified: 2, size: 4 };
+    // (asked, "File Changed on Disk" would answer Save As here)
+    expect(await keeper.beforeWrite(tab, tab.ref, tab.name, 'saved')).toBe('go');
+    keeper.written(tab);
+    await priv(keeper).checkDisk(tab);
+    expect(keeper.isPaused(tab)).toBe(false);
+    keeper.written(tab);
+    await priv(keeper).checkDisk(tab);
+    expect(keeper.isPaused(tab)).toBe(true);
   });
 });
 

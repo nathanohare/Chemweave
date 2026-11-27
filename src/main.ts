@@ -4781,6 +4781,8 @@ const keeper = new Keeper({
   setPrefs: (p) => { keepPrefs = p; tickAutoSave(); renderTabs(); storeSettings(); },
   flash,
   refresh: () => { renderTabs(); updateTitle(); tickAutoSave(); },
+  // (copies an update's restart kept because the recovery copies couldn't be made then: not needed now)
+  allKept: () => { void import('./keep/restart').then(({ settleRestart }) => settleRestart(keepStore())).catch(() => {}); },
 });
 // The web version: a notice when a newer version is published, and a reload that keeps unsaved work
 /** The page is reloading for a new version with every unsaved tab copied: no "Leave site?" question. */
@@ -12980,6 +12982,7 @@ const restartHooks: RestartHooks = {
   paused: (t) => keeper.isPaused(t),
   pause: (t) => keeper.pause(t),
   secure: () => keeper.copyNow(),
+  kept: (t) => keeper.recovery.copied(t.id, ws.token(t)),
 };
 
 /** The app is closing for an update, its tabs kept: the window closes without asking about unsaved changes. */

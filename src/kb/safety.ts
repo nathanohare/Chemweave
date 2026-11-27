@@ -15,6 +15,9 @@
 // supplier notifications that give dichloromethane H350 and acetone H372. The numbers come from
 // safety-data.json (scripts/kb/build-safety.mjs); the lists below are written for this program.
 
+// (pubchem-safety.ts has no value imports: scripts/kb/build-safety.mjs loads it in Node as it is)
+import { lowerDose } from './pubchem-safety';
+
 export interface Lethal {
   kind: string;
   species: string;
@@ -257,19 +260,6 @@ export function vapourRatio(r: SafetyRecord): number | null {
   return (Math.min(vp, 760) / 760) * 1e6 / ppm;
 }
 
-/** A dose in mg/kg, or null when its unit isn't a dose per body weight. */
-function mgPerKg(l: Lethal): number | null {
-  const u = l.unit.toLowerCase();
-  return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : null;
-}
-
-/** Whether dose `l` is lower than `cur` (for the same route): compared in mg/kg when both can be; otherwise only in the same unit. */
-export function lowerDose(l: Lethal, cur: Lethal): boolean {
-  const a = mgPerKg(l), b = mgPerKg(cur);
-  if (a !== null && b !== null) return a < b;
-  return cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value;
-}
-
 /** The lowest oral LD50 in mg/kg, or null. */
 export function oralLd50(r: SafetyRecord): number | null {
   const v = r.lethal.filter((l) => l.kind === 'LD50' && l.route === 'oral').map((l) => { const u = l.unit.toLowerCase(); return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : NaN; }).filter((n) => Number.isFinite(n));
@@ -406,26 +396,31 @@ export function logKowOf(r: SafetyRecord): { value: number; source: string } | n
 }
 
 /**
- * The net charge written in a SMILES ([N+](=O)[O-] adds to none: a neutral nitro group written
- * with its charges apart, as PubChem does; [NH4+] is +1).
+ * Whether a SMILES is a neutral molecule written with charges apart only as nitro groups and
+ * N-oxides are ([N+](=O)[O-], [n+][O-]): every charged atom a nitrogen without hydrogens (+) or an
+ * oxygen (−), as many of each. Zwitterions (an amino acid's [NH3+] and CO2⁻) are not: they are
+ * ions in water, which the skin estimate isn't for. (A betaine, R3N⁺CH2CO2⁻, still passes.)
  */
-export function netCharge(smiles: string): number {
-  let q = 0;
-  for (const m of smiles.matchAll(/\[[^\]]*?([+-]+)(\d*)\]/g)) {
-    const sign = m[1][0] === '+' ? 1 : -1;
-    q += sign * (m[2] ? Number(m[2]) : m[1].length);
+export function chargesApartOnly(smiles: string): boolean {
+  let plus = 0, minus = 0;
+  for (const m of smiles.matchAll(/\[([^\]]*?)([+-]+)(\d*)\]/g)) {
+    const n = m[3] ? Number(m[3]) : m[2].length;
+    if (m[2][0] === '+' && /^(?:\d*)[Nn]$/.test(m[1])) plus += n;
+    else if (m[2][0] === '-' && /^(?:\d*)O$/.test(m[1])) minus += n;
+    else return false;
   }
-  return q;
+  return plus === minus;
 }
 
 /**
  * How fast the compound crosses skin from water, estimated by the Potts–Guy equation
  * (Pharm. Res. 1992, 9, 663): log Kp (cm/h) = −2.72 + 0.71 log Kow − 0.0061 MW. Only for neutral
- * organic molecules up to 500 g/mol; salts, metals and ions get none. A rough guide to which
+ * organic molecules up to 500 g/mol (nitro compounds and N-oxides included, whose charges PubChem
+ * writes apart); salts, metals, ions and zwitterions get none. A rough guide to which
  * compounds go through skin quickly, never a substitute for the skin notation or glove data.
  */
 export function skinKp(r: SafetyRecord): { kp: number; band: 'high' | 'moderate' | 'low'; source: string } | null {
-  if (!r.smiles || !r.mw || r.mw > 500 || netCharge(r.smiles) !== 0 || /\.|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
+  if (!r.smiles || !r.mw || r.mw > 500 || !chargesApartOnly(r.smiles) || /\.|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
   const k = logKowOf(r);
   if (!k) return null;
   const kp = 10 ** (-2.72 + 0.71 * k.value - 0.0061 * r.mw);

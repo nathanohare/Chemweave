@@ -19,18 +19,23 @@ const arr = (v: unknown): unknown[] => (Array.isArray(v) ? v : []);
 export const PUBMED_SUMMARY = 'https://eutils.ncbi.nlm.nih.gov/entrez/eutils/esummary.fcgi?db=pubmed&retmode=json&id=';
 
 /**
- * PubMed ids in text: "31234567", "PMID: 31234567", a pubmed.ncbi.nlm.nih.gov link, several at
- * once. Text that marks its ids (PMID or a link) gives only those, so a pasted citation's year,
- * volume and pages aren't taken for ids; otherwise only bare numbers count.
+ * PubMed ids in text: "31234567", "PMID: 31234567", "PMIDs 31234567 and 31234568", "PubMed ID
+ * 31234567", a pubmed.ncbi.nlm.nih.gov or ncbi.nlm.nih.gov/pubmed link (or ?pmid=), several at once.
+ * Text that marks its ids gives only those (and the ids listed straight after a mark), so a pasted
+ * citation's year, volume and pages aren't taken for ids. Unmarked text gives a list of bare
+ * numbers, or else only the numbers long enough to be a PMID (7 to 9 digits).
  */
 export function parsePmids(text: string): string[] {
   const out: string[] = [];
   const add = (id: string) => { if (!out.includes(id)) out.push(id); };
-  for (const m of text.matchAll(/(?:pubmed\.ncbi\.nlm\.nih\.gov\/|\bPMID:?\s*)(\d{1,9})\b/gi)) add(m[1]);
+  const marked = /(?:pubmed\.ncbi\.nlm\.nih\.gov\/|ncbi\.nlm\.nih\.gov\/pubmed\/|[?&]pmid=|\bPMIDs?\b[:#]?\s*|\bPub[Mm]ed\s+IDs?\b[:#]?\s*)(\d{1,9}(?:\s*(?:,|;|&|\band\b)?\s*\d{1,9}\b)*)/gi;
+  for (const m of text.matchAll(marked)) for (const id of m[1].match(/\d{1,9}/g) ?? []) add(id);
   if (out.length) return out;
-  // no marks: ids alone, separated by commas, semicolons, spaces or new lines
-  const parts = text.split(/[\s,;]+/).filter(Boolean);
-  if (parts.every((p) => /^\d{1,9}$/.test(p))) parts.forEach(add);
+  // no marks: ids alone, separated by commas, semicolons, "and", spaces or new lines
+  // (only trailing punctuation goes: a number in brackets, such as a year, means the text is not a list)
+  const parts = text.split(/[\s,;]+|\band\b/).map((p) => p.replace(/[.:]+$/, '')).filter(Boolean);
+  if (parts.length && parts.every((p) => /^\d{1,9}$/.test(p))) parts.forEach(add);
+  else for (const p of parts) { const bare = p.replace(/^[([]+|[)\]]+$/g, ''); if (/^\d{7,9}$/.test(bare)) add(bare); }
   return out;
 }
 

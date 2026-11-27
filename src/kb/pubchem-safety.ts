@@ -5,7 +5,8 @@
 // scripts/kb/build-safety.mjs, which builds the bundled tables, and by the Knowledge Base window to
 // rate a compound that isn't in them, live from PubChem. Plain functions, no imports to run.
 
-import { lowerDose, type Lethal, type SafetyRecord, type Sourced } from './safety';
+// (type imports only: scripts/kb/build-safety.mjs loads this file in Node as it is)
+import type { Lethal, SafetyRecord, Sourced } from './safety';
 
 /** Sources whose values may be shipped, in order of preference. */
 export const OPEN_SOURCES = ['Hazardous Substances Data Bank (HSDB)', 'The National Institute for Occupational Safety and Health (NIOSH)', 'CAMEO Chemicals', 'Occupational Safety and Health Administration (OSHA)', 'PAC Chemical Database, U.S. Department of Energy'];
@@ -180,6 +181,19 @@ export function safetyRecordFrom(c: RecordInput): SafetyRecord {
 /** True when an open source gave something to rate the compound by. */
 export function hasHazardData(r: SafetyRecord): boolean {
   return !!(r.idlh || r.lethal.some((l) => l.kind === 'LD50' || l.kind === 'LC50') || r.ghs?.codes.length || r.alerts.length || r.incompatible);
+}
+
+/** A dose in mg/kg, or null when its unit isn't a dose per body weight. */
+function mgPerKg(l: Lethal): number | null {
+  const u = l.unit.toLowerCase();
+  return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : null;
+}
+
+/** Whether dose `l` is lower than `cur` (for the same route): compared in mg/kg when both can be; otherwise only in the same unit. */
+export function lowerDose(l: Lethal, cur: Lethal): boolean {
+  const a = mgPerKg(l), b = mgPerKg(cur);
+  if (a !== null && b !== null) return a < b;
+  return cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value;
 }
 
 /** A smaller record for the big table: the lowest LD50/LC50 per route only, no links, short texts. */

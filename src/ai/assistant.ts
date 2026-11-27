@@ -86,13 +86,18 @@ const SMILES_CHARS = /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/;
 export function parseAnswer(text: string): { prose: string; actions: AssistantAction[] } {
   // the fenced blocks in order (an answer may show a SMILES or a scheme in a block of its own
   // before the proposal): the last one that holds JSON is the proposal
-  const fences = [...text.matchAll(/```([A-Za-z]*)[ \t]*\n([\s\S]*?)```/g)];
+  // (any tag after the opening fence, c++ or json5 too, and Windows line ends)
+  const fences = [...text.matchAll(/```([^\n`]*)\r?\n([\s\S]*?)```/g)];
   let fence: RegExpMatchArray | undefined;
   let raw: unknown;
   for (let i = fences.length - 1; i >= 0 && !fence; i--) {
-    const lang = fences[i][1].toLowerCase();
-    if (lang && lang !== 'json') continue;
-    try { raw = JSON.parse(fences[i][2]); fence = fences[i]; } catch { /* not the proposal */ }
+    const lang = fences[i][1].trim().toLowerCase();
+    if (lang && lang !== 'json' && lang !== 'json5' && lang !== 'jsonc') continue;
+    try {
+      const v: unknown = JSON.parse(fences[i][2]);
+      // a proposal is an object or a list; a block holding only a number or a word is not one
+      if (v && typeof v === 'object') { raw = v; fence = fences[i]; }
+    } catch { /* not the proposal */ }
   }
   if (!fence || fence.index === undefined) return { prose: text.trim(), actions: [] };
   const prose = (text.slice(0, fence.index) + text.slice(fence.index + fence[0].length)).trim();

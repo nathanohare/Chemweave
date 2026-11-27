@@ -88,7 +88,7 @@ const DASH = String.raw`\s*[-–—−]\s*`;
  * What ends a peak list: another nucleus's NMR list, or the data an SI paragraph goes on with
  * (HRMS, MS, IR, a melting point, an optical rotation, Rf, an elemental analysis).
  */
-const LIST_END = /\b(\d{1,3}[A-Z][a-z]?)(?:\s*\{[^}]*\})?\s*NMR\b|\b(?:HRMS|HR-?MS|LRMS|ESI-?MS|MS|FT-?IR|IR|UV|Anal\.|Rf|Rƒ|R_f)\b|\bm\.?p\.?\s*[:=]?\s*-?\d|\[α\]/g;
+const LIST_END = /\b(\d{1,3}[A-Z][a-z]?)(?:\s*\{[^}]*\})?\s*NMR\b|\b(?:HRMS|HR-?MS|LRMS|ESI-?MS|MS|FT-?IR|IR|UV|Anal\.|Rf|Rƒ|R_f)\b|\b[Mm]\.?[Pp]\.?\s*[:=]?\s*-?\d|\[α\]/g;
 
 /** Splits pasted text into 1H and 13C lists (an SI paragraph often holds both). */
 export function parsePeakLists(text: string): MeasuredList[] {

@@ -1,3 +1,5 @@
+// @vitest-environment jsdom
+//
 // Code review 2026-11-26, batch 02: the Library, PubMed and Zotero, Find Structure in Files.
 //   F138: a Zotero item matched by DOI dropped the reference's own collections, PMID and abstract.
 //   F634: edits merged in from another computer didn't redraw the open windows.
@@ -14,11 +16,16 @@
 //   F633: every indexed file made its own substructure call.
 
 import { describe, it, expect, vi } from 'vitest';
+
+vi.mock('../src/ui/ask', () => ({ ask: vi.fn(async () => ({ library: '1', key: 'k' })) }));
+
 import { cleanCompound, emptyLibrary, mergeLibraries, parseLibrary, libraryText, type LibraryData, type LibReference } from '../src/library/library';
 import { Library, type LibraryPlace } from '../src/library/library-store';
 import { applyZotero, fromPubmed, parsePmids, zoteroLibrary, type ZoteroLink } from '../src/library/online';
 import { blankRef } from '../src/document/references';
-import { emptyIndex, INDEX_MAX_FILES, searchFiles, type SearchDeps } from '../src/library/file-index';
+import { emptyIndex, indexText, parseIndex, searchFiles, type SearchDeps } from '../src/library/file-index';
+import { libraryHolder, type LibraryRefsHost } from '../src/ui/library-refs';
+import type { HolderPanelContext } from '../src/ui/references-dialog';
 
 const ref = (id: string, over: Partial<LibReference> = {}): LibReference => ({ ...blankRef('article', id), title: id, added: 1, modified: 1, ...over });
 const link: ZoteroLink = { library: 'users/1', key: 'k', version: 0 };
@@ -57,10 +64,26 @@ describe('F640: a tag taken off in Zotero goes here too', () => {
 });
 
 describe('F641: a sync is applied to the library as it is when it finishes', () => {
-  it('leaves an edit made meanwhile as it is', () => {
-    const before = { ...emptyLibrary(), references: [ref('r-9', { title: 'Renamed while syncing' })] };
-    const r = applyZotero(before, { collections: [], items: [item('Z1', 1, {})] }, link);
-    expect(r.lib.references.map((x) => x.title)).toEqual(['Renamed while syncing', 'T']);
+  it('leaves an edit made while Zotero was being read (Sync with Zotero in the References window)', async () => {
+    const lib = new Library(memPlace(), 0);
+    await lib.load();
+    lib.change((l) => ({ ...l, references: [ref('r-9', { title: 'Before' })] }));
+    let written: ZoteroLink | null = null;
+    const host = {
+      files: () => [], pickPdf: async () => null, openFile: async () => {}, styleChanged: () => {}, location: async () => {}, flash: () => {},
+      zotero: { read: async () => null, write: async (l: ZoteroLink | null) => { written = l; } },
+      get: async (url: string) => {
+        if (url.includes('/collections')) return '[]';
+        // the person renames a reference while the items are on their way
+        lib.change((l) => ({ ...l, references: l.references.map((r) => ({ ...r, title: 'Renamed while syncing', modified: 9 })) }));
+        return JSON.stringify([item('Z1', 4, { title: 'From Zotero' })]);
+      },
+    } as unknown as LibraryRefsHost;
+    const ctx = { picked: () => [], select: () => {}, refresh: () => {}, flash: () => {} } as HolderPanelContext;
+    const panel = libraryHolder(lib, host).panel!(ctx);
+    [...panel.el.querySelectorAll('button')].find((b) => b.textContent === 'Sync with Zotero…')!.click();
+    await vi.waitFor(() => expect(written).not.toBeNull());
+    expect(lib.now.references.map((x) => x.title).sort()).toEqual(['From Zotero', 'Renamed while syncing']);
   });
 });
 
@@ -87,6 +110,14 @@ describe('F637: PubMed ids in pasted text', () => {
     expect(parsePmids('https://pubmed.ncbi.nlm.nih.gov/31234567/ and PMID 30000001')).toEqual(['31234567', '30000001']);
     expect(parsePmids('31234567, 30000001\n29999999')).toEqual(['31234567', '30000001', '29999999']);
     expect(parsePmids('J Org Chem 2019, 84, 1234')).toEqual([]);
+    expect(parsePmids('https://www.ncbi.nlm.nih.gov/pubmed/31234567')).toEqual(['31234567']);
+    expect(parsePmids('https://pubmed.ncbi.nlm.nih.gov/?term=x&pmid=31234567')).toEqual(['31234567']);
+    expect(parsePmids('PMID: 31234567, 31234568')).toEqual(['31234567', '31234568']);
+    expect(parsePmids('PMIDs 31234567 and 31234568')).toEqual(['31234567', '31234568']);
+    expect(parsePmids('PubMed ID 31234567')).toEqual(['31234567']);
+    expect(parsePmids('31234567.')).toEqual(['31234567']);
+    expect(parsePmids('31234567 and 30000001')).toEqual(['31234567', '30000001']);
+    expect(parsePmids('31234567 (2019)')).toEqual(['31234567']);
   });
 });
 
@@ -145,16 +176,25 @@ describe('F635: a save that failed is tried again', () => {
     await lib.flush();
     expect(lib.problem).toMatch(/could not be saved/);
     expect(place.text).toBeNull();
+    // tried again while it still can't be read: the windows aren't redrawn for the same problem
+    const told = vi.fn();
+    lib.onChange(told);
+    await lib.saveNow();
+    expect(told).not.toHaveBeenCalled();
     place.fail = false;
     await lib.flush();
+    expect(told).toHaveBeenCalledTimes(1);
     expect(parseLibrary(place.text).references.map((r) => r.id)).toEqual(['r-1']);
     expect(lib.problem).toBe('');
   });
 });
 
 describe('F632 and F633: Find Structure in Files', () => {
-  it('keeps as many files as one search reads', () => {
-    expect(INDEX_MAX_FILES).toBeGreaterThanOrEqual(20000);
+  it('keeps as many files as one search reads, so a second search reads none again', () => {
+    // (Find Structure in Files searches up to 20,000 files at a time)
+    const ix = emptyIndex();
+    for (let i = 0; i < 8000; i++) ix.files[`/f/${i}.cdxml`] = { size: 1, modified: 1, read: i, structures: [] };
+    expect(Object.keys(parseIndex(indexText(ix)).files)).toHaveLength(8000);
   });
 
   it('checks the indexed files’ structures in one call', async () => {
@@ -169,5 +209,20 @@ describe('F632 and F633: Find Structure in Files', () => {
     expect(r.read).toBe(0);
     // used now: kept ahead of files not searched lately
     expect(ix.files['/f/1.cdxml'].read).toBeGreaterThan(1);
+  });
+
+  it('shows the hits from the index before it reads a file that takes a while', async () => {
+    const ix = emptyIndex();
+    ix.files['/f/1.cdxml'] = { size: 1, modified: 1, read: 1, structures: [{ spot: { kind: 'drawing' } as never, atoms: [], smiles: 'CCO' }] };
+    const files = [{ path: '/f/1.cdxml', size: 1, modified: 1 }, { path: '/f/slow.cdxml', size: 1, modified: 1 }];
+    const seen: string[] = [];
+    const deps: SearchDeps = {
+      read: async () => { seen.push(`reading with ${seen.filter((x) => x.startsWith('hit')).length} hits`); return new Uint8Array(); },
+      found: async () => [], smiles: async () => [],
+      contains: async (_q, smiles) => smiles.map(() => true),
+      hit: (h) => seen.push(`hit ${h.path}`),
+    };
+    await searchFiles(files, 'CO', 'contains', ix, deps);
+    expect(seen).toEqual(['hit /f/1.cdxml', 'reading with 1 hits']);
   });
 });

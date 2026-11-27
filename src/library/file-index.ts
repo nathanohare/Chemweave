@@ -35,7 +35,7 @@ export const emptyIndex = (): FileIndex => ({ version: 1, files: {} });
 /** Files the index remembers at most (the least recently used are let go): as many as one search reads (src/ui/find-in-files.ts). */
 export const INDEX_MAX_FILES = 20000;
 /** SMILES checked for containing the query in one call to the chemistry engine. */
-const CONTAINS_BATCH = 2000;
+const CONTAINS_BATCH = 500;
 /** Atoms remembered for each structure (enough to select it; a polymer drawn huge is cut). */
 const MAX_ATOMS = 400;
 
@@ -143,6 +143,8 @@ export async function searchFiles(files: { path: string; size: number; modified:
     let entry = freshEntry(ix, f);
     // (used now: kept in the index ahead of files not searched lately)
     if (entry) entry.read = Date.now();
+    // (a file to read takes a while: what is found so far is shown first)
+    else await check();
     if (!entry) {
       try {
         const found = await deps.found(await deps.read(f.path), f.path);

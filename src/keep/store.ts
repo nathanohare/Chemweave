@@ -78,55 +78,95 @@ function listKeys(folder: string, all: { key: string; size: number; modified: nu
   return [...out.values()];
 }
 
-/** A browser: the page's IndexedDB storage. */
+/**
+ * A browser: the page's IndexedDB storage. Each copy's bytes are in "kept"; its size and time are
+ * also in "sizes", so listing a folder and deleting never read the copies themselves (a file's
+ * 30 versions of a large deck would otherwise be read at every save).
+ */
 export function browserStore(): KeepStore {
   let db: Promise<IDBDatabase> | null = null;
   const open = () => db ??= new Promise((resolve, reject) => {
     // ask the browser to keep this storage when space runs short (it may still say no, or ask the person)
     void navigator.storage?.persist?.().catch(() => false);
-    const r = indexedDB.open('chem-illustrator-kept', 1);
-    r.onupgradeneeded = () => r.result.createObjectStore('kept');
+    const r = indexedDB.open('chem-illustrator-kept', 2);
+    r.onupgradeneeded = () => {
+      const d = r.result;
+      const had = d.objectStoreNames.contains('kept');
+      if (!had) d.createObjectStore('kept');
+      if (!d.objectStoreNames.contains('sizes')) {
+        const sizes = d.createObjectStore('sizes');
+        // (once, from version 1: the sizes of what is kept already)
+        if (had) {
+          const c = r.transaction!.objectStore('kept').openCursor();
+          c.onsuccess = () => {
+            const at = c.result;
+            if (!at) return;
+            const row = at.value as Row;
+            sizes.put({ size: row.data.length, modified: row.modified } satisfies Size, at.key);
+            at.continue();
+          };
+        }
+      }
+    };
     r.onsuccess = () => resolve(r.result);
     r.onerror = () => reject(r.error);
   });
-  const run = async <T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
-    const s = (await open()).transaction('kept', mode).objectStore('kept');
+  type Row = { data: Uint8Array; modified: number };
+  type Size = { size: number; modified: number };
+  /** Work on both stores at once, done when the browser has written it all. */
+  const both = async (mode: IDBTransactionMode, f: (kept: IDBObjectStore, sizes: IDBObjectStore) => void): Promise<void> => {
+    const t = (await open()).transaction(['kept', 'sizes'], mode);
     return new Promise((resolve, reject) => {
-      const r = f(s);
-      r.onsuccess = () => resolve(r.result);
-      r.onerror = () => reject(r.error);
+      t.oncomplete = () => resolve();
+      t.onerror = () => reject(t.error);
+      t.onabort = () => reject(t.error);
+      f(t.objectStore('kept'), t.objectStore('sizes'));
     });
   };
-  type Row = { data: Uint8Array; modified: number };
   // Everything under a folder: the keys from "folder/" up to (not including) "folder0", as '0'
-  // comes straight after '/'. Only those rows are read, never the whole store.
+  // comes straight after '/'.
   const under = (folder: string) => {
     const pre = folder.replace(/\/$/, '') + '/';
     return IDBKeyRange.bound(pre, pre.slice(0, -1) + '0', false, true);
   };
-  const all = async (folder: string) => {
-    const s = (await open()).transaction('kept', 'readonly').objectStore('kept');
+  const sizesUnder = async (folder: string) => {
+    const s = (await open()).transaction('sizes', 'readonly').objectStore('sizes');
     const out: { key: string; size: number; modified: number }[] = [];
     return new Promise<typeof out>((resolve, reject) => {
       const r = s.openCursor(under(folder));
       r.onsuccess = () => {
         const c = r.result;
         if (!c) { resolve(out); return; }
-        const row = c.value as Row;
-        out.push({ key: String(c.key), size: row.data.length, modified: row.modified });
+        const z = c.value as Size;
+        out.push({ key: String(c.key), size: z.size, modified: z.modified });
         c.continue();
       };
       r.onerror = () => reject(r.error);
     });
   };
   return {
-    async put(key, data) { await run('readwrite', (s) => s.put({ data: data.slice(), modified: Date.now() } satisfies Row, key)); },
-    async get(key) { const r = await run('readonly', (s) => s.get(key)) as Row | undefined; return r ? r.data : null; },
-    async list(folder) { return listKeys(folder, await all(folder)); },
+    async put(key, data) {
+      const modified = Date.now();
+      await both('readwrite', (kept, sizes) => {
+        kept.put({ data: data.slice(), modified } satisfies Row, key);
+        sizes.put({ size: data.length, modified } satisfies Size, key);
+      });
+    },
+    async get(key) {
+      const s = (await open()).transaction('kept', 'readonly').objectStore('kept');
+      const r = await new Promise<Row | undefined>((resolve, reject) => {
+        const q = s.get(key);
+        q.onsuccess = () => resolve(q.result as Row | undefined);
+        q.onerror = () => reject(q.error);
+      });
+      return r ? r.data : null;
+    },
+    async list(folder) { return listKeys(folder, await sizesUnder(folder)); },
     async remove(key) {
       // the copy itself and everything under it, deleted by key without reading any of them
-      await run('readwrite', (s) => s.delete(key));
-      await run('readwrite', (s) => s.delete(under(key)));
+      await both('readwrite', (kept, sizes) => {
+        for (const st of [kept, sizes]) { st.delete(key); st.delete(under(key)); }
+      });
     },
     async where() { return 'this browser’s storage for the page'; },
   };
