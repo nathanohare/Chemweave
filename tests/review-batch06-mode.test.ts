@@ -75,7 +75,7 @@ describe('Spectra section settings that show other controls (F229)', () => {
     expect(cell(rowOf('Structure and ID'), 'Caption size')).toBeDefined();
 
     expect(cell(rowOf('Links'), 'Color')).toBeUndefined();
-    const look = cell(rowOf('Links'), 'Look')!.querySelector('select')!;
+    const look = cell(rowOf('Links'), 'Link Style')!.querySelector('select')!;
     look.value = 'blue';
     look.dispatchEvent(new Event('change', { bubbles: true }));
     await tick(60);
