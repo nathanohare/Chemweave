@@ -5,6 +5,7 @@
 // scripts/kb/build-safety.mjs, which builds the bundled tables, and by the Knowledge Base window to
 // rate a compound that isn't in them, live from PubChem. Plain functions, no imports to run.
 
+// (type imports only: scripts/kb/build-safety.mjs loads this file in Node as it is)
 import type { Lethal, SafetyRecord, Sourced } from './safety';
 
 /** Sources whose values may be shipped, in order of preference. */
@@ -182,13 +183,26 @@ export function hasHazardData(r: SafetyRecord): boolean {
   return !!(r.idlh || r.lethal.some((l) => l.kind === 'LD50' || l.kind === 'LC50') || r.ghs?.codes.length || r.alerts.length || r.incompatible);
 }
 
+/** A dose in mg/kg, or null when its unit isn't a dose per body weight. */
+function mgPerKg(l: Lethal): number | null {
+  const u = l.unit.toLowerCase();
+  return u === 'g/kg' ? l.value * 1000 : u === 'ug/kg' ? l.value / 1000 : u === 'mg/kg' ? l.value : null;
+}
+
+/** Whether dose `l` is lower than `cur` (for the same route): compared in mg/kg when both can be; otherwise only in the same unit. */
+export function lowerDose(l: Lethal, cur: Lethal): boolean {
+  const a = mgPerKg(l), b = mgPerKg(cur);
+  if (a !== null && b !== null) return a < b;
+  return cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value;
+}
+
 /** A smaller record for the big table: the lowest LD50/LC50 per route only, no links, short texts. */
 export function compactRecord(r: SafetyRecord): SafetyRecord {
   const best = new Map<string, Lethal>();
   for (const l of r.lethal) {
     if (l.kind !== 'LD50' && l.kind !== 'LC50') continue;
     const cur = best.get(l.route);
-    if (!cur || (cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value)) best.set(l.route, l);
+    if (!cur || lowerDose(l, cur)) best.set(l.route, l);
   }
   const idlh = r.idlh ? { ...r.idlh } : null;
   if (idlh) delete idlh.url;

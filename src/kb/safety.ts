@@ -15,6 +15,9 @@
 // supplier notifications that give dichloromethane H350 and acetone H372. The numbers come from
 // safety-data.json (scripts/kb/build-safety.mjs); the lists below are written for this program.
 
+// (pubchem-safety.ts has no value imports: scripts/kb/build-safety.mjs loads it in Node as it is)
+import { lowerDose } from './pubchem-safety';
+
 export interface Lethal {
   kind: string;
   species: string;
@@ -263,7 +266,14 @@ export function oralLd50(r: SafetyRecord): number | null {
   return v.length ? Math.min(...v) : null;
 }
 
-const has = (r: SafetyRecord, ...codes: string[]) => !!r.ghs?.codes.some((c) => codes.some((x) => c === x || c.startsWith(x + '+') || c.includes('+' + x)));
+/**
+ * Whether a stored code (H330, H300+H310+H330 combined) is one of these. Harmonized codes keep
+ * their EU letter suffix (H360D, H360FD, H350i), and those count as the bare code.
+ */
+export function codeIs(c: string, x: string): boolean {
+  return c.split('+').some((part) => part === x || (/^H\d{3}[A-Za-z]{1,2}$/.test(part) && part.slice(0, 4) === x));
+}
+const has = (r: SafetyRecord, ...codes: string[]) => !!r.ghs?.codes.some((c) => codes.some((x) => codeIs(c, x)));
 const alert = (r: SafetyRecord, re: RegExp) => r.alerts.some((a) => re.test(a));
 const pyrophoric = (r: SafetyRecord) => has(r, 'H250') || PYROPHORIC.has(r.cid);
 /** Saturated vapour at least this many times the IDLH: the compound can readily reach it in air. */
@@ -364,8 +374,8 @@ export function lethalByRoute(r: SafetyRecord): Partial<Record<Lethal['route'], 
   for (const l of r.lethal) {
     if (l.kind !== 'LD50' && l.kind !== 'LC50') continue;
     const cur = best.get(l.route);
-    // a lower dose in the same unit wins; otherwise keep the first (a rat value, as HSDB lists it)
-    if (!cur || (cur.unit.toLowerCase() === l.unit.toLowerCase() && l.value < cur.value)) best.set(l.route, l);
+    // a lower dose wins (in mg/kg, or in the same unit); otherwise keep the first (a rat value, as HSDB lists it)
+    if (!cur || lowerDose(l, cur)) best.set(l.route, l);
   }
   for (const route of ROUTE_ORDER) {
     const l = best.get(route);
@@ -386,13 +396,31 @@ export function logKowOf(r: SafetyRecord): { value: number; source: string } | n
 }
 
 /**
+ * Whether a SMILES is a neutral molecule written with charges apart only as nitro groups and
+ * N-oxides are ([N+](=O)[O-], [n+][O-]): every charged atom a nitrogen without hydrogens (+) or an
+ * oxygen (−), as many of each. Zwitterions (an amino acid's [NH3+] and CO2⁻) are not: they are
+ * ions in water, which the skin estimate isn't for. (A betaine, R3N⁺CH2CO2⁻, still passes.)
+ */
+export function chargesApartOnly(smiles: string): boolean {
+  let plus = 0, minus = 0;
+  for (const m of smiles.matchAll(/\[([^\]]*?)([+-]+)(\d*)\]/g)) {
+    const n = m[3] ? Number(m[3]) : m[2].length;
+    if (m[2][0] === '+' && /^(?:\d*)[Nn]$/.test(m[1])) plus += n;
+    else if (m[2][0] === '-' && /^(?:\d*)O$/.test(m[1])) minus += n;
+    else return false;
+  }
+  return plus === minus;
+}
+
+/**
  * How fast the compound crosses skin from water, estimated by the Potts–Guy equation
  * (Pharm. Res. 1992, 9, 663): log Kp (cm/h) = −2.72 + 0.71 log Kow − 0.0061 MW. Only for neutral
- * organic molecules up to 500 g/mol; salts, metals and ions get none. A rough guide to which
+ * organic molecules up to 500 g/mol (nitro compounds and N-oxides included, whose charges PubChem
+ * writes apart); salts, metals, ions and zwitterions get none. A rough guide to which
  * compounds go through skin quickly, never a substitute for the skin notation or glove data.
  */
 export function skinKp(r: SafetyRecord): { kp: number; band: 'high' | 'moderate' | 'low'; source: string } | null {
-  if (!r.smiles || !r.mw || r.mw > 500 || /\.|[+-]\]|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
+  if (!r.smiles || !r.mw || r.mw > 500 || !chargesApartOnly(r.smiles) || /\.|\[(?:Li|Na|K|Mg|Zn|Al|Cu|Pd|Hg|Tl|Ni|Co|Cs|Ca|Sn|Ti|B|Si|Os|Ru|Cr|Mn|Pb|Ag|Se|Ce)/.test(r.smiles) || !/C|c/.test(r.smiles)) return null;
   const k = logKowOf(r);
   if (!k) return null;
   const kp = 10 ** (-2.72 + 0.71 * k.value - 0.0061 * r.mw);

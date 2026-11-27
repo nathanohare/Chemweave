@@ -5,6 +5,7 @@
 // preview shows the pages as they print: a PDF's pages fill the text width, a picture prints at
 // its own size, shrunk to fit.
 
+import { markFilesTaken } from './window-drop';
 import type { SiProject, SiSection } from '../si/project';
 import type { PdfPageReader } from '../render/pdf-page';
 import { addInfo } from './info-tip';
@@ -195,6 +196,7 @@ export class SiAttachmentPage {
       const f = e.dataTransfer?.files[0];
       if (!f || p.readOnly) return;
       e.preventDefault();
+      markFilesTaken(e);
       void f.arrayBuffer().then((b) => this.use(f.name, new Uint8Array(b)));
     });
     this.el.replaceChildren(h, rows, fileRow, stage);

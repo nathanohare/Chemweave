@@ -116,6 +116,8 @@ export interface WorkspaceHooks {
    * stop when the file has been changed elsewhere since it was opened ('save-as' asks for another place).
    */
   beforeWrite?(tab: Tab, ref: FileRef, name: string, how: SaveHow): Promise<'go' | 'stop' | 'save-as'>;
+  /** The write that beforeWrite answered 'go' to has ended, written or not (after saved or autoSaveFailed). */
+  written?(tab: Tab): void;
   /** Save As has a file name (`name`): anything to ask about saving under it, before it is written. */
   beforeSaveAs?(tab: Tab, name: string): Promise<void>;
   /** A file was written (`was`: where the tab's file was before, which Save As changes). */
@@ -681,7 +683,9 @@ export class Workspace {
     t.seen = this.host.version;
     if (spare) this.drop(spare);
     const parts = [`${stats.atoms} atoms`, `${stats.bonds} bonds`, ...(stats.arrows ? [`${stats.arrows} arrow${stats.arrows === 1 ? '' : 's'}`] : []), ...(stats.texts ? [`${stats.texts} text${stats.texts === 1 ? '' : 's'}`] : [])];
-    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}. Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
+    // (atoms the file gives no place are said, not drawn in a heap; review F554)
+    const lost = scene.leftOut ? ` ${scene.leftOut} atom${scene.leftOut === 1 ? '' : 's'} with no place in the file ${scene.leftOut === 1 ? 'was' : 'were'} left out.` : '';
+    this.hooks.flash(`Opened ${name} (${FORMAT_NAMES[fmt]}): ${parts.join(', ')}.${lost} Save writes it back as a ${FORMAT_NAMES[fmt]}; Save As .cdxml keeps styles, shapes and everything else.`);
     return true;
   }
 
@@ -956,6 +960,15 @@ export class Workspace {
   }
 
   private async writeTo(tab: Tab, ref: FileRef, name: string, how: SaveHow = 'saved'): Promise<boolean> {
+    const going = { on: false };
+    try {
+      return await this.writeOnce(tab, ref, name, how, going);
+    } finally {
+      if (going.on) this.hooks.written?.(tab);
+    }
+  }
+
+  private async writeOnce(tab: Tab, ref: FileRef, name: string, how: SaveHow, going: { on: boolean }): Promise<boolean> {
     const auto = how === 'autosaved';
     // what the tab holds now: changes made while the file is being written stay unsaved
     const edits = tab.deck?.edits ?? tab.book?.edits ?? tab.document?.edits ?? 0;
@@ -967,6 +980,7 @@ export class Workspace {
       const go = (await this.hooks.beforeWrite?.(tab, ref, name, how)) ?? 'go';
       if (go === 'stop') return false;
       if (go === 'save-as') return this.saveAs(tab);
+      going.on = true;
       enc = await this.encode(tab, name);
       await writeFile(ref, name, enc.data, enc.type);
       if (!auto) enc.note += this.officeNoteFor(tab);

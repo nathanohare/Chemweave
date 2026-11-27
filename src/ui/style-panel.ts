@@ -32,7 +32,7 @@ import { ringFillsOn } from '../chem/ring-fill';
 import { frameMembers } from '../editor/frames';
 import { methylState, writeTerminalMethyls, type MethylStyle } from '../chem/hydrogens';
 import type { TableData } from '../model';
-import { canShowGuides, guidesOn, plainReactionArrow } from '../chem/arrow-text';
+import { canShowGuides, guidesOn } from '../chem/arrow-text';
 import { RIBBON_ICONS } from './ribbon-icons';
 import { attachedAtoms } from '../editor/attached';
 import { lookPatch } from '../editor/tied-look';
@@ -81,7 +81,7 @@ export interface ReactionHooks {
   setSideText(arrowId: number, side: ArrowTextSide, text: string): void;
   /** Line one side up this arrow's own way (null: the drawing style's). */
   setTextAlign(arrowId: number, side: ArrowTextSide, how: 'left' | 'center' | 'right' | null): void;
-  /** Show or hide the arrows' dashed text guides (null: as usual). */
+  /** Show or hide the arrows' dashed text guides (null: as usual); an arrow that shows them or not by default anyway goes back to its default. */
   setGuides(arrowIds: number[], on: boolean | null): void;
 }
 
@@ -406,7 +406,7 @@ export class StylePanel {
     this.color('Color', r.color, (v) => set('Arrow color', () => ({ color: v })));
     // the dashed boxes for typing text above and below: shown on plain reaction arrows, and on any other straight arrow when asked
     if (this.reaction && arrows.every(canShowGuides)) {
-      this.check('Show text guides', arrows.every(guidesOn), (v) => this.reaction!.setGuides(arrows.map((a) => a.id), v === arrows.every(plainReactionArrow) ? null : v),
+      this.check('Show text guides', arrows.every(guidesOn), (v) => this.reaction!.setGuides(arrows.map((a) => a.id), v), // (each arrow against its own default: review F332)
         'The dashed boxes above and below the arrow for typing reagents, conditions and the Results line. Plain reaction arrows show them; turn them on here for any other straight arrow.');
     }
     if (arrows.length === 1) this.reactionControls(r);
