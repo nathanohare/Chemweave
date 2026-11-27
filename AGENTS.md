@@ -26,5 +26,6 @@ In short:
 - Every pull request that changes the app adds a change file to `changes/` saying in plain words what
   it changed (`changes/README.md`); it becomes the release notes, Help ▸ What's New and CHANGELOG.md.
   Never edit CHANGELOG.md by hand.
+- Asked to put someone's Supporting Information or lab data into a Chemweave SI project (a `.chemsi` file or a folder with `project.json`)? That is not a code change: follow [docs/guide/si-import-for-ai.md](docs/guide/si-import-for-ai.md).
 - Run the tests for what you changed (`npx vitest run tests/<file>`) and `npm run typecheck:strict`
   before committing.

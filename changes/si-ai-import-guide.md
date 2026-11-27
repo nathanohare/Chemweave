@@ -1,0 +1,3 @@
+Added: Insert ▸ Import with AI on the SI Project tab copies a guide for AI assistants, with a starting message to paste into your AI's chat, and adds a short note for AI assistants (AGENTS.md) to the project. New SI projects get the note too.
+Added: Help ▸ Copy Guide for AI Assistants and Help ▸ Save Guide for AI Assistants… give the same guide in any kind of tab, to paste or as a Markdown file.
+Added: the user guide has a page for AI assistants that import a Supporting Information into an SI project: the file format, the rules for missing and conflicting data, and a script that checks the result.

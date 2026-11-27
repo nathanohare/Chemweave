@@ -62,6 +62,7 @@ export const PAGES = [
   { name: 'Design', src: 'docs/guide/design.md', label: 'Design', group: 'The modes' },
   { name: 'SI-Project', src: 'docs/guide/si-project.md', label: 'SI Project', group: 'The modes' },
   { name: 'Libraries', src: 'docs/guide/libraries.md', label: 'Libraries and Find Structure', group: 'Everything else' },
+  { name: 'SI-Import-with-AI', src: 'docs/guide/si-import-for-ai.md', label: 'Importing an SI with AI', group: 'Everything else' },
   { name: 'Files-and-Sharing', src: 'docs/guide/files-and-sharing.md', label: 'Files and sharing', group: 'Everything else' },
   { name: 'Troubleshooting', src: 'docs/guide/troubleshooting.md', label: 'Troubleshooting', group: 'Everything else' },
   { name: 'Feedback', src: 'docs/guide/feedback.md', label: 'Feedback, problems and ideas', group: 'Everything else' },

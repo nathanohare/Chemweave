@@ -20,6 +20,8 @@ const spectrumAxis = '<path d="M2.75 19.25h14.5"/>';
 
 /** The SI's own drawings. */
 export const SI_ICONS: Record<string, string> = {
+  // Insert ▸ Import with AI: a page with a four-pointed spark
+  'si:ai-import': page + '<path d="M8 11h5M8 14.5h6M8 18h4"/><path class="f a" d="M17.5 1.75l1.1 2.9 2.9 1.1-2.9 1.1-1.1 2.9-1.1-2.9-2.9-1.1 2.9-1.1z"/>',
   // Review ▸ Dictionary: a book with a tick
   'si:dictionary': '<path class="p" d="M5.25 3.75h11a1.5 1.5 0 0 1 1.5 1.5v15h-11a1.5 1.5 0 0 1-1.5-1.5z"/><path d="M5.25 18.25a1.5 1.5 0 0 1 1.5-1.5h11"/>' + check(8.5, 9.5),
   // View ▸ Hide SI Page: two panes, the left one folded away toward the arrow
