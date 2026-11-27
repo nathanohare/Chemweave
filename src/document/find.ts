@@ -47,7 +47,9 @@ export function findAll(text: string, query: string, opts: FindOptions = {}): [n
   const out: [number, number][] = [];
   for (let m = re.exec(text); m; m = re.exec(text)) {
     const a = m.index, b = a + m[0].length;
-    re.lastIndex = a + 1;
+    // on to the next character (both halves of an emoji's or another astral character's pair: with
+    // the 'u' flag a search from inside one starts at the same character, the same match for ever)
+    re.lastIndex = a + ((text.codePointAt(a) ?? 0) > 0xffff ? 2 : 1);
     if (m[0].includes('\n') || m[0].includes(OBJECT_CHAR)) continue;
     if (opts.wholeWord && (wordChar(text[a - 1]) || wordChar(text[b]))) continue;
     if (out.length && a < out[out.length - 1][1]) continue;

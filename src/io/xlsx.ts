@@ -828,9 +828,11 @@ async function writeBook(book: Workbook, deps: XlsxPictures, opts: { macros?: bo
           wrote = v;
           body = `<c r="${ref}"${sAttr} t="b">${f}<v>${v ? 1 : 0}</v></c>`;
         } else if (isError(v)) {
+          // (an error the file format has no code for, such as #SPILL! or #FIELD!, is saved as #VALUE!,
+          // and recorded as what was saved, so the cell is known again when the file is opened)
           const code = (v as CellError).code;
-          wrote = code;
-          body = `<c r="${ref}"${sAttr} t="e">${f}<v>${FILE_ERRORS.includes(code) ? code : '#VALUE!'}</v></c>`;
+          wrote = FILE_ERRORS.includes(code) ? code : '#VALUE!';
+          body = `<c r="${ref}"${sAttr} t="e">${f}<v>${wrote}</v></c>`;
         } else {
           wrote = excelCellText(v as string);
           body = f

@@ -147,7 +147,7 @@ export class DocInsertUI {
       ['Field…', () => void this.field()],
       ['Document Properties…', () => void this.properties()],
       null,
-      ['Save Selection to Quick Part Gallery…', () => void this.savePart(), !(this.f && this.host.ed().start < this.host.ed().end)],
+      ['Save Selection to Quick Part Gallery…', () => void this.savePart(), !!this.f && this.host.ed().start < this.host.ed().end],
       ['Delete a Quick Part…', () => void this.deletePart(), parts.length > 0],
     );
     popupMenu(x, y, items);

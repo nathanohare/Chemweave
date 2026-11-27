@@ -2526,14 +2526,15 @@ export class Doc {
   get contentsKey(): object { return this.atoms; }
 
   /**
-   * Exchange everything drawn, with its style, file and undo history, with another document. A
+   * Exchange everything drawn, with its style, file, the ChemDraw objects kept for writing back
+   * (`kept`, so they are saved with their own drawing) and undo history, with another document. A
    * slide deck keeps each slide in a document of its own and swaps the one being edited into
    * this one, so the editor, the checks and the chemistry engine always work on this document.
    * Watchers, live stereo labels and the commit hook stay with this document.
    */
   swap(other: Doc): void {
     if (this.tx || other.tx) throw new Error('Cannot swap documents in the middle of an edit');
-    const fields = ['style', 'background', 'page', 'guides', 'source', 'textStyles', 'atoms', 'bonds', 'captions', 'arrows', 'shapes', 'adj', 'centresOf',
+    const fields = ['style', 'background', 'page', 'guides', 'source', 'kept', 'textStyles', 'atoms', 'bonds', 'captions', 'arrows', 'shapes', 'adj', 'centresOf',
       'grid', 'atomCell', 'maxBondLen', 'bondLenStale', 'bondLenShrunk', 'undoStack', 'redoStack', 'born'] as const;
     const a = this as unknown as Record<string, unknown>, b = other as unknown as Record<string, unknown>;
     for (const f of fields) { const t = a[f]; a[f] = b[f]; b[f] = t; }

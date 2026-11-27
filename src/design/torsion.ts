@@ -333,12 +333,13 @@ export function refitTorsion(doc: Doc, m: Measure, before: ReadonlyMap<string, u
   for (const s of [...doc.shapes.values()]) {
     const d = s.torsion, f = s.frame;
     if (!d || !f || before.has('s' + s.id)) continue;
-    const movedArrows = f.arrows.filter((id) => before.get('r' + id));
+    // arrows changed in this edit and still there (a deleted one is in `before` but no longer drawn)
+    const movedArrows = f.arrows.filter((id) => before.get('r' + id) && doc.arrows.has(id));
     const movedCaps = f.captions.filter((id) => before.get('c' + id));
     if (!movedArrows.length && !movedCaps.length) continue;
     const at = plotCorner(doc, d, f.arrows);
     // the whole chart moved (its axes too): nothing to do
-    if (!at || f.arrows.some((id) => before.get('r' + id) && isAxis(doc.arrows.get(id)!))) continue;
+    if (!at || movedArrows.some((id) => isAxis(doc.arrows.get(id)!))) continue;
     const x = (phi: number) => at.x + (phi / 360) * d.w;
     const shifts = { ...(d.shifts ?? {}) };
     let changed = false;

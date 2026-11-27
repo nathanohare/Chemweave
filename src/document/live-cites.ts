@@ -320,12 +320,24 @@ export function bibFieldApp(instr: string): CiteManager | null {
 }
 
 /**
+ * Two links to the same item in a manager's library: by its addresses when both have them (Zotero's
+ * and Mendeley's URIs), else by the manager's id. Mendeley Desktop numbers each citation's items
+ * ITEM-1, ITEM-2… afresh, so such an id names no item and never links two citations' items.
+ */
+function sameItem(a: RefLink, b: RefLink): boolean {
+  if (a.app !== b.app) return false;
+  if (a.uris?.length && b.uris?.length) return a.uris.some((u) => b.uris!.includes(u));
+  if (a.app === 'mendeley' && /^ITEM-\d+$/i.test(b.id)) return false;
+  return a.id === b.id;
+}
+
+/**
  * The document's reference for a cited item: the one already linked to the same item, or the
  * same reference (by DOI, or title and year), which gets the link; else the item is added.
  */
 export function placeRef(refs: Reference[], got: Reference): string {
   const link = got.live!;
-  const linked = refs.find((r) => r.live?.app === link.app && r.live.id === link.id);
+  const linked = refs.find((r) => !!r.live && sameItem(r.live, link));
   if (linked) return linked.id;
   // one of ours, written for the manager under its own id
   const ours = refs.find((r) => !r.live && r.id === link.id);

@@ -1072,10 +1072,10 @@ export function equationRun(id: number, style: rt.RunStyle): TextRun {
   return objectRun(id, rt.cleanStyle({ ...style, sub: undefined, sup: undefined }));
 }
 
-/** The objects inside an object (structures in a table's cells, citations in a footnote), in order. */
+/** The objects inside an object (structures in a table's cells, citations in a footnote, equations and fields in a text box), in order. */
 export function innerObjects(o: DocObject | undefined): number[] {
   if (o?.kind === 'table') return o.table.rows.flatMap((row) => row.flatMap((c) => objectsInText(c.runs)));
-  if (o?.kind === 'note') return objectsInText(o.runs);
+  if (o?.kind === 'note' || o?.kind === 'textbox') return objectsInText(o.runs);
   return [];
 }
 
@@ -1144,8 +1144,9 @@ export function usedObjects(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<
   const used = new Set(objectsInText(flatRuns(t)));
   // with those in the headers and footers
   if (t.hf) for (const id of hfObjectIds(allHf({ hf: t.hf, paras: t.paras }), t.objects)) used.add(id);
-  // and those inside them (citations in footnotes)
-  for (const id of [...used]) for (const x of innerObjects(t.objects[id])) used.add(x);
+  // and those inside them (citations in footnotes), at any depth: a Set's loop also visits the ids
+  // added while it runs (an equation in a text box in a table cell)
+  for (const id of used) for (const x of innerObjects(t.objects[id])) used.add(x);
   return used;
 }
 

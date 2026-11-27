@@ -218,6 +218,14 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 /** Commands that, in a text box, work on its text (others leave the box first). */
 const BOX_COMMANDS = /^(format-painter$|(insert|remove|open)-link$|insert-symbol$|doc-(align-|justify|bold|italic|underline|sub|sup|formula|stereo-italic|raise-charges|highlight|bullets|numbering|indent|outdent)|line-|font-|select-all$|undo$|redo$|zoom-|copy$|cut$|paste$|box-|find$|replace$|wrap-)/;
 
+/**
+ * The Header & Footer tab's commands, run while a header or footer is typed into: they work on
+ * that header (Previous, Next, Link to Previous, Different First Page…), so it isn't left first.
+ * (Close leaves it as any other command does, the window staying put; Picture… changes the
+ * section's header straight away, so the one typed into is finished first.)
+ */
+const HF_COMMANDS = /^(hf-(?!picture$|close$)|numbers-|page-number-format$)/;
+
 /** Commands that, in a table cell, work there too (others leave the cell first). */
 const CELL_COMMANDS = /^(table-|tbl-|insert-table$|insert-structure$|structure-from-name-doc$|name-to-structure$|insert-picture$|insert-object$|paste-object$|edit-figure$|compound-number$|cross-reference$|insert-citation$)/;
 
@@ -2308,6 +2316,8 @@ export class DocumentMode {
       if (o.kind === 'table') objects[id] = { ...o, table: { ...o.table, rows: o.table.rows.map((row) => row.map((cell) => ({ ...cell, runs: remap(cell.runs) }))) } };
       // and the citations in a pasted footnote
       if (o.kind === 'note') objects[id] = { ...o, runs: remap(o.runs) };
+      // and the equations, fields and figures in a pasted text box
+      if (o.kind === 'textbox') objects[id] = { ...o, runs: remap(o.runs) };
     }
     const b = f.box?.cell ? f.box : null;
     // into a table cell: no text boxes, bibliographies or notes inside it (a table goes in as a table in the cell)
@@ -3898,7 +3908,7 @@ export class DocumentMode {
     const f = this.file;
     if (!f) return false;
     // in a text box, the text buttons work on its text; other commands leave it first
-    if (f.box && !BOX_COMMANDS.test(cmd) && !(f.box.cell && CELL_COMMANDS.test(cmd))) this.stopBox();
+    if (f.box && !BOX_COMMANDS.test(cmd) && !(f.box.cell && CELL_COMMANDS.test(cmd)) && !(f.box.hf && HF_COMMANDS.test(cmd))) this.stopBox();
     if (/^table-/.test(cmd)) { this.tableCommand(cmd); return true; }
     if (/^outline-/.test(cmd)) { this.outlineCommand(cmd); return true; }
     const kind = VIEW_COMMANDS[cmd];
@@ -4160,13 +4170,12 @@ export class DocumentMode {
         const page = cmd === 'hf-first' && f.box?.hf ? f.layout().pages[f.box.hf.page] : undefined;
         const mine = page ? sectionsOf(f.t)[page.section] : undefined;
         if (mine?.linked) {
-          this.hfChange(() => f.ed.update(changeSection(f.t, mine.index, { titlePg: !mine.hf.firstPage }), 'Different First Page'));
+          this.hfChange(() => f.ed.update(changeSection(f.t, mine.index, { titlePg: !sectionsOf(f.t)[mine.index].hf.firstPage }), 'Different First Page'));
           this.updateRibbon();
           return true;
         }
-        const hf = this.section().hf;
         const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
-        this.setSection({ hf: cmd === 'hf-first' ? { ...hf, firstPage: !hf.firstPage || undefined, first: hf.first ?? blank() } : { ...hf, oddEven: !hf.oddEven || undefined, even: hf.even ?? blank() } }, cmd === 'hf-first' ? 'Different First Page' : 'Different Odd & Even Pages');
+        this.setSection(({ hf }) => ({ hf: cmd === 'hf-first' ? { ...hf, firstPage: !hf.firstPage || undefined, first: hf.first ?? blank() } : { ...hf, oddEven: !hf.oddEven || undefined, even: hf.even ?? blank() } }), cmd === 'hf-first' ? 'Different First Page' : 'Different Odd & Even Pages');
         this.updateRibbon();
         return true;
       }
@@ -4175,9 +4184,7 @@ export class DocumentMode {
       case 'hf-plain': this.headerPlain(); return true;
       case 'footer-edit': this.editHfHere('footer'); return true;
       case 'numbers-s': {
-        const hf = this.section().hf;
-        const s = hf.prefix === 'S';
-        this.setSection({ hf: { ...hf, prefix: s ? '' : 'S', numbers: hf.numbers === 'none' ? 'footer-center' : hf.numbers } }, 'Page numbers');
+        this.setSection(({ hf }) => ({ hf: { ...hf, prefix: hf.prefix === 'S' ? '' : 'S', numbers: hf.numbers === 'none' ? 'footer-center' : hf.numbers } }), 'Page numbers');
         break;
       }
       case 'page-number-format': void this.pageNumberFormat(); return true;
@@ -4221,11 +4228,15 @@ export class DocumentMode {
   }
   private sections: { t: DocText; secs: Section[] } | null = null;
 
-  /** Change the section the caret is in. */
-  private setSection(patch: SectionPatch, label: string): void {
+  /**
+   * Change the section the caret is in. A patch built from the section's settings is passed as a
+   * function of the section: while a header is typed into, it is worked out after that header is
+   * finished (which can change the section's `hf`), so it never puts back what finishing changed.
+   */
+  private setSection(patch: SectionPatch | ((sec: Section) => SectionPatch), label: string): void {
     const f = this.file!;
     const index = this.section().index;
-    this.hfChange(() => f.ed.update(changeSection(f.t, index, patch), label));
+    this.hfChange(() => f.ed.update(changeSection(f.t, index, typeof patch === 'function' ? patch(sectionsOf(f.t)[index]) : patch), label));
   }
 
   // ---------------------------------------------------------------- headers and footers on the page
@@ -4309,8 +4320,10 @@ export class DocumentMode {
     const pages = f.layout().pages;
     const own = pages[at.page]?.section ?? 0;
     if (own === 0) { this.host.flash('The first section has no section before it to link to.'); return; }
-    const sec = sectionsOf(f.t)[own];
-    this.hfChange(() => f.ed.update(changeSection(f.t, own, sec.linked ? { hf: sec.hf, linked: false } : { linked: true, titlePg: hasTitlePg(sec.hf) }), 'Link to Previous'));
+    this.hfChange(() => {
+      const sec = sectionsOf(f.t)[own];
+      f.ed.update(changeSection(f.t, own, sec.linked ? { hf: sec.hf, linked: false } : { linked: true, titlePg: hasTitlePg(sec.hf) }), 'Link to Previous');
+    });
   }
 
   /** Header ▾ and Footer ▾: ready-made headers and footers, and Edit and Remove. */
@@ -4361,7 +4374,7 @@ export class DocumentMode {
     if (!f) return;
     const hf = this.section().hf;
     const tick = (on: boolean, label: string) => `${on ? '✓' : '\u2003'} ${label}`;
-    const place = (v: NumberPlace) => this.setSection({ hf: { ...hf, numbers: v } }, 'Page numbers');
+    const place = (v: NumberPlace) => this.setSection((sec) => ({ hf: { ...sec.hf, numbers: v } }), 'Page numbers');
     const at = (v: NumberPlace, label: string): [string, () => void] => [tick(hf.numbers === v, label), () => place(v)];
     popupMenu(x, y, [
       at('header-left', 'Top of Page, Left'), at('header-center', 'Top of Page, Center'), at('header-right', 'Top of Page, Right'),
@@ -4459,7 +4472,7 @@ export class DocumentMode {
       if (!(n >= 1 && n <= 4)) return false;
       page({ cols: n > 1 ? n : undefined });
     } else if (what === 'numbers') {
-      this.setSection({ hf: { ...sec.hf, numbers: v as NumberPlace } }, 'Page numbers');
+      this.setSection((now) => ({ hf: { ...now.hf, numbers: v as NumberPlace } }), 'Page numbers');
     } else if (what === 'breaks') {
       if (v === 'page' || v === 'column') this.pageBreak(v === 'column');
       else if (v in BREAK_NAMES) this.sectionBreak(v as BreakKind);
@@ -4536,8 +4549,7 @@ export class DocumentMode {
     if (!f) return;
     const sec = this.section();
     if (!sec.hf.bodies) { this.host.flash('This section\'s header and footer are plain text already.'); return; }
-    const { bodies: _b, ...hf } = sec.hf;
-    this.setSection({ hf }, 'Plain header and footer');
+    this.setSection((now) => { const { bodies: _b, ...hf } = now.hf; return { hf }; }, 'Plain header and footer');
   }
 
   /** Layout > Hyphenation > Hyphenation Options: on or off, the hyphenation zone, how many hyphens in a row, and words in capitals. */

@@ -3163,10 +3163,10 @@ function rgbHex(c: Element): string {
   return '#' + h('r') + h('g') + h('b');
 }
 
-/** Move an element and everything inside it. */
+/** Move an element and everything inside it (a curve's CurvePoints too: ChemDraw places a curve by them alone). */
 function shift(e: Element, dx: number, dy: number): void {
   if (!dx && !dy) return;
-  for (const name of POSITION_ATTRS) {
+  for (const name of [...POSITION_ATTRS, 'CurvePoints']) {
     const v = e.getAttribute(name);
     if (v === null) continue;
     const n = nums(v);

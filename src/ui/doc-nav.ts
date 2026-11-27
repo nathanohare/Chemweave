@@ -112,6 +112,9 @@ export class DocNav {
     if (!this.hits.length) return;
     this.at = (this.at + dir + this.hits.length) % this.hits.length;
     this.host.goToHit(this.hits[this.at]);
+    // the keys stay in the search box (going to the hit focuses the page, where the next Enter
+    // would replace the selected hit with a paragraph break)
+    this.search.focus();
     this.render();
   }
 
