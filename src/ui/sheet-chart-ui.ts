@@ -450,11 +450,11 @@ export class SheetCharts {
     // treemaps and decomposition trees open up by clicks on the chart once it is selected
     const opened = c.path?.length ? c.path.join(' › ') : '';
     if (c.kind === 'treemap') {
-      const drilled = row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill up')) : null);
+      const drilled = row('Drilled into', note(opened || 'The whole', 'cp-value'), opened ? button('Drill Up', () => this.patch((x) => clean({ ...x, path: undefined }), 'Drill Up')) : null);
       addInfo(drilled.firstElementChild, 'Click a box of the chart to drill into it, and a step of the trail above it to go back up.');
       out.push(drilled);
     } else if (c.kind === 'decomp') {
-      const expanded = row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse tree')) : null);
+      const expanded = row('Expanded', note(opened || 'The first level only', 'cp-value'), opened ? button('Collapse', () => this.patch((x) => clean({ ...x, path: undefined }), 'Collapse Tree')) : null);
       addInfo(expanded.firstElementChild, 'Click a node of the chart to split it by the next level, and click it again to close it.');
       out.push(expanded);
     }
@@ -513,7 +513,7 @@ export class SheetCharts {
         out.push(row('Line style', select([['solid', 'Solid'], ['dash', 'Dashed'], ['dot', 'Dotted']], s.dash ?? 'solid', (v) => this.patchSeries(i, { dash: v === 'solid' ? undefined : (v as 'dash') }, 'Line style')),
           numberBox(s.lineWidth, (v) => this.patchSeries(i, { lineWidth: v }, 'Line width'), '2', 'px')));
       }
-      const remove = () => row('', button('Remove Series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove series')));
+      const remove = () => row('', button('Remove Series', () => this.patch((x) => ({ ...x, series: x.series.filter((_, j) => j !== i) }), 'Remove Series')));
       if (c.kind !== 'box') out.push(row('Values shown', check(!!s.labels, (v) => this.patchSeries(i, { labels: v || undefined }, 'Data labels')),
         c.kind === 'scatter' ? check(!!s.labelX, (v) => this.patchSeries(i, { labelX: v || undefined, ...(v ? { labels: true } : {}) }, 'Data labels'), 'Show x (m/z)') : null));
       if (!FITTED.has(c.kind)) { if (c.series.length > 1 && c.kind !== 'pie') out.push(remove()); return; }

@@ -5660,7 +5660,7 @@ const rulers = new SlideRulers(host, {
     // a new guide, shown, dragged from the ruler
     const next = { ...view, showGuides: true, guides: { x: [...view.guides.x], y: [...view.guides.y] } };
     next.guides[axis].push(axis === 'x' ? -1e6 : -1e6);
-    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add guide', view);
+    startGuideDrag(d, next, { axis, i: next.guides[axis].length - 1 }, e, 'Add Guide', view);
   },
 });
 
@@ -5698,7 +5698,7 @@ function startGuideDrag(d: Deck, view: SlideView, which: { axis: 'x' | 'y'; i: n
     const off = v < 0 || v > (which.axis === 'x' ? d.size.w : d.size.h);
     if (off) view.guides[which.axis].splice(which.i, 1);
     d.settings.view = before;
-    d.setSettings({ ...d.settings, view }, off ? 'Remove guide' : label);
+    d.setSettings({ ...d.settings, view }, off ? 'Remove Guide' : label);
     renderer.repaintAll();
     editor.requestScene();
   };
@@ -5755,7 +5755,7 @@ function toggleGuides(): void {
   const d = deckNow();
   if (!d || ws.active.mode !== 'slides') return;
   const v = slideViewOf(d);
-  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide guides' : 'Show guides');
+  d.setSettings({ ...d.settings, view: { ...v, guides: { x: [...v.guides.x], y: [...v.guides.y] }, showGuides: !v.showGuides } }, v.showGuides ? 'Hide Guides' : 'Show Guides');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -5770,7 +5770,7 @@ async function gridSettings(): Promise<void> {
   slideLook.grid = got.grid;
   guidesOn.slides = got.smart;
   Object.assign(rulerPrefs, got.prefs);
-  d.setSettings({ ...d.settings, view: got.view }, 'Grid and guides');
+  d.setSettings({ ...d.settings, view: got.view }, 'Grid and Guides');
   showGuides();
   showRulers();
   storeSettings();
@@ -5787,7 +5787,7 @@ function addGuide(axis: 'x' | 'y'): void {
   // not a second guide where one is already (the deck's first ones are down the middle, hidden): it shows
   const mid = (axis === 'x' ? d.size.w : d.size.h) / 2;
   if (!next.guides[axis].some((g) => Math.abs(g - mid) < 0.01)) next.guides[axis].push(mid);
-  d.setSettings({ ...d.settings, view: next }, 'Add guide');
+  d.setSettings({ ...d.settings, view: next }, 'Add Guide');
   showRulers();
   renderer.repaintAll();
   editor.requestScene();
@@ -8465,7 +8465,7 @@ function clearNarration(which: 'slide' | 'all'): void {
   if (!d) return;
   const ix = clearTargets(d, which).filter((i) => d.narrated(i));
   if (!ix.length) { flash(which === 'all' ? 'No slide has narration to clear.' : 'This slide has no narration to clear.'); return; }
-  d.editSlides(which === 'all' ? 'Clear narration on all slides' : 'Clear narration', ix, (sd) => {
+  d.editSlides(which === 'all' ? 'Clear Narration on All Slides' : 'Clear Narration', ix, (sd) => {
     for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
   });
   flash(`Narration cleared from ${ix.length} slide${ix.length > 1 ? 's' : ''}. Their times stay (Clear ▸ Timings takes those off).`);
@@ -8511,7 +8511,7 @@ function wireShows(presenter: Presenter, presenterView: PresenterView, inkShape:
         const ix = [...sounds.keys()].filter((i) => i >= 0 && i < d.slides.length);
         if (ix.length) {
           const poster = speakerPng(), s = 24;
-          d.editSlides('Record narration', ix, (sd, i) => {
+          d.editSlides('Record Narration', ix, (sd, i) => {
             // a new recording takes the place of the slide's old one
             for (const sh of [...sd.shapes.values()]) if (sh.video?.narration) sd.removeShape(sh.id);
             const n = sounds.get(i)!;
@@ -8587,7 +8587,7 @@ async function customShowsCmd(): Promise<void> {
   if (!got || deckNow() !== d) return;
   const show = d.settings.show && d.settings.show.custom !== undefined && !got.shows.some((c) => c.id === d.settings.show!.custom) ? { ...d.settings.show, custom: undefined } : d.settings.show;
   if (show && show.custom === undefined) delete show.custom;
-  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom shows');
+  d.setSettings({ ...d.settings, customShows: got.shows, ...(show ? { show } : {}) }, 'Custom Shows');
   if (got.play !== undefined) present(false, false, { custom: got.play });
 }
 
@@ -11459,14 +11459,14 @@ const COMMANDS: Record<string, () => unknown> = {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use timings' : 'Advance manually');
+    d.setSettings({ ...d.settings, show: { ...s, manual: s.manual ? undefined : true } }, s.manual ? 'Use Timings' : 'Advance Manually');
     showSlideState();
   },
   'play-narrations': () => {
     const d = deckNow();
     if (!d) return;
     const s = d.settings.show ?? defaultShow();
-    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play narrations' : 'Show without narration');
+    d.setSettings({ ...d.settings, show: { ...s, noNarration: s.noNarration ? undefined : true } }, s.noNarration ? 'Play Narrations' : 'Show without Narration');
     showSlideState();
   },
   'header-footer': () => void headerFooter(),

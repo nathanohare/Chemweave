@@ -147,3 +147,31 @@ describe('Slide undo steps are in Title Case (F854)', () => {
     has('src/main.ts', "'Set Up Show'", "'Rehearse Timings'", "'Clear Timings on All Slides'");
   });
 });
+
+describe('Round 2: the user guide names the buttons the app has', () => {
+  it('uses the renamed buttons', () => {
+    has('docs/guide/slides.md', '**References on Slide…**', '**Mark Areas to Keep**', '**Mark Areas to Remove**', '**Original Size**', '**Apply to This Slide**');
+    has('docs/guide/design.md', '**Remove White…**');
+    has('docs/guide/sheets.md', '**First-Order Decay**', 'Σ Values on Rows');
+    has('docs/guide/documents.md', '**Replace All**');
+    has('docs/guide/si-project.md', 'Header, Footer and Page Numbers');
+  });
+  it('no longer uses the old names', () => {
+    hasNot('docs/guide/slides.md', '**Look…**', '**Mark to keep**', '**Original size**', '**Apply to this slide**');
+    hasNot('docs/guide/design.md', '**Remove white…**');
+    hasNot('docs/guide/sheets.md', '**First-order decay**', 'Σ Values down the rows');
+    hasNot('docs/guide/documents.md', 'and **All** for every match');
+  });
+  it('other paths to the same commands use the same undo names', () => {
+    has('src/ui/outline-view.ts', "'New Slide'");
+    hasNot('src/ui/outline-view.ts', "'New slide'");
+    has('src/ui/sheet-view.ts', "'Column Width' : 'Row Height'", "'Row Height' : 'Column Width'");
+    hasNot('src/ui/sheet-view.ts', "'Row height'", "'Column width'");
+    has('src/ui/sheet-mode.ts', "'Reset to Calculated'");
+    has('src/ui/dashboard-ui.ts', "'Clear Slicer'");
+    has('src/ui/dashboard-view.ts', "'Clear Slicer'");
+    has('src/ui/background-dialog.ts', '`Apply to ${o.count} Slides`');
+    has('src/ui/sheet-sparkline-ui.ts', "'More Colors… '");
+  });
+  it('the float box leaves an "i" in its title bar out of the drag', () => has('src/ui/float-box.ts', "closest('button, .info-icon')"));
+});

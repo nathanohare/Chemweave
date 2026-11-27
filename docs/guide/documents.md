@@ -441,9 +441,9 @@ Letters are set in italic as variables. Use `\mathrm{…}` for element symbols, 
 
 ## Find and replace
 
-**Home** tab ▸ **Find** (Ctrl+F) opens a box at the top right of the pages. Every match is lit up; Enter and Shift+Enter step through them, and **Match case** and **Whole words** narrow the search. **Replace** (Ctrl+H) adds the replace part, with **Replace** for one at a time and **All** for every match.
+**Home** tab ▸ **Find** (Ctrl+F) opens a box at the top right of the pages. Every match is lit up; Enter and Shift+Enter step through them, and **Match case** and **Whole words** narrow the search. **Replace** (Ctrl+H) adds the replace part, with **Replace** for one at a time and **Replace All** for every match.
 
-The **Make it** buttons change how the replacement looks: formula, bold, italic, underline, subscript, superscript, or plain. Leave "Replace with" empty to change only the style: for example, find `CH2Cl2`, choose the formula look, then **All**, and every CH2Cl2 in the text becomes CH₂Cl₂. Each Replace All is one step to undo. Finding goes by the letters alone, so CH2Cl2 is found however it is formatted.
+The **Make it** buttons change how the replacement looks: formula, bold, italic, underline, subscript, superscript, or plain. Leave "Replace with" empty to change only the style: for example, find `CH2Cl2`, choose the formula look, then **Replace All**, and every CH2Cl2 in the text becomes CH₂Cl₂. Each Replace All is one step to undo. Finding goes by the letters alone, so CH2Cl2 is found however it is formatted.
 
 **Go To** (Ctrl+G or F5) goes to a page, section, line, bookmark, comment, footnote, endnote, field, table, figure, equation or heading: type its number, `+` or `-` with a number to go on or back from the cursor, or a bookmark's name. **Select ▾** selects everything, the figures, or all the text formatted like the text at the cursor (then change its formatting in one go).
 

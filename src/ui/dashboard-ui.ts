@@ -236,7 +236,7 @@ export class DashboardUi {
     if (!t) { popupMenu(x, y, [...add, null, ['Clear All Filters', () => this.clearFilters()], ['Dashboard Settings', () => this.focusPanel()]]); return; }
     const items: MenuItem[] = [];
     if (t.kind === 'chart') items.push(['Clear Chart Filter', () => this.clearPick(t), !!t.pick?.length], ...this.chartItems(t), null);
-    if (t.kind === 'slicer') items.push(['Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear slicer'), !!t.selected?.length], null);
+    if (t.kind === 'slicer') items.push(['Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear Slicer'), !!t.selected?.length], null);
     items.push(
       ['Settings…', () => this.focusPanel()],
       ['Duplicate', () => { const d = this.dash!; const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile; this.add(copy); }],
@@ -296,8 +296,8 @@ export class DashboardUi {
     const note = (s: string, cls = 'muted small') => Object.assign(document.createElement('p'), { textContent: s, className: cls });
     if (!t) {
       out.push(withInfo(head('Dashboard'), 'Click a tile to change it. Drag a tile to move it, or its corner to resize it. Slicer buttons filter every tile fed by the same table, and so does clicking a bar, slice, Sankey node or band, treemap box or decomposition tree node.'));
-      out.push(row('Columns', numberBox(d.cols, (v) => v && this.set({ ...d, cols: Math.max(2, Math.min(24, Math.round(v))), tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, Math.max(2, Math.round(v))), x: Math.min(x.x, Math.max(0, Math.round(v) - x.w)) })) }, 'Dashboard columns'))));
-      out.push(row('Row height', numberBox(d.rowH, (v) => v && this.set({ ...d, rowH: Math.max(20, v) }, 'Dashboard row height'), '', 'px')));
+      out.push(row('Columns', numberBox(d.cols, (v) => v && this.set({ ...d, cols: Math.max(2, Math.min(24, Math.round(v))), tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, Math.max(2, Math.round(v))), x: Math.min(x.x, Math.max(0, Math.round(v) - x.w)) })) }, 'Dashboard Columns'))));
+      out.push(row('Row height', numberBox(d.rowH, (v) => v && this.set({ ...d, rowH: Math.max(20, v) }, 'Dashboard Row Height'), '', 'px')));
       out.push(row('Gap', numberBox(d.gap, (v) => v !== undefined && this.set({ ...d, gap: Math.max(0, v) }, 'Dashboard gap'), '', 'px')));
       out.push(row('Background', colour(d.background ?? '#f3f4f6', (v) => this.set({ ...d, background: v }, 'Dashboard background')), d.background ? button('Default', () => this.set({ ...d, background: undefined }, 'Dashboard background')) : null));
       out.push(head('Add a tile'));
@@ -339,7 +339,7 @@ export class DashboardUi {
         // the tile sets the chart's size, background and border, so those rows go
         const tileSets = new Set(['Size', 'Background', 'Border']);
         if (!hasLevels(t.chart.kind) && t.chart.kind !== 'scatter') {
-          const same = row('Same labels', select([['', 'One bar or point per row'], ...(['average', 'sum', 'count', 'median', 'min', 'max'] as Aggregate[]).map((a): [string, string] => [a, `${AGGREGATE_NAMES[a]} of each`])], t.group ?? '', (v) => this.update(t.id, { group: (v as Aggregate) || undefined } as Partial<ChartTile>, 'Combine rows')));
+          const same = row('Same labels', select([['', 'One bar or point per row'], ...(['average', 'sum', 'count', 'median', 'min', 'max'] as Aggregate[]).map((a): [string, string] => [a, `${AGGREGATE_NAMES[a]} of each`])], t.group ?? '', (v) => this.update(t.id, { group: (v as Aggregate) || undefined } as Partial<ChartTile>, 'Combine Rows')));
           if (t.group === 'average' || t.group === 'median') addInfo(same.firstElementChild, 'Turn on error bars to show the standard deviation of each label.');
           out.push(same);
         }
@@ -374,7 +374,7 @@ export class DashboardUi {
         addInfo(filterBy.firstElementChild, 'Click buttons on the tile to filter (click again to remove one).');
         out.push(filterBy);
         out.push(note(t.selected?.length ? `Showing only: ${t.selected.join(', ')}` : 'Showing everything.'));
-        if (t.selected?.length) out.push(rowOf(button('Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear slicer'))));
+        if (t.selected?.length) out.push(rowOf(button('Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear Slicer'))));
         break;
       }
       case 'gallery': {

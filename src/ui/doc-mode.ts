@@ -5831,7 +5831,7 @@ export class DocumentMode {
     }
     if (!all.some((x) => x.start < end && x.end > start)) { this.goToChange(true); return; }
     // the caret stays where the change was; what follows moved up by what was taken away
-    ed.update(decide(ed.t, accept, start, end), accept ? 'Accept change' : 'Reject change', start, start);
+    ed.update(decide(ed.t, accept, start, end), accept ? 'Accept Change' : 'Reject Change', start, start);
     this.goToChange(true, start);
   }
 

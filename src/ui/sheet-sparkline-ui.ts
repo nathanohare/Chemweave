@@ -45,7 +45,7 @@ export function colourPopup(x: number, y: number, wb: Workbook | null, pick: (c:
     input.type = 'color';
     input.dataset.systemPicker = '';
     input.addEventListener('change', () => done(input.value));
-    more.append('More colors ', input);
+    more.append('More Colors… ', input);
     m.append(grid, more);
   });
 }

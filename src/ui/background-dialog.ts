@@ -344,7 +344,7 @@ export function formatBackground(o: BackgroundDialogOptions): Promise<Background
     const ok = document.createElement('button');
     ok.type = 'submit';
     ok.className = 'primary';
-    ok.textContent = o.design ? 'Apply' : o.count > 1 ? `Apply to ${o.count} slides` : 'Apply to This Slide';
+    ok.textContent = o.design ? 'Apply' : o.count > 1 ? `Apply to ${o.count} Slides` : 'Apply to This Slide';
     const spacer = document.createElement('span');
     spacer.className = 'bg-spacer';
     buttons.append(reset, all, spacer, cancel, ok);

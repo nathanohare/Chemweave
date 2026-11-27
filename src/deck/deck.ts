@@ -2588,7 +2588,7 @@ export class Deck {
     this.sections = v.real.sections;
     this.master = v.real.master;
     if (was) this.attach();
-    this.applyMaster(next, 'Slide master');
+    this.applyMaster(next, 'Slide Master');
     this.onSwitch();
     this.onChange();
   }

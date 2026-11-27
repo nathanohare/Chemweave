@@ -1004,7 +1004,7 @@ export class SheetView {
     const to = drawn ? hitPart(drawn.hits, (x - box.x) / this.zoom, (y - box.y) / this.zoom)?.drill : undefined;
     if (!to) return;
     const { path: _from, ...closed } = c;
-    const label = c.kind === 'decomp' ? (to.length ? 'Expand tree' : 'Collapse tree') : to.length > (c.path?.length ?? 0) ? 'Drill down' : 'Drill up';
+    const label = c.kind === 'decomp' ? (to.length ? 'Expand Tree' : 'Collapse Tree') : to.length > (c.path?.length ?? 0) ? 'Drill Down' : 'Drill Up';
     this.replaceChart(to.length ? { ...closed, path: to } : closed, label);
   }
 
@@ -3509,7 +3509,7 @@ export class SheetView {
       else map.set(p.index, d.orig);
       const sel = this.sel.range;
       const whole = p.kind === 'col' ? sel.r1 === 0 && sel.r2 >= MAX_ROWS - 1 && p.index >= sel.c1 && p.index <= sel.c2 : sel.c1 === 0 && sel.c2 >= MAX_COLS - 1 && p.index >= sel.r1 && p.index <= sel.r2;
-      wb.edit(p.kind === 'col' ? 'Column width' : 'Row height', () => {
+      wb.edit(p.kind === 'col' ? 'Column Width' : 'Row Height', () => {
         // with several whole columns (or rows) selected, they all get the new size
         // (as far as the cells in use go, and always as far as the one dragged)
         const from = whole ? (p.kind === 'col' ? sel.c1 : sel.r1) : p.index, to = whole ? lastLine(sel, p.kind === 'col' ? 'col' : 'row', p.kind === 'col' ? s.lastCol : s.lastRow) : p.index;
@@ -3628,7 +3628,7 @@ export class SheetView {
     const wb = this.wb!;
     const s = wb.sheet;
     this.commitEdit();
-    wb.edit(kind === 'row' ? 'Row height' : 'Column width', () => {
+    wb.edit(kind === 'row' ? 'Row Height' : 'Column Width', () => {
       for (let i = from; i <= to; i++) {
         if (kind === 'row') s.setRowHeight(i, undefined);
         else s.setColWidth(i, Math.max(24, Math.min(600, this.fittedWidth(s, i) || DEFAULT_COL_W)));

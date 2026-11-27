@@ -888,7 +888,7 @@ Two readers can read pictures:
 
 ## Colors and palettes
 
-Every color button opens a palette: Automatic, the standard colors, the colors already in the drawing, custom palettes, and **More colors…**. Atoms, bonds and whole structures can be colored from the Style panel.
+Every color button opens a palette: Automatic, the standard colors, the colors already in the drawing, custom palettes, and **More Colors…**. Atoms, bonds and whole structures can be colored from the Style panel.
 
 **Edit ▸ Color Palettes…** makes rows of your custom colors, which show in every color menu in every mode. Start a **New palette**, add a ready-made row (color-blind safe, grays, blues or warm), or make one from the drawing's colors.
 

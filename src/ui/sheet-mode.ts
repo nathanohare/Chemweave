@@ -1644,7 +1644,7 @@ export class SheetMode {
       const allowed = cond?.kind === 'values' ? new Set(cond.allowed) : null;
       const boxes: HTMLInputElement[] = [];
       const everyValue = [...seen.keys()].sort((a, b) => (a === '' ? 1 : b === '' ? -1 : a.localeCompare(b, undefined, { numeric: true })));
-      // a long list shows its first values; the others have no box: they follow (Select all)
+      // a long list shows its first values; the others have no box: they follow (Select All)
       const sorted = everyValue.slice(0, FILTER_LIST_MAX);
       const listed = new Set(sorted);
       const all = document.createElement('label');
@@ -1658,7 +1658,7 @@ export class SheetMode {
       if (everyValue.length > sorted.length) {
         const more = document.createElement('p');
         more.className = 'muted';
-        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others are shown while (Select all) is checked, unless another filter hides them.`;
+        more.textContent = `The first ${sorted.length} of ${everyValue.length} values are listed. The others are shown while (Select All) is checked, unless another filter hides them.`;
         list.append(more);
       }
       for (const t of sorted) {
@@ -1672,7 +1672,7 @@ export class SheetMode {
         list.append(l);
       }
       const ok = btn('OK', () => {
-        // the values not listed are not in a box: they follow (Select all), or an earlier choice if it was left alone
+        // the values not listed are not in a box: they follow (Select All), or an earlier choice if it was left alone
         const picked = boxes.filter((b) => b.checked).map((b) => b.value);
         const unlisted = everyValue.filter((t) => !listed.has(t) && (allTouched ? allBox.checked : !allowed || allowed.has(t)));
         const everyThing = picked.length === boxes.length && unlisted.length === everyValue.length - sorted.length;
@@ -2094,7 +2094,7 @@ export class SheetMode {
     const R = v.sel.range;
     const keys = s.keysIn(R).filter((k) => s.isOverride(rowOf(k), colOf(k)));
     if (!keys.length) { this.host.flash('None of the selected cells has a value typed over a calculated one.'); return; }
-    this.edit('Reset to calculated', (sh) => {
+    this.edit('Reset to Calculated', (sh) => {
       for (const k of keys) sh.setCell(rowOf(k), colOf(k), { style: sh.cell(rowOf(k), colOf(k))?.style });
     });
     this.host.flash(`Reset ${keys.length} cell${keys.length > 1 ? 's' : ''} to the calculated value.`);
