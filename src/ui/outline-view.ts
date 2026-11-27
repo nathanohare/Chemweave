@@ -87,11 +87,21 @@ export class OutlineView {
   /** The slides the outline was last built from (to tell a change to one slide from a change to the list). */
   private built: readonly object[] = [];
 
-  /** The outline again from the slides (not while typing in it). */
-  rebuild(): void {
+  /** Are the rows made from these very slides, in this order? */
+  private current(d: Deck): boolean {
+    return d.slides.length === this.built.length && d.slides.every((s, k) => s === this.built[k]);
+  }
+
+  /**
+   * The outline again from the slides. Not while typing in it, unless the slides themselves are
+   * not the ones its rows were made from (each row knows its slide by its place in the list, so
+   * rows left over from before a slide was added would write into the wrong slides), or `force`.
+   */
+  rebuild(force = false): void {
     const d = this.hooks.deck();
     if (!this.shown || !d) return;
-    if (this.el.contains(document.activeElement)) { this.mark(d.index); return; }
+    if (!force && this.el.contains(document.activeElement) && this.current(d)) { this.mark(d.index); return; }
+    clearTimeout(this.typing);
     const scroll = this.el.scrollTop;
     this.built = d.slides.slice();
     this.el.replaceChildren(...d.slides.map((_s, i) => this.row(d, i)));
@@ -191,7 +201,7 @@ export class OutlineView {
     const d = this.hooks.deck();
     if (!d) return;
     d.insertSlide(i + 1, 'title-content', () => {}, 'New Slide');
-    this.rebuild();
+    if (!this.current(d)) this.rebuild(true);
     this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
   }
 
@@ -213,12 +223,15 @@ export class OutlineView {
       const all = body.lookList();
       const moved = { title: all.slice(start, end), body: bodyLooks(after, all.slice(end + 1)) };
       body.value = start > 0 ? before : '';
-      this.commit(i, title, body);
       const d = this.hooks.deck();
       if (!d) return;
+      // the lines taken out of this slide and the new slide they make are one step to undo
+      const was = d.historyLength;
+      this.commit(i, title, body);
       const rest = parseOutline(after);
       d.insertSlide(i + 1, 'title-content', (doc) => { applyOutline(doc, lines[0], rest, moved); }, 'New Slide');
-      this.rebuild();
+      d.joinSince(was, 'New Slide');
+      if (!this.current(d)) this.rebuild(true);
       this.el.querySelectorAll<HTMLElement>('.ol-title')[i + 1]?.focus();
       return;
     }

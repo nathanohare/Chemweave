@@ -21,13 +21,14 @@ import { askKeepInk, systemShortcut, type ShowOptions } from './present';
 type Audience = 'other-screen' | 'window' | 'none';
 
 /** Open the audience window: full screen on another screen when there is one. */
-async function openAudience(): Promise<{ where: Audience; win: Window | null }> {
+export async function openAudience(): Promise<{ where: Audience; win: Window | null }> {
   if (isTauri()) {
     const { WebviewWindow } = await import('@tauri-apps/api/webviewWindow');
     const { availableMonitors, currentMonitor } = await import('@tauri-apps/api/window');
     (await WebviewWindow.getByLabel(AUDIENCE))?.destroy();
     const [all, here] = await Promise.all([availableMonitors(), currentMonitor()]);
-    const other = all.find((m) => !here || m.name !== here.name || m.position.x !== here.position.x || m.position.y !== here.position.y);
+    // (when this window's screen isn't known, no screen can be told to be another one: the audience gets a window)
+    const other = here ? all.find((m) => m.name !== here.name || m.position.x !== here.position.x || m.position.y !== here.position.y) : undefined;
     if (other) {
       const pos = other.position.toLogical(other.scaleFactor), sz = other.size.toLogical(other.scaleFactor);
       new WebviewWindow(AUDIENCE, { url: 'audience.html', title: 'Slide show', x: pos.x, y: pos.y, width: sz.width, height: sz.height, decorations: false, fullscreen: true, focus: false });

@@ -6,7 +6,7 @@ import type { SheetView } from './sheet-view';
 import type { SheetCharts } from './sheet-chart-ui';
 import { ask, Field } from './ask';
 import { addInfo, withInfo } from './info-tip';
-import { refText, readRef, CHART_NAMES, ChartKind, hasLevels } from '../sheet/chart';
+import { refText, readRef, CHART_NAMES, ChartKind, hasLevels, newChartId } from '../sheet/chart';
 import {
   Dashboard, Tile, TileKind, Source, Aggregate, KpiTile, TableTile, SlicerTile, GalleryTile, TextTile, ChartTile,
   AGGREGATE_NAMES, TILE_NAMES, resolveSource, sourceKey, sourceName, columnOf, newTileId, freeSpot, chartOfColumns,
@@ -117,7 +117,7 @@ export class DashboardUi {
         if (got.from !== 'new') {
           // (without the part an Excel file had for it, which is the sheet's chart's)
           const { file: _file, ...c } = existing[Number(got.from)].c;
-          this.add({ id: newTileId(), kind: 'chart', ...this.place('chart'), chart: { ...c, id: newTileId() } });
+          this.add({ id: newTileId(), kind: 'chart', ...this.place('chart'), chart: { ...c, id: newChartId() } });
           return;
         }
       }
@@ -239,7 +239,13 @@ export class DashboardUi {
     if (t.kind === 'slicer') items.push(['Clear This Slicer', () => this.update(t.id, { selected: undefined } as Partial<SlicerTile>, 'Clear Slicer'), !!t.selected?.length], null);
     items.push(
       ['Settings…', () => this.focusPanel()],
-      ['Duplicate', () => { const d = this.dash!; const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile; this.add(copy); }],
+      ['Duplicate', () => {
+        const d = this.dash!;
+        const copy = { ...structuredClone(t), id: newTileId(), ...freeSpot(d, t.w, t.h) } as Tile;
+        // (a chart's id is the key its drawn data is saved under in .xlsx, so the copy needs its own)
+        if (copy.kind === 'chart') copy.chart = { ...copy.chart, id: newChartId() };
+        this.add(copy);
+      }],
       ['Delete Tile', () => this.view.dash.remove(t.id)],
       null,
       ...add,
@@ -296,7 +302,12 @@ export class DashboardUi {
     const note = (s: string, cls = 'muted small') => Object.assign(document.createElement('p'), { textContent: s, className: cls });
     if (!t) {
       out.push(withInfo(head('Dashboard'), 'Click a tile to change it. Drag a tile to move it, or its corner to resize it. Slicer buttons filter every tile fed by the same table, and so does clicking a bar, slice, Sankey node or band, treemap box or decomposition tree node.'));
-      out.push(row('Columns', numberBox(d.cols, (v) => v && this.set({ ...d, cols: Math.max(2, Math.min(24, Math.round(v))), tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, Math.max(2, Math.round(v))), x: Math.min(x.x, Math.max(0, Math.round(v) - x.w)) })) }, 'Dashboard Columns'))));
+      out.push(row('Columns', numberBox(d.cols, (v) => {
+        if (!v) return;
+        // the tiles keep inside the grid as it will be (at most 24 columns), not as typed
+        const n = Math.max(2, Math.min(24, Math.round(v)));
+        this.set({ ...d, cols: n, tiles: d.tiles.map((x) => ({ ...x, w: Math.min(x.w, n), x: Math.min(x.x, Math.max(0, n - x.w)) })) }, 'Dashboard Columns');
+      })));
       out.push(row('Row height', numberBox(d.rowH, (v) => v && this.set({ ...d, rowH: Math.max(20, v) }, 'Dashboard Row Height'), '', 'px')));
       out.push(row('Gap', numberBox(d.gap, (v) => v !== undefined && this.set({ ...d, gap: Math.max(0, v) }, 'Dashboard gap'), '', 'px')));
       out.push(row('Background', colour(d.background ?? '#f3f4f6', (v) => this.set({ ...d, background: v }, 'Dashboard background')), d.background ? button('Default', () => this.set({ ...d, background: undefined }, 'Dashboard background')) : null));
@@ -360,10 +371,15 @@ export class DashboardUi {
       case 'table': {
         out.push(sourceRow(t.source, (s) => this.update(t.id, { source: s, columns: undefined, sortBy: undefined } as Partial<TableTile>)));
         const shown = new Set(t.columns ?? res?.names ?? []);
-        for (const [n] of names) out.push(row('', check(shown.has(n), (v) => {
-          const next = (res?.names ?? []).filter((m) => (m === n ? v : shown.has(m)));
-          this.update(t.id, { columns: next.length === res?.names.length ? undefined : next } as Partial<TableTile>, 'Table columns');
-        }, n)));
+        for (const [n] of names) {
+          const box: HTMLElement = check(shown.has(n), (v) => {
+            const next = (res?.names ?? []).filter((m) => (m === n ? v : shown.has(m)));
+            // (an empty list would mean every column, so the last one stays checked)
+            if (!next.length) { (box.querySelector('input') ?? box as HTMLInputElement).checked = true; return; }
+            this.update(t.id, { columns: next.length === res?.names.length ? undefined : next } as Partial<TableTile>, 'Table columns');
+          }, n);
+          out.push(row('', box));
+        }
         out.push(row('Sort by', select([['', '(sheet order)'], ...names], t.sortBy ?? '', (v) => this.update(t.id, { sortBy: v || undefined } as Partial<TableTile>)), check(!!t.descending, (v) => this.update(t.id, { descending: v || undefined } as Partial<TableTile>), 'Largest first')));
         out.push(row('Most rows', numberBox(t.maxRows, (v) => this.update(t.id, { maxRows: v } as Partial<TableTile>), '200')));
         break;
