@@ -9,7 +9,7 @@
 // rings such as norbornane) keep their drawn shape, resized.
 
 import { Vec, add, sub, mul, dist, cross, angleOf, fromAngle, normAngle, distToSegment, DEG } from '../geom';
-import { isWedge, type Bond, type BondDisplay, type Doc } from '../model';
+import { isWedge, turnedOverWedge as turnedOver, type Bond, type BondDisplay, type Doc } from '../model';
 import { bondLength } from './chemgeom';
 import { atomsOnBonds, countCrossings, CROSSING, inPolygon, segmentsCross, untangleSystem } from './untangle';
 
@@ -272,10 +272,6 @@ function wedgeZ(d: BondDisplay): number {
   return d === 'wedge' || d === 'hollowWedge' ? 1 : d === 'hashWedge' ? -1 : 0;
 }
 
-/** A wedge turned over so that it points the other way (a hollow wedge becomes a hashed one). */
-function turnedOver(d: BondDisplay): BondDisplay {
-  return d === 'wedge' || d === 'hollowWedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d;
-}
 
 /** Which way round a stereocentre's wedges make it (+1 / −1), or 0 when the drawing doesn't say. */
 function handedness(doc: Doc, id: number, c: number, around: number[], ids: number[], pos: Vec[]): number {

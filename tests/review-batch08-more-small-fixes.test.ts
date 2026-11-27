@@ -19,7 +19,7 @@ describe('more small fixes', () => {
     const g: JGraph = { atoms: [{ el: 'C', arom: false, h: 3 }, { el: 'F', arom: false, h: 0 }], bonds: [{ u: 0, v: 1, o: 1 }] };
     const j = predictCouplings(g).find((c) => c.kind === 'HF-gem')?.j;
     expect(j).toBeDefined();
-    expect(Math.abs(j! - 46.4)).toBeLessThan(3);
+    expect(Math.abs(j! - 46.4)).toBeLessThan(0.5);
   });
 
   it('F395: deuterium takes hydrogen\'s volume (CDCl3 as CHCl3)', () => {

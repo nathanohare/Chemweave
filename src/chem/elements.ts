@@ -165,3 +165,23 @@ export function isMetalLabel(label: string): boolean {
 export function lowestValence(z: number, charge = 0): number | undefined {
   return VALENCES[z] ? implicitHydrogens(z, 0, charge) : undefined;
 }
+
+/**
+ * Which atom of a group takes a negative charge given to the whole group (a label's charge, kept
+ * apart from its text: CO2 −, SO3 −). The head atom, unless its bonds already fill its valence:
+ * then the group's first uncharged O, S or N that carries a hydrogen, which the charge replaces
+ * (CO2 − is the carboxylate's O⁻, not C⁻; SO3 − the sulfonate's). `used` is each atom's bond
+ * total, the head's including its bonds outside the group; `hasH` says whether an atom carries a
+ * hydrogen (by default an implicit one). Shared by the molfile writer and Expand Label (review
+ * F398), so a label reads and expands the same way.
+ */
+export function negativeChargeSite(atoms: readonly { z: number; charge?: number }[], used: readonly number[], head: number, q: number,
+  hasH: (i: number) => boolean = (i) => implicitHydrogens(atoms[i].z, Math.ceil(used[i] - 1e-6), 0) > 0): number {
+  if (q >= 0 || atoms.length < 2) return head;
+  const u = Math.ceil(used[head] - 1e-6);
+  const most = maxValence(atoms[head].z, q);
+  // (only when the charge would break that atom's valence: B of B(OH)3 − takes it with its four bonds)
+  if (implicitHydrogens(atoms[head].z, u, 0) > 0 || most === undefined || u <= most) return head;
+  const k = atoms.findIndex((x, i) => i !== head && (x.z === 8 || x.z === 16 || x.z === 7) && !x.charge && hasH(i));
+  return k >= 0 ? k : head;
+}

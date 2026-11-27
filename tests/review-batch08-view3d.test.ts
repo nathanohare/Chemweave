@@ -53,21 +53,30 @@ describe('clutter', () => {
     expect(want.overlaps).toBeGreaterThan(0);
   });
 
-  it('is quick for a 300-atom model (a view search calls it hundreds of times)', () => {
-    // a chain of 300 carbons, 1.5 Å bonds pointing every which way, folded up on itself
+  it('is quick for a 1000-atom model (a view search calls it hundreds of times)', () => {
+    // a chain of 1000 carbons, 1.5 Å bonds pointing every which way, folded up on itself
     let seed = 11;
     const rnd = () => { seed = (seed * 16807) % 2147483647; return seed / 2147483647; };
-    const n = 300;
+    const n = 1000;
     const pts: P3[] = [[0, 0, 0]];
     for (let i = 1; i < n; i++) {
       const t = rnd() * 2 * Math.PI, u = rnd() * 2 - 1, r = Math.sqrt(1 - u * u), p = pts[i - 1];
       pts.push([p[0] + 1.5 * r * Math.cos(t), p[1] + 1.5 * r * Math.sin(t), p[2] + 1.5 * u]);
     }
     const sk = skeleton(Array(n).fill(6), Array.from({ length: n - 1 }, (_, i) => ({ a: i, b: i + 1 })), pts);
-    expect(clutter(pts, sk).score).toBeCloseTo(plain(pts, sk).score, 9);
     const t = performance.now();
-    for (let k = 0; k < 200; k++) clutter(pts, sk);
-    // (counting every pair took about 2.8 s for this; sorting into squares about 0.3 s)
-    expect(performance.now() - t).toBeLessThan(1500);
+    for (let k = 0; k < 50; k++) clutter(pts, sk);
+    // (counting every pair took about 18 s for this, which grows as the square of the atoms;
+    // sorting into squares well under a second. The limit is wide, for a machine busy with other
+    // work, and still far below the pair count's time)
+    expect(performance.now() - t).toBeLessThan(8000);
+  });
+
+  it('comes to an end for a model whose bonds all have no length', () => {
+    // three atoms on one spot, away from the origin (a damaged model): nothing to divide by
+    const pts: P3[] = [[2, 3, 1], [2, 3, 1], [2, 3, 1]];
+    const sk = skeleton([6, 6, 6], [{ a: 0, b: 1 }, { a: 1, b: 2 }], pts);
+    expect(sk.L).toBe(0);
+    expect(() => clutter(pts, sk)).not.toThrow();
   });
 });

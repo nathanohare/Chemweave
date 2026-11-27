@@ -73,11 +73,19 @@ I1 I 0.705 0.5 0.5
     expect(parseSmiles('[O--]').atoms[0].charge).toBe(-2);
     expect(parseSmiles('[*]C').atoms[0].dummy).toBe(true);
   });
+
+  it('F402: a ring number before any atom, or closing on its own atom, is passed over', () => {
+    const g = parseSmiles('1CC1');
+    expect(g.atoms.map((a) => a.z)).toEqual([6, 6]);
+    expect(g.bonds).toHaveLength(1);
+    expect(parseSmiles('.1C').atoms).toHaveLength(1);
+    expect(parseSmiles('C11').bonds).toHaveLength(0);
+  });
 });
 
 describe('F391: a molecule written wrapped across a cell face', () => {
   it('is grown once, not once more one cell along', () => {
-    // a C–C pair 1.5 Å apart across the x face of a 10 Å P1 cell, written as x = 0.95 and
+    // a C–C pair 1.0 Å apart across the x face of a 10 Å P1 cell, written as x = 0.95 and
     // x = 0.05 (wrapped), and the same pair written side by side: one molecule, two atoms, each time
     const cif = (x2: number) => readCif(`data_w
 _cell_length_a 10

@@ -1,9 +1,10 @@
 // Review batch 08, F384, F385 and F405: a lookup's timeout also covers reading the answer's body
 // (a server can send its headers and then stall), and the CAS RN lookup's message names the
-// service that failed. No network: the services' answers are made here.
+// service that failed; a body given up on before it was waited for fails quietly when it fails.
+// No network: the services' answers are made here.
 import { describe, expect, it } from 'vitest';
 import { cactusSmiles, CactusError } from '../src/chem/cactus';
-import { pubchemName, PubChemError, type Fetch } from '../src/chem/pubchem';
+import { pubchemName, PubChemError, untilAborted, type Fetch } from '../src/chem/pubchem';
 import { CasMemory, structureForCas, type CasDeps } from '../src/chem/cas';
 
 /** A 200 answer whose body never comes. */
@@ -21,6 +22,26 @@ describe('timeouts cover the body', () => {
     await expect(r).rejects.toBeInstanceOf(PubChemError);
     await expect(r).rejects.toThrow('did not answer in time');
   }, 10000);
+});
+
+describe('giving up on a body', () => {
+  it('a body already given up on fails quietly when it fails later', async () => {
+    const seen: unknown[] = [];
+    const on = (e: unknown) => { seen.push(e); };
+    process.on('unhandledRejection', on);
+    try {
+      const ctl = new AbortController();
+      ctl.abort();
+      let fail!: (e: Error) => void;
+      const body = new Promise<never>((_, reject) => { fail = reject; });
+      await expect(untilAborted(body, ctl.signal)).rejects.toThrow('Aborted');
+      fail(new Error('the body was lost'));
+      await new Promise((r) => setTimeout(r, 20));
+      expect(seen).toEqual([]);
+    } finally {
+      process.off('unhandledRejection', on);
+    }
+  });
 });
 
 describe('CAS RN lookup messages', () => {

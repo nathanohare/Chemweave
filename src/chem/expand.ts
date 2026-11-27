@@ -4,9 +4,9 @@
 // chemistry engine from SMILES and turned to lie along the bond the label hung from.
 
 import type { Doc, Atom, Bond } from '../model';
-import { isMetalAtom } from '../model';
+import { isMetalAtom, outsideValence } from '../model';
 import { Vec, dist, angleOf, DEG } from '../geom';
-import { SYMBOLS, elementNumber } from './elements';
+import { SYMBOLS, elementNumber, implicitHydrogens, negativeChargeSite, valenceOfBonds } from './elements';
 import { NICKNAMES, labelGraph, type MiniGraph } from './labels';
 import { templateById, atomPlacements, crowdingOf, placeTemplate, freePlacement, type Template, type TemplateAtom, type TemplateBond, type TemplateShape, type TemplateHapto } from './templates';
 import { ligandByAbbr } from './ligands';
@@ -230,6 +230,32 @@ function readMolblock(mb: string): RawMol {
   return { atoms, bonds };
 }
 
+/**
+ * Where a label's own charge goes when it is drawn out: `at` the atom taking it (the head, or for a
+ * negative charge the head's valence can't take, the group's O, S or N with a hydrogen, as
+ * negativeChargeSite says and the molfile writer reads it), and `dropH` an explicit hydrogen on that
+ * atom the charge replaces (-1 for none). `outside` is the head's bond total outside the molfile.
+ */
+function labelChargeSite(raw: RawMol, head: number, q: number, dummy: number, outside = 0): { at: number; dropH: number } {
+  if (q >= 0) return { at: head, dropH: -1 };
+  const zs = raw.atoms.map((p) => ({ z: elementNumber(p.sym) ?? 0, charge: p.chg }));
+  const used = raw.atoms.map(() => 0);
+  const hOn = raw.atoms.map(() => -1);
+  for (const [i, j, o] of raw.bonds) {
+    const v = o === 4 ? 1.5 : o;
+    used[i] += v; used[j] += v;
+    if (zs[j].z === 1 && i !== dummy) hOn[i] = j;
+    if (zs[i].z === 1 && j !== dummy) hOn[j] = i;
+  }
+  used[head] += outside;
+  // (the * stands for the atom the label hangs from: not an atom of the group)
+  const atoms = dummy >= 0 ? zs.map((x, i) => (i === dummy ? { z: 0 } : x)) : zs;
+  const at = negativeChargeSite(atoms, used, head, q, (i) => hOn[i] >= 0 || (zs[i].z !== 0 && implicitH(zs[i].z, used[i])));
+  return { at, dropH: at !== head && hOn[at] >= 0 && !(implicitH(zs[at].z, used[at])) ? hOn[at] : -1 };
+}
+
+const implicitH = (z: number, used: number) => implicitHydrogens(z, Math.ceil(used - 1e-6), 0) > 0;
+
 const isDummy = (sym: string) => sym === '*' || sym === 'R' || sym === 'R#' || sym === 'A';
 
 /**
@@ -276,15 +302,17 @@ export function expandWithMolblock(doc: Doc, labelId: number, molblock: string):
   const pts = crowd(opts[1]) < crowd(opts[0]) - 1e-6 ? opts[1] : opts[0];
   const extra = a.s && a.s !== 1 ? { s: a.s } : {};
   const ids: number[] = [];
+  // the label's own charge (kept apart from its text: PPh3 with a +) goes on its first atom, or a
+  // negative one on the atom the molfile writer gives it (CO2 − is the carboxylate's O⁻; review F398)
+  const site = labelChargeSite(raw, f, a.charge ?? 0, dummy);
   raw.atoms.forEach((p, i) => {
-    if (i === dummy) { ids.push(-1); return; }
+    if (i === dummy || i === site.dropH) { ids.push(-1); return; }
     const z = elementNumber(p.sym);
-    // the label's own charge (kept apart from its text: PPh3 with a +) goes on its first atom
-    const charge = p.chg + (i === f ? a.charge ?? 0 : 0);
+    const charge = p.chg + (i === site.at ? a.charge ?? 0 : 0);
     ids.push(doc.addAtom(pts[i].x, pts[i].y, z ?? 6, { ...extra, charge, label: z === undefined ? p.sym : null, ...(p.iso ? { isotope: p.iso } : {}), ...(a.color ? { color: a.color } : {}) }).id);
   });
   for (const [i, j, o] of raw.bonds) {
-    if (i === dummy || j === dummy) continue;
+    if (i === dummy || j === dummy || ids[i] < 0 || ids[j] < 0) continue;
     doc.addBond(ids[i], ids[j], o === 4 ? 1.5 : o, 'solid', extra);
   }
   if (old && nb) {
@@ -410,14 +438,19 @@ export function expandInPlace(doc: Doc, labelId: number, molblock: string): numb
   const extra = a.s && a.s !== 1 ? { s: a.s } : {};
   const colour = a.color ? { color: a.color } : {};
   const head = elementNumber(o.sym) ?? 6;
-  // (the label's own charge, kept apart from its text, stays on the head atom)
-  doc.updateAtom(a.id, { z: head, label: null, charge: o.chg + (a.charge ?? 0), ...(o.iso ? { isotope: o.iso } : {}) });
+  // the label's own charge (kept apart from its text) stays on the head atom, or a negative one goes
+  // where the molfile writer puts it (review F398)
+  const outside = valenceOfBonds((doc.adj.get(a.id) ?? []).map((bid) => doc.bonds.get(bid)!).filter((b) => !outsideValence(b)).map((b) => b.order));
+  const site = labelChargeSite(raw, 0, a.charge ?? 0, -1, outside);
+  doc.updateAtom(a.id, { z: head, label: null, charge: o.chg + (site.at === 0 ? a.charge ?? 0 : 0), ...(o.iso ? { isotope: o.iso } : {}) });
   const ids: number[] = [a.id];
   raw.atoms.forEach((p, i) => {
     if (i === 0) return;
+    if (i === site.dropH) { ids.push(-1); return; }
     const z = elementNumber(p.sym);
-    ids.push(doc.addAtom(best[i].x, best[i].y, z ?? 6, { ...extra, charge: p.chg, label: z === undefined ? p.sym : null, ...(p.iso ? { isotope: p.iso } : {}), ...colour }).id);
+    const charge = p.chg + (i === site.at ? a.charge ?? 0 : 0);
+    ids.push(doc.addAtom(best[i].x, best[i].y, z ?? 6, { ...extra, charge, label: z === undefined ? p.sym : null, ...(p.iso ? { isotope: p.iso } : {}), ...colour }).id);
   });
-  for (const [i, j, ord] of raw.bonds) doc.addBond(ids[i], ids[j], ord === 4 ? 1.5 : ord, 'solid', extra);
+  for (const [i, j, ord] of raw.bonds) if (ids[i] >= 0 && ids[j] >= 0) doc.addBond(ids[i], ids[j], ord === 4 ? 1.5 : ord, 'solid', extra);
   return ids;
 }

@@ -271,6 +271,27 @@ export function grow(s: Structure): Grown {
   // wrapped round to the other side of the cell (A at x = 0.99, B at x = 0.01) has the wrapped
   // ones moved back by a whole cell, next to the atoms they are bonded to, so the molecule is
   // placed once (and not again, one cell along, from the bonds across the cell face).
+  // (only atoms in the same or a touching box of the cell, counted round the cell's faces, can be
+  // bonded: boxes at least as thick as the longest bond, so the search isn't every pair; review F391)
+  const far = 2 * s.atoms.reduce((m, a) => Math.max(m, COVALENT[a.element] ?? 1.5), 0) + BOND_TOLERANCE;
+  const axis = [0, 1, 2].map((k) => [s.orth[0][k], s.orth[1][k], s.orth[2][k]] as V3);
+  const cross = (u: V3, v: V3): V3 => [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+  const volume = Math.abs(det3(s.orth));
+  // boxes along each axis: the cell's thickness across the other two axes over the bond length
+  const per = [0, 1, 2].map((k) => Math.max(1, Math.min(64, Math.floor(volume / (norm3(cross(axis[(k + 1) % 3], axis[(k + 2) % 3])) || 1) / far) || 1)));
+  const boxOf = (f: V3) => f.map((v, k) => Math.min(per[k] - 1, Math.floor((v - Math.floor(v)) * per[k]))) as V3;
+  const boxKey = (b: V3) => (b[0] * per[1] + b[1]) * per[2] + b[2];
+  const inBox = new Map<number, number[]>();
+  s.atoms.forEach((a, i) => { const k = boxKey(boxOf(a.frac)); const l = inBox.get(k); if (l) l.push(i); else inBox.set(k, [i]); });
+  const nearSites = (i: number): number[] => {
+    const b = boxOf(s.atoms[i].frac);
+    const keys = new Set<number>();
+    for (let d0 = -1; d0 <= 1; d0++) for (let d1 = -1; d1 <= 1; d1++) for (let d2 = -1; d2 <= 1; d2++) {
+      const w = (v: number, d: number, n: number) => (((v + d) % n) + n) % n;
+      keys.add(boxKey([w(b[0], d0, per[0]), w(b[1], d1, per[1]), w(b[2], d2, per[2])]));
+    }
+    return [...keys].flatMap((k) => inBox.get(k) ?? []).sort((p, q) => p - q);
+  };
   const shiftOf: (V3 | null)[] = s.atoms.map(() => null);
   for (let root = 0; root < s.atoms.length; root++) {
     if (shiftOf[root]) continue;
@@ -279,7 +300,7 @@ export function grow(s: Structure): Grown {
     while (todo.length) {
       const i = todo.pop()!;
       const fi = s.atoms[i].frac, si = shiftOf[i]!;
-      for (let j = 0; j < s.atoms.length; j++) {
+      for (const j of nearSites(i)) {
         if (shiftOf[j]) continue;
         const fj = s.atoms[j].frac;
         // the copy of j nearest to i (i where it now is)

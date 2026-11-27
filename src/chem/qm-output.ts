@@ -348,12 +348,15 @@ export function gaussianTheory(route: string): string {
   const mb = /(?:^|\s)([^\s=/]+)\/([^\s=]+)/.exec(r);
   let method = mb ? methodName(mb[1]) : '';
   const basis = mb ? basisName(mb[2]) : '';
-  // (Gaussian takes the keyword shortened, em=gd3bj, and its option with or without '=')
-  const disp = /\b(?:empiricaldispersion|em)\s*(?:=\s*)?\(?\s*(gd3bj|gd3|gd2|pfd)/i.exec(r)?.[1].toLowerCase();
+  // (Gaussian takes the keyword shortened, em=gd3bj, and its option with or without '='. A route
+  // wrapped over lines is joined with nothing between, so a keyword may follow the one before it
+  // with no space: no word boundary is asked for, only that em isn't the end of a longer word)
+  const disp = /(?:empiricaldispersion|(?:^|[^a-z])em)\s*(?:=\s*)?\(?\s*(gd3bj|gd3|gd2|pfd)/i.exec(r)?.[1].toLowerCase();
   if (disp && method) method += disp === 'gd3bj' ? '-D3(BJ)' : disp === 'gd3' ? '-D3' : disp === 'gd2' ? '-D2' : '';
   // the solvent options: scrf=(smd,solvent=thf), scrf(smd, solvent=thf) or scrf=smd
-  const scrfOpts = /\bscrf\s*(?:=\s*)?(\([^)]*\)|[^\s(]+)/i.exec(r)?.[1];
-  const scrf = scrfOpts !== undefined ? scrfOpts.replace(/^\(|\)$/g, '') : /\bscrf\b/i.test(r) ? '' : null;
+  // (no word boundary before scrf: a wrapped route can glue it to the keyword before, gd3bjscrf=…)
+  const scrfOpts = /scrf\s*(?:=\s*)?(\([^)]*\)|[^\s(]+)/i.exec(r)?.[1];
+  const scrf = scrfOpts !== undefined ? scrfOpts.replace(/^\(|\)$/g, '') : /scrf/i.test(r) ? '' : null;
   let solv = '';
   if (scrf !== null) {
     const model = /\bsmd\b/i.test(scrf) ? 'SMD' : /\bcpcm\b/i.test(scrf) ? 'CPCM' : 'PCM';
@@ -437,11 +440,24 @@ export function pickEnergy(results: QmResult[]): { kind: 'free' | 'scf'; quantit
   return results.length && results.every((r) => r.free !== null) ? { kind: 'free', quantity: 'ΔG' } : { kind: 'scf', quantity: 'ΔE' };
 }
 
+/** Words a species file name starts with after its ordering number (2-TS1, 3-int2, 1-reactant). */
+const SPECIES_WORD = /^(?:ts|int|inter|intermediate|im|rc|pc|sm|reactants?|react|products?|prod|complex|cplx)(?![a-z])/i;
+
 /** A species' name from its file: a transition state (one imaginary frequency) gets its ‡. */
 export function speciesName(r: QmResult): string {
-  // an ordering number with _, space or . after it goes (01_, 3 ), not a locant (2-naphthol); job
-  // words go only after a separator, as many as there are (INT2_opt_freq, not Ser-Asp or adopt)
-  let n = r.name.replace(/^\d+[_ .]+(?=\D)/, '').replace(/(?:[_-](?:opt|freq|optfreq|sp|ts-?opt|final))+$/i, '').replace(/^ts(\d*)$/i, (_, d: string) => `TS${d}`);
+  let n = r.name;
+  // An ordering number in front goes (01_, 3 , 2-TS1, 01-int1), but not a locant (2-naphthol,
+  // 1-hexene): with a dash after it, it goes only when it is zero-padded or what follows is a
+  // species word (TS, Int, IM, RC, PC, SM, reactant, product, complex).
+  const lead = /^(\d+)([-_ .]+)(?=\D)/.exec(n);
+  if (lead) {
+    const rest = n.slice(lead[0].length);
+    const dashOnly = /^-+$/.test(lead[2]);
+    if (!dashOnly || (lead[1].length > 1 && lead[1][0] === '0') || SPECIES_WORD.test(rest)) n = rest;
+  }
+  // job words go after a separator, as many as there are (INT2_opt_freq), or glued straight onto
+  // a number (int1opt, 7opt); not from inside a name (Ser-Asp, adopt)
+  n = n.replace(/(?:[_-](?:opt|freq|optfreq|sp|ts-?opt|final))+$/i, '').replace(/(\d)(?:opt|freq|optfreq|final)+$/i, '$1').replace(/^ts(\d*)$/i, (_, d: string) => `TS${d}`);
   if (!n) n = r.name;
   return r.imaginary === 1 && !n.endsWith('‡') ? n + '‡' : n;
 }

@@ -35,7 +35,9 @@ function turn(): Promise<void> {
  * stall after sending its headers (the timeout has to cover the body too).
  */
 export function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
-  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  // (the promise left behind still settles: its failure is caught here, so it isn't reported as
+  // an unhandled rejection)
+  if (signal.aborted) { p.catch(() => {}); return Promise.reject(new DOMException('Aborted', 'AbortError')); }
   return new Promise<T>((resolve, reject) => {
     const stop = () => reject(new DOMException('Aborted', 'AbortError'));
     signal.addEventListener('abort', stop, { once: true });

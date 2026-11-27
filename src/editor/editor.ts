@@ -5930,7 +5930,7 @@ export class Editor {
     const snap = snapshot(doc, this.sel, this.measure());
     const c = this.turnCentre(b);
     const f = axis === 'h' ? mirrorX(c.x) : mirrorY(c.y);
-    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
+    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hollowWedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     // the bonds flipped: those selected, and those between selected atoms
     const wedged = [...doc.bonds.values()].filter((x) => swap[x.display] && (this.sel.bonds.has(x.id) || (this.sel.atoms.has(x.a1) && this.sel.atoms.has(x.a2))));
     const name = `Flip ${axis === 'h' ? 'horizontal' : 'vertical'}${keep ? ', keeping configuration' : ''}`;
@@ -5948,7 +5948,7 @@ export class Editor {
    */
   reorient(moves: { atoms: Iterable<number>; f: (p: Vec) => Vec; mirror: boolean }[], name = 'Orient Like'): void {
     const doc = this.doc;
-    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
+    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hollowWedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     doc.edit(name, () => {
       for (const m of moves) {
         const atoms = new Set(m.atoms);

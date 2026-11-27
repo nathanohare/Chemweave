@@ -6,7 +6,7 @@
 // count as wedges and plain hashed or dashed bonds as hashed wedges, and R groups and labels
 // that can't be read rank above every real atom.
 
-import { Doc, Bond, Atom, StereoInfo, isWedge } from '../model';
+import { Doc, Bond, Atom, StereoInfo, isWedge, type StereoLabel } from '../model';
 import { axialTags } from './axial';
 import { Vec, Rect, norm, sub, len, lerp, distToSegment } from '../geom';
 import { labelBonds, labelSpec, layoutLabel, labelLook } from './labels';
@@ -747,22 +747,37 @@ export function setStereoText(doc: Doc, kind: 'a' | 'b', id: number, text: strin
     const a = doc.atoms.get(id);
     if (!a) return;
     if (!t) {
-      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet)
-      if (a.stereoLabel?.manual) doc.updateAtom(id, { stereoLabel: { ...a.stereoLabel, text: '', manual: undefined } });
+      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet);
+      // the text it was typed over (a file's) comes back
+      if (a.stereoLabel?.manual) doc.updateAtom(id, { stereoLabel: untyped(a.stereoLabel) });
       return;
     }
     const p = atomStereoPlace(doc, a, t, measure);
-    doc.updateAtom(id, { showStereo: true, stereoLabel: { text: t, dx: p.x - a.x, dy: p.y - a.y, size: p.size, italic: p.italic || undefined, manual: true } });
+    doc.updateAtom(id, { showStereo: true, stereoLabel: { text: t, dx: p.x - a.x, dy: p.y - a.y, size: p.size, italic: p.italic || undefined, manual: true, ...typedOverOf(a.stereoLabel) } });
   } else {
     const b = doc.bonds.get(id);
     if (!b) return;
     if (!t) {
-      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet)
-      if (b.stereoLabel?.manual) doc.updateBond(id, { stereoLabel: { ...b.stereoLabel, text: '', manual: undefined } });
+      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet);
+      // the text it was typed over (a file's) comes back
+      if (b.stereoLabel?.manual) doc.updateBond(id, { stereoLabel: untyped(b.stereoLabel) });
       return;
     }
     const p = bondStereoPlace(doc, b, t, measure);
     const m = doc.atoms.get(b.a1)!, n = doc.atoms.get(b.a2)!;
-    doc.updateBond(id, { showStereo: true, stereoLabel: { text: t, dx: p.x - (m.x + n.x) / 2, dy: p.y - (m.y + n.y) / 2, size: p.size, italic: p.italic || undefined, manual: true } });
+    doc.updateBond(id, { showStereo: true, stereoLabel: { text: t, dx: p.x - (m.x + n.x) / 2, dy: p.y - (m.y + n.y) / 2, size: p.size, italic: p.italic || undefined, manual: true, ...typedOverOf(b.stereoLabel) } });
   }
+}
+
+/** What a label typed over this one keeps of it: its text (and whether that came from a file), once. */
+function typedOverOf(l: StereoLabel | undefined): Pick<StereoLabel, 'typedOver'> {
+  if (l?.manual) return l.typedOver ? { typedOver: l.typedOver } : {};
+  return l?.text ? { typedOver: { text: l.text, ...(l.fromFile ? { fromFile: true } : {}) } } : {};
+}
+
+/** A typed label with its typing taken away: the text it was typed over, or none (review F057). */
+function untyped(l: StereoLabel): StereoLabel {
+  const { typedOver, manual: _m, fromFile: _f, ...rest } = l;
+  void _m; void _f;
+  return { ...rest, text: typedOver?.text ?? '', ...(typedOver?.fromFile ? { fromFile: true } : {}) };
 }

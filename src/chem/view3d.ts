@@ -73,7 +73,10 @@ export function clutter(view: P3[], sk: Skeleton): { score: number; overlaps: nu
   // length wide first, which is the same answer quicker; a view search calls this about a
   // thousand times, which for a 300-atom model held the window for seconds)
   const nearAtom = NEAR_ATOM * L, nearBond = NEAR_BOND * L;
-  const cell = (v: number) => Math.floor(v / L);
+  // (squares at least a little wide, so a model whose bonds all have no length, or a position that
+  // isn't a number, can't make the square search below run on without end; review F423)
+  const step = L > 1e-6 && Number.isFinite(L) ? L : 1.5;
+  const cell = (v: number) => (Number.isFinite(v) ? Math.floor(v / step) : 0);
   const grid = new Map<string, number[]>();
   atoms.forEach((a, i) => {
     const k = `${cell(view[a][0])},${cell(view[a][1])}`;

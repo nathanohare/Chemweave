@@ -134,6 +134,9 @@ export const isBuiltInNickname = (name: string): boolean => BUILT_IN.has(name);
 /** The program's own nicknames and their SMILES (first atom where it joins). */
 export const builtInNicknames = (): [string, string][] => [...BUILT_IN].map((n) => [n, NICKNAMES[n]]);
 
+/** Whether two spellings read as the same group (sameReading), kept as worked out. */
+const SAME_READING = new Map<string, boolean>();
+
 /**
  * Add nicknames of the person's own (or ones a drawing brings with it): name → SMILES, the
  * first atom being where it joins. Built-in names are left as they are. Returns the names added.
@@ -146,7 +149,7 @@ export function addNicknames(more: Record<string, string>): string[] {
     nickCache.delete(name);
     added.push(name);
   }
-  if (added.length) { NICK_NAMES = nickNames(); graphCache.clear(); }
+  if (added.length) { NICK_NAMES = nickNames(); graphCache.clear(); SAME_READING.clear(); }
   return added;
 }
 
@@ -157,6 +160,7 @@ export function removeNickname(name: string): void {
   nickCache.delete(name);
   NICK_NAMES = nickNames();
   graphCache.clear();
+  SAME_READING.clear();
 }
 
 export interface Token {
@@ -339,7 +343,9 @@ export function styleLabel(label: string, marks?: LabelMarks, look: AlkylLook = 
       if (dash && !f.dash) restyled += '-';
       else if (!dash && f.dash) i++;
     }
-    const free = restyled === t.text || !!NICKNAMES[restyled];
+    // (decided by reading: CO2tBu and CO2t-Bu, PnBu3 and Pn-Bu3 are the same groups and follow the
+    // look; review F049)
+    const free = restyled === t.text || sameReading(t.text, restyled);
     for (const f of fs) at.set(t.at + f.at, { dash: f.dash, free });
   }
   if (!at.size) return keep;
@@ -361,8 +367,41 @@ export function styleLabel(label: string, marks?: LabelMarks, look: AlkylLook = 
   };
   const out = restyle(false);
   // a whole label that is an abbreviation (tBuDavePhos, read only as a whole) keeps its spelling
-  // unless the restyled one is an abbreviation too
-  return NICKNAMES[label] && out.label !== label && !NICKNAMES[out.label] ? restyle(true) : out;
+  // unless the restyled one reads as the same group
+  return NICKNAMES[label] && out.label !== label && !sameReading(label, out.label) ? restyle(true) : out;
+}
+
+/**
+ * A label's group as text that doesn't depend on the order its atoms were read in, nor on whether a
+ * ring was written aromatic or with alternating bonds (Ph, C1=CC=CC=C1): each atom by element,
+ * charge, written hydrogens, mass, bonds and π bonds, each bond by its two atoms.
+ */
+function readingKey(g: MiniGraph): string {
+  const deg = g.atoms.map(() => 0), pi = g.atoms.map(() => 0);
+  for (const b of g.bonds) { deg[b.a]++; deg[b.b]++; pi[b.a] += b.order - 1; pi[b.b] += b.order - 1; }
+  const atom = (i: number) => { const a = g.atoms[i]; return `${a.z}${a.dummy ? '*' : ''}${a.charge}h${a.hCount ?? '?'}i${a.iso ?? 0}d${deg[i]}p${Math.round(pi[i])}`; };
+  const atoms = g.atoms.map((_, i) => atom(i)).sort();
+  const bonds = g.bonds.map((b) => [atom(b.a), atom(b.b)].sort().join('-')).sort();
+  return atoms.join(',') + '|' + bonds.join(',');
+}
+
+/**
+ * Whether two spellings of a label read as the same group (CO2tBu and CO2t-Bu), so a look may
+ * change one into the other. A spelling that the abbreviation table knows only as a name, with
+ * no reading of its own (a ligand listed by its paper's spelling), counts as different, as does
+ * one that isn't read at all.
+ */
+function sameReading(a: string, b: string): boolean {
+  const k = a + '\u0000' + b;
+  let same = SAME_READING.get(k);
+  if (same === undefined) {
+    const ga = labelGraph(a), gb = labelGraph(b);
+    same = !!ga && !!gb && readingKey(ga) === readingKey(gb);
+    // (labels are styled each time they are drawn: the answers are kept, a few hundred at most)
+    if (SAME_READING.size > 2000) SAME_READING.clear();
+    SAME_READING.set(k, same);
+  }
+  return same;
 }
 
 /** Pieces with the hand-set marks applied, split where a mark changes how a character sits. */
@@ -801,7 +840,11 @@ export function parseSmiles(smi: string): MiniGraph {
       // a ring number: one digit, or %nn for ten and over
       const n = c === '%' ? Number(smi.slice(i + 1, i + 3)) + 100 : Number(c);
       if (c === '%') i += 2;
+      // (a ring number before any atom, or closing on the atom that opened it, as in a damaged
+      // SMILES from settings or a file, is passed over; review F402)
+      if (prev < 0) { pendingOrder = 0; i++; continue; }
       const open = rings.get(n);
+      if (open && (open.atom === prev || !atoms[open.atom])) { rings.delete(n); pendingOrder = 0; i++; continue; }
       if (open) {
         const ord = pendingOrder || open.order || (atoms[open.atom].aromatic && atoms[prev].aromatic ? 1.5 : 1);
         bonds.push({ a: open.atom, b: prev, order: ord });

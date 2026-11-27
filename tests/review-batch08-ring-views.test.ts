@@ -34,7 +34,7 @@ const step = (doc: Doc, ring: number[], s: RingStep) => {
 };
 
 describe('chair and back', () => {
-  it('keeps a wedge drawn from the substituent\'s own stereocentre', () => {
+  it('keeps the stereocentre a wedge from the substituent shows', () => {
     // 1-cyclohexylethanol, its CH(OH) centre shown by a wedge from that CH to the ring carbon
     const doc = new Doc();
     const L = doc.style.bondLength;
@@ -51,10 +51,43 @@ describe('chair and back', () => {
     expect(before).toContain('@');
     step(doc, ring, 'chair');
     step(doc, ring, 'flat');
-    const b = doc.bonds.get(wedge)!;
-    expect(b.a1).toBe(ch);
-    expect(b.display).toBe('wedge');
+    // (the wedge stays on the bond from the CH, or moves to another of the CH's bonds)
+    expect([...doc.bonds.values()].some((b) => b.a1 === ch && b.display !== 'solid')).toBe(true);
+    void wedge;
     expect(canon(doc)).toBe(before);
+  });
+
+  it('keeps the ring\'s cis/trans as well as the substituent\'s own centre', () => {
+    // cis-4-methyl-1-(1-hydroxyethyl)cyclohexane, both ring substituents wedged from the ring
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    let ring: number[] = [], toRing = 0, ch = 0;
+    doc.bulk(() => {
+      ring = hexane(doc);
+      const top = doc.atoms.get(ring[0])!, bottom = doc.atoms.get(ring[3])!;
+      const c = doc.addAtom(top.x, top.y - L), o = doc.addAtom(top.x - L * 0.866, top.y - 1.5 * L, 8), me = doc.addAtom(top.x + L * 0.866, top.y - 1.5 * L);
+      toRing = doc.addBond(ring[0], c.id, 1, 'wedge').id;
+      doc.addBond(c.id, o.id); doc.addBond(c.id, me.id);
+      const m4 = doc.addAtom(bottom.x, bottom.y + L);
+      doc.addBond(ring[3], m4.id, 1, 'wedge');
+      ch = c.id;
+    });
+    const cis = canon(doc);
+    expect(cis.match(/@+/g)?.length).toBe(2);
+    step(doc, ring, 'chair');
+    // in the chair, the side chain's own centre is shown by a wedge from it to the ring carbon
+    doc.edit('wedge', () => doc.updateBond(toRing, { a1: ch, a2: ring[0], display: 'wedge' }));
+    const chair = canon(doc);
+    step(doc, ring, 'flat');
+    const flat = canon(doc);
+    // both ring centres and the side chain's centre are drawn
+    expect(flat.match(/@+/g)?.length).toBe(3);
+    // and the ring is still cis: with the side chain's centre left out, it is the drawing we began with
+    const sideWedge = [...doc.bonds.values()].find((b) => b.a1 === ch && b.display !== 'solid')!;
+    doc.edit('plain', () => doc.updateBond(sideWedge.id, { display: 'solid' }));
+    expect(canon(doc)).toBe(cis);
+    // the chair drawing reads the same (the chemistry engine is shown it laid out flat)
+    expect(chair).toBe(flat);
   });
 
   it('moves an ethyl group\'s CH3 in depth with its CH2', () => {
@@ -73,5 +106,24 @@ describe('chair and back', () => {
     expect(d2).not.toBeCloseTo(0, 3);
     // in the flat drawing both were at depth 0: they stay level with each other
     expect(d3).toBeCloseTo(d2, 6);
+  });
+
+  it('going flat keeps a branch\'s depths relative to its first atom (another chair further along)', () => {
+    const doc = new Doc();
+    const L = doc.style.bondLength;
+    let ring: number[] = [], ch2 = 0, ch3 = 0;
+    doc.bulk(() => {
+      ring = hexane(doc);
+      const top = doc.atoms.get(ring[0])!;
+      const a = doc.addAtom(top.x, top.y - L), b = doc.addAtom(top.x + L * 0.866, top.y - 1.5 * L);
+      doc.addBond(ring[0], a.id); doc.addBond(a.id, b.id);
+      ch2 = a.id; ch3 = b.id;
+    });
+    step(doc, ring, 'chair');
+    // the branch's far atom drawn 7 deeper than its first (as a chair in the branch would be)
+    doc.edit('depth', () => doc.updateAtom(ch3, { depth: (doc.atoms.get(ch2)!.depth ?? 0) + 7 }));
+    step(doc, ring, 'flat');
+    expect(doc.atoms.get(ch2)!.depth).toBeUndefined();
+    expect(doc.atoms.get(ch3)!.depth).toBeCloseTo(7, 6);
   });
 });

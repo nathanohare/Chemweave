@@ -39,5 +39,21 @@ describe('species names', () => {
     expect(named('2-naphthol')).toBe('2-naphthol');
     expect(named('1-hexene')).toBe('1-hexene');
     expect(named('01_reactant')).toBe('reactant');
+    // ordering numbers with a dash: zero-padded, or before a species word
+    expect(named('2-TS1')).toBe('TS1');
+    expect(named('3-int')).toBe('int');
+    expect(named('01-int1')).toBe('int1');
+    expect(named('1-reactant')).toBe('reactant');
+  });
+
+  it('F409: a job word glued onto a number goes', () => {
+    expect(named('int1opt')).toBe('int1');
+    expect(named('7opt')).toBe('7');
+  });
+
+  it('F407, F408: a route wrapped over lines (joined with nothing between) still gives the solvent', () => {
+    // Gaussian echoes a long route over several lines, which are joined as they come
+    expect(gaussianTheory('#p opt freq b3lyp/6-31g(d) empiricaldispersion=gd3bjscrf=(smd,solvent=thf)')).toBe('B3LYP-D3(BJ)/6-31G(d), SMD(THF)');
+    expect(gaussianTheory('#p opt freq b3lyp/6-31g(d) scrf=(smd,solvent=thf)em=gd3bj')).toBe('B3LYP-D3(BJ)/6-31G(d), SMD(THF)');
   });
 });
