@@ -1144,8 +1144,9 @@ export function usedObjects(t: Pick<DocText, 'runs' | 'objects'> & Partial<Pick<
   const used = new Set(objectsInText(flatRuns(t)));
   // with those in the headers and footers
   if (t.hf) for (const id of hfObjectIds(allHf({ hf: t.hf, paras: t.paras }), t.objects)) used.add(id);
-  // and those inside them (citations in footnotes)
-  for (const id of [...used]) for (const x of innerObjects(t.objects[id])) used.add(x);
+  // and those inside them (citations in footnotes), at any depth: a Set's loop also visits the ids
+  // added while it runs (an equation in a text box in a table cell)
+  for (const id of used) for (const x of innerObjects(t.objects[id])) used.add(x);
   return used;
 }
 

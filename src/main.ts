@@ -11002,7 +11002,6 @@ function setPictureStyle(look: PictureLook | undefined): boolean {
   return true;
 }
 
-/** Slide commands that work on Slide Master view's pages as they are (the rest close it first). */
 /** The layout a `layout-<id>` command puts on the slide, or null. The Slide Master's Title, References
  * and Title Slide Colors checkboxes share the prefix but are ordinary COMMANDS that change the layout
  * itself, so they are not layout picks. */
@@ -11011,6 +11010,7 @@ function layoutPickId(name: string): string | null {
   if (name === 'layout-has-title' || name === 'layout-has-refs' || name === 'layout-title-look') return null;
   return name.slice('layout-'.length);
 }
+/** Slide commands that work on Slide Master view's pages as they are (the rest close it first). */
 const MASTER_VIEW_OK = new Set(['slide-master', 'edit-layouts', 'edit-layout', 'lock-items-deck', 'layout-has-refs', 'insert-placeholder-refs', 'view-slide-ruler', 'view-gridlines', 'view-guides', 'grid-settings', 'add-vertical-guide', 'add-horizontal-guide', 'layout-has-title', 'layout-title-look']);
 /** Commands that are about the deck's slides (the show, printing, PDF): Slide Master view closes first. */
 const CLOSE_MASTER_FIRST = new Set(['present', 'present-current', 'presenter-view', 'print', 'export-pdf', 'export-picture', 'view-normal', 'view-outline', 'view-notes-page', 'view-sorter', 'reading-view']);

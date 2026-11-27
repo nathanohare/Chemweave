@@ -1,7 +1,7 @@
 Fixed: Document: Insert ▸ Quick Parts ▸ Save Selection to Quick Part Gallery is available when text is selected (it was greyed out exactly then).
 Fixed: Document: Previous, Next, Link to Previous, Insert Alignment Tab, Different First Page, Different Odd & Even Pages and Go to Footer on the Header & Footer tab now act on the header being edited instead of closing it.
 Fixed: Document: pressing Enter again in the Navigation pane's search box goes to the next result instead of replacing the found word with a new paragraph.
-Fixed: Document: equations, fields and pictures inside text boxes are kept when a document is opened, saved, copied or pasted.
+Fixed: Document: equations, fields and pictures inside text boxes (and inside tables in text boxes) are kept when a document is opened, saved, copied, pasted or compared.
 Fixed: Document: Find and the Navigation search no longer freeze when the search starts with an emoji or another character outside the basic set.
 Fixed: Document: citations from Mendeley Desktop of different papers stay separate references instead of all becoming the first paper.
 Fixed: Files: bracketed groups and chemical properties kept from a ChemDraw file are saved again, and are never written into another tab's file.

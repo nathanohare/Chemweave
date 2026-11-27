@@ -5,7 +5,7 @@
 // change the section the body's caret is in).
 
 import { describe, it, expect } from 'vitest';
-import { docMode } from './doc-mode-harness';
+import { docMode, type } from './doc-mode-harness';
 import { newDocument, paraFromStyle, runStyleOf, type DocText } from '../src/document/document';
 import { newBreak, sectionsOf } from '../src/document/sections';
 import type { DocumentMode } from '../src/ui/doc-mode';
@@ -67,5 +67,52 @@ describe('Header & Footer commands while a header is typed into', () => {
     dm.run('hf-goto-footer');
     expect(f.box?.hf?.kind).toBe('footer');
     expect(f.box?.hf?.page).toBe(page);
+  }, 60000);
+});
+
+/** One section of two pages, a plain header and the page number in the footer. */
+function oneSection(): Partial<DocText> {
+  const d = newDocument();
+  const s = d.styles.Normal;
+  const runs = [{ ...runStyleOf(s), text: 'page 1\npage 2' }];
+  const paras = [0, 1].map((i) => ({ ...paraFromStyle(s, {}), ...(i === 1 ? { pageBreak: true } : {}) }));
+  return { runs, paras, hf: { ...d.hf, header: ['One', '', ''], numbers: 'footer-center' } };
+}
+
+/** Every object a header or footer body points at is in the document. */
+function bodiesWhole(f: DocFile): void {
+  const hf = sectionsOf(f.t)[0].hf;
+  for (const b of Object.values(hf.bodies ?? {})) for (const r of b?.runs ?? []) if (r.obj !== undefined) expect(f.t.objects[r.obj]).toBeDefined();
+}
+
+describe('Header & Footer settings work on the header as finished', () => {
+  for (const cmd of ['hf-first', 'hf-odd-even', 'numbers-s', 'numbers-footer-right']) {
+    it(`${cmd} with the footer opened and nothing typed keeps the page number`, async () => {
+      const { dm, f } = await docMode(oneSection());
+      (dm as unknown as { startHf(p: number, k: string): boolean }).startHf(1, 'footer');
+      dm.run(cmd);
+      dm.run('hf-close');
+      bodiesWhole(f);
+      expect(sectionsOf(f.t)[0].hf.bodies?.footer).toBeUndefined();
+    }, 60000);
+  }
+
+  it('Page Number place from the header is not undone by the header being finished', async () => {
+    const { dm, f } = await docMode(oneSection());
+    (dm as unknown as { startHf(p: number, k: string): boolean }).startHf(1, 'header');
+    dm.run('numbers-header-right');
+    dm.run('hf-close');
+    const hf = sectionsOf(f.t)[0].hf;
+    expect(hf.numbers).toBe('header-right');
+    expect(hf.bodies?.header).toBeUndefined();
+  }, 60000);
+
+  it('Plain Text keeps what was just typed into the header', async () => {
+    const { dm, f, ta } = await docMode(oneSection());
+    (dm as unknown as { startHf(p: number, k: string): boolean }).startHf(1, 'header');
+    type(ta, 'Zed');
+    dm.run('hf-plain');
+    dm.run('hf-close');
+    expect(JSON.stringify(sectionsOf(f.t)[0].hf)).toContain('Zed');
   }, 60000);
 });

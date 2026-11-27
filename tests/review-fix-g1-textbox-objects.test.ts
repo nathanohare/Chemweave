@@ -57,3 +57,16 @@ describe('objects inside a text box', () => {
     expect(innerKinds(back)).toEqual(['field']);
   });
 });
+
+describe('objects nested two levels down count as used', () => {
+  it('keeps an equation in a table cell in a text box', () => {
+    const float = { x: 0, y: 0, wrap: 'square' } as never;
+    const objects: Record<number, DocObject> = {
+      1: { kind: 'textbox', runs: [objectRun(2)], w: 100, float },
+      2: { kind: 'table', table: { rows: [[{ runs: [objectRun(3)] }]] } } as never,
+      3: { kind: 'math', tex: 'x' },
+    };
+    const used = usedObjects({ runs: [objectRun(1)], objects });
+    expect([...used].sort()).toEqual([1, 2, 3]);
+  });
+});

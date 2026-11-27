@@ -411,6 +411,8 @@ export class DashboardView {
 
   /** Make a few of the pictures waiting and draw each into its canvas (no new draw of the dashboard). */
   private fillWaiting(): void {
+    // a hidden dashboard's canvases are off the page: nothing to make for them
+    if (this.el.hidden) { this.waiting = []; return; }
     let budget = PICTURES_PER_FRAME;
     while (this.waiting.length && budget > 0) {
       const w = this.waiting.shift()!;
