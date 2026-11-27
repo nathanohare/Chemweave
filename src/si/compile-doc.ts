@@ -27,6 +27,7 @@ import { hrmsCalc, hrmsSpecies, hrmsTolerance, mentionKind } from './checks';
 import { formatMz, listingFailed, peaksNear, reportListing, summary, type ReportData } from './ms-reports';
 import { readReportFile } from './report-files';
 import type { MolFacts } from './chem';
+import type { SiFolder } from './folder';
 import { R, formatChemistry, formatNmr, scriptCharacters, type Leave } from './format';
 import { compoundBlock, gpSentence, inlineFigures } from './blocks';
 import { attachmentDir, autoPlace, boxSpot, cropInk, roomBeside, PLACE_GAP, captionText, effective, nmrNucleus, idSizeOf, structureBoxAt, structureBoxSize, GUTTERS, headerParts, HEADER_PT, printKind, printsReports, reportItems, sectionDefaults, shownSize, slotSize, spectrumItems, structureSize, BOX_PAD as SI_BOX_PAD, type Crop, type InkMap, type SpectrumLayout } from './spectra';
@@ -1128,9 +1129,7 @@ class Compiler {
       for (const [key, item] of spectrumItems(c)) {
         const file = partText(item.file);
         if (!file) continue;
-        const bytes = await this.p.folder.readBytes(joinPath(c.folder, attachmentDir(c, key), file));
-        if (!bytes) continue;
-        const n = /\.pdf$/i.test(file) ? await pagesOf(file, bytes).catch(() => null) : 1;
+        const n = await this.spectrumPages(joinPath(c.folder, attachmentDir(c, key)), file, pagesOf);
         for (let i = 0; i < (n ?? 0); i++) {
           const eff = effective(defaults, item, String(i + 1));
           if (!last || last.orientation !== eff.orientation || last.per !== eff.per_page || last.n >= last.per) { last = { orientation: eff.orientation, per: eff.per_page, n: 0 }; pages++; }
@@ -1141,6 +1140,33 @@ class Compiler {
     return pages;
   }
 
+  /**
+   * How many pages one spectrum file prints in the Spectra section (null or 0: none, as
+   * spectraSection leaves it out): a PDF's pages, or one for a picture that can be read. Counted
+   * once for each file while its size and time of change stay the same (the live preview asks on
+   * each change), so its bytes aren't read again.
+   */
+  private async spectrumPages(dir: string, file: string, pagesOf: (file: string, bytes: Uint8Array) => Promise<number | null>): Promise<number | null> {
+    const folder = this.p.folder;
+    const entry = (await folder.entries(dir).catch(() => [])).find((e) => e.name === file && !e.folder);
+    const key = entry?.modified !== undefined && entry.size !== undefined ? `${joinPath(dir, file)}\n${entry.size}\n${entry.modified}` : null;
+    let counts = spectrumPageCounts.get(folder);
+    if (key && counts?.has(key)) return counts.get(key)!;
+    const bytes = await folder.readBytes(joinPath(dir, file));
+    if (!bytes) return null;
+    let n: number | null;
+    if (/\.pdf$/i.test(file)) {
+      let failed = false;
+      n = await pagesOf(file, bytes).catch(() => { failed = true; return null; });
+      if (failed) return null;
+    } else n = pictureObject(file, bytes, { w: 1e6, h: 1e6 }) ? 1 : 0;
+    if (key) {
+      if (!counts) { counts = new Map(); spectrumPageCounts.set(folder, counts); }
+      if (counts.size > 2000) counts.clear();
+      counts.set(key, n);
+    }
+    return n;
+  }
 
   /** The compounds of the Data sections in `sections` (and below) that are printed, in tree order. */
   private includedCompounds(sections: readonly SiSection[]): SiCompound[] {
@@ -1451,21 +1477,60 @@ class Compiler {
       if ((this.texts.get('general') ?? '').trim()) { if (this.included('cover')) this.b.pendingBreak = true; await this.general(); }
     } else if (only.kind === 'compound') {
       const c = p.compounds.find((x) => x.id === only.id);
-      if (c) await this.compound(c, 2);
+      const s = c ? p.sections.find((x) => x.id === c.sectionId) : undefined;
+      if (c) await this.compound(c, s ? this.depthOf(s) + 1 : 2);
     } else if (only.kind === 'scheme') {
       const k = p.schemes.find((x) => x.id === only.id);
       const s = k ? p.sections.find((x) => x.id === k.sectionId) : undefined;
-      if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, 2, drawn.has(c.id)); }
+      if (k && s) { const drawn = await this.scheme(k, s); for (const c of k.children) await this.compound(c, this.depthOf(s) + 1, drawn.has(c.id)); }
     } else if (only.kind === 'spectra') {
       // a compound's spectra pages, as they print in the Spectra section (without its heading)
       const c = p.compounds.find((x) => x.id === only.id);
       if (c) { this.spectraDone = true; await this.spectraSection(p.sections.find((x) => x.type === 'spectra') ?? null, 1, [c]); }
     } else {
       const s = p.sections.find((x) => x.id === only.id);
-      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; await this.spectraSection(s, 1); }
+      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; this.seedCounters(s); await this.spectraSection(s, this.depthOf(s)); }
       // (a section's spectra are left out: Compile shows them)
-      else if (s) { this.excluded.delete(s.id); this.spectraDone = true; await this.section(s, 1); }
+      // (at its own level, numbered on from the headings before it, as Compile prints it)
+      else if (s) { this.excluded.delete(s.id); this.spectraDone = true; this.seedCounters(s); await this.section(s, this.depthOf(s)); }
     }
+  }
+
+  /** A section's heading level in the whole SI: 1 for a top one, 2 for its sub-sections and so on. */
+  private depthOf(s: SiSection): number {
+    let n = 1;
+    for (let at = this.p.parent(s); at && n < 9; at = this.p.parent(at)) n++;
+    return n;
+  }
+
+  /**
+   * The heading numbers counted so far when Compile reaches section `s` (for the live preview of
+   * one section): the sections before it at each of its levels that print a heading, the headings
+   * typed at that level in its parent's text, and General Information's heading before the first
+   * top one when it is numbered. (A Spectra section prints its heading when it prints something:
+   * here, when a compound it shows has a spectrum file or an HRMS report it prints.)
+   */
+  private seedCounters(s: SiSection): void {
+    const path: SiSection[] = [];
+    for (let at: SiSection | null = s; at && path.length < 9; at = this.p.parent(at)) path.unshift(at);
+    const f = this.headingFmt;
+    const info = dict(this.p.settings.general_information);
+    const generalTitle = info.heading === undefined ? 'General Information' : str(info.heading).trim();
+    const general = !!f?.text && this.included('general') && !!(this.texts.get('general') ?? '').trim() && !!generalTitle;
+    const firstSpectra = this.p.sections.find((x) => x.type === 'spectra');
+    const spectraPrints = (x: SiSection): boolean => {
+      const defaults = sectionDefaults(x, this.p.settings);
+      return this.includedCompounds(this.p.top).some((c) => spectrumItems(c).some(([, i]) => !!partText(i.file)) || (!this.excluded.has('hrms_reports') && printsReports(c, defaults)));
+    };
+    const heads = (x: SiSection): boolean => !this.excluded.has(x.id) && (x.type === 'spectra' ? !this.excluded.has('spectra') && x === firstSpectra && spectraPrints(x) : x.type === 'file' ? !!str(x.data.heading).trim() : true);
+    // (headings typed in a text section's text, one level below it, come before its sub-sections)
+    const typed = (x: SiSection | null): number => (x?.type === 'text' && f?.text ? parseMarkup(this.texts.get(x.id) ?? '').filter((q) => q.heading === 1 && q.runs.length && !q.table && !q.figure && !q.image).length : 0);
+    this.counters = path.map((n, i) => {
+      const parent = i ? path[i - 1] : null;
+      const siblings = parent ? parent.children : this.p.top;
+      const before = siblings.slice(0, Math.max(0, siblings.indexOf(n))).filter(heads).length + (i === 0 && general ? 1 : 0) + typed(parent);
+      return before + (n === s ? 0 : 1);
+    });
   }
 
   /** The compounds the document (or the preview's page) prints. */
@@ -1493,14 +1558,14 @@ class Compiler {
     const { hf, format } = this.pageLines(p.w - p.left - p.right);
     // (the live preview keeps the links to pages it leaves out, so it shows them as they print)
     const finish = this.preview ? (t: DocText): DocText => t : (t: DocText): DocText => dropDeadLinks(t, this.linkLook);
-    return finish(this.b.finish({
+    return finish(firstSectionOnDoc(this.b.finish({
       styles: this.styles,
       hf,
       ...(format !== 'decimal' ? { numFormat: format } : {}),
       references: this.p.references.map(toReference),
       props: { title: title || this.p.title },
       noFigureOffer: true,
-    }));
+    })));
   }
 
   private async buildAll(): Promise<void> {
@@ -1519,7 +1584,26 @@ class Compiler {
   }
 }
 
+/** Each project folder's spectrum files' page counts, by path, size and time of change (Compiler.spectrumPages). */
+const spectrumPageCounts = new WeakMap<SiFolder, Map<string, number | null>>();
+
 const plainOf = (runs: Run[]): string => runs.map((r) => r.text).join('').trim();
+
+/**
+ * A section break on the document's first paragraph (its first pages turned landscape) made the
+ * document's own page: a document's first section is its page, and a break there is never read.
+ */
+function firstSectionOnDoc(t: DocText): DocText {
+  const sec = t.paras[0]?.section;
+  if (!sec) return t;
+  const { section: _section, ...first } = t.paras[0];
+  const out: DocText = { ...t, paras: [first, ...t.paras.slice(1)] };
+  if (sec.page) out.page = sec.page;
+  if (sec.hf) out.hf = sec.hf;
+  if (sec.format && sec.format !== 'decimal') out.numFormat = sec.format;
+  else delete out.numFormat;
+  return out;
+}
 
 export { coverSpacing } from './front-layout';
 

@@ -48,7 +48,8 @@ const PATTERNS: [string, string, true?][] = [
   ['yield', String.raw`\byield\s*(?:[=:]|of)?\s*(?<v>${NUM})\s*%`],
   ['loading', String.raw`(?<v>\d+(?:\.\d+)?)\s*mol\s*%`],
   ['temperature', String.raw`(?<v>-?\d{1,3})\s*°\s*C\b`],
-  ['temperature', String.raw`\b(?<v>rt|r\.t\.|room temperature|reflux)\b`],
+  // (no \b after the last "." of "r.t.": there is no word boundary between "." and a space)
+  ['temperature', String.raw`\b(?<v>rt\b|r\.t\.(?!\w)|room temperature\b|reflux\b)`],
   ['time', String.raw`(?<v>\d+(?:\.\d+)?)\s*(?<u>min|hr|hrs)\b`, true],
   ['time', String.raw`(?<v>\d+(?:\.\d+)?)\s+(?<u>h|days?)\b`, true],
   ['scale', String.raw`(?<v>\d+(?:\.\d+)?)\s*(?<u>mmol|mg)\b`, true],
@@ -862,7 +863,7 @@ const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 const REAGENT_RE = notAfter(new RegExp(`(${[...REAGENT_ALIASES.keys()].sort((a, b) => b.length - a.length).map(escapeRe).join('|')})(?![\\w-])`, 'gi'), /[\w-]/);
 
 const TEMP = notAfter(/(-?\d{1,3}(?:\.\d+)?)\s*°\s*C\b|(-?\d{1,3})\s*(?:o|º)C\b/g, /[\w.]/);
-const TEMP_WORD = /\b(rt|r\.\s?t\.|room temperature|ambient temperature|reflux(?:ing)?)\b/gi;
+const TEMP_WORD = /\b(rt\b|r\.\s?t\.(?!\w)|room temperature\b|ambient temperature\b|reflux(?:ing)?\b)/gi;
 const TIME = notAfter(/(\d+(?:\.\d+)?)\s*(min|mins|minutes?|hrs?|hours?|days?|d|h)\b(?!\s*%)/g, /[\w.-]/);
 const EQUIV = notAfter(/(\d+(?:\.\d+)?)\s*(?:equiv\.?|eq\.?|equivalents?)(?![\w])/gi, /[\w.-]/);
 const LOADING = notAfter(/(\d+(?:\.\d+)?)\s*mol\s*%/gi, /[\w.-]/);
