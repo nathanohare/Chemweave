@@ -298,7 +298,8 @@ class Layout {
   constructor(private sh: SchemeShape, private bond: number) {
     this.g = spacing(bond).gap;
     let b: Rect | null = null;
-    for (const n of sh.nodes) b = union(b, n.box);
+    // (from what is laid out: a structure left out of a closed loop doesn't move where it starts, or it would be laid over)
+    for (const i of sh.path?.length ? sh.path : sh.nodes.map((_, k) => k)) b = union(b, sh.nodes[i].box);
     for (const l of sh.links) if (l.arrow) b = union(b, { x1: Math.min(l.arrow.tail.x, l.arrow.head.x), y1: Math.min(l.arrow.tail.y, l.arrow.head.y), x2: Math.max(l.arrow.tail.x, l.arrow.head.x), y2: Math.max(l.arrow.tail.y, l.arrow.head.y) });
     this.origin = { x: b!.x1, y: b!.y1 };
   }
@@ -544,6 +545,7 @@ class Layout {
         const { s, e } = ends(k);
         // each arc needs room for its arrowhead, and for its conditions alongside it
         const l = link(k);
+        if (!l) continue;
         const need = Math.max(2.8 * bond, ...[...l.above, ...l.below, ...l.inside].map((it) => 0.9 * Math.max(width(it.box), height(it.box))));
         if (sign * (e - s) * R < need) { ok = false; break; }
         // and the step names inside need room clear of the middle (and of the catalyst's name there)
@@ -557,7 +559,7 @@ class Layout {
     }
     path.forEach((i, k) => this.placeNode(i, add(cen, fromAngle(angle(k), R))));
     if (N < 2) return;
-    for (let k = 0; k < N; k++) { const { s, e } = ends(k); this.arcStep(link(k), cen, R, s, e, reagentArrows); }
+    for (let k = 0; k < N; k++) { const l = link(k); if (!l) continue; const { s, e } = ends(k); this.arcStep(l, cen, R, s, e, reagentArrows); }
     // a caption on its own (the catalyst's name) goes in the middle
     if (this.sh.loose.length === 1) { const it = this.sh.loose[0]; this.shift(it, sub(cen, centre(it.box))); }
   }

@@ -62,19 +62,21 @@ describe('Draw Next Intermediate keeps the lone pairs of unchanged atoms stuck t
 });
 
 describe('metal labels with ligands written before the metal (F045)', () => {
-  /** A Pd atom labelled `label` with two Cl atoms bonded to it. */
-  function pd(label: string) {
+  /** An atom of atomic number z labelled `label`, with two Cl atoms bonded to it. */
+  function pd(label: string, z = 46) {
     const doc = new Doc();
     const m = doc.edit('m', () => {
-      const metal = doc.addAtom(0, 0, 46, { label });
+      const metal = doc.addAtom(0, 0, z, { label });
       for (const x of [-20, 20]) doc.addBond(metal.id, doc.addAtom(x, 0, 17).id, 1);
       return metal.id;
     });
     return countElectrons(doc, m).find((c) => c.metal === m);
   }
+  // Covalent bond classification (Green, J. Organomet. Chem. 1995, 500, 127; Parkin's CBC page,
+  // columbia.edu/cu/chemistry/groups/parkin/cbcm.html): an MLlXx complex has m + 2l + x
+  // electrons, m the valence electrons of the neutral metal (10 for Pd, group 10), and valence
+  // number x. PdCl2 drawn: two X, no L, so 10 + 2 = 12 electrons and Pd(II).
   it('counts LnPd, L2Pd and (L)nPd from their drawn bonds, as Pd', () => {
-    // two Cl drawn: two X ligands, Pd(II); 10 + 2 = 12 electrons counting the metal's group (10)
-    // and one per X, the L written before the metal not counted (no checked source: covalent counting)
     for (const label of ['LnPd', 'L2Pd', '(L)nPd', 'LPd']) {
       const c = pd(label);
       expect(c, label).toBeDefined();
@@ -82,11 +84,18 @@ describe('metal labels with ligands written before the metal (F045)', () => {
       expect([c!.x, c!.oxidation, c!.electrons]).toEqual([2, 2, 12]);
     }
   });
-  it("a label it can't read is still counted from its bonds, and the note says so", () => {
-    const c = pd('Pd-?');
-    expect(c).toBeDefined();
-    expect(c!.x).toBe(2);
-    expect(c!.notes.join(' ')).toMatch(/isn't read for its ligands/);
+  it("a label it can't read is still counted from its bonds as the metal it starts with, and the note says so", () => {
+    // (a typed label whose first part isn't an element leaves the atom's own number at carbon)
+    for (const [label, z] of [['Pd-?', 46], ['Pd-?', 6], ['[Pd]', 6]] as const) {
+      const c = pd(label, z);
+      expect(c, label).toBeDefined();
+      expect(c!.symbol, label).toBe('Pd');
+      expect([c!.x, c!.oxidation, c!.electrons], label).toEqual([2, 2, 12]);
+      expect(c!.notes.join(' ')).toMatch(/isn't read for its ligands/);
+    }
+  });
+  it('a generic metal (M, [M], MLn) is left out, not counted as carbon', () => {
+    for (const label of ['M', '[M]', 'MLn', 'LnM']) expect(pd(label, 6), label).toBeUndefined();
   });
 });
 
@@ -185,17 +194,18 @@ describe('isotope and bond warnings (F424, F425, F426)', () => {
 
 describe('Stoichiometry Table (F419, F420)', () => {
   const book = () => stoichiometryBook([
-    { role: 'Starting material', name: 'benzaldehyde', formula: 'C7H6O', mw: 106.12 },
-    { role: 'Reagent', name: 'NaBH4', formula: 'BH4Na', mw: 37.83 },
-    { role: 'Product', name: 'benzyl alcohol', formula: 'C7H8O', mw: 108.14 },
+    // (made-up round numbers, not real compounds: only the sheet's arithmetic is checked here)
+    { role: 'Starting material', name: 'A', mw: 100 },
+    { role: 'Reagent', name: 'B', mw: 50 },
+    { role: 'Product', name: 'C', mw: 120 },
   ], 2);
   it('a concentration of 0 or text falls back to the volume from the density', () => {
     const wb = book();
     const sh = wb.sheets[0];
-    // 2 mmol × 106.12 mg/mmol = 212.24 mg; over 1.044 g/mL (mg/µL) = 203.3 µL (V = m/ρ)
+    // 2 mmol × 100 mg/mmol = 200 mg; at 1.25 g/mL (mg/µL) that is 160 µL (V = m/ρ)
     for (const conc of ['0', 'n/a', 'neat']) {
-      wb.edit('conc', () => { sh.setInput(1, 8, '1.044'); sh.setInput(1, 9, conc); });
-      expect(Number(sh.value(1, 10)), conc).toBeCloseTo(212.24 / 1.044, 6);
+      wb.edit('conc', () => { sh.setInput(1, 8, '1.25'); sh.setInput(1, 9, conc); });
+      expect(Number(sh.value(1, 10)), conc).toBeCloseTo(160, 6);
     }
     // (a concentration still gives the solution's volume: 2 mmol ÷ 0.5 M = 4 mL = 4000 µL)
     wb.edit('conc', () => { sh.setInput(1, 9, '0.5'); });
@@ -207,11 +217,11 @@ describe('Stoichiometry Table (F419, F420)', () => {
     const g = greenRows(3);
     wb.edit('iso', () => { sh.setInput(g.isolated, 3, '200'); });
     const pmi0 = Number(sh.value(g.pmi, 3));
-    // PMI = mass in ÷ product: (212.24 + 75.66) ÷ 200 (2 mmol of each at 1 equiv)
-    expect(pmi0).toBeCloseTo((2 * 106.12 + 2 * 37.83) / 200, 6);
+    // PMI = mass in ÷ product: (200 + 100) ÷ 200 (2 mmol of each at 1 equiv)
+    expect(pmi0).toBeCloseTo(1.5, 6);
     // a solvent typed in the empty row under the table, with its mass
     wb.edit('THF', () => { sh.setInput(4, 0, 'Solvent'); sh.setInput(4, 1, 'THF'); sh.setInput(4, 6, '4445'); });
-    expect(Number(sh.value(g.pmi, 3))).toBeCloseTo((2 * 106.12 + 2 * 37.83 + 4445) / 200, 6);
+    expect(Number(sh.value(g.pmi, 3))).toBeCloseTo((300 + 4445) / 200, 6);
     expect(String(sh.value(g.note, 0))).toMatch(/Mass \(mg\)/);
     expect(String(sh.value(g.note, 0))).not.toMatch(/density and volume/);
   });

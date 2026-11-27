@@ -256,10 +256,10 @@ export function layoutTree(tree: Tree, links: TreeLink[], z: TreeSizes, opts: Tr
     return { m: p.m + dm * t, c: p.c + dc * t };
   };
 
-  /** Run `ri` laid out with the species that joins it at (0, 0). `toward`: the side of that species its parent run is on (kept clear for the arrow that joins them). */
   // (each run laid out once for each side its parent is on: a branch's layout is asked for again
   // for each side and slant it might take, and so would grow with each level of branches on branches)
   const subs = new Map<string, Sub>();
+  /** Run `ri` laid out with the species that joins it at (0, 0). `toward`: the side of that species its parent run is on (kept clear for the arrow that joins them). */
   const sub = (ri: number, toward?: 1 | -1): Sub => {
     const key = `${ri} ${toward ?? 0}`;
     let got = subs.get(key);

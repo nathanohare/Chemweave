@@ -11,7 +11,9 @@ import { Doc } from '../src/model';
 import { plainMeasure, schemeItems } from '../src/chem/reaction';
 import { applyArrange, planArrange, type Scope } from '../src/chem/scheme-arrange';
 import { applySchemePlan, DEFAULT_SCHEME_PREFS, planCleanUp, schemePrefs, setSchemePrefs, spacing, withSchemePrefs } from '../src/chem/scheme-layout';
-import { insertSlot, makeSmart, readSmart, smartFrameOf, smartMarks, stretch, type SmartRead } from '../src/chem/smart-scheme';
+import { arrangeSmart, cleanUpCycle, insertSlot, makeSmart, readSmart, smartFrameOf, smartMarks, stretch, type SmartRead } from '../src/chem/smart-scheme';
+import { layoutTree, readTree, type TreeLink } from '../src/chem/scheme-tree';
+import { askLoop, closeLoopPop } from '../src/ui/smart-loop-pop';
 import type { Selection } from '../src/editor/arrange';
 
 afterEach(() => setSchemePrefs(DEFAULT_SCHEME_PREFS));
@@ -206,5 +208,150 @@ describe('the + marks of a Smart Scheme with no species left (F417)', () => {
     const read = readSmart(doc, m, id);
     expect(read?.slots.length ?? 0).toBe(0);
     expect(() => smartMarks(doc, m, id)).not.toThrow();
+  });
+});
+
+// (boxes touching count: a two-atom chain drawn level has a box with no height)
+const overlaps = (a: { x1: number; y1: number; x2: number; y2: number }, b: { x1: number; y1: number; x2: number; y2: number }) => a.x1 <= b.x2 && b.x1 <= a.x2 && a.y1 <= b.y2 && b.y1 <= a.y2;
+
+describe('a structure left out of a closed loop, above and left of it (F052, round 2)', () => {
+  it('is not laid over by the loop', () => {
+    for (const kind of ['line', 'down', 'cycle'] as const) {
+      const doc = new Doc();
+      const m = plainMeasure(doc);
+      const loop = doc.edit('build', () => [0, 1, 2].map((i) => chain(doc, 200 + i * 60, 200)));
+      applyArrange(doc, m, planArrange(doc, m, all(), { kind: 'cycle' })!);
+      const stray = doc.edit('stray', () => chain(doc, 20, 20));
+      applyArrange(doc, m, planArrange(doc, m, all(), { kind })!);
+      const sb = boxOf(doc, stray);
+      for (const s of loop) expect(overlaps(boxOf(doc, s), sb), kind).toBe(false);
+    }
+  });
+  it('a Smart Scheme of the loop and the stray structure reads as the loop', () => {
+    const doc = new Doc();
+    const m = plainMeasure(doc);
+    doc.edit('build', () => { for (let i = 0; i < 3; i++) chain(doc, i * 60, 0); });
+    applyArrange(doc, m, planArrange(doc, m, all(), { kind: 'cycle' })!);
+    doc.edit('stray', () => chain(doc, 400, 300));
+    const s = sel();
+    for (const a of doc.atoms.keys()) s.atoms.add(a);
+    for (const r of doc.arrows.keys()) s.arrows.add(r);
+    let id = 0;
+    doc.edit('make', () => { id = makeSmart(doc, m, s, { layout: 'cycle' })!; });
+    const read = readSmart(doc, m, id)!;
+    expect(read.closed).toBe(true);
+    expect(read.chain).toBe(true);
+    expect(read.slots.length).toBe(3);
+  });
+});
+
+describe("a Smart Scheme's own shortest arrow, laid out, then Clean Up Reaction elsewhere (F053, round 2)", () => {
+  it('leaves the usual shortest arrow for Clean Up Reaction', () => {
+    const { doc, m, id } = smartWithStructure(3);
+    doc.edit('fmt', () => { doc.updateShape(id, { smart: { ...doc.shapes.get(id)!.smart!, fmt: { arrowLength: 200 } } }); arrangeSmart(doc, m, id); });
+    // the Smart Scheme's own arrow is laid out at least 200 long
+    const own = [...doc.arrows.values()][0];
+    expect(Math.hypot(own.head.x - own.tail.x, own.head.y - own.tail.y)).toBeGreaterThanOrEqual(200 - 1e-6);
+    expect('arrowLength' in schemePrefs).toBe(false);
+    // a plain reaction in another drawing keeps the usual shortest arrow (2.8 bond lengths, SPACING.minArrow)
+    const other = new Doc();
+    const L = other.style.bondLength;
+    const r = other.edit('build', () => {
+      const a = chain(other, 0, 0), b = chain(other, 3 * L, 0);
+      return other.addArrow({ ...LOOK, tail: { x: 1.2 * L, y: 0 }, head: { x: 2.4 * L, y: 0 }, step: { reactants: [ref(a)], products: [ref(b)], above: [], below: [], manual: true } }).id;
+    });
+    const om = plainMeasure(other);
+    applySchemePlan(other, om, planCleanUp(other, om)!);
+    const got = other.arrows.get(r)!;
+    expect(Math.hypot(got.head.x - got.tail.x, got.head.y - got.tail.y)).toBeCloseTo(2.8 * L, 3);
+  });
+});
+
+/** A Smart cycle of four text species, A → B → C → D → A. */
+function smartCycle() {
+  const doc = new Doc();
+  const m = plainMeasure(doc);
+  const s = sel();
+  let id = 0;
+  doc.edit('make', () => {
+    const at = [[0, 0], [120, 0], [120, 120], [0, 120]];
+    const caps = ['A', 'B', 'C', 'D'].map((t, i) => doc.addCaption({ x: at[i][0], y: at[i][1], runs: [{ text: t }], justify: 'center' }));
+    for (const c of caps) s.captions.add(c.id);
+    caps.forEach((c, i) => {
+      const d = caps[(i + 1) % 4], p = at[i], q = at[(i + 1) % 4];
+      const r = doc.addArrow({ ...LOOK, tail: { x: p[0] + (q[0] - p[0]) * 0.3, y: p[1] + (q[1] - p[1]) * 0.3 }, head: { x: p[0] + (q[0] - p[0]) * 0.7, y: p[1] + (q[1] - p[1]) * 0.7 }, step: { reactants: ['c' + c.id], products: ['c' + d.id], above: [], below: [], manual: true } });
+      s.arrows.add(r.id);
+    });
+    id = makeSmart(doc, m, s, { layout: 'cycle' })!;
+  });
+  return { doc, m, id };
+}
+
+describe("Smart Schemes use the drawing style's own scheme distances (F413, round 2)", () => {
+  it('a Smart Scheme with no format of its own is laid out with the style gap', () => {
+    const { doc, m, id } = smartWithStructure(2);
+    doc.edit('style', () => { doc.style = { ...doc.style, scheme: { structGap: 20 } }; });
+    doc.edit('lay', () => arrangeSmart(doc, m, id));
+    const atoms = doc.shapes.get(id)!.frame!.atoms;
+    const r = [...doc.arrows.values()][0];
+    expect(r.tail.x - boxOf(doc, atoms).x2).toBeCloseTo(20, 3);
+  });
+  it('Clean Up Cycle leaves the style gap between each arrow and its species', () => {
+    const { doc, m, id } = smartCycle();
+    const gap = 30;
+    doc.edit('style', () => { doc.style = { ...doc.style, scheme: { structGap: gap } }; });
+    expect(spacing(doc.style.bondLength).gap).not.toBeCloseTo(gap, 3);
+    doc.edit('clean', () => { expect(cleanUpCycle(doc, m, id)).toBe(true); });
+    const read = readSmart(doc, m, id)!;
+    // how far a point is outside a box (0 inside)
+    const out = (p: { x: number; y: number }, b: { x1: number; y1: number; x2: number; y2: number }) => Math.max(b.x1 - p.x, p.x - b.x2, b.y1 - p.y, p.y - b.y2);
+    for (const l of read.links) {
+      const from = read.slots[l.from].box, to = read.slots[l.to].box;
+      const fwd = l.arrow.headStyle !== 'none';
+      expect(out(fwd ? l.arrow.tail : l.arrow.head, from)).toBeCloseTo(gap, 1);
+      expect(out(fwd ? l.arrow.head : l.arrow.tail, to)).toBeCloseTo(gap, 1);
+    }
+  });
+});
+
+describe('a fused loop on a cycle of two species, and the picker (F416, round 2)', () => {
+  it('a cycle of two can still share its one step', () => {
+    const read = { closed: true, chain: true, slots: [0, 1].map(() => ({})), links: [] } as unknown as SmartRead;
+    expect(stretch(read, 0, 1)).toEqual([0, 1]);
+  });
+  it('the To list offers only stretches that leave some of the loop', () => {
+    const toOptions = (n: number, slot: number) => {
+      const anchor = document.createElement('button');
+      document.body.append(anchor);
+      const species = Array.from({ length: n }, (_, k) => ({ k, name: String.fromCharCode(65 + k) }));
+      void askLoop(anchor, { species, steps: [], loops: [species.map((s) => s.k)], slot });
+      const label = [...document.querySelectorAll('label')].find((x) => x.textContent?.startsWith('To'))!;
+      const got = [...label.querySelector('select')!.options].map((o) => Number(o.value));
+      closeLoopPop();
+      anchor.remove();
+      return got;
+    };
+    // from species 2 (index 1) round a loop of four: 3 and 4, not 1 (the long way, all four)
+    expect(toOptions(4, 1)).toEqual([2, 3]);
+    // a loop of two: the one other species
+    expect(toOptions(2, 0)).toEqual([1]);
+  });
+});
+
+describe('a tree of branches on branches is laid out without growing with each level (F414)', () => {
+  it('reads each species size a bounded number of times', () => {
+    // a full binary tree six levels deep: 127 species, every branch with branches of its own
+    const links: TreeLink[] = [];
+    let n = 1;
+    const grow = (p: number, d: number) => { if (!d) return; for (let k = 0; k < 2; k++) { const c = n++; links.push({ from: p, to: c }); grow(c, d - 1); } };
+    grow(0, 6);
+    let reads = 0;
+    const w = new Proxy(new Array(n).fill(60), { get(a, k) { if (typeof k === 'string' && /^\d+$/.test(k)) reads++; return Reflect.get(a, k); } });
+    const z = { w, h: new Array(n).fill(20), lenAcross: new Array(links.length).fill(40), lenDown: new Array(links.length).fill(30), reachAcross: links.map((): [number, number] => [0, 0]), reachDown: links.map((): [number, number] => [0, 0]), gap: 5, rowGap: 18 };
+    const placed = layoutTree(readTree(n, links)!, links, z, { fan: true });
+    expect(placed.centres.length).toBe(n);
+    // (laid out once per run and side: about 19 reads a species; laid out again for every side and
+    // slant tried, it was over a hundred)
+    expect(reads).toBeLessThan(30 * n);
   });
 });

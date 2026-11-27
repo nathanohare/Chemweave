@@ -78,7 +78,7 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       put(g.yield, 'Yield (%)', `=IF(${iso}="","",100*${iso}/(F${pr}*D${pr}))`);
       put(g.eFactor, 'E-factor', `=IF(${iso}="","",(SUMIF(${col('A')},"<>Product",${col('G')})-${iso})/${iso})`);
       put(g.pmi, 'PMI', `=IF(${iso}="","",SUMIF(${col('A')},"<>Product",${col('G')})/${iso})`);
-      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G (for a solution, only the compound in it): to count solvents and work-up too, add them as rows in the table or just under it, with their mass in Mass (mg).');
+      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G (for a solution, only the compound in it): to count solvents and work-up too, add them as rows inserted in the table or on the row directly under it, with their mass in Mass (mg).');
       sh.patchStyle({ r1: g.yield, c1: 3, r2: g.pmi, c2: 3 }, { numFmt: '0.0' });
       sh.patchStyle({ r1: g.note, c1: 0, r2: g.note, c2: 0 }, { italic: true });
     }

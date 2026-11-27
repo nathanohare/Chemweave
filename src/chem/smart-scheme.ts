@@ -18,7 +18,7 @@ import type { Measure, Selection } from '../editor/arrange';
 import { applyArrange, planArrange, readScheme, schemeNet, schemeTree, type ArrangePlan, type Scope } from './scheme-arrange';
 import { crowdedLinks, type NetJoin } from './cycle-net';
 import { arrowFrame, type Item } from './reaction';
-import { spacing } from './scheme-layout';
+import { prefsOf, spacing } from './scheme-layout';
 import { cleanFormat, formatPrefs, restyleSmart, type SmartFormat } from './smart-format';
 import { arrowMid, sweepThrough } from '../objects';
 import { bezFrom, pathPoints } from '../arrow-path';
@@ -1006,8 +1006,9 @@ export function stretch(read: SmartRead, from: number, to: number): number[] | n
     const a = lp.indexOf(from), b = lp.indexOf(to);
     if (a < 0 || b < 0 || a === b) continue;
     const n = lp.length, len = ((b - a + n) % n) + 1;
-    // some of the loop has to be left over for the loop that is there already
-    if (len < 2 || len >= n) continue;
+    // some of the loop has to be left over for the loop that is there already: not every species
+    // of it (but a loop of two has only the one step to share, with the other step left over)
+    if (len < 2 || (len >= n && n > 2)) continue;
     return Array.from({ length: len }, (_, k) => lp[(a + k) % n]);
   }
   return null;
@@ -1284,7 +1285,7 @@ export function refitSmart(doc: Doc, before: ReadonlyMap<string, Entity | null>,
     if (retypedTidy(doc, m, s.id, mem, before)) { arrangeSmart(doc, m, s.id); continue; }
     const read = readSmart(doc, m, s.id);
     if (!read) continue;
-    const gap = s.smart.fmt?.structGap ?? spacing(doc.style.bondLength).gap;
+    const gap = s.smart.fmt?.structGap ?? spacing(doc.style.bondLength, prefsOf(doc)).gap;
     // round a cycle, every step's arrow follows one smooth path through all the species (once one
     // of them has moved: one only retyped or recolored leaves the arrows where they are)
     if (simpleLoop(s.smart, read)) {
@@ -1380,7 +1381,7 @@ export function cleanUpCycle(doc: Doc, m: Measure, frameId: number): boolean {
   const e = fitEllipse(read.slots.map((sl) => mid(sl.box)));
   if (!e) return false;
   for (const sl of read.slots) { const c = mid(sl.box), p = ontoEllipse(e, c); shiftSlot(doc, sl, { x: p.x - c.x, y: p.y - c.y }); }
-  refitCycle(doc, read, data.fmt?.structGap ?? spacing(doc.style.bondLength).gap, e);
+  refitCycle(doc, read, data.fmt?.structGap ?? spacing(doc.style.bondLength, prefsOf(doc)).gap, e);
   return true;
 }
 
@@ -1532,7 +1533,7 @@ export function branchSpots(doc: Doc, m: Measure, frameId: number, slot: number)
   if (!s?.smart || !read || !sl || read.net || read.closed || !(read.chain || read.tree)) return [];
   const layout = smartLayoutOf(s.smart, read);
   if (layout === 'cycle' || smartIsFree(s.smart, read)) return [];
-  const L = doc.style.bondLength, g = s.smart.fmt?.structGap ?? spacing(L).gap;
+  const L = doc.style.bondLength, g = s.smart.fmt?.structGap ?? spacing(L, prefsOf(doc)).gap;
   const c = mid(sl.box), hw = (sl.box.x2 - sl.box.x1) / 2, hh = (sl.box.y2 - sl.box.y1) / 2;
   const reach = g + 1.5 * L;
   return ([1, -1] as const).map((side) => {
