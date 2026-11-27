@@ -218,6 +218,14 @@ const isMac = typeof navigator !== 'undefined' && /Mac|iPhone|iPad/.test(navigat
 /** Commands that, in a text box, work on its text (others leave the box first). */
 const BOX_COMMANDS = /^(format-painter$|(insert|remove|open)-link$|insert-symbol$|doc-(align-|justify|bold|italic|underline|sub|sup|formula|stereo-italic|raise-charges|highlight|bullets|numbering|indent|outdent)|line-|font-|select-all$|undo$|redo$|zoom-|copy$|cut$|paste$|box-|find$|replace$|wrap-)/;
 
+/**
+ * The Header & Footer tab's commands, run while a header or footer is typed into: they work on
+ * that header (Previous, Next, Link to Previous, Different First Page…), so it isn't left first.
+ * (Close leaves it as any other command does, the window staying put; Picture… changes the
+ * section's header straight away, so the one typed into is finished first.)
+ */
+const HF_COMMANDS = /^(hf-(?!picture$|close$)|numbers-|page-number-format$)/;
+
 /** Commands that, in a table cell, work there too (others leave the cell first). */
 const CELL_COMMANDS = /^(table-|tbl-|insert-table$|insert-structure$|structure-from-name-doc$|name-to-structure$|insert-picture$|insert-object$|paste-object$|edit-figure$|compound-number$|cross-reference$|insert-citation$)/;
 
@@ -2308,6 +2316,8 @@ export class DocumentMode {
       if (o.kind === 'table') objects[id] = { ...o, table: { ...o.table, rows: o.table.rows.map((row) => row.map((cell) => ({ ...cell, runs: remap(cell.runs) }))) } };
       // and the citations in a pasted footnote
       if (o.kind === 'note') objects[id] = { ...o, runs: remap(o.runs) };
+      // and the equations, fields and figures in a pasted text box
+      if (o.kind === 'textbox') objects[id] = { ...o, runs: remap(o.runs) };
     }
     const b = f.box?.cell ? f.box : null;
     // into a table cell: no text boxes, bibliographies or notes inside it (a table goes in as a table in the cell)
@@ -3898,7 +3908,7 @@ export class DocumentMode {
     const f = this.file;
     if (!f) return false;
     // in a text box, the text buttons work on its text; other commands leave it first
-    if (f.box && !BOX_COMMANDS.test(cmd) && !(f.box.cell && CELL_COMMANDS.test(cmd))) this.stopBox();
+    if (f.box && !BOX_COMMANDS.test(cmd) && !(f.box.cell && CELL_COMMANDS.test(cmd)) && !(f.box.hf && HF_COMMANDS.test(cmd))) this.stopBox();
     if (/^table-/.test(cmd)) { this.tableCommand(cmd); return true; }
     if (/^outline-/.test(cmd)) { this.outlineCommand(cmd); return true; }
     const kind = VIEW_COMMANDS[cmd];

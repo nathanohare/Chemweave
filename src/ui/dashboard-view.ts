@@ -37,6 +37,9 @@ interface Drag {
   downOn: EventTarget | null;
 }
 
+/** New structure pictures made in one frame at most. */
+const PICTURES_PER_FRAME = 12;
+
 export class DashboardView {
   readonly el: HTMLDivElement;
   private page: HTMLDivElement;
@@ -117,9 +120,19 @@ export class DashboardView {
 
   /** New structure pictures still to be made in this frame. */
   private budget = 0;
+  /**
+   * Canvases on the page waiting for a structure picture not made yet: a few are made each frame
+   * and drawn into their canvas where it is. The dashboard isn't drawn again for them, so a gallery
+   * needing more pictures than the cache keeps (or a picture that can't be made) can't keep
+   * redrawing it every frame.
+   */
+  private waiting: { st: Structure; scale: number; paint(bmp: CanvasImageSource): void }[] = [];
+  private fillQueued = false;
 
   draw(): void {
-    this.budget = 12;
+    this.budget = PICTURES_PER_FRAME;
+    // the canvases waiting are thrown away with the old tiles
+    this.waiting = [];
     const d = this.dashboard, wb = this.host.wb;
     if (!d || !wb || this.el.hidden) return;
     const g = this.grid(d);
@@ -373,14 +386,39 @@ export class DashboardView {
     c.style.width = `${w}px`; c.style.height = `${h}px`;
     const box = this.host.structureBox(st);
     const k = Math.min(w / Math.max(1, box.w), h / Math.max(1, box.h), 1.6);
-    // pictures already made are drawn at once; a few new ones are made each time, the rest next frame
-    let bmp = this.host.structureBitmap(st, k * dpr);
-    if (!bmp && this.budget > 0) { this.budget--; bmp = this.host.structureBitmap(st, -k * dpr); }
-    if (!bmp) { this.render(); return c; }
-    const ctx = c.getContext('2d')!;
     const bw = box.w * k * dpr, bh = box.h * k * dpr;
-    ctx.drawImage(bmp, (c.width - bw) / 2, (c.height - bh) / 2, bw, bh);
+    const paint = (bmp: CanvasImageSource) => c.getContext('2d')?.drawImage(bmp, (c.width - bw) / 2, (c.height - bh) / 2, bw, bh);
+    // pictures already made are drawn at once; a few new ones are made each time, the rest are filled in later
+    let bmp = this.host.structureBitmap(st, k * dpr);
+    if (!bmp && this.budget > 0) {
+      this.budget--;
+      bmp = this.host.structureBitmap(st, -k * dpr);
+      if (!bmp) return c; // it can't be made (draws nothing): left blank
+    }
+    if (bmp) paint(bmp);
+    else { this.waiting.push({ st, scale: k * dpr, paint }); this.fillLater(); }
     return c;
+  }
+
+  private fillLater(): void {
+    if (this.fillQueued) return;
+    this.fillQueued = true;
+    requestAnimationFrame(() => {
+      this.fillQueued = false;
+      this.fillWaiting();
+    });
+  }
+
+  /** Make a few of the pictures waiting and draw each into its canvas (no new draw of the dashboard). */
+  private fillWaiting(): void {
+    let budget = PICTURES_PER_FRAME;
+    while (this.waiting.length && budget > 0) {
+      const w = this.waiting.shift()!;
+      let bmp = this.host.structureBitmap(w.st, w.scale);
+      if (!bmp) { budget--; bmp = this.host.structureBitmap(w.st, -w.scale); }
+      if (bmp) w.paint(bmp); // one that can't be made is dropped, not tried again
+    }
+    if (this.waiting.length) this.fillLater();
   }
 
   // ---------------------------------------------------------------- changing tiles

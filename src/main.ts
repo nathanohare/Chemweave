@@ -5369,7 +5369,7 @@ function showSlideState(): void {
     custom.text = sizeName(deck.size);
   } else custom?.remove();
   sizeSel.value = named;
-  for (const b of document.querySelectorAll<HTMLElement>('[data-cmd^="layout-"]')) b.setAttribute('aria-checked', String(b.dataset.cmd === `layout-${deck.current.layout}`));
+  for (const b of document.querySelectorAll<HTMLElement>('[data-cmd^="layout-"]')) if (layoutPickId(b.dataset.cmd ?? '') !== null) b.setAttribute('aria-checked', String(b.dataset.cmd === `layout-${deck.current.layout}`));
   for (const b of document.querySelectorAll<HTMLElement>('[data-cmd="view-normal"], [data-cmd="view-sorter"]')) {
     const on = b.dataset.cmd === 'view-sorter' ? slideViewNow() === 'sorter' : slideViewNow() === 'normal';
     b.setAttribute(b.getAttribute('role') === 'menuitemradio' ? 'aria-checked' : 'aria-pressed', String(on));
@@ -10895,7 +10895,8 @@ function command(name: string): boolean {
     const [, id, index] = name.split(':');
     return contextBond !== null && editor.fuseRing(contextBond, id, Number(index));
   }
-  if (name.startsWith('layout-') && ws.active.mode === 'slides') { setLayout(name.slice('layout-'.length)); return true; }
+  const pick = layoutPickId(name);
+  if (pick !== null && ws.active.mode === 'slides') { setLayout(pick); return true; }
   if (name.startsWith('new-slide-layout-') && ws.active.mode === 'slides') { newSlide(name.slice('new-slide-layout-'.length)); return true; }
   const run = COMMANDS[name];
   if (!run) return false;
@@ -11002,6 +11003,14 @@ function setPictureStyle(look: PictureLook | undefined): boolean {
 }
 
 /** Slide commands that work on Slide Master view's pages as they are (the rest close it first). */
+/** The layout a `layout-<id>` command puts on the slide, or null. The Slide Master's Title, References
+ * and Title Slide Colors checkboxes share the prefix but are ordinary COMMANDS that change the layout
+ * itself, so they are not layout picks. */
+function layoutPickId(name: string): string | null {
+  if (!name.startsWith('layout-')) return null;
+  if (name === 'layout-has-title' || name === 'layout-has-refs' || name === 'layout-title-look') return null;
+  return name.slice('layout-'.length);
+}
 const MASTER_VIEW_OK = new Set(['slide-master', 'edit-layouts', 'edit-layout', 'lock-items-deck', 'layout-has-refs', 'insert-placeholder-refs', 'view-slide-ruler', 'view-gridlines', 'view-guides', 'grid-settings', 'add-vertical-guide', 'add-horizontal-guide', 'layout-has-title', 'layout-title-look']);
 /** Commands that are about the deck's slides (the show, printing, PDF): Slide Master view closes first. */
 const CLOSE_MASTER_FIRST = new Set(['present', 'present-current', 'presenter-view', 'print', 'export-pdf', 'export-picture', 'view-normal', 'view-outline', 'view-notes-page', 'view-sorter', 'reading-view']);

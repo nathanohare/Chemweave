@@ -622,7 +622,11 @@ export class Keeper {
     try {
       const now = await this.ws.encode(tab, tab.name);
       const data = typeof now.data === 'string' ? new TextEncoder().encode(now.data) : now.data;
-      await this.versions.add(key, data, 'restored', { keep: Math.max(p.versionsKeep, 1), days: p.versionsDays, ext: extensionOf(tab.name) });
+      // Version History switched off: keep this one too, but leave every version kept before as it is
+      const limits = p.versionsKeep > 0
+        ? { keep: p.versionsKeep, days: p.versionsDays }
+        : { keep: (await this.versions.list(key)).length + 1, days: 0 };
+      await this.versions.add(key, data, 'restored', { ...limits, ext: extensionOf(tab.name) });
     } catch { /* the version is still restored */ }
     const t = await this.ws.openAs(bytes, withExtension(v.file, extensionOf(v.file) || extensionOf(tab.name)), { name: tab.name, ref: tab.ref, dirty: true, stamp: tab.stamp, replace: tab });
     if (t) this.host.flash(`Restored the version from ${when(v.at)}. ${this.autoOn(t) ? 'AutoSave saves it shortly.' : 'Save to keep it.'}`, 6000);

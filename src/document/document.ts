@@ -1072,10 +1072,10 @@ export function equationRun(id: number, style: rt.RunStyle): TextRun {
   return objectRun(id, rt.cleanStyle({ ...style, sub: undefined, sup: undefined }));
 }
 
-/** The objects inside an object (structures in a table's cells, citations in a footnote), in order. */
+/** The objects inside an object (structures in a table's cells, citations in a footnote, equations and fields in a text box), in order. */
 export function innerObjects(o: DocObject | undefined): number[] {
   if (o?.kind === 'table') return o.table.rows.flatMap((row) => row.flatMap((c) => objectsInText(c.runs)));
-  if (o?.kind === 'note') return objectsInText(o.runs);
+  if (o?.kind === 'note' || o?.kind === 'textbox') return objectsInText(o.runs);
   return [];
 }
 

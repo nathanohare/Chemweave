@@ -24,13 +24,26 @@ const R = {
   FORMULA: 0x0006, STRING: 0x0207, SHRFMLA: 0x04bc, ARRAY: 0x0221, MERGECELLS: 0x00e5, COLINFO: 0x007d, ROW: 0x0208,
 } as const;
 
-/** The records from `at` to the end of their substream (its EOF), CONTINUE records joined to the one before. */
+/**
+ * The records from `at` to the end of their substream (its EOF), CONTINUE records joined to the one
+ * before. A substream nested in it (an embedded chart's BOF ... EOF inside a worksheet) is skipped
+ * whole, so its records are not taken for the sheet's and reading goes on after it.
+ */
 function records(b: Uint8Array, at: number): Rec[] {
   const out: Rec[] = [];
+  // how deep in nested substreams (0: the one asked for), and whether the last record was skipped
+  let depth = 0, skipped = false, started = false;
   while (at + 4 <= b.length) {
     const id = b[at] | (b[at + 1] << 8), len = b[at + 2] | (b[at + 3] << 8);
     const data = b.subarray(at + 4, Math.min(b.length, at + 4 + len));
     at += 4 + len;
+    if (id === R.BOF) { if (started) depth++; started = true; }
+    if (depth > 0 || (skipped && id === R.CONTINUE)) {
+      if (id === R.EOF) depth--;
+      skipped = true;
+      continue;
+    }
+    skipped = false;
     const last = out[out.length - 1];
     if (id === R.CONTINUE && last) {
       const joined = new Uint8Array(last.data.length + data.length);

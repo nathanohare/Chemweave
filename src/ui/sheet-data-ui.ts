@@ -118,6 +118,15 @@ function open(w: ReturnType<typeof windowOf>, first?: HTMLElement | null): void 
   first?.focus();
 }
 
+/**
+ * Advanced Filter's Copy to: whether copying the list to `dest` would write over the list before
+ * it is read. The place copied to is cleared from its row down, so a place in the list's columns at
+ * or above its last row is refused (above the list as well as in it).
+ */
+export function copyMeetsList(dest: { row: number; col: number }, L: Range): boolean {
+  return dest.row <= L.r2 && dest.col <= L.c2 && dest.col + (L.c2 - L.c1) >= L.c1;
+}
+
 /** A cell or block typed in a window ("B2", "$A$1:$C$9"); null when it isn't one. */
 const readRange = (t: string): Range | null => parseRange(t.trim().replace(/\$/g, '').toUpperCase());
 const readCell = (t: string): { row: number; col: number } | null => {
@@ -818,7 +827,7 @@ export class SheetData {
       const copy = action.value() === 'copy';
       const dest = copy ? readCell(to.value.replace(/:.*$/, '')) : null;
       if (copy && !dest) return 'Give a cell to copy the rows to (such as $K$1).';
-      if (dest && dest.row <= L.r2 && dest.row >= L.r1 && dest.col <= L.c2 && dest.col + (L.c2 - L.c1) >= L.c1) return 'Copy the rows somewhere clear of the list.';
+      if (dest && copyMeetsList(dest, L)) return 'Copy the rows somewhere clear of the list.';
       let got = { shown: 0, total: 0 };
       this.host.edit('Advanced Filter', (sh) => { got = applyAdvancedFilter(sh, { list: L, criteria: C, unique: unique.box.checked, copyTo: dest }); },
         dest ? () => ({ r1: dest.row, c1: dest.col, r2: dest.row + got.shown, c2: dest.col + L.c2 - L.c1 }) : undefined);

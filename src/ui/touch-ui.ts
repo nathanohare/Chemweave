@@ -160,9 +160,13 @@ function installLongPress(): void {
   let hold: { id: number; x: number; y: number; target: Element; timer: number } | null = null;
   // the press that opened a menu, until it lifts, and a moment after
   let swallowId: number | null = null, swallowUntil = 0;
+  // the pointercancel sent below, so the listener can tell it from the browser's own
+  let ownCancel = false;
   const end = () => { if (hold) { clearTimeout(hold.timer); hold = null; } };
   window.addEventListener('pointerdown', (e) => {
     end();
+    // a new first touch means the held one is gone, however it ended
+    if (e.isPrimary && swallowId !== null && swallowId !== e.pointerId) swallowId = null;
     if (e.pointerType === 'mouse' || !touchOn() || e.button !== 0 || !e.isPrimary) return;
     const target = e.target as Element;
     // typing places keep the system's own long press (select, paste, Scribble)
@@ -174,7 +178,10 @@ function installLongPress(): void {
         hold = null;
         swallowId = id;
         // whatever the press started ends where it is (one that hadn't moved is forgotten)
-        target.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType, clientX: x, clientY: y, bubbles: true }));
+        ownCancel = true;
+        try {
+          target.dispatchEvent(new PointerEvent('pointercancel', { pointerId: id, pointerType, clientX: x, clientY: y, bubbles: true }));
+        } finally { ownCancel = false; }
         const under = document.elementFromPoint(x, y) ?? target;
         under.dispatchEvent(new MouseEvent('contextmenu', { clientX: x, clientY: y, button: 2, buttons: 0, bubbles: true, cancelable: true }));
       }, HOLD_MS),
@@ -187,7 +194,13 @@ function installLongPress(): void {
     if (hold?.id === e.pointerId) end();
     if (swallowId === e.pointerId) { swallowId = null; swallowUntil = e.timeStamp + 400; }
   }, true);
-  window.addEventListener('pointercancel', (e) => { if (e.isTrusted && hold?.id === e.pointerId) end(); }, true);
+  // the browser can end the press itself (a pan or scroll after the hold, a system gesture, the pen
+  // leaving range): that ends the swallowing too, or every later click in the app would be stopped
+  window.addEventListener('pointercancel', (e) => {
+    if (ownCancel) return;
+    if (hold?.id === e.pointerId) end();
+    if (swallowId === e.pointerId) { swallowId = null; swallowUntil = e.timeStamp + 400; }
+  }, true);
   // the lift after a long press isn't also a click on what was under it
   window.addEventListener('click', (e) => {
     if (swallowId === null && e.timeStamp > swallowUntil) return;

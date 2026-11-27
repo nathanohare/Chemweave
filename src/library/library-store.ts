@@ -175,11 +175,13 @@ export class Library {
         const text = await this.place.read();
         if (text?.trim() && !isLibraryText(text)) throw new Error('the file there is damaged, so it was left as it is');
         const there: LibraryData | null = text ? parseLibrary(text) : null;
-        const merged = pruneDeleted(there ? mergeLibraries(there, this.data) : this.data);
+        const mine = this.data;
+        const merged = pruneDeleted(there ? mergeLibraries(there, mine) : mine);
         await this.place.write(libraryText(merged));
         // what came from elsewhere shows here too
-        const grew = there && (merged.references.length !== this.data.references.length || merged.compounds.length !== this.data.compounds.length || merged.collections.length !== this.data.collections.length);
-        this.data = merged;
+        const grew = there && (merged.references.length !== mine.references.length || merged.compounds.length !== mine.compounds.length || merged.collections.length !== mine.collections.length);
+        // a change made while the file was written stays (its own save, queued by change(), writes it)
+        this.data = this.data === mine ? merged : mergeLibraries(this.data, merged);
         this.problem = '';
         if (grew) this.tell();
       } catch (e) {
