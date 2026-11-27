@@ -6,7 +6,7 @@
 // its own size, shrunk to fit.
 
 import type { SiProject, SiSection } from '../si/project';
-import type { PdfPageReader } from '../render/pdf-page';
+import { fingerprint, type PdfPageReader } from '../render/pdf-page';
 import { addInfo } from './info-tip';
 
 /**
@@ -87,12 +87,23 @@ export class SiAttachmentPage {
     const p = this.host.project;
     const file = str(this.s.data.file);
     if (!file) return;
+    // (the section is saved without the file first: a failed save leaves the file where it is, and a
+    // failed move to the Trash puts the file's name back)
+    this.s.data.file = null;
+    try {
+      await p.saveSection(this.s);
+    } catch (e) {
+      this.s.data.file = file;
+      this.host.flash(`The file could not be removed: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      this.host.redraw();
+      return;
+    }
     try {
       await p.trashFiles([`${this.s.folder}/${file}`], 'file', file, { section_id: this.s.id, section_name: this.s.name });
-      this.s.data.file = null;
-      await p.saveSection(this.s);
       this.host.flash(`${file} went to the Trash.`);
     } catch (e) {
+      this.s.data.file = file;
+      await p.saveSection(this.s).catch(() => {});
       this.host.flash(`The file could not be removed: ${e instanceof Error ? e.message : String(e)}`, 8000);
     }
     this.host.redraw();
@@ -127,7 +138,8 @@ export class SiAttachmentPage {
     this.reader = reader;
     const first = await reader.size(1).catch(() => ({ w: 595, h: 842 }));
     if (this.disposed) return 0;
-    const drawn = drawnPages(`${this.s.folder}/${file}\0${bytes.length}`, reader.count);
+    const key = `${this.s.folder}/${file}\0${bytes.length}\0${fingerprint(bytes)}`;
+    const drawn = drawnPages(key, reader.count);
     const imgs: HTMLImageElement[] = [];
     for (let i = 0; i < reader.count; i++) {
       const paper = el('div', 'si-attach-paper');
@@ -151,7 +163,7 @@ export class SiAttachmentPage {
         const i = queue.shift()!;
         if (drawn[i]) { imgs[i].src = drawn[i]!; imgs[i].style.aspectRatio = ''; continue; }
         const blob = await reader.picture(i + 1);
-        if (!blob || this.disposed || drawnPdfs.get(`${this.s.folder}/${file}\0${bytes.length}`) !== drawn) continue;
+        if (!blob || this.disposed || drawnPdfs.get(key) !== drawn) continue;
         drawn[i] = URL.createObjectURL(blob);
         imgs[i].src = drawn[i]!;
         imgs[i].style.aspectRatio = '';
@@ -193,8 +205,11 @@ export class SiAttachmentPage {
     stage.addEventListener('drop', (e) => {
       stage.classList.remove('drop');
       const f = e.dataTransfer?.files[0];
-      if (!f || p.readOnly) return;
+      if (!f) return;
+      // (the window's own drop handler opens files or places pictures: not for a file dropped here, even when refused)
       e.preventDefault();
+      e.stopPropagation();
+      if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
       void f.arrayBuffer().then((b) => this.use(f.name, new Uint8Array(b)));
     });
     this.el.replaceChildren(h, rows, fileRow, stage);

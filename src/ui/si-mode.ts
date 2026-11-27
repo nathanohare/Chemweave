@@ -57,7 +57,7 @@ import { nextMisspelled, setSiDictionary } from './si-spell';
 import { addDictionaryWord, dictionaryWords } from '../si/dictionary';
 import { typingPrefs } from '../text/typing';
 import { editReference } from './references-dialog';
-import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, type Reference } from '../document/references';
+import { blankRef, cleanRef, fetchDoi, newRefId, parseReferenceText, splitDois, type Reference } from '../document/references';
 import { newTable } from '../si/tables';
 import type { Pasted } from '../io/clipboard';
 import { ask, askChoice } from './ask';
@@ -1984,7 +1984,8 @@ export class SiMode {
     this.pane.hidden = this.ribbon.hidden = !this.tab;
     this.mentionTip.hide();
     this.showZoom(!!this.tab);
-    if (!this.tab) return;
+    // (no project shows: no project's words are spelled right, and the next project shown reads its own)
+    if (!this.tab) { setSiDictionary(null); this.dictFor = null; return; }
     this.use(this.tab.si!);
     this.shownKey = '';
     this.refresh();
@@ -1999,7 +2000,8 @@ export class SiMode {
     if (!again && this.dictFor === p) return;
     this.dictFor = p;
     const words = await dictionaryWords(p.folder);
-    if (this.project !== p) return;
+    // (another tab by now: this project's words were not applied, so it is read again when its tab shows)
+    if (this.project !== p) { if (this.dictFor === p) this.dictFor = null; return; }
     setSiDictionary({
       words,
       readOnly: p.readOnly,
@@ -2419,7 +2421,17 @@ export class SiMode {
     this.labelsRead = true;
     try {
       await this.pendingOf(p);
-      const { labels: got, auto } = await objectLabelSets(p);
+      // (the project's files as they are now: while none has been written, moved or put back since the labels were read,
+      // a page drawn again shows those and the whole project is not gone through again)
+      const j = journalOf(p.folder);
+      const stamp = j ? `${p.revision}:${j.changes}` : '';
+      let got: Map<string, string>, auto: Map<string, string>;
+      if (stamp && this.labelsFor === p && this.labelsStamp === stamp) { got = this.objLabels; auto = this.objAutoLabels; } else {
+        ({ labels: got, auto } = await objectLabelSets(p));
+        if (this.project !== p) return;
+        this.labelsFor = p;
+        this.labelsStamp = stamp;
+      }
       if (this.project !== p) return;
       this.objLabels = got;
       this.objAutoLabels = auto;
@@ -2431,6 +2443,9 @@ export class SiMode {
       if (this.labelsAgain) { this.labelsAgain = false; void this.readLabels(); }
     }
   }
+  /** The project the labels in objLabels are of, and the state of its files then ('' when it keeps no history to tell by). */
+  private labelsFor: SiProject | null = null;
+  private labelsStamp = '';
   private labelsAgain = false;
 
   private idOf(c: SiCompound): string { return this.report ? displayId(this.report, c.id) : 'ID?'; }
@@ -2519,10 +2534,13 @@ export class SiMode {
     const row = (depth: number, icon: string, text: string, sel: Pick, more: Partial<RowSpec> = {}): void => { specs.push({ depth, icon, text, sel, ...more }); };
     row(0, svg('si', 16), p.title, { kind: 'project' }, { cls: 'si-root' });
     row(1, svg('grid', 15), 'Dashboard', { kind: 'dashboard' }, { title: 'How far along the project is, and every compound’s data at a glance' });
+    // (the compounds with an open flag, worked out once: not once for each row)
+    const flagInside = new Set<string>();
+    for (const [place, list] of p.openFlagsByPlace()) { const slash = place.indexOf('/'); if (slash > 0 && list.some((x) => x.isFlag)) flagInside.add(place.slice(0, slash)); }
     const compoundRow = (c: SiCompound, depth: number): void => {
       const k = p.completion(c);
       // (SI Assistant's flags and the ones left in the Live Preview)
-      const flagged = Object.keys(flagsOf(c)).length > 0 || [...p.openFlagsByPlace()].some(([k, v]) => k.startsWith(`${c.id}/`) && v.some((x) => x.isFlag));
+      const flagged = Object.keys(flagsOf(c)).length > 0 || flagInside.has(c.id);
       const active = this.activeWarnings(c);
       const tip = active.map((w) => w.message).join('\n').replace(/&/g, '&amp;').replace(/"/g, '&quot;').replace(/</g, '&lt;');
       const icon = flagged ? `<span class="si-st flag" title="Flagged for checking">${svg('flag')}</span>` : active.length ? `<span class="si-st warn" title="${tip}">${svg('warn')}</span>`
@@ -2737,7 +2755,17 @@ export class SiMode {
     this.dashShown();
     this.lockFields(out);
     this.mentionTip.hide();
+    // (a page drawn again after a change made in one of its boxes (Tab out of an ID, a tick): the box the keys had moved on to keeps them)
+    const was = document.activeElement;
+    const wasKey = was instanceof HTMLElement && this.page.contains(was) && /^(INPUT|SELECT|TEXTAREA|BUTTON)$/.test(was.tagName) ? [...focusKeys(this.page)].find(([, e]) => e === was)?.[0] ?? '' : '';
     this.page.replaceChildren(out);
+    if (wasKey && key0 === JSON.stringify(this.pick)) {
+      const back = focusKeys(this.page).get(wasKey);
+      if (back && !(back as HTMLInputElement).disabled) {
+        back.focus({ preventScroll: true });
+        if (back instanceof HTMLInputElement && (back.type === 'text' || back.type === 'search')) { try { back.setSelectionRange(back.value.length, back.value.length); } catch { /* (no caret in this kind of box) */ } }
+      }
+    }
     if (keep && this.ribbon.querySelector<HTMLElement>(`[data-si-tab="${keep}"]`)?.hidden === false) this.showRibbonTab(keep);
     // (the Manuscript Check tab comes forward when its page is first shown: its commands are the page's only ones)
     if (this.pick.kind === 'manuscript' && this.lastPageKind !== 'manuscript') this.showRibbonTab('ms');
@@ -2870,12 +2898,14 @@ export class SiMode {
     };
     if (cmd === 'ref-doi') {
       const got = await ask('Add by DOI', [{ name: 'doi', label: 'DOI', value: '', placeholder: '10.1021/acs.orglett.0c01234, or several on lines of their own', type: 'textarea' }], { ok: 'Add', note: 'Each is filled in from Crossref (needs the internet). Check them on the list after.' });
-      const dois = (got?.doi ?? '').split(/[\s,;]+/).map((x) => x.trim()).filter(Boolean);
+      const dois = splitDois(got?.doi ?? '');
       if (!dois.length) return;
       this.host.flash(`Looking up ${dois.length === 1 ? 'the DOI' : `${dois.length} DOIs`} on Crossref…`, 15000);
       const found: Reference[] = [];
       const failed: string[] = [];
       for (const d of dois) { try { found.push(await fetchDoi(d)); } catch (e) { failed.push(`${d} (${e instanceof Error ? e.message : String(e)})`); } }
+      // (the tab of another project by now: nothing is added to that one, or put in its queue and Undo history)
+      if (this.project !== p) { this.host.flash('Another project is showing now, so the references were not added. Run Add by DOI again in the project they were for.', 6000); return; }
       if (found.length) await add(found);
       if (failed.length) this.host.flash(`Could not look up ${failed.join('; ')}. Add ${failed.length === 1 ? 'it' : 'them'} by hand with Add Reference.`, 8000);
     } else if (cmd === 'ref-new') {
@@ -3304,11 +3334,13 @@ export class SiMode {
   private spectraCard(out: HTMLElement, s: SiSection): void {
     const p = this.project!;
     const now = sectionDefaults(s);
+    // (a setting that decides whether other controls are there: the page is drawn again, so they follow it)
+    const SHOWS_OTHERS: (keyof SpectrumLayout)[] = ['spectrum_frame', 'struct_frame', 'caption', 'link_style'];
     const save = (key: keyof SpectrumLayout, value: unknown): void => void this.act(async () => {
       // (every setting, in SI Assistant's order and form, so either program reads the file the same)
       s.data.defaults = defaultsJson({ ...sectionDefaults(s), [key]: value });
       await p.saveSection(s);
-    }, false);
+    }, SHOWS_OTHERS.includes(key));
     const card = el('div', 'si-card');
     const h = el('h3', 'si-sub', 'How spectra are printed');
     addInfo(h, 'Every compound’s spectra (its Spectra field, and Additional files set to “Spectra section”) are printed here, compound by compound, each with its header line and the compound’s structure and ID on it. A spectrum’s own settings, set on its compound’s spectra page (under this section in the list), win over these.');
@@ -3464,19 +3496,26 @@ export class SiMode {
       req.type = 'checkbox';
       req.checked = !!e.required;
       req.title = 'Required';
+      // (each change is made to the list as it is when it runs, not as it was when this page was drawn: two quick changes both stay)
       req.addEventListener('change', () => {
-        const next = entries.map((x, j) => (j === i ? { ...x, required: req.checked } : x));
-        void this.act(() => p.setDefaultFields(s.id, next));
+        const on = req.checked;
+        void this.act(() => p.setDefaultFields(s.id, defaultFieldsOf(s).map((x) => (x.key === e.key ? { ...x, required: on } : x))));
       });
       const up = el('button', 'si-mini', '▲');
       up.type = 'button';
       up.title = 'Move up';
       up.disabled = i === 0;
-      up.addEventListener('click', () => { const next = entries.slice(); [next[i - 1], next[i]] = [next[i], next[i - 1]]; void this.act(() => p.setDefaultFields(s.id, next)); });
+      up.addEventListener('click', () => void this.act(() => {
+        const next = defaultFieldsOf(s).slice();
+        const at = next.findIndex((x) => x.key === e.key);
+        if (at < 1) return Promise.resolve();
+        [next[at - 1], next[at]] = [next[at], next[at - 1]];
+        return p.setDefaultFields(s.id, next);
+      }));
       const rm = el('button', 'si-mini', '✕');
       rm.type = 'button';
       rm.title = 'Take off the list';
-      rm.addEventListener('click', () => void this.act(() => p.setDefaultFields(s.id, entries.filter((_, j) => j !== i))));
+      rm.addEventListener('click', () => void this.act(() => p.setDefaultFields(s.id, defaultFieldsOf(s).filter((x) => x.key !== e.key))));
       const lab = el('label', 'si-fieldname');
       lab.append(req, ...fieldLabelNodes(def?.label ?? e.key));
       r.append(lab, up, rm);
@@ -4366,6 +4405,9 @@ export class SiMode {
     } catch (e) {
       L.state.textContent = '⚠ Not updated';
       L.state.title = e instanceof Error ? e.message : String(e);
+      // (what is shown is out of date: the next page chosen compiles again, not only moves over the old one)
+      this.liveDirty = true;
+      L.shown = '';
     } finally {
       this.liveBusy = false;
       if (this.liveAgain) { this.liveAgain = false; this.liveSoon(0, false); }
@@ -4771,9 +4813,10 @@ export class SiMode {
     if (!todo.length) return;
     const big = todo.filter((f) => sizeOf(f) > MAX_REPORT_BYTES && !vendorRawKind(f.name));
     if (big.length) this.host.flash(`${big.map((f) => f.name).join(', ')}: kept, but too large to read numbers from.`, 6000);
-    if (!fieldKeys(c).includes('hrms')) await p.addField(c, { key: 'hrms' });
     const failed: string[] = [];
     await this.act(async () => {
+      // (the field and the reports are one step of Undo)
+      if (!fieldKeys(c).includes('hrms')) await p.addField(c, { key: 'hrms' });
       for (const f of todo) {
         let bytes: Uint8Array;
         try { bytes = f instanceof File ? new Uint8Array(await f.arrayBuffer()) : f.bytes; } catch (e) { failed.push(`${f.name} (${e instanceof Error ? e.message : String(e)})`); continue; }
@@ -5255,7 +5298,12 @@ export class SiMode {
       sel.add(new Option('None (type the procedure)', ''));
       for (const gp of gps) sel.add(new Option(partText(gp.name) || 'General procedure', partText(gp.id)));
       sel.value = gpId;
-      sel.addEventListener('change', () => void this.act(() => p.setValue(c, 'procedure', { ...choice, gp: sel.value, values: (choice.values as Json) ?? {} })));
+      // (from the compound as it is when saved, as the boxes below do: what was typed in them since the page was drawn is kept)
+      sel.addEventListener('change', () => void this.act(() => {
+        const now = valuesOf(c).procedure;
+        const cur = now && typeof now === 'object' && !Array.isArray(now) ? (now as Json) : {};
+        return p.setValue(c, 'procedure', { ...cur, gp: sel.value, values: (cur.values as Json) ?? {} });
+      }));
       r.append(sel);
       body.append(r);
     }
@@ -5326,7 +5374,8 @@ export class SiMode {
       const rm = el('button', 'si-mini', '✕');
       rm.type = 'button';
       rm.title = 'Remove this report';
-      rm.addEventListener('click', () => void this.act(() => { if (!p.readOnly) reports.splice(reports.indexOf(r), 1); return save(); }));
+      // (a second click before the page is drawn again finds the report gone: it removes nothing, not the last one)
+      rm.addEventListener('click', () => void this.act(() => { const at = reports.indexOf(r); if (!p.readOnly && at >= 0) reports.splice(at, 1); return save(); }));
       line.append(sel, box.el, rm);
       body.append(line);
     }
@@ -5494,7 +5543,8 @@ export class SiMode {
       this.tree.querySelector<HTMLElement>('.si-row.on')?.focus();
       return;
     }
-    if (e.key === 'ArrowUp' || e.key === 'ArrowDown') {
+    // (from the tree only: in the page the arrows scroll it, and a button or list there keeps its own keys)
+    if ((e.key === 'ArrowUp' || e.key === 'ArrowDown') && this.tree.contains(e.target as Node)) {
       const rows = [...this.tree.querySelectorAll<HTMLElement>('.si-row')];
       const at = rows.findIndex((r) => r.classList.contains('on'));
       const next = rows[Math.max(0, Math.min(rows.length - 1, at + (e.key === 'ArrowUp' ? -1 : 1)))];
@@ -6199,7 +6249,14 @@ export class SiMode {
           if (j < 0 || j >= size) return;
           await this.act(() => p.moveCompound(c.id, sid, step > 0 ? j + 1 : j, kid));
           if (kid && p.position(c)[2] === i) this.host.flash('A scheme page’s compounds follow the order of their boxes: move the box in the scheme instead.', 4000);
-        } else if (s) {
+        } else if (this.pick.kind === 'scheme') {
+          // (the scheme page itself, among the items of its section: not the section that holds it)
+          const k = p.scheme(this.pick.id);
+          const sec = p.section(k.sectionId);
+          const i = sec.items.indexOf(k), j = i + step;
+          if (i < 0 || j < 0 || j >= sec.items.length) return;
+          await this.act(() => p.moveScheme(k.id, sec.id, step > 0 ? j + 1 : j));
+        } else if (s && this.pick.kind === 'section') {
           const list = s.parentId ? p.section(s.parentId).children : p.top;
           const i = list.indexOf(s), j = i + step;
           if (j < 0 || j >= list.length) return;
@@ -6232,8 +6289,10 @@ export class SiMode {
         if (!d) return;
         const ids = p.idsWithoutPages(d);
         if (!ids.length) { this.host.flash('Every ID in the table has a compound page already.'); return; }
-        await this.act(async () => { for (const _ of ids) await p.addCompound(d.id); });
-        this.host.flash(`Added ${ids.length} compound page${ids.length === 1 ? '' : 's'}: ${ids.join(', ')}.`);
+        let done = false;
+        await this.act(async () => { for (const _ of ids) await p.addCompound(d.id); done = true; });
+        // (when it could not be saved the reason is on the screen: it is not replaced by a success)
+        if (done) this.host.flash(`Added ${ids.length} compound page${ids.length === 1 ? '' : 's'}: ${ids.join(', ')}.`);
         return;
       }
       case 'manual-id': {
@@ -6260,12 +6319,12 @@ export class SiMode {
         // the selected compound gets the field; a Data section picked gets it on its list of fields
         if (!c && data && this.pick.kind === 'section') {
           const entries = defaultFieldsOf(data);
-          const got = await this.chooseField(entries.map((e) => e.key));
+          const got = await this.chooseField(entries.map((e) => e.key), entries.map((e) => e.custom?.label ?? ''));
           if (got) await this.act(() => p.setDefaultFields(data.id, [...entries, { ...got, required: false }]));
           return;
         }
         if (!c) { this.host.flash('Select a compound, or a Data section to change its list of fields.'); return; }
-        const got = await this.chooseField(fieldKeys(c));
+        const got = await this.chooseField(fieldKeys(c), (Array.isArray(c.data.fields) ? (c.data.fields as FieldEntry[]) : []).map((e) => (e && typeof e === 'object' ? e.custom?.label ?? '' : '')));
         if (got) await this.act(() => p.addField(c, got));
         return;
       }
@@ -6343,9 +6402,9 @@ export class SiMode {
       case 'apply-fields': {
         const d = needData();
         if (!d) return;
-        let n = 0;
-        await this.act(async () => { n = await p.applyDefaultFields(d.id); });
-        this.host.flash(n ? `Updated the fields of ${n} compound page${n === 1 ? '' : 's'}.` : 'Every compound page has the section’s fields already.');
+        let n = 0, done = false;
+        await this.act(async () => { n = await p.applyDefaultFields(d.id); done = true; });
+        if (done) this.host.flash(n ? `Updated the fields of ${n} compound page${n === 1 ? '' : 's'}.` : 'Every compound page has the section’s fields already.');
         return;
       }
       case 'warnings':
@@ -6527,7 +6586,7 @@ export class SiMode {
   }
 
   /** Pick one of the library's fields (or make one), leaving out those the page has. */
-  private async chooseField(have: string[]): Promise<FieldEntry | null> {
+  private async chooseField(have: string[], haveLabels: string[] = []): Promise<FieldEntry | null> {
     const options = [...CORE_FIELDS, ...LIBRARY_FIELDS].filter((f) => !have.includes(f.key) && f.kind !== 'structure').map((f) => ({ value: f.key, label: f.label }));
     options.push({ value: '+custom', label: 'A custom field…' });
     const got = await ask('Add Field', [{ name: 'key', label: 'Field', value: options[0]?.value ?? '+custom', options }], { ok: 'Add' });
@@ -6538,9 +6597,14 @@ export class SiMode {
       { name: 'type', label: 'Kind', value: 'short_text', options: [{ value: 'short_text', label: 'Short text' }, { value: 'long_text', label: 'Long text' }, { value: 'number_unit', label: 'Number with unit' }, { value: 'file', label: 'File(s)' }] },
     ], { ok: 'Add' });
     if (!own || !own.label.trim()) return null;
-    const key = 'custom_' + own.label.trim().toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
-    if (ALL_FIELDS.has(key) || have.includes(key)) { this.host.flash('There is a field with that name already.'); return null; }
-    return { key, custom: { label: own.label.trim(), type: own.type } };
+    const label = own.label.trim();
+    if (haveLabels.some((x) => x.trim().toLowerCase() === label.toLowerCase())) { this.host.flash('There is a field with that name already.'); return null; }
+    // (the key is made from the letters and digits of the name; a name with none, or one that makes a key a field has already, gets a number after it)
+    const slug = label.toLowerCase().replace(/[^a-z0-9]+/g, '_').replace(/^_|_$/g, '').slice(0, 30);
+    const base = slug || 'field';
+    let key = `custom_${base}`;
+    for (let n = 2; ALL_FIELDS.has(key) || have.includes(key); n++) key = `custom_${base}_${n}`;
+    return { key, custom: { label, type: own.type } };
   }
 
   private editStructure(c: SiCompound): void {
@@ -6567,8 +6631,10 @@ export class SiMode {
   private async pasteSpectrum(c: SiCompound, e?: ClipboardEvent): Promise<void> {
     const p = this.project!;
     if (p.readOnly) { this.host.flash('This SI project is open read-only.'); return; }
+    // (read at once: a paste event's data is only there while the event is being handled, not after the saves on their way are waited for)
+    const reading = this.clipboard(e);
     await this.commitAll();
-    const got = await this.clipboard(e);
+    const got = await reading;
     if (!got) return;
     let main: { ext: string; bytes: Uint8Array } | null = null;
     let original: Uint8Array | null = null;
@@ -6597,6 +6663,7 @@ export class SiMode {
       [...SPECTRUM_TYPES.map((t) => ({ value: t as string, label: PASTE_TYPE_LABELS[t], primary: t === guess })), { value: '', label: 'Cancel' }], '');
     if (!type) return;
     const m = main;
+    let saved = false;
     await this.act(async () => {
       const def = ALL_FIELDS.get('spectra')!;
       if (!fieldKeys(c).includes('spectra')) await p.addField(c, { key: 'spectra' });
@@ -6618,8 +6685,10 @@ export class SiMode {
       list.push(item);
       await p.saveCompound(c);
       this.forgetThumbs(p);
+      saved = true;
     });
-    this.host.flash(`Pasted a ${PASTE_TYPE_LABELS[type as keyof typeof PASTE_TYPE_LABELS] ?? type} spectrum into ${this.idOf(c)}. ${keptLine(how)}`, 6000);
+    // (act says why when it could not save: that is not covered over)
+    if (saved) this.host.flash(`Pasted a ${PASTE_TYPE_LABELS[type as keyof typeof PASTE_TYPE_LABELS] ?? type} spectrum into ${this.idOf(c)}. ${keptLine(how)}`, 6000);
   }
 
   /** Paste ▸ the copied structure (ChemDraw, Chemweave, or a molfile) as the compound's structure. */
@@ -6755,7 +6824,9 @@ export class SiMode {
       }
       if (c) {
         if (!fieldKeys(c).includes('references')) await p.addField(c, { key: 'references' });
-        const v = valuesOf(c).references as Json;
+        // (a value that is missing, or not of the form a references field has, starts as an empty one)
+        const now = valuesOf(c).references;
+        const v: Json = now && typeof now === 'object' && !Array.isArray(now) ? (now as Json) : { text: '', refs: [] };
         const refs = Array.isArray(v.refs) ? (v.refs as string[]) : [];
         await p.setValue(c, 'references', { ...v, refs: [...refs, ...ids.filter((i) => !refs.includes(i))] });
       }
@@ -6799,6 +6870,22 @@ function guessSpectrum(name: string): string {
 }
 
 /** Check items in a list (searchable); resolves with those checked (none when cancelled). */
+/**
+ * The page's boxes and buttons by what tells them apart (kind, label, tip, class and place among
+ * those alike), so the one that had the keys can be found again when the page is drawn again.
+ */
+function focusKeys(root: HTMLElement): Map<string, HTMLElement> {
+  const seen = new Map<string, number>();
+  const out = new Map<string, HTMLElement>();
+  for (const e of root.querySelectorAll<HTMLElement>('input, select, textarea, button')) {
+    const base = [e.tagName, (e as HTMLInputElement).type ?? '', e.getAttribute('aria-label') ?? '', e.title, e.className].join('|');
+    const n = seen.get(base) ?? 0;
+    seen.set(base, n + 1);
+    out.set(`${base}#${n}`, e);
+  }
+  return out;
+}
+
 /** A mention's kind from its id's start, for tables, figures and schemes. */
 const OBJECT_WORDS: Record<string, string> = { 't-': 'Table', 'f-': 'Figure', 'k-': 'Scheme' };
 
@@ -6830,10 +6917,13 @@ function pickFromList<T>(title: string, items: T[], main: (x: T) => string, sub:
     search.addEventListener('input', fill);
     const buttons = el('div', 'ask-buttons');
     const ok = el('button', 'primary', 'Add');
+    ok.type = 'submit';
     ok.value = 'ok';
     ok.disabled = true;
+    // (not a submit button: Enter in the Search box takes the form's first one, which would be Cancel and drop the ticked rows)
     const cancel = el('button', '', 'Cancel');
-    cancel.value = 'cancel';
+    cancel.type = 'button';
+    cancel.addEventListener('click', () => d.close('cancel'));
     buttons.append(cancel, ok);
     form.append(search, list, buttons);
     d.append(form);

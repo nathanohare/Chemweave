@@ -6,7 +6,7 @@
 
 import { SettingsWindow, type SettingsPage } from './settings-window';
 import { ask, type Field } from './ask';
-import type { Json, SiProject } from '../si/project';
+import { SiProjectError, type Json, type SiProject } from '../si/project';
 import type { DocStyle } from '../style';
 import type { NamedStyle } from '../document/document';
 import { COUNT_NAMES, ENDS, HEADING_PRESETS, headingExample, headingFormat, presetOf, storedFormat, storeHeadingFormat, type CountStyle, type HeadingFormat } from '../si/heading-format';
@@ -368,7 +368,9 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
   await host.save(() => {
     storeImpurityTable(s, table2);
     const h = Number(got.tolH), c = Number(got.tolC);
-    storeImpurityTolerances(s, Number.isFinite(h) && h >= 0 ? h : tolH, Number.isFinite(c) && c >= 0 ? c : tolC);
+    // (a box left empty keeps the tolerance it had: Number('') is 0, which would switch the warnings off)
+    const ok = (t: string | undefined, n: number): boolean => !!t?.trim() && Number.isFinite(n) && n >= 0;
+    storeImpurityTolerances(s, ok(got.tolH, h) ? h : tolH, ok(got.tolC, c) ? c : tolC);
   });
 }
 
@@ -376,7 +378,12 @@ async function impurities(p: SiProject, host: SiSettingsHost): Promise<void> {
 
 /** The project's dictionary.txt: words spelled right in its text, and printed as written (not formatted as chemistry). */
 async function dictionary(p: SiProject, host: SiSettingsHost): Promise<void> {
-  const text = (await p.folder.readText(DICTIONARY_FILE).catch(() => null)) ?? '';
+  // (a file that is there but can't be read now is never shown as empty and written over: null is only a file that isn't there)
+  let text: string;
+  try { text = (await p.folder.readText(DICTIONARY_FILE)) ?? ''; } catch (e) {
+    await host.save(() => { throw new SiProjectError(`${DICTIONARY_FILE} in the project folder can’t be read just now (half synced, or open in another program), so the dictionary was not opened. Try again in a moment. (${e instanceof Error ? e.message : String(e)})`); });
+    return;
+  }
   const got = await ask('Dictionary', [
     { name: 'words', label: 'Words, one per line', value: text, type: 'textarea', placeholder: 'e.g. CDK2' },
   ], { ok: 'Save', note: `The project's own words (${DICTIONARY_FILE} in the project folder, shared with co-authors). They are never underlined, and are printed as written: “CDK2” is not subscripted. Lines starting with # are comments. Right-click an underlined word ▸ Add to This Project’s Dictionary adds one.` });
@@ -407,7 +414,7 @@ async function styles(p: SiProject, host: SiSettingsHost): Promise<void> {
   }
   const tbody = table.createTBody();
   body.append(table);
-  type Row = { id: string; read: () => StyleLook; fill: (look: StyleLook) => void };
+  type Row = { id: string; read: () => StyleLook; fill: (look: StyleLook) => void; follow: () => void };
   const rows: Row[] = [];
   const input = (type: string, label: string, cls = ''): HTMLInputElement => {
     const x = document.createElement('input');
@@ -438,28 +445,41 @@ async function styles(p: SiProject, host: SiSettingsHost): Promise<void> {
     reset.textContent = 'Reset';
     reset.title = `${name} as Chemweave makes it`;
     for (const el of [font, size, bold, italic, color, align, before, after, line, reset]) tr.insertCell().append(el);
+    const controls = (): StyleLook => cleanLook({ font: font.value, size: Number(size.value), bold: bold.checked, italic: italic.checked, color: color.value, align: align.value, spaceBefore: Number(before.value), spaceAfter: Number(after.value), line: Number(line.value) });
+    // What the boxes held when last filled, and which properties had a value of their own then: a
+    // property that still holds what it was filled with, and had no value of its own, follows the
+    // default (Compound Title and Contents Heading follow Normal as it is set now, not as it was when this opened).
+    let filled: StyleLook = {};
+    let own = new Set<string>();
     const fill = (look: StyleLook): void => {
       const def = defOf();
       const v = { ...def, ...look };
       font.value = v.font; size.value = String(v.size); bold.checked = !!v.bold; italic.checked = !!v.italic;
       color.value = v.color && /^#[0-9a-f]{6}$/i.test(v.color) ? v.color : '#000000';
       align.value = v.align; before.value = String(v.spaceBefore); after.value = String(v.spaceAfter); line.value = String(v.line);
+      filled = controls();
+      own = new Set(Object.keys(look));
+      // (the styles made from Normal show its change at once)
+      if (id === 'Normal') for (const r of rows) if (r.id !== 'Normal') r.follow();
     };
     // only what differs from the default is kept (the rest keeps following Chemweave's)
     const read = (): StyleLook => {
       const def = defOf();
-      const got = cleanLook({ font: font.value, size: Number(size.value), bold: bold.checked, italic: italic.checked, color: color.value, align: align.value, spaceBefore: Number(before.value), spaceAfter: Number(after.value), line: Number(line.value) });
+      const got = controls();
       const defColor = def.color && /^#[0-9a-f]{6}$/i.test(def.color) ? def.color.toLowerCase() : '#000000';
       const out: StyleLook = {};
       for (const [k, v] of Object.entries(got) as [keyof StyleLook, StyleLook[keyof StyleLook]][]) {
+        if (!own.has(k) && v === filled[k]) continue;
         const was = k === 'color' ? defColor : def[k];
         if (v !== was) (out as Record<string, unknown>)[k] = v;
       }
       return out;
     };
+    const follow = (): void => { if (id !== 'Normal') fill(read()); };
+    if (id === 'Normal') for (const x of [font, size, bold, italic, color, align, before, after, line]) for (const ev of ['input', 'change']) x.addEventListener(ev, () => { for (const r of rows) if (r.id !== 'Normal') r.follow(); });
     reset.addEventListener('click', () => fill({}));
     fill(now[id] ?? {});
-    rows.push({ id, read, fill });
+    rows.push({ id, read, fill, follow });
   }
   const collect = (): StyleLooks => Object.fromEntries(rows.map((r) => [r.id, r.read()]).filter(([, l]) => Object.keys(l as StyleLook).length));
   const got = await ask('Styles', [], {

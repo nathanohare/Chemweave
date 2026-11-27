@@ -49,7 +49,8 @@ export class SiFigureEditor {
     this.el.append(h, this.pic, lab);
     this.el.addEventListener('focusin', () => this.host.chosen(this));
     this.el.addEventListener('mousedown', () => this.host.chosen(this));
-    this.el.addEventListener('dblclick', () => void this.command('draw-structure'));
+    // (not a double-click on the Label box, to select a word in it, or on the heading's buttons)
+    this.el.addEventListener('dblclick', (e) => { if (!(e.target as Element | null)?.closest?.('input, label, button, textarea, select, .info-icon, .info-pop')) void this.command('draw-structure'); });
     this.paint();
   }
 

@@ -14,6 +14,7 @@ const attr = (t: string): string => esc(t).replace(/"/g, '&quot;');
 export const hasFormatting = (clean: string): boolean => /<(b|i|u|sub|sup)>|<span /.test(clean);
 
 const BLOCKS = new Set(['P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+const CELLS = new Set(['TD', 'TH']);
 
 /** The pasted HTML as plain text with only <b>, <i>, <u>, <sub>, <sup> and SI links (line breaks as <br> when `multiline`, else spaces). */
 export function cleanPastedHtml(html: string, multiline: boolean): string {
@@ -63,8 +64,11 @@ export function cleanPastedHtml(html: string, multiline: boolean): string {
     if (tag === 'SUB' || va === 'sub') next.pos = 'sub';
     else if (tag === 'SUP' || va === 'super') next.pos = 'sup';
     else if (va === 'baseline') next.pos = '';
-    const block = BLOCKS.has(tag) && out.length > 0;
-    if (block) out.push(multiline ? '<br>' : ' ');
+    // (one break between blocks, not one for each that starts: a list item holding a paragraph is one line;
+    // the cells of a table row are kept apart by a space)
+    const last = out[out.length - 1] ?? '';
+    if (BLOCKS.has(tag) && out.length > 0 && last !== (multiline ? '<br>' : ' ')) out.push(multiline ? '<br>' : ' ');
+    else if (CELLS.has(tag) && out.length > 0 && last !== '<br>' && !last.endsWith(' ')) out.push(' ');
     for (const k of node.childNodes) walk(k, next);
   };
   walk(doc.body, { b: false, i: false, u: false, pos: '' });

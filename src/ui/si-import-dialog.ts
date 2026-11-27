@@ -259,9 +259,9 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
       item(list, 'Cover page', plan.cover, () => coverPage(plan.cover as ImportedCover));
     }
     if (plan.references.length) group(`References (${plan.references.length})`, () => referencesPage(plan.references as ImportedReference[]));
-    // spectra no compound was found for (each can be given one)
+    // spectra no compound was found for (each can be given one); there when there are spectra at all, so one set to "(not matched)" later can be found again
     const unmatchedCount = (): number => spectraOf(null).length;
-    const unmatched = unmatchedCount() ? group(`Spectra not matched (${unmatchedCount()})`, () => unmatchedPage()) : null;
+    const unmatched = plan.spectra.length ? group(`Spectra not matched (${unmatchedCount()})`, () => unmatchedPage()) : null;
     /** A spectrum given another compound: the pages showing spectra are made again when next shown. */
     const spectraMoved = (): void => {
       for (const it of [...built.keys()]) if (it !== current && (compoundItems.has(it) || it === unmatched?.head)) built.delete(it);
@@ -516,9 +516,16 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
           const r = todo[k];
           status.textContent = `Looking up ${k + 1} of ${todo.length}…`;
           try {
-            const found = await fetchDoi(String((r.ref as unknown as Record<string, unknown>).doi));
+            const ref = r.ref as unknown as Record<string, unknown>;
+            const before = { ...ref };
+            const found = await fetchDoi(String(ref.doi));
             if (closed) return;
-            r.ref = { ...found, id: r.ref.id ?? found.id };
+            // (filled in place: the boxes of the table write to this very object, and what was typed in one during the lookup is kept)
+            const next: Record<string, unknown> = { ...found, id: ref.id ?? found.id };
+            for (const key of new Set([...Object.keys(ref), ...Object.keys(next)])) {
+              if (JSON.stringify(ref[key]) !== JSON.stringify(before[key])) continue;
+              if (key in next) ref[key] = next[key]; else delete ref[key];
+            }
             r.looked_up = 'done';
             done++;
           } catch (e) {
@@ -557,6 +564,8 @@ export function askImport(plan: ImportPlan, read: ReadResult, host: SiImportDial
           r.append(b);
         } else r.append(el('span', 'si-imp-nobox'));
         const name = lineBox(s.name, (v) => { s.name = v.trim() || s.name; sectionChanged(s, false); }, 'Section name');
+        // (a name can't be empty: the one it has is put back in the box when it is left)
+        name.addEventListener('change', () => { if (!name.value.trim()) name.value = s.name; });
         const what = KIND_NOTES[s.kind] + (s.kind === 'data' ? ` (${s.compounds.filter((c) => c.keep).length} compounds)` : '');
         r.append(name, el('span', 'muted', what));
         made.append(r);

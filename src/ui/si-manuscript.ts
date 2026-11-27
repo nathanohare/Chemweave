@@ -68,6 +68,8 @@ export class SiManuscriptPage {
   /** A check asked for while one was running (with its `force`), made when that one ends. */
   private queued: boolean | null = null;
   private names: string[] = [];
+  /** Why the last check failed ('' when it didn't), shown in the summary while there is no result. */
+  private lastError = '';
 
   constructor(private host: SiManuscriptHost, private state: ManuscriptState) {
     const h = el('h2', 'si-title', 'Manuscript Check');
@@ -85,7 +87,9 @@ export class SiManuscriptPage {
       this.el.classList.remove('si-drop');
       const files = [...(e.dataTransfer?.files ?? [])];
       if (!files.length) return;
+      // (the window's own drop handler opens files as documents: not for files added here)
       e.preventDefault();
+      e.stopPropagation();
       void Promise.all(files.map(async (f) => ({ name: f.name, bytes: new Uint8Array(await f.arrayBuffer()) }))).then((got) => this.add(got));
     });
     this.draw();
@@ -106,31 +110,32 @@ export class SiManuscriptPage {
     // a check is running (a long PDF being read): this one is made right after it, so a file
     // added or a result dismissed meanwhile is not left out
     if (this.busy) { this.queued = this.queued === null ? force : this.queued || force; return; }
-    this.names = await manuscriptFiles(this.p);
-    if (!this.names.length) {
-      forget(this.p);
-      this.state.sources = [];
-      this.state.result = await checkManuscript(this.p, [], { files: 0 });
-      this.state.checked = true;
-      this.draw();
-      this.host.resultChanged();
-      return;
-    }
+    // (busy from the start: a check asked for while the folder is listed is queued, not run beside this one)
     this.busy = true;
     this.el.classList.add('si-busy');
+    this.lastError = '';
     try {
-      // (files that haven't changed since they were read are not read again, unless `force`)
-      const sources = await readAll(this.p, {
-        force,
-        smiles: (m) => this.host.smiles(m),
-        progress: (message) => { this.summaryEl.textContent = message; return this.el.isConnected; },
-      });
-      this.state.sources = sources;
-      this.state.result = await checkManuscript(this.p, sources, { facts: (m) => this.host.facts(m), files: this.names.length });
-      this.state.checked = true;
+      this.names = await manuscriptFiles(this.p);
+      if (!this.names.length) {
+        forget(this.p);
+        this.state.sources = [];
+        this.state.result = await checkManuscript(this.p, [], { files: 0 });
+        this.state.checked = true;
+      } else {
+        // (files that haven't changed since they were read are not read again, unless `force`)
+        const sources = await readAll(this.p, {
+          force,
+          smiles: (m) => this.host.smiles(m),
+          progress: (message) => { this.summaryEl.textContent = message; return this.el.isConnected; },
+        });
+        this.state.sources = sources;
+        this.state.result = await checkManuscript(this.p, sources, { facts: (m) => this.host.facts(m), files: this.names.length });
+        this.state.checked = true;
+      }
     } catch (e) {
       if (e instanceof Stopped) { this.queued = null; this.summaryEl.textContent = 'The check was stopped. Click Check Again to finish it.'; return; }
-      this.host.flash(`The manuscript could not be checked: ${e instanceof Error ? e.message : String(e)}`, 8000);
+      this.lastError = e instanceof Error ? e.message : String(e);
+      this.host.flash(`The manuscript could not be checked: ${this.lastError}`, 8000);
     } finally {
       this.busy = false;
       this.el.classList.remove('si-busy');
@@ -229,7 +234,10 @@ export class SiManuscriptPage {
   private draw(): void {
     this.drawFiles();
     const r = this.state.result;
-    this.summaryEl.textContent = r ? summary(r) : this.names.length ? 'Reading the manuscript…' : 'No manuscript added yet.';
+    this.summaryEl.textContent = r ? summary(r)
+      : !this.names.length ? 'No manuscript added yet.'
+      : this.lastError && !this.busy ? `The manuscript could not be checked: ${this.lastError.replace(/[.\s]+$/, '')}. Click Check Again.`
+      : this.busy ? 'Reading the manuscript…' : 'The manuscript has not been checked yet. Click Check Again.';
     const notes = r ? [...new Set(r.notes)] : [];
     this.notesEl.replaceChildren(...notes.map((n) => el('li', '', n)));
     this.notesEl.hidden = !notes.length;
