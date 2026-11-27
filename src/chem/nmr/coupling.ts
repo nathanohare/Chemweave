@@ -150,9 +150,10 @@ export function predictCouplings(g: JGraph): Coupling[] {
   at.forEach((f, fi) => {
     if (f.el !== 'F') return;
     for (const p of nbs[fi]) {
-      // (geminal H–F: about 80 Hz on an sp2 CH, 47.5 on an sp3 CH2F or CHF, and 46.4 Hz in CH3F;
-      // Pretsch, Bühlmann, Badertscher, Structure Determination of Organic Compounds, 4th ed.,
-      // Springer 2009, H–F coupling constants)
+      // Geminal H–F: 46.4 Hz in CH3F (Pretsch, Bühlmann, Badertscher, Structure Determination of
+      // Organic Compounds, 4th ed., Springer 2009, H–F coupling constants; to be checked against the
+      // book). The 80 Hz (sp2 CH) and 47.5 Hz (sp3 CH2F/CHF) values predate this note and have no
+      // checked source yet.
       if (at[p.n].h) add(p.n, fi, at[p.n].h === 1 && hyb(p.n) === 2 ? 80 : at[p.n].h === 3 ? 46.4 : 47.5, 'HF-gem');
       for (const q of nbs[p.n]) {
         if (q.n === fi || !at[q.n].h) continue;
