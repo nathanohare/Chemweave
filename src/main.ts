@@ -126,7 +126,7 @@ import { LayersPanel } from './ui/layers-panel';
 import { Scrollbars, type ScrollContent } from './ui/scrollbars';
 import { installScrollbarFade } from './ui/scrollbar-fade';
 import type { Presenter, ShowOptions } from './ui/present';
-import { editHeaderFooter } from './ui/header-footer-dialog';
+import { applyHeaderFooter, editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
 import { docHolder, deckHolder } from './ui/ref-holders';
 import { editSlideRefs } from './ui/slide-refs-dialog';
@@ -7667,7 +7667,7 @@ async function referencesSlideOptions(): Promise<void> {
 async function insertReference(): Promise<void> {
   if (docActive() || sheetActive()) { void openReferences(); return; }
   finishTyping();
-  const groups = (): RefGroup[] => refHolders().map((h) => ({ name: h.name, refs: h.refs(), style: h.citeStyle() }));
+  const groups = (): RefGroup[] => refHolders().map((h) => ({ key: h.key, name: h.name, refs: h.refs(), style: h.citeStyle() }));
   const here = sameDrawing('The reference');
   const got = await chooseRefsToInsert(groups(), async () => {
     const asked = await ask('Reference by DOI', [{ name: 'doi', label: 'DOI', value: '' }], { ok: 'Look Up', note: 'Paste a DOI (10.1021/om100106e) or a doi.org link. The details are filled in from Crossref, which needs the internet.' });
@@ -7989,6 +7989,8 @@ async function drawingStyleDialog(): Promise<void> {
     current, own: ownStyles, kindPlural: STYLE_KINDS[mode].plural, where: STYLE_KINDS[mode].where,
     isDefault: modeStyleFor(mode) === current.name, hasStructures,
     preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+    // a style saved in the window is kept even when the window is cancelled
+    saveOwn: (own) => { ownStyles = own; storeSettings(); },
   });
   if (!got || ws.active !== tab) return;
   ownStyles = got.own;
@@ -8565,7 +8567,7 @@ async function headerFooter(tab: 'slide' | 'notes' = 'slide'): Promise<void> {
   const ix = pickedSlides();
   const got = await editHeaderFooter(d.master, d.current, ix.length, tab);
   if (!got || deckNow() !== d) return;
-  d.setHeaderFooter(got.master, got.show, got.scope === 'picked' ? ix : undefined);
+  applyHeaderFooter(d, got, ix);
 }
 
 /** Slide Show > Set Up Show. */
@@ -9673,6 +9675,7 @@ function loadSiMode(): Promise<SiMode> {
         const got = await editDrawingStyle({
           current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
           preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+          saveOwn: (own) => { ownStyles = own; storeSettings(); },
         });
         if (!got) return null;
         if (got.own !== ownStyles) { ownStyles = got.own; storeSettings(); }

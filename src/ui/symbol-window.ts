@@ -94,9 +94,11 @@ export class SymbolWindow {
       const r = this.d.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;
       const move = (m: PointerEvent) => { this.d.style.left = `${Math.max(0, m.clientX - dx)}px`; this.d.style.top = `${Math.max(0, m.clientY - dy)}px`; this.d.style.right = 'auto'; };
-      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); };
+      // (a drag the browser takes over, as a touch gesture, ends in pointercancel and not pointerup)
+      const up = () => { removeEventListener('pointermove', move); removeEventListener('pointerup', up); removeEventListener('pointercancel', up); };
       addEventListener('pointermove', move);
       addEventListener('pointerup', up);
+      addEventListener('pointercancel', up);
     });
   }
 
@@ -153,7 +155,13 @@ export class SymbolWindow {
     if (!this.target.insert(ch)) return;
     this.target.used(ch);
     const s = symbolInfo(ch);
+    // a symbol typed with the keyboard (arrow to it, Enter) keeps the focus: the tiles are made again,
+    // so the one focused is found again, or the arrow keys and Esc would stop working
+    const at = document.activeElement;
+    const was = at instanceof HTMLElement && at.classList.contains('sym') ? (this.grid.contains(at) ? this.grid : this.recentRow.contains(at) ? this.recentRow : null) : null;
+    const chAt = at instanceof HTMLElement ? at.textContent : '';
     this.fill();
+    if (was) [...was.querySelectorAll<HTMLButtonElement>('button.sym')].find((b) => b.textContent === chAt)?.focus();
     this.describe(s);
   }
 

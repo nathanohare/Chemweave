@@ -212,14 +212,17 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
     row(grid, 'Crop to shape', shape);
     const ratio = document.createElement('select');
     for (const [v, name] of ASPECTS) ratio.add(new Option(name, v));
-    ratio.addEventListener('change', () => {
+    const applyRatio = () => {
       const img = small;
-      if (!img || !ratio.value) { aspect = undefined; crop = { ...(o.crop ?? { l: 0, t: 0, r: 0, b: 0 }) }; draw(); return; }
+      if (!ratio.value) { aspect = undefined; crop = { ...(o.crop ?? { l: 0, t: 0, r: 0, b: 0 }) }; draw(); return; }
+      // (picked before the picture has loaded: it is applied as soon as it has, below)
+      if (!img) return;
       const want = ratio.value === 'own' ? img.width / img.height : Number(ratio.value);
       crop = aspectCrop(img.width, img.height, want);
       aspect = want;
       draw();
-    });
+    };
+    ratio.addEventListener('change', applyRatio);
     addInfo(row(grid, 'Crop to proportions', ratio).querySelector('span'), 'Centered; drag the crop handles to move it.');
 
     // ------------------------------------------------ buttons
@@ -230,6 +233,12 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
       crop = { l: 0, t: 0, r: 0, b: 0 };
       aspect = small ? small.width / small.height : undefined;
       for (const s of [bright, contrast, sharp, alpha]) s.set(0);
+      // (the sliders and colors that only matter once a setting is turned on again start from their usual values)
+      tol.set(BG_TOL * 100);
+      level.set(50);
+      tint = { kind: 'tint', dark: '#1f3864', light: '#ddebf7' };
+      dark.value = tint.dark;
+      light.value = tint.light;
       recolor.value = 'none';
       bgOn.checked = false;
       shape.value = 'rect';
@@ -351,7 +360,7 @@ export function pictureFormat(o: PictureFormatOptions): Promise<PictureFormatRes
       c.height = Math.max(1, Math.round(ih * k));
       c.getContext('2d', { willReadFrequently: true })!.drawImage(img, 0, 0, c.width, c.height);
       small = c;
-      draw();
+      if (ratio.value) applyRatio(); else draw();
     }).catch(() => { hint.textContent = 'This picture could not be read.'; });
   });
 }

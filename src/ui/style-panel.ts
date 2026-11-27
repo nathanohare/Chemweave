@@ -715,7 +715,7 @@ export class StylePanel {
     this.check('Axis and its titles', d.axis, (v) => set({ axis: v }));
     this.check('Mark the largest barrier', d.barrier, (v) => set({ barrier: v }), 'A double arrow from the lowest point up to the highest after it, on each pathway');
     this.check('Mark the overall change', !!d.overall, (v) => set({ overall: v }), 'A double arrow from the first species to the last, on each pathway');
-    this.number('Decimal places', d.digits, 1, 0, 3, (v) => set({ digits: v }));
+    this.whole('Decimal places', d.digits, 0, 3, (v) => set({ digits: v }));
     const n = Math.max(...d.paths.map((p) => p.points.length));
     this.note(`${d.paths.length === 1 ? 'One pathway' : `${d.paths.length} pathways`} through ${n} species.`);
     this.help('Change the names and energies in the window; drag a corner to resize it. Anything you draw inside stays when it is redrawn.');
@@ -854,7 +854,7 @@ export class StylePanel {
       const rel = toRelative(mo).levels[at];
       this.number('Energy', rel.e, 0.01, 0, 1, (v) => set(withLevel(mo, at, { e: v })), 'Its place up the diagram, from 0 at the bottom to 1 at the top (no units). Dragging the level sets it too.');
       if (!l.auto) {
-        this.number('Degeneracy', l.n, 1, 1, 5, (v) => set(withLevel(mo, at, { n: v })), 'How many orbitals share this level');
+        this.whole('Degeneracy', l.n, 1, 5, (v) => set(withLevel(mo, at, { n: v })), 'How many orbitals share this level');
         if (l.column === 'middle') {
           const choices = fromChoices(mo.levels), want = fromValue(l);
           const list: Opt<string>[] = choices.map((c): Opt<string> => [c.value, c.text]);
@@ -1318,9 +1318,9 @@ export class StylePanel {
       this.select('Column Alignment', JUSTIFY, colAlign === 'justify' ? 'left' : colAlign, (v) => set('Column alignment', setColumnAlign(t, cell.c, v)));
       this.number('Column width (pt)', round(t.cols[cell.c], 10), 1, 4, 2000, (v) => set('Column width', setColumnWidth(t, cell.c, v)),
         'You can also drag the handle at the right of the text box while typing in a cell.');
-      this.number('Cell spans (columns)', spanOf(t, cell.r, cell.c), 1, 1, t.cols.length - cell.c, (v) => set('Join table cells', setSpan(t, cell.r, cell.c, v)),
+      this.whole('Cell spans (columns)', spanOf(t, cell.r, cell.c), 1, t.cols.length - cell.c, (v) => set('Join table cells', setSpan(t, cell.r, cell.c, v)),
         'Join this cell with the ones to its right, for a heading over several columns.');
-      this.number('Cell spans (rows)', rowSpanOf(t, cell.r, cell.c), 1, 1, t.rows.length - cell.r, (v) => set('Join table cells', setRowSpan(t, cell.r, cell.c, v)),
+      this.whole('Cell spans (rows)', rowSpanOf(t, cell.r, cell.c), 1, t.rows.length - cell.r, (v) => set('Join table cells', setRowSpan(t, cell.r, cell.c, v)),
         'Join this cell with the ones under it (a vertical merge), for a label beside several rows.');
       buttons([
         ['Merge Right', 'Join this cell with the one to its right; their text goes together', canMerge(t, cell.r, cell.c, 'right') ? () => set('Merge cells', mergeRight(t, cell.r, cell.c), cell) : null],
@@ -1474,14 +1474,14 @@ export class StylePanel {
       this.select('Kind', kinds, kind, (v) => set('Attachment point', v === 'Numbered'
         ? { attach: 'Unspecified', attachNum: a.attachNum ?? nextNumber(this.doc, a.id, (x) => (x.attach ? x.attachNum : undefined)) }
         : { attach: v, attachNum: undefined }));
-      if (kind === 'Numbered') this.number('Number', a.attachNum ?? 0, 1, 0, 99, (v) => set('Attachment number', { attachNum: v || undefined }),
+      if (kind === 'Numbered') this.whole('Number', a.attachNum ?? 0, 0, 99, (v) => set('Attachment number', { attachNum: v || undefined }),
         'The number in the black diamond; 0 for none.');
       return;
     }
     this.heading('Atom');
     this.text('Label', a.label ?? '', a.z === 6 ? 'carbon (no label)' : 'automatic', (v) => this.edit('Label', () => this.applyLabel(a.id, v)),
       'Type a label (O, NH₂, OTBS, CO₂Et…); leave empty for a plain carbon.');
-    this.number('Charge', a.charge, 1, -8, 8, (v) => set('Charge', { charge: v }));
+    this.whole('Charge', a.charge, -8, 8, (v) => set('Charge', { charge: v }));
     this.color('Color', a.color, (v) => set('Atom color', { color: v }));
     this.color('Highlight', a.highlight, (v) => { set(v ? 'Highlight' : 'Remove highlight', { highlight: v }); if (v) this.highlightUsed(v); }, 'None');
     this.highlightControls([a], []);
@@ -1952,13 +1952,25 @@ export class StylePanel {
       n.step = '1';
       n.value = String(c.expected.value);
       n.setAttribute('aria-label', 'Expected Count');
+      let finished = false;
       const done = () => {
+        if (finished) return;
+        finished = true;
         const v = Math.round(Number(n.value));
         if (n.value.trim() && Number.isFinite(v) && v >= 2 && v <= 30) set('Expected Count', (now) => ({ ...now, expect: v }));
         else { this.key = ''; this.refresh(); }
       };
+      const cancel = () => { if (finished) return; finished = true; this.key = ''; this.refresh(); };
+      // (the number offered is taken with Enter, which the browser doesn't report as a change; clicking away
+      // without touching the box changes nothing and the list stays on Auto)
+      const offered = n.value;
       n.addEventListener('change', done);
-      n.addEventListener('keydown', (e) => { if (e.key === 'Enter') n.blur(); if (e.key === 'Escape') { this.key = ''; this.refresh(); } e.stopPropagation(); });
+      n.addEventListener('blur', () => { if (n.value === offered) cancel(); else done(); });
+      n.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') done();
+        if (e.key === 'Escape') cancel();
+        e.stopPropagation();
+      });
       holder.replaceChildren(n);
       n.focus();
       n.select();
@@ -2223,6 +2235,11 @@ export class StylePanel {
     inp.addEventListener('change', apply);
     inp.addEventListener('keydown', (e) => { if (e.key === 'Enter') { apply(); inp.blur(); } e.stopPropagation(); });
     this.row(label, inp, help);
+  }
+
+  /** A number row for a count (a charge, a number): what is typed is rounded to a whole number. */
+  private whole(label: string, value: number, min: number, max: number, on: (v: number) => void, help?: string): void {
+    this.number(label, value, 1, min, max, (v) => on(Math.round(v)), help);
   }
 
   /** A colour row: the drawing's palette, "automatic" (black unless `auto` says otherwise), or any colour. */
