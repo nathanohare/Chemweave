@@ -12,7 +12,7 @@
 // Footnotes and endnotes come in as notes
 // typed into here, and a table of figures (a TOC field for captions) as one worked out here.
 
-import { COVER_MARK } from '../document/quick-parts';
+import { COVER_END_MARK, COVER_FIRST_OFF_MARK, COVER_MARK } from '../document/quick-parts';
 import { readKeptSettings } from './docx-settings';
 import type { AuthorityMark, CellBorders, Contents, IndexMark, Justify, ParaBorders, ParaStyle, PictureFx, RowHeight, TabStop, TableCell, TableData, TextRun } from '../model';
 import { parseIndex, parseTa, parseToa, parseXe } from '../document/index-toa';
@@ -56,7 +56,7 @@ import { fmtText, revText } from '../document/revisions';
 import { parseDesign } from '../document/themes';
 import { linkFromTarget } from '../links';
 import { mathText, ommlToTex } from '../document/math';
-import { CITE_PRESETS, cleanOptions } from '../document/cite-styles';
+import { cleanOptions, knownStyle } from '../document/cite-styles';
 import { listIndent, ownStyleXml, tableText } from './docx-write';
 import { readChart, rethemed, themeColorsOf } from './office-chart';
 import { freshBox, sameBoxData, sizedBox } from '../sheet/chart-box';
@@ -3904,7 +3904,7 @@ class DocxReader {
       ...(parseDesign(m?.design) ? { design: parseDesign(m?.design)! } : {}),
       ...(m?.noFigureOffer === true ? { noFigureOffer: true } : {}),
       ...(m?.siLink && typeof m.siLink.path === 'string' && m.siLink.path ? { siLink: { path: m.siLink.path, title: typeof m.siLink.title === 'string' ? m.siLink.title : '' } } : {}),
-      ...(typeof m?.citeStyle === 'string' && m.citeStyle in CITE_PRESETS ? { citeStyle: m.citeStyle } : zoteroStyle ? { citeStyle: zoteroStyle } : {}),
+      ...(typeof m?.citeStyle === 'string' && knownStyle(m.citeStyle) ? { citeStyle: m.citeStyle } : zoteroStyle ? { citeStyle: zoteroStyle } : {}),
       ...(manager ? { citeManager: manager } : {}),
       ...(zoteroPrefs ? { zoteroPrefs } : {}),
       // (a theme made here from a Design choice is written from that choice, not kept)
@@ -3987,7 +3987,7 @@ function keepUsedMarks(t: DocText): void {
   t.paras = t.paras.map((p) => {
     if (!p?.marks) return p;
     // (a cover page's own mark stays: it says the page is one, which Remove Current Cover Page and a new cover need)
-    const marks = p.marks.filter((m) => !m.startsWith('_') || m === COVER_MARK || used.has(m.toLowerCase()));
+    const marks = p.marks.filter((m) => !m.startsWith('_') || m === COVER_MARK || m === COVER_FIRST_OFF_MARK || m === COVER_END_MARK || used.has(m.toLowerCase()));
     const { marks: _m, ...rest } = p;
     return marks.length ? { ...rest, marks } : rest;
   });

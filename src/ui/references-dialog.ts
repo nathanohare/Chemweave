@@ -14,7 +14,7 @@ import { withInfo } from './info-tip';
 import { addCloseX } from './window-x';
 import { parsePmids } from '../library/online';
 import type { DocText } from '../document/document';
-import { CITE_PRESETS, changedOptions, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
+import { CITE_PRESETS, changedOptions, knownStyle, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
 import {
   REF_TYPES, bibLabel, citeSuper, citeText, blankRef, citationNumbers, cleanRef, describe, fetchDoi, findDuplicate,
   formatReference, newRefId, newReferences, normaliseDoi, parseReferenceText, piecesText, shortLabel,
@@ -286,7 +286,7 @@ export interface StyleChoice { style: string; options: Partial<CiteFormat>; forN
  */
 export function editCiteStyle(style: string, options: Partial<CiteFormat>): Promise<StyleChoice | null> {
   return modal<StyleChoice>('cite-style-dialog', (d, done) => {
-    let cur = style in CITE_PRESETS ? style : Object.keys(CITE_PRESETS)[0];
+    let cur = knownStyle(style) ? style : Object.keys(CITE_PRESETS)[0];
     let f: CiteFormat = citeFormat(cur, options);
     const pick = el('select');
     for (const [k, p] of Object.entries(CITE_PRESETS)) pick.add(new Option(`${p.name} (${p.journals})`, k));
@@ -797,7 +797,7 @@ export class ReferencesDialog {
   /** The style of the file picked (or, until it has one, the person's own). */
   private style(): CiteStyle {
     const s = this.holder()?.citeStyle();
-    return s && s in CITE_PRESETS ? s : preferredStyle().style;
+    return knownStyle(s) ? s : preferredStyle().style;
   }
 
   private format(): CiteFormat {
