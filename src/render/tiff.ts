@@ -38,6 +38,13 @@ export function lzw(data: Uint8Array): Uint8Array {
       w = k;
     }
     put(w);
+    // the reader adds a table entry for this last code too, before it reads the end code: widen
+    // as it will (libtiff's encoder does the same), so the end code is read at the right width
+    next++;
+    if (next === 512) width = 10;
+    else if (next === 1024) width = 11;
+    else if (next === 2048) width = 12;
+    else if (next === 4094) { put(CLEAR); width = 9; }
     put(EOI);
   }
   if (bits > 0) {

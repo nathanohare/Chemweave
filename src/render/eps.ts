@@ -6,7 +6,7 @@
 // character set so accented letters and dashes come out right. Pictures inside are stored
 // LZW-compressed; EPS has no see-through colours, so those are blended with white.
 
-import { Item, Seg, outlineOfPrevious, parseColor } from './vector';
+import { Item, Seg, VecPath, outlineOfPrevious, parseColor } from './vector';
 import type { EmfBox } from './emf';
 import { textPieces, standardFont, type PdfImage } from '../io/pdf';
 import { lzw } from './tiff';
@@ -99,16 +99,30 @@ export async function itemsToEps(items: Item[], box: EmfBox, image: (src: string
       const paint = colour(it.color);
       // (an outline drawn over its own letters: left out, the letters alone)
       if (paint.a <= 0 || !it.text || outlineOfPrevious(items, idx)) continue;
-      body.push(`gsave ${paint.v} rg ${num(it.x)} ${num(it.y)} translate ${num(-(it.angle ?? 0))} rotate 1 -1 scale`);
+      body.push(`gsave ${paint.v} rg ${num(it.x)} ${num(it.y)} translate ${num(-(it.angle ?? 0))} rotate 1 -1 scale${it.stroke ? ' np' : ''}`);
       for (const p of textPieces(it.text, it.widths)) {
         const f = fontKey(p.symbol ? 'Symbol' : standardFont(it.family, it.bold, it.italic));
-        body.push(`${f} ${num(it.size)} sf ${num(p.dx)} 0 m ${psString(p.codes)} show`);
+        // letters with only an outline (No fill): their outlines added to the path and stroked, not
+        // filled by show (PostScript Language Reference, charpath: false keeps them for stroking)
+        body.push(`${f} ${num(it.size)} sf ${num(p.dx)} 0 m ${psString(p.codes)} ${it.stroke ? 'false charpath' : 'show'}`);
       }
+      if (it.stroke) body.push(`${num(it.stroke)} w 1 J 1 j S`);
       body.push('grestore');
     } else {
       const c = it.crop ?? { l: 0, t: 0, r: 0, b: 0 };
       const iw = it.w / Math.max(0.01, 1 - c.l - c.r), ih = it.h / Math.max(0.01, 1 - c.t - c.b);
-      body.push(`gsave ${num(it.x)} ${num(it.y)} ${num(it.w)} ${num(it.h)} rectclip`);
+      // turned about its middle and flipped about it (as the PDF has it), then cut to its box, rounded when it is
+      const cx = it.x + it.w / 2, cy = it.y + it.h / 2;
+      const turn = it.rot || it.flipH || it.flipV
+        ? ` ${num(cx)} ${num(cy)} translate${it.rot ? ` ${num(it.rot)} rotate` : ''}${it.flipH || it.flipV ? ` ${it.flipH ? -1 : 1} ${it.flipV ? -1 : 1} scale` : ''} ${num(-cx)} ${num(-cy)} translate`
+        : '';
+      let cut = `${num(it.x)} ${num(it.y)} ${num(it.w)} ${num(it.h)} rectclip`;
+      if (it.radius) {
+        const p = new VecPath();
+        p.roundRect(it.x, it.y, it.w, it.h, it.radius);
+        cut = `np ${pathOps(p.segs)} clip np`;
+      }
+      body.push(`gsave${turn} ${cut}`);
       const img = await image(it.src).catch(() => null);
       if (!img) body.push(`0.85 0.85 0.85 rg ${num(it.x)} ${num(it.y)} ${num(it.w)} ${num(it.h)} rectfill`);
       else {
