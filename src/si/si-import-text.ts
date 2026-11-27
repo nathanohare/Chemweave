@@ -38,6 +38,8 @@ export interface ImportedFigure {
   below: [number, number] | null;   // PDF: [top, bottom] under its caption, tried second,
   below_labels: string[];  // …the short lines there (its labels
   cut_below: boolean;      // if it was cut from there: then left out of the text)
+  /** PDF: the short lines just above its caption, taken out of the text as the figure's own labels (put back when the picture isn't cut from there). */
+  above_labels?: string[];
 }
 
 export interface ImportedSection {
@@ -83,6 +85,13 @@ export function stripNumber(text: string): string {
   const m = match(NUM, text);
   if (m && (m.group('dot') || match(rx('(?:S|SI-?)?\\d'), m.group('num')!))) return strip(text.slice(m.end), ' .:');
   return strip(text, ' :');
+}
+
+/** How many characters of `text` are its leading number ("2.1 Solvents:" → 4), as stripNumber takes it off; 0 when it has none. */
+export function numberLength(text: string): number {
+  const m = match(NUM, text);
+  if (m && (m.group('dot') || match(rx('(?:S|SI-?)?\\d'), m.group('num')!))) return text.length - lstrip(text.slice(m.end), ' .:').length;
+  return 0;
 }
 
 export function numLevel(text: string): number {
@@ -426,12 +435,34 @@ class Builder {
     const where = new Map<Para, number>();
     items.forEach(([k, o], i) => { if (k === 'para') where.set(o as Para, i); });
     let pending: [string, string] | null = null;      // [label, caption] waiting for a figure
+    // a paragraph's pictures and drawings, as figures
+    const putObjects = (p: Para): void => {
+      for (const o of p.objects) {
+        if (o.kind === 'mnova' || !o.picture || !o.picture.length) continue;   // (spectra are imported on their own)
+        if (spectra && o.kind !== 'picture') continue;
+        const ext = pictureExt(o.picture_name, o.picture);
+        const fig = this.figure(o.kind === 'picture' && ext !== '.emf' && ext !== '.wmf' ? 'picture' : 'object', figures, { data: o.picture, ext });
+        if (o.width_in) fig.width_cm = r2(o.width_in * 2.54);
+        if (pending && !isTableLabel(pending[0])) {
+          [fig.label, fig.caption] = pending;
+          pending = null;
+          // (the caption came first: its line becomes the figure's)
+          for (let k = lines.length - 1; k >= 0; k--) if (lines[k] === captionMarker(fig.label, fig.caption)) { lines.splice(k, 1); break; }
+        }
+        lines.push(rstrip(`!figure{${fig.key}} ${fig.caption}`));
+      }
+    };
     let i = 0;
     while (i < paras.length) {
       const p = paras[i];
       if (p.cell) {                    // a Word table
         const cells: Para[] = [];
         while (i < paras.length && paras[i].cell && paras[i].cell![0] === p.cell[0]) { cells.push(paras[i]); i++; }
+        // (a table holding only pictures, such as two figures side by side: the pictures, without an empty table)
+        if (cells.every((cp) => !strip(paraText(cp))) && cells.some((cp) => cp.objects.some((o) => o.kind !== 'mnova' && o.picture?.length))) {
+          for (const cp of cells) putObjects(cp);
+          continue;
+        }
         const fig = this.figure('table', figures, { table: tableOf(cells) });
         if (pending && isTableLabel(pending[0])) {   // (its caption, above it)
           [fig.label, fig.caption] = pending;
@@ -444,6 +475,8 @@ class Builder {
         while (i < paras.length && footnote(paras[i])) { notes.push(paraMarkup(paras[i])); i++; }
         if (fig.table) fig.table.footnotes = notes;
         lines.push(rstrip(`!table{${fig.key}} ${fig.caption}`));
+        // (the table reads only text: pictures and drawings in its cells follow it as figures)
+        for (const cp of cells) putObjects(cp);
         continue;
       }
       i++;
@@ -462,7 +495,9 @@ class Builder {
             fig.bottom = p.top;
             const [top, labels] = topAbove(items, where.get(p)!, this.levels);
             fig.top = top;
-            while (lines.length && labels.has(lines[lines.length - 1])) lines.pop();   // (drawn in the figure)
+            const above: string[] = [];
+            while (lines.length && labels.has(lines[lines.length - 1])) above.unshift(lines.pop()!);   // (drawn in the figure)
+            fig.above_labels = above;
             const [below, belowLabels] = topBelow(items, where.get(p)!, this.levels);
             fig.below_labels = belowLabels;
             fig.below = [p.bottom, below];
@@ -486,7 +521,8 @@ class Builder {
       const level = this.levels.get(p);
       if (level) {
         let runs = p.runs;
-        const number = text.length - lstrip(stripNumber(text)).length;
+        // (measured from the number itself: a trailing ":" or "." is not part of it)
+        const number = numberLength(text);
         if (number && stripNumber(text) !== strip(text, ' :')) {   // ("1.1 Solvents" → "Solvents")
           const after = splitRuns(runs, number)[1];
           runs = after.length ? after : runs;
@@ -498,20 +534,7 @@ class Builder {
         }
         lines.push('#'.repeat(Math.max(1, Math.min(2, level - base))) + ' ' + writeMarkup([{ runs: plain.filter((r) => r.text) }]).trim());
       } else if (text) lines.push(paraMarkup(p));
-      for (const o of p.objects) {
-        if (o.kind === 'mnova' || !o.picture || !o.picture.length) continue;   // (spectra are imported on their own)
-        if (spectra && o.kind !== 'picture') continue;
-        const ext = pictureExt(o.picture_name, o.picture);
-        const fig = this.figure(o.kind === 'picture' && ext !== '.emf' && ext !== '.wmf' ? 'picture' : 'object', figures, { data: o.picture, ext });
-        if (o.width_in) fig.width_cm = r2(o.width_in * 2.54);
-        if (pending && !isTableLabel(pending[0])) {
-          [fig.label, fig.caption] = pending;
-          pending = null;
-          // (the caption came first: its line becomes the figure's)
-          for (let k = lines.length - 1; k >= 0; k--) if (lines[k] === captionMarker(fig.label, fig.caption)) { lines.splice(k, 1); break; }
-        }
-        lines.push(rstrip(`!figure{${fig.key}} ${fig.caption}`));
-      }
+      putObjects(p);
     }
     // captions that found no figure stay as text
     return [strip(lines.map(captionText).join('\n'), '\n'), figures];

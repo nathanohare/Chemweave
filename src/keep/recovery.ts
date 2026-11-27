@@ -132,6 +132,8 @@ export class Recovery {
     return this.serial(async () => {
       let n = 0;
       const live = new Set<number>();
+      // one tab that can't be copied doesn't stop the others (its last copy, if any, stays)
+      let failed: unknown = null;
       for (const t of tabs) {
         if (!t.dirty) continue;
         live.add(t.id);
@@ -141,14 +143,18 @@ export class Recovery {
           Object.assign(had, { name: t.name, path: t.path, stamp: t.stamp, mode: t.mode });
           continue;
         }
-        const c = await t.copy();
-        const ext = /\.([A-Za-z0-9]+)$/.exec(c.name)?.[1] ?? 'bin';
-        const file = `tab-${t.id}.${ext.toLowerCase()}`;
-        await this.store.put(this.key(file), c.data);
-        if (had && had.file !== file) await this.store.remove(this.key(had.file));
-        this.tabs.set(t.id, { id: t.id, name: t.name, mode: t.mode, path: t.path, stamp: t.stamp, file, copied: this.now() });
-        this.tokens.set(t.id, t.token);
-        n++;
+        try {
+          const c = await t.copy();
+          const ext = /\.([A-Za-z0-9]+)$/.exec(c.name)?.[1] ?? 'bin';
+          const file = `tab-${t.id}.${ext.toLowerCase()}`;
+          await this.store.put(this.key(file), c.data);
+          if (had && had.file !== file) await this.store.remove(this.key(had.file)).catch(() => {});
+          this.tabs.set(t.id, { id: t.id, name: t.name, mode: t.mode, path: t.path, stamp: t.stamp, file, copied: this.now() });
+          this.tokens.set(t.id, t.token);
+          n++;
+        } catch (e) {
+          failed ??= e;
+        }
       }
       for (const [id, c] of [...this.tabs]) {
         if (live.has(id)) continue;
@@ -157,6 +163,8 @@ export class Recovery {
         this.tokens.delete(id);
       }
       await this.writeManifest();
+      // (said after the others are copied and the list is written)
+      if (failed !== null) throw failed;
       return n;
     });
   }

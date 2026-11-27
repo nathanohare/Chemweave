@@ -57,8 +57,8 @@ export function storeSiDrawingStyle(settings: Json, style: DocStyle): void {
     font_size_pt: style.labelSize,
   };
   if (SI_FONTS.has(style.labelFont)) values.font = style.labelFont;
-  // (SI Assistant's defaults, ACS 1996, aren't written into a project that had none)
-  const same = values.bond_length_cm === 0.508 && values.line_width_pt === 0.6 && values.font_size_pt === 10 && (values.font === undefined || sd.font === undefined);
+  // (SI Assistant's defaults, ACS 1996 and its label font, aren't written into a project that had none: another font is)
+  const same = values.bond_length_cm === 0.508 && values.line_width_pt === 0.6 && values.font_size_pt === 10 && (values.font === undefined || values.font === ACS_1996.labelFont);
   if (!had && same) return;
   for (const [k, v] of Object.entries(values)) sd[k] = v;
   if (!had && sd.font === undefined) sd.font = SI_DEFAULT_FONT;

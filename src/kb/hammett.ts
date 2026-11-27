@@ -100,7 +100,8 @@ const ELEMENT: Record<string, string> = {
 export function joinedBy(x: Hammett): string {
   if (!x.smiles) return (x.row !== null && JOINS_UNDRAWN[x.row]) || 'Carbon';
   if (x.smiles.split('[*]').length === 3) return 'Fused ring (3,4-)';
-  const m = /^\[\*\](?:\[([A-Za-z][a-z]?)|(Cl|Br|[BCNOSPFI]|[cnos]))/.exec(x.smiles);
+  // (a bond sign may come first: [*]/C=C/… for a double bond's geometry)
+  const m = /^\[\*\][/\\=#-]?(?:\[([A-Za-z][a-z]?)|(Cl|Br|[BCNOSPFI]|[cnos]))/.exec(x.smiles);
   const el = m ? (m[1] ?? m[2]) : '';
   return ELEMENT[el.length === 1 ? el.toUpperCase() : el] ?? 'Other';
 }

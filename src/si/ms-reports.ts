@@ -502,11 +502,13 @@ export function readMzml(text: string): ReportData {
 export function readMzxml(text: string): ReportData {
   const scans: [number[], number[]][] = [], flags: boolean[] = [];
   let levels = 0;
-  // each <scan …> start and the <peaks> that follows it (a nested MS/MS scan has its own)
-  const re = /<(?:[\w.-]+:)?scan(\s[^>]*)?>|<(?:[\w.-]+:)?peaks(\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?peaks>/g;
+  // each <scan …> start and the <peaks> that follows it (a nested MS/MS scan has its own); an empty
+  // scan's <peaks … /> closes itself
+  const re = /<(?:[\w.-]+:)?scan(\s[^>]*)?>|<(?:[\w.-]+:)?peaks(?:\s[^>]*?)?\/>|<(?:[\w.-]+:)?peaks(\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?peaks>/g;
   let scan = '';
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    if (m[3] === undefined && /^<(?:[\w.-]+:)?peaks/.test(m[0])) { levels++; continue; }   // (a scan with no peaks)
     if (m[3] === undefined) { scan = m[1] ?? ''; continue; }
     const pAttrs = m[2] ?? '';
     const level = Math.trunc(Number(attr(scan, 'msLevel') || 1)) || 1;
@@ -983,7 +985,7 @@ function excelNumber(text: string): string {
 }
 
 /** Every sheet of an .xlsx workbook as rows of cell texts (shared and inline strings resolved). */
-export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
+export function xlsxRows(content: Uint8Array, maxRows = 100000, rowCounts?: number[]): string[][][] {
   const files = unzipSync(content, {
     filter: (f) => {
       const wanted = f.name === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(f.name);
@@ -1002,9 +1004,14 @@ export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
   let budget = XLSX_MAX_CELLS;
   for (const name of sheets) {
     const sparse: Map<number, string>[] = [];
-    let read = 0;
+    let read = 0, rowsThere = 0;
     for (const row of elements(dec.decode(files[name]), 'row')) {
-      if (sparse.length >= maxRows || read >= budget) break;
+      if (sparse.length >= maxRows || read >= budget) {
+        // (past the rows read: only counted, for how many are left out)
+        if (!rowCounts) break;
+        if (/<(?:\w+:)?c[\s/>]/.test(row.inner)) rowsThere++;
+        continue;
+      }
       const cells = new Map<number, string>();
       for (const c of elements(row.inner, 'c')) {
         const ref = attr(c.attrs, 'r') ?? '';
@@ -1020,8 +1027,10 @@ export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
       }
       if (!cells.size) continue;
       sparse.push(cells);
+      rowsThere++;
       read += cells.size;
     }
+    rowCounts?.push(rowsThere);
     const used = [...new Set(sparse.flatMap((c) => [...c.keys()]))].sort((a, b) => a - b).slice(0, XLSX_MAX_COLUMNS);
     const keep = used.length ? sparse.slice(0, Math.max(1, Math.floor(budget / used.length))) : sparse;
     const rows = keep.map((c) => used.map((col) => c.get(col) ?? ''));
@@ -1159,9 +1168,11 @@ export function reportListing(bytes: Uint8Array, name: string, most = LISTING_LI
   try {
     let lines: string[], total: number;
     if (ext === '.xlsx' || ext === '.xlsm') {
-      const sheets = xlsxRows(bytes, most + 1000);
+      const counts: number[] = [];
+      const sheets = xlsxRows(bytes, most + 1000, counts);
       lines = trimmed(aligned(sheets.flatMap((s) => [...s, []])));
-      total = lines.length;
+      // (the rows of each sheet past those read count too)
+      total = lines.length + sheets.reduce((n, s, i) => n + Math.max(0, (counts[i] ?? s.length) - s.length), 0);
     } else {
       if (bytes.length > MAX_FILE_BYTES) throw new ReportReadError('too large');
       const text = decode(bytes);

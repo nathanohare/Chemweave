@@ -82,7 +82,7 @@ export function vicinal3d(model: Model3d): Vicinal3d[] {
   const out: Vicinal3d[] = [];
   for (const bd of model.bonds) {
     const [c1, c2] = [bd.a, bd.b];
-    if (!sp3C(c1) || !sp3C(c2) || inSmallRing.has(c1) && inSmallRing.has(c2)) continue;
+    if (!sp3C(c1) || !sp3C(c2) || inSmallRing.has(c1) || inSmallRing.has(c2)) continue;
     const hs1 = nb[c1].filter(isH), hs2 = nb[c2].filter(isH);
     if (!hs1.length || !hs2.length) continue;
     // substituents (non-H, not the fragment carbons), with the β effect on Δχ

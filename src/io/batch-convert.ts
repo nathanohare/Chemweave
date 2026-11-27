@@ -36,13 +36,17 @@ export interface BatchDeps {
   molToSmiles(molblock: string): Promise<string | null>;
 }
 
-/** The records of an SD file, each with the name on its first line (or "" when it has none). */
+/**
+ * The records of an SD file, each with the name on its first line (or "" when it has none). A
+ * record with no "M  END" (cut short, or only data fields) comes with an empty molblock, so it is
+ * counted as one that can't be read (review F533); only blank text between records is passed over.
+ */
 export function splitSdf(text: string): { name: string; molblock: string }[] {
   const out: { name: string; molblock: string }[] = [];
   // (a record's first line, its name, may be blank, so only the line ending after $$$$ goes)
   for (const body of text.replace(/\r\n?/g, '\n').split(/^\$\$\$\$[ \t]*\n?/m)) {
     const end = body.indexOf('M  END');
-    if (end < 0) continue;
+    if (end < 0) { if (body.trim()) out.push({ name: body.split('\n')[0].trim(), molblock: '' }); continue; }
     const molblock = body.slice(0, end + 6) + '\n';
     out.push({ name: molblock.split('\n')[0].trim(), molblock });
   }
@@ -56,13 +60,40 @@ export function splitSmilesList(text: string): { name: string; smiles: string }[
     .filter((x) => !/^smiles$/i.test(x.smiles));
 }
 
+/**
+ * Names Windows keeps for devices, whatever follows them after a dot (Microsoft, "Naming Files,
+ * Paths, and Namespaces": CON, PRN, AUX, NUL, COM1 to COM9, LPT1 to LPT9).
+ */
+const RESERVED = /^(?:con|prn|aux|nul|com[1-9]|lpt[1-9])$/i;
+/** For each set of names used, the next number to try for each name (so many equal names don't each count up from 2). */
+const nextNumber = new WeakMap<Set<string>, Map<string, number>>();
+
 /** A file name safe on Windows and Mac, made different from the ones used already. */
 export function uniqueName(stem: string, ext: string, used: Set<string>): string {
-  const clean = stem.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '').slice(0, 120) || 'structure';
+  // (cut to length first, so no dot or space is left at the end; a device name gets a _ before it; review F534)
+  let clean = stem.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').slice(0, 120).replace(/[. ]+$/, '') || 'structure';
+  if (RESERVED.test(clean.split('.')[0].trim())) clean = `_${clean}`;
   let name = `${clean}.${ext}`;
-  for (let i = 2; used.has(name.toLowerCase()); i++) name = `${clean} (${i}).${ext}`;
+  const key = name.toLowerCase();
+  let next = nextNumber.get(used);
+  if (!next) nextNumber.set(used, (next = new Map()));
+  // (counting on from the number the last name like this one got; review F535)
+  for (let i = next.get(key) ?? 2; used.has(name.toLowerCase()); i++) { name = `${clean} (${i}).${ext}`; next.set(key, i + 1); }
   used.add(name.toLowerCase());
   return name;
+}
+
+/**
+ * As uniqueName, and also not the name of a file already in the folder written to (`taken` says
+ * whether one is), so converting into a folder never writes over a file there: the new file
+ * gets a " (2)" name instead. A folder that can't be checked (`taken` fails) stops it, with why.
+ */
+export async function freeBatchName(stem: string, ext: string, used: Set<string>, taken: (name: string) => Promise<boolean>): Promise<string> {
+  for (let tries = 0; tries < 10000; tries++) {
+    const name = uniqueName(stem, ext, used);
+    if (!(await taken(name))) return name;
+  }
+  throw new Error(`every name for ${stem}.${ext} is taken in the folder`);
 }
 
 const stemOf = (file: string) => file.replace(/\.[^.\\/]+$/, '');

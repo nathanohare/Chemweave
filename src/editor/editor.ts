@@ -338,6 +338,10 @@ function isAtomText(text: string): boolean {
 }
 
 const emptySel = (): Selection => ({ atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() });
+/** Captions that can be picked (hidden ones are kept and saved, but not drawn or picked). */
+const visibleCaptions = (doc: Doc): number[] => [...doc.captions.values()].filter((c) => !c.hidden).map((c) => c.id);
+/** Shapes that can be picked or moved (not hidden or locked). */
+const pickableShapes = (doc: Doc): number[] => [...doc.shapes.values()].filter((s) => !s.hidden && !s.locked).map((s) => s.id);
 /** How quickly a second click must follow for a double-click (the usual system default). */
 const DOUBLE_CLICK_MS = 500;
 
@@ -761,9 +765,18 @@ export class Editor {
       // a right-button drag pans; the menu only shows for a right click that stayed put.
       // (Windows sends this after the button comes up, macOS while it is still down.)
       if (this.drag?.button === 2) this.pendingContext = e;
-      else if (!this.rightDragged) this.onContextMenu(e);
+      else {
+        // (the flag says only whether the right-button press just ended was a drag: used once)
+        const panned = this.rightDragged;
+        this.rightDragged = false;
+        if (!panned) this.onContextMenu(e);
+      }
     });
-    window.addEventListener('keydown', (e) => { if (!this.freeAngleKey(e)) this.onKey(e); });
+    window.addEventListener('keydown', (e) => {
+      // (a menu asked for from the keyboard, Shift+F10 or the Menu key, opens whatever pan came before)
+      this.rightDragged = false;
+      if (!this.freeAngleKey(e)) this.onKey(e);
+    });
     window.addEventListener('keyup', (e) => this.freeAngleKey(e));
     window.addEventListener('blur', () => { this.spaceHeld = false; });
     // holding Ctrl over the selection shows that a drag will copy it
@@ -1294,6 +1307,10 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    // a mouse's Back and Forward buttons are no clicks on the drawing
+    if (e.pointerType === 'mouse' && (e.button === 3 || e.button === 4)) return;
+    // (a right-button drag before this press says nothing about the menu this press may open)
+    this.rightDragged = false;
     this.commitLabel();
     // picking a focal point: this click names the atom, bond or ring
     if (this.focalPicking && e.button === 0) { this.pickFocalAt(this.docPoint(e)); return; }
@@ -1831,7 +1848,7 @@ export class Editor {
     if (!d) return;
     this.drag = null;
     this.guideLines = [];
-    if (d.moved && (d.mode === 'move' || d.mode === 'spot' || d.mode === 'rotate' || d.mode === 'handle' || (d.mode === 'turn3d' && d.persp?.begun))) {
+    if (d.moved && (d.mode === 'move' || d.mode === 'spot' || d.mode === 'rotate' || d.mode === 'handle' || d.mode === 'reshape' || (d.mode === 'turn3d' && d.persp?.begun))) {
       this.doc.abandon();
       this.afterUndo();
     }
@@ -1868,8 +1885,9 @@ export class Editor {
       return;
     }
     if (d.button === 2) {
-      this.rightDragged = d.moved;
       const ctx = this.pendingContext;
+      // a pan whose menu event came while the button was down (macOS) has had it: nothing left to hold back
+      this.rightDragged = d.moved && !ctx;
       this.pendingContext = null;
       if (ctx && !d.moved) this.onContextMenu(ctx);
     }
@@ -2208,7 +2226,7 @@ export class Editor {
 
 
   /** The last bond-tool click that grew a bond from an atom (a quick second click there is a double-click). */
-  private lastSprout: { atom: number; at: number; p: Vec } | null = null;
+  private lastSprout: { atom: number; at: number; p: Vec; step?: object } | null = null;
 
   private click(d: Drag, p: Vec): void {
     const doc = this.doc;
@@ -2340,7 +2358,8 @@ export class Editor {
         // the second click of a double-click on an atom takes back the first click's bond and edits the label
         const last = this.lastSprout;
         this.lastSprout = null;
-        if (h?.kind === 'atom' && last?.atom === h.id && performance.now() - last.at < DOUBLE_CLICK_MS && dist(last.p, p) <= this.tol(4)) {
+        // (only while the bond is still the newest step: after an Undo, or another edit, Undo would take back something else)
+        if (h?.kind === 'atom' && last?.atom === h.id && performance.now() - last.at < DOUBLE_CLICK_MS && dist(last.p, p) <= this.tol(4) && last.step !== undefined && last.step === doc.topStep) {
           this.undo();
           this.editLabel(h.id);
           return;
@@ -2362,6 +2381,9 @@ export class Editor {
             this.lastEdited = b.id;
           }
         });
+        // (the step that made it, to tell whether it is still the newest)
+        const made = this.lastSprout as typeof last;
+        if (made) made.step = doc.topStep;
         // as in ChemDraw, the far end of the new bond takes the next hotkey
         if (!h || h.kind === 'atom') this.setKeyHot({ kind: 'atom', id: this.lastEdited! });
         this.changed();
@@ -2435,7 +2457,9 @@ export class Editor {
         doc.updateBond(id, { order: 1, display: t.display, ...(flip ? { a1: b.a2, a2: b.a1 } : {}) });
       }
     } else {
-      doc.updateBond(id, { order: 1, display: b.display === t.display ? 'solid' : t.display });
+      // (the tool's own order too: the Partial Bond tool makes a half bond, as dragging a new one does)
+      const same = b.display === t.display && b.order === t.order;
+      doc.updateBond(id, same ? { order: 1, display: 'solid' } : { order: t.order, display: t.display });
     }
     // a bond made triple (or a second double bond on an allene carbon) straightens its ends
     straightenAt(doc, id);
@@ -4152,10 +4176,39 @@ export class Editor {
   /** The Smart Scheme the selection is in (its frame), if any. */
   selectedSmart(): number | null {
     for (const id of this.sel.shapes) if (this.doc.shapes.get(id)?.smart) return id;
+    // which Smart Scheme each thing is in, worked out once per change of the drawing (as
+    // smartFrameOf has it: the first scheme that holds it), not by every scheme for every thing picked
+    const own = this.smartOwners();
+    if (!own) return null;
     for (const [k, set] of [['caption', this.sel.captions], ['arrow', this.sel.arrows], ['shape', this.sel.shapes], ['atom', this.sel.atoms]] as const) {
-      for (const id of set) { const g = smartFrameOf(this.doc, k, id); if (g !== null) return g; }
+      const m = own[k];
+      for (const id of set) { const g = m.get(id); if (g !== undefined) return g; }
     }
     return null;
+  }
+
+  private smartOwnersCache: { version: number; doc: Doc; own: Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null } | null = null;
+  private smartOwners(): Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null {
+    const doc = this.doc;
+    if (this.smartOwnersCache?.doc === doc && this.smartOwnersCache.version === doc.version) return this.smartOwnersCache.own;
+    let own: Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null = null;
+    const put = (m: Map<number, number>, id: number, frame: number) => { if (!m.has(id)) m.set(id, frame); };
+    for (const s of doc.shapes.values()) {
+      if (!s.smart) continue;
+      own ??= { caption: new Map(), arrow: new Map(), shape: new Map(), atom: new Map() };
+      own.shape.set(s.id, s.id);
+      const f = s.frame;
+      if (!f) continue;
+      for (const id of f.captions) put(own.caption, id, s.id);
+      for (const id of f.arrows) put(own.arrow, id, s.id);
+      for (const id of f.shapes) put(own.shape, id, s.id);
+      for (const a of f.atoms) {
+        put(own.atom, a, s.id);
+        if (doc.atoms.has(a)) for (const x of doc.fragmentOf(a)) put(own.atom, x, s.id);
+      }
+    }
+    this.smartOwnersCache = { version: doc.version, doc, own };
+    return own;
   }
 
   /** Called each time the overlay is drawn (the Smart Scheme pane keeps beside its scheme). */
@@ -4234,7 +4287,7 @@ export class Editor {
   /** Where branches can start beside the species picked in Smart Scheme `id` (none unless one species is picked). */
   private smartSpotsCache: { key: string; spots: ReturnType<typeof branchSpots>; slot: number } | null = null;
   private smartSpots(id: number): ReturnType<typeof branchSpots> {
-    const key = `${id} ${this.doc.version} ${[...this.sel.captions].join()}|${[...this.sel.atoms].slice(0, 4).join()}|${[...this.sel.shapes].join()}|${this.sel.arrows.size}`;
+    const key = `${id} ${this.doc.version} ${[...this.sel.captions].join()}|${[...this.sel.atoms].join()}|${[...this.sel.shapes].join()}|${this.sel.arrows.size}`;
     if (this.smartSpotsCache?.key !== key) {
       const slot = this.sel.shapes.has(id) ? undefined : this.smartPicked()?.slot;
       this.smartSpotsCache = { key, slot: slot ?? -1, spots: slot === undefined ? [] : branchSpots(this.doc, this.measure(), id, slot) };
@@ -4759,11 +4812,12 @@ export class Editor {
     const doc = this.doc;
     n = Math.max(1, Math.min(200, Math.round(n)));
     this.chainLength = n;
-    const bonds = from === null ? Math.max(1, n - 1) : n;
+    // (in empty space the chain is n atoms, so n − 1 bonds: one atom on its own for 1)
+    const bonds = from === null ? n - 1 : n;
     if (from !== null && !doc.atoms.has(from)) return;
     if (!this.sel.atoms.size) this.sel = emptySel();
     doc.edit('Chain', () => {
-      const pts = chainFrom(doc, from, p, bonds, doc.style.chainAngle);
+      const pts = bonds ? chainFrom(doc, from, p, bonds, doc.style.chainAngle) : [];
       let cur = from !== null ? doc.atoms.get(from)! : doc.addAtom(p.x, p.y);
       for (let i = 1; i < pts.length; i++) cur = bondTo(doc, cur, pts[i]);
       this.lastEdited = cur.id;
@@ -4835,7 +4889,11 @@ export class Editor {
 
   selectAll(): void {
     const d = this.doc;
-    this.sel = { atoms: new Set(d.atoms.keys()), bonds: new Set(d.bonds.keys()), captions: new Set(d.captions.keys()), arrows: new Set(d.arrows.keys()), shapes: new Set([...d.shapes.values()].filter((s) => !s.hidden && !s.locked).map((s) => s.id)) };
+    // what can be picked, as a drag round everything picks it: no hidden text, and no structures while they are locked
+    const atoms = this.structuresLocked ? [] : d.atoms.keys(), bonds = this.structuresLocked ? [] : d.bonds.keys();
+    this.sel = { atoms: new Set(atoms), bonds: new Set(bonds), captions: new Set(visibleCaptions(d)), arrows: new Set(d.arrows.keys()), shapes: new Set(pickableShapes(d)) };
+    // (a curved arrow's join pressed before is no longer what Delete takes out)
+    this.activeHandle = null;
     this.requestOverlay();
     this.onChange();
   }
@@ -5011,11 +5069,11 @@ export class Editor {
    * nothing is selected.
    */
   async turnSelectionBy(x: number, y: number, z: number, real: boolean): Promise<boolean> {
-    const structures = structuresOf(this.doc, this.sel.atoms);
-    if (!structures.length) return false;
+    if (!structuresOf(this.doc, this.sel.atoms).length) return false;
     const doc = this.doc;
-    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+    const prep = await this.prepareSelectionTurn(doc, real);
     if (this.doc !== doc) return true;
+    if (!prep) return false;
     if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
     const R: M3 = anglesTurn(x, y, z);
     let left = 0;
@@ -5035,11 +5093,10 @@ export class Editor {
    * the wedges and keeps the turn; `cancel` puts everything back. Null when nothing is selected.
    */
   async previewTurn(real: boolean): Promise<TurnPreview | null> {
-    const structures = structuresOf(this.doc, this.sel.atoms);
-    if (!structures.length) return null;
+    if (!structuresOf(this.doc, this.sel.atoms).length) return null;
     const doc = this.doc;
-    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
-    if (this.doc !== doc) return null;
+    const prep = await this.prepareSelectionTurn(doc, real);
+    if (this.doc !== doc || !prep) return null;
     const label = real ? '3-D Rotation' : 'Rotate in Perspective';
     let begun = false, done = false, R: M3 = IDENT_TURN, unshown = 0;
     const live = () => !done && this.doc === doc;
@@ -5081,15 +5138,31 @@ export class Editor {
    * copy can be given to try it first. Returns why not when it can't.
    */
   async realShape(atom: number, doc: Doc = this.doc): Promise<string | null> {
-    const structures = structuresOf(doc, [atom]);
-    if (!structures.length) return 'There is no structure there.';
-    const prep = await prepareTurn(doc, structures, true, this.perspectiveHost);
+    if (!structuresOf(doc, [atom]).length) return 'There is no structure there.';
+    const prep = await this.prepareSelectionTurn(doc, true, [atom]);
+    if (!prep) return doc.atoms.has(atom) ? 'The structure changed while its 3-D shape was being built. Try again.' : 'There is no structure there.';
     if (prep.notes.length) return prep.notes[0];
     doc.edit('Real 3-D shape', () => {
       prep.turn.apply(doc, IDENT_TURN, true);
       prep.turn.remember(doc);
     });
     if (doc === this.doc) this.changed();
+    return null;
+  }
+
+  /**
+   * The structures of the selection (or of `atoms`) got ready to turn, as they are once that is
+   * done: a change made to the drawing meanwhile has them got ready again, from the drawing as it
+   * is then. Null when they are gone, or the drawing keeps changing.
+   */
+  private async prepareSelectionTurn(doc: Doc, real: boolean, atoms?: number[]): Promise<Prepared | null> {
+    for (let tries = 0; tries < 3; tries++) {
+      const structures = structuresOf(doc, atoms ?? (doc === this.doc ? this.sel.atoms : []));
+      if (!structures.length) return null;
+      const version = doc.version;
+      const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+      if (doc.version === version) return prep;
+    }
     return null;
   }
 
@@ -5369,7 +5442,8 @@ export class Editor {
   deleteSelection(): void {
     // a curved arrow's join that was pressed: Delete takes out just that join
     const a = this.activePoint();
-    if (a && a.i % 3 === 0 && this.removeBend(a.r.id, a.i)) return;
+    const s0 = this.sel, alone = s0.arrows.size === 1 && !s0.atoms.size && !s0.bonds.size && !s0.captions.size && !s0.shapes.size;
+    if (a && alone && a.i % 3 === 0 && this.removeBend(a.r.id, a.i)) return;
     // whole species of a Smart Scheme picked on the page: they go as × in its list takes them
     if (this.deleteSmartSpecies()) return;
     const doc = this.doc;
@@ -5457,8 +5531,9 @@ export class Editor {
   /** Box round the selection (remembered until the drawing or the selection changes). */
   selBox(): Rect | null {
     const s = this.sel;
-    const sum = (x: Set<number>) => { let t = 0; for (const id of x) t += id; return `${x.size}:${t}`; };
-    const key = `${this.doc.version}|${sum(s.atoms)}|${sum(s.captions)}|${sum(s.arrows)}|${sum(s.shapes)}`;
+    // (the ids themselves: two selections of the same size can add up to the same)
+    const ids = (x: Set<number>) => [...x].join(',');
+    const key = `${this.doc.version}|${ids(s.atoms)}|${ids(s.captions)}|${ids(s.arrows)}|${ids(s.shapes)}`;
     if (key !== this.selBoxCache.key) this.selBoxCache = { key, box: selectionBox(this.doc, s, this.measure()) };
     return this.selBoxCache.box;
   }
@@ -5780,12 +5855,13 @@ export class Editor {
   private gridUnits(): ReturnType<typeof units> {
     const doc = this.doc, m = this.measure();
     const none = !this.hasSelection();
+    // (nothing picked: everything that can be picked, so hidden and locked things stay where they are)
     const sel = none
-      ? { atoms: new Set(doc.atoms.keys()), bonds: new Set(doc.bonds.keys()), captions: new Set(doc.captions.keys()), arrows: new Set(doc.arrows.keys()), shapes: new Set(doc.shapes.keys()) }
+      ? { atoms: new Set(this.structuresLocked ? [] : doc.atoms.keys()), bonds: new Set(this.structuresLocked ? [] : doc.bonds.keys()), captions: new Set(visibleCaptions(doc)), arrows: new Set(doc.arrows.keys()), shapes: new Set(pickableShapes(doc)) }
       : this.sel;
     const chosen = joinGroups(doc, units(doc, sel, m));
     // numbers under the chosen structures come along, picked or not
-    const others = none ? [] : units(doc, { atoms: new Set(), bonds: new Set(), captions: new Set([...doc.captions.keys()].filter((id) => !sel.captions.has(id))), arrows: new Set(), shapes: new Set() }, m);
+    const others = none ? [] : units(doc, { atoms: new Set(), bonds: new Set(), captions: new Set(visibleCaptions(doc).filter((id) => !sel.captions.has(id))), arrows: new Set(), shapes: new Set() }, m);
     const folded = withLabels(doc, [...chosen, ...others], doc.style.bondLength);
     const loose = new Set(others.flatMap((u) => u.captions));
     return folded.filter((u) => u.atoms.length || !u.captions.every((id) => loose.has(id)) || u.arrows.length || u.shapes.length);
@@ -5883,6 +5959,21 @@ export class Editor {
       }
     });
     this.changed();
+  }
+
+  /**
+   * Clean Up and Orient Reaction: the structures turned as Orient Like First worked out (`moves`)
+   * and the scheme tidied as Clean Up Reaction does, in one undo step. What Clean Up Reaction
+   * returned (false: nothing to tidy).
+   */
+  cleanUpAndOrient(moves: { atoms: Iterable<number>; f: (p: Vec) => Vec; mirror: boolean }[]): false | 'matched' | 'fitted' {
+    let tidied = false as false | 'matched' | 'fitted';
+    this.doc.edit('Clean Up and Orient Reaction', () => {
+      if (moves.length) this.reorient(moves);
+      tidied = this.cleanUpReaction();
+    });
+    this.changed();
+    return tidied;
   }
 
   /** Turn the selection about its centre; positive is clockwise. */
@@ -6968,13 +7059,17 @@ export class Editor {
       }
       for (const id of s.arrows) {
         const r = doc.arrows.get(id);
-        if (r) doc.updateArrow(id, { tail: at(r.tail), head: at(r.head), headLength: r.headLength * f, headWidth: r.headWidth * f });
+        if (!r) continue;
+        // its own line widths and spacings grow with it too
+        const own: Partial<Arrow> = {};
+        for (const k of ['lineWidth', 'boldWidth', 'hashSpacing', 'shaftSpacing'] as const) if (r[k] !== undefined) own[k] = r[k]! * f;
+        doc.updateArrow(id, { tail: at(r.tail), head: at(r.head), headLength: r.headLength * f, headWidth: r.headWidth * f, ...own });
       }
       for (const id of s.shapes) {
         const sh = doc.shapes.get(id);
         if (!sh) continue;
         const p1 = at({ x: sh.x1, y: sh.y1 }), p2 = at({ x: sh.x2, y: sh.y2 });
-        doc.updateShape(id, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        doc.updateShape(id, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, ...(sh.lineWidth !== undefined ? { lineWidth: sh.lineWidth * f } : {}) });
       }
     });
     this.changed();
@@ -7124,6 +7219,15 @@ export class Editor {
     if (!this.pointerInside && target && target !== document.body && target !== this.r.overlay && /^(Shift\+)?(Enter|Space|Tab)$/.test(chord)) return;
     if (chord === 'Escape') {
       this.keyHot = null;
+      // in the middle of a drag: it is called off, and what it moved goes back (as in Office and ChemDraw)
+      if (this.drag?.moved) {
+        // (a right-button pan called off: the menu event its release brings still doesn't open the menu)
+        if (this.drag.button === 2) { this.rightDragged = true; this.pendingContext = null; }
+        this.abandonPress();
+        this.showPointer(e.ctrlKey || e.metaKey);
+        this.requestOverlay();
+        return;
+      }
       if (this.cropping !== null) { this.cropping = null; this.requestOverlay(); this.onChange(); return; }
       this.clearSelection();
       return;
@@ -7834,14 +7938,17 @@ export class Editor {
     // Align Left, Center or Right with atom labels picked lines the labels up (Style panel ▸ Label alignment)
     if (f.kind === 'align' && f.j !== 'justify') {
       const labelled = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi);
-      if (labelled.length) {
+      if (labelled.length && !caps.length && !shapes.length) {
         doc.edit('Label alignment', () => { for (const a of labelled) doc.updateAtom(a.id, labelAlignPatch(doc, a, f.j as LabelAlign)); });
-        if (!caps.length && !shapes.length) { this.requestScene(); this.changed(); return true; }
+        this.requestScene(); this.changed(); return true;
       }
     }
     // atoms picked on their own: Home ▸ Font sets their labels' font, size and bold
     if (!caps.length && !shapes.length) return this.formatLabels(f);
+    // (with text picked too, the labels line up in the same step, so one Undo takes back the click)
+    const labels = f.kind === 'align' && f.j !== 'justify' ? [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi) : [];
     doc.edit('Format text', () => {
+      for (const a of labels) doc.updateAtom(a.id, labelAlignPatch(doc, a, (f as { j: LabelAlign }).j));
       for (const c of caps) {
         const base = c.ph ? doc.textStyles?.[c.ph] : undefined;
         const defaults = base ? { ...base } : { ...styleFromFace(st.captionFace), size: st.captionSize };
@@ -7989,7 +8096,7 @@ export class Editor {
     if (this.emptySides?.version !== v) this.emptySides = { version: v, map: new Map() };
     let got = this.emptySides.map.get(r.id);
     if (!got) {
-      const t = arrowTexts(this.doc, this.measure(), r);
+      const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
       got = { above: !t.above.length, below: !t.below.length, results: !!t.below.length && !t.results.length };
       this.emptySides.map.set(r.id, got);
     }
@@ -8006,7 +8113,7 @@ export class Editor {
       const shown = (s: ArrowSide) => fresh || this.helperHover?.id === r.id && this.helperHover.side === s;
       for (const side of ARROW_SIDES) {
         if (!this.sidesFree(r)[side]) continue;
-        const b = helperBox(this.doc, r, side, this.measure());
+        const b = helperBox(this.doc, r, side, this.measure(), this.schemeItems());
         // hovering finds a box within reach; a click needs the box to be showing and under it
         const pad = hovering ? L * 0.5 : 0;
         if (p.x < b.x1 - pad || p.x > b.x2 + pad || p.y < b.y1 - pad || p.y > b.y2 + pad) continue;
@@ -8022,10 +8129,10 @@ export class Editor {
     const boxes: Rect[] = [];
     const f = this.freshArrow;
     const fr = f && performance.now() < f.until ? this.doc.arrows.get(f.id) : undefined;
-    if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure()));
+    if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure(), this.schemeItems()));
     const h = this.helperHover;
     const hr = h ? this.doc.arrows.get(h.id) : undefined;
-    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure()));
+    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure(), this.schemeItems()));
     if (!boxes.length) return;
     ctx.save();
     ctx.strokeStyle = colour;
@@ -8077,7 +8184,7 @@ export class Editor {
   arrowSideText(id: number): (Record<ArrowSide, string> & { align: Record<ArrowSide, 'left' | 'center' | 'right'> }) | null {
     const r = this.doc.arrows.get(id);
     if (!r || !isReactionArrow(r)) return null;
-    const t = arrowTexts(this.doc, this.measure(), r);
+    const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
     const one = (cs: Caption[]) => (cs[0] ? plainText(cs[0].runs) : '');
     const align = { above: sideAlign(this.doc, r, 'above', t.above), below: sideAlign(this.doc, r, 'below', t.below), results: sideAlign(this.doc, r, 'results', t.results) };
     return { above: one(t.above), below: one(t.below), results: one(t.results), align };
@@ -8105,7 +8212,7 @@ export class Editor {
       const now = this.doc.arrows.get(id)!;
       // with no choice of its own a side goes back to the drawing's alignment
       if (!how) {
-        const t = arrowTexts(this.doc, this.measure(), now);
+        const t = arrowTexts(this.doc, this.measure(), now, this.schemeItems());
         const j = sideAlign(this.doc, now, side, t[side]);
         for (const c of t[side]) if (c.justify !== j) this.doc.updateCaption(c.id, { justify: j });
       }
@@ -8115,13 +8222,14 @@ export class Editor {
   }
 
   /** Show or hide the dashed text guides on the selected arrows (null: as usual, only on plain reaction arrows). */
-  setArrowGuides(ids: number[], on: boolean | null): void {
+  setArrowGuides(ids: number[], on: boolean | null, byDefault?: (r: Arrow) => boolean): void {
     this.doc.edit(on === false ? 'Hide Text Guides' : 'Show Text Guides', () => {
       for (const id of ids) {
         const r = this.doc.arrows.get(id);
         if (!r) continue;
         const look = { ...r.textLook };
-        if (on === null) delete look.guides; else look.guides = on;
+        // (an arrow that shows them or not by default anyway is put back to its default, each arrow on its own)
+        if (on === null || (byDefault && byDefault(r) === on)) delete look.guides; else look.guides = on;
         this.doc.updateArrow(id, { textLook: Object.keys(look).length ? look : undefined });
       }
     });
@@ -8155,7 +8263,7 @@ export class Editor {
       const r = this.doc.arrows.get(id);
       if (!r) continue;
       arrows.push(r);
-      const t = arrowTexts(this.doc, this.measure(), r);
+      const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
       for (const c of [...t.above, ...t.below, ...t.results]) ids.add(c.id);
     }
     const changes: [number, TextRun[]][] = [];
@@ -8322,7 +8430,7 @@ export class Editor {
       ? { runs: applyBase(c.runs, base), paras: c.paras, justify: c.justify, wrap: c.wrap, width: c.width, lineHeight: c.lineHeight, lineSpacing: c.lineSpacing, cols: c.cols, colGap: c.colGap, boxH: c.boxH, fit: c.fit, ...lines }
       : { runs: [], justify: opts?.justify ?? 'left' as const, wrap, ...lines };
     const ed = new CaptionEditor(host, at, initial, defaults, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       if (id !== null) hide(null);
       const empty = !plainText(res.runs).trim();
       const cur = id !== null ? doc.captions.get(id) : null;
@@ -8629,7 +8737,7 @@ export class Editor {
     // a turned shape's text is typed turned with it
     const rot = shapeTurn(s), mid = shapeMid(s);
     const ed = new CaptionEditor(host, turnAbout({ x: g.x, y: g.y }, mid, rot), { runs: s.text?.runs ?? [], paras: s.text?.paras, justify: s.textAlign ?? 'center', wrap, ...this.r.slideLines() }, {}, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       this.r.geoEdit = null;
       const cur = doc.shapes.get(id);
       if (cur) {
@@ -8643,6 +8751,8 @@ export class Editor {
       this.changed();
     }, rot);
     this.captionEd = ed;
+    // (not a caption: no caption is the one being typed in)
+    this.captionEdId = null;
     if (click) { const q = turnAbout(click, mid, -rot); ed.ed.setCaret(ed.ed.offsetAt(q.x - g.x, q.y - g.y)); }
   }
 
@@ -8751,7 +8861,7 @@ export class Editor {
       },
     };
     const ed = new CaptionEditor(host, at, { runs: shown.runs, paras: shown.paras, justify, wrap }, {}, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       const cur = doc.shapes.get(id);
       if (this.r.tableEdit?.id === id) {
         const before = this.r.tableEdit.table;
@@ -8770,6 +8880,8 @@ export class Editor {
       this.changed();
     });
     this.captionEd = ed;
+    // (not a caption: no caption is the one being typed in)
+    this.captionEdId = null;
     if (click) ed.ed.setCaret(ed.ed.offsetAt(click.x - at.x, click.y - at.y));
     else ed.ed.selectAll();
     this.onChange();
