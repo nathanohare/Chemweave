@@ -81,11 +81,11 @@ import { outgrownFrame } from '../document/figures';
 import { docObjectLook, withObjectLook } from '../document/object-look';
 import type { TableData } from '../model';
 import {
-  canMerge, coveringCell, deleteColumn, deleteRow, emptyTable, insertColumn, tableFromCells, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, setColumnAlign, setColumnWidth, setPart, splitCell, spanOf,
+  canMerge, coveringCell, deleteColumn, deleteRow, emptyTable, evenColumns, fillColumns, nearestSide, shadeCells, valignCells, insertColumn, tableFromCells, insertRow, isCovered, mergeDown, mergeRight, nextCell, rowSpanOf, setColumnAlign, setColumnWidth, setPart, splitCell, spanOf,
 } from '../table';
-import { cellMargins, paintEdge, type CellBlock } from '../document/table-styles';
+import { PaintDrag, cellMargins, type CellBlock } from '../document/table-styles';
 import { blockOf, canMergeBlock, mergeBlock } from '../document/table-convert';
-import { BORDER_STYLES, BORDER_WIDTHS, DocTablesUI, LOOK_OPTIONS, penSwatch } from './doc-tables-ui';
+import { DocTablesUI, LOOK_OPTIONS, penControlsIn, showPen, wirePen, type PenControls } from './doc-tables-ui';
 import { DocNav } from './doc-nav';
 import { DocInsertUI } from './doc-insert-ui';
 import { DocParagraphUI } from './doc-paragraph-ui';
@@ -109,7 +109,7 @@ import { COVER_ACCENTS } from './doc-insert-ui';
 import { GO_TO_KINDS, goToOffset, similarRanges, type GoToKind } from '../document/goto';
 import { DocIndexUI } from './doc-index-ui';
 import { lookOfTable } from '../document/table-styles';
-import type { BorderLine, BorderSide, TableLook } from '../model';
+import type { TableLook } from '../model';
 import { BREAK_NAMES, changeSection, hasTitlePg, newBreak, pageNumText, sectionAt, sectionsOf, type Section, type SectionPatch } from '../document/sections';
 import {
   type HfKey, A4, COMPOUND, INCH, LETTER, OBJECT_CHAR, CAPTION_NAMES, END_FORMAT, FOOT_FORMAT, captionRuns, noteLabel, noteStyle, nextObjectId, pastedObjects, objectRun, equationRun, objectsInText, runStyleOf, setParaStyle, styleOf, fieldTexts, objectOffsets, inlineMove,
@@ -307,7 +307,7 @@ export class DocumentMode {
     | { kind: 'resize'; id: number; w0: number; h0?: number; scale0: number; x0: number; left?: boolean; top?: boolean; float?: Float; /** Set once the drag has made its undo step (the moves after it join that step). */ recorded?: boolean }
     | { kind: 'move'; id: number; from: { x: number; y: number }; float: Float; moved: boolean; others: [number, Float][] }
     | { kind: 'inline'; id: number; from: { x: number; y: number }; to: number | null }
-    | { kind: 'paint'; done: Set<string> }
+    | { kind: 'paint'; drag: PaintDrag }
     | { kind: 'figure'; geo?: string; from: { x: number; y: number }; to: { x: number; y: number } }
     | { kind: 'shape'; id: number; w0: number; h0: number; from: { x: number; y: number } }
     | { kind: 'offer' }
@@ -772,8 +772,8 @@ export class DocumentMode {
     if (!back) this.setTable(tg.id, insertRow(tg.t, tg.t.rows.length), 'Insert row', { r: tg.t.rows.length, c: 0 });
   }
 
-  /** Change a table in the text (one undo step), and go back into a cell of it (the same one, or `go`). */
-  setTable(id: number, table: TableData, kind: string, go?: { r: number; c: number } | null): void {
+  /** Change a table in the text (one undo step; `kind` null: part of the step before, as along a Border Painter drag), and go back into a cell of it (the same one, or `go`). */
+  setTable(id: number, table: TableData, kind: string | null, go?: { r: number; c: number } | null): void {
     const f = this.file!;
     const o = f.t.objects[id];
     if (o?.kind !== 'table') return;
@@ -842,14 +842,14 @@ export class DocumentMode {
         break;
       case 'table-valign-top': case 'table-valign-center': case 'table-valign-bottom': {
         const v = cmd.slice(13);
-        this.setTable(id, mapCells(t, (cell, rr, cc) => (this.inChosen(tg, rr, cc) ? { ...cell, valign: v === 'top' ? undefined : v as 'center' | 'bottom' } : cell)), 'Cell alignment');
+        this.setTable(id, valignCells(t, (rr, cc) => this.inChosen(tg, rr, cc), v as 'top' | 'center' | 'bottom'), 'Cell alignment');
         break;
       }
       case 'table-shade-none': this.shade(undefined); break;
       case 'table-align-left': case 'table-align-center': case 'table-align-right': this.alignColumn(cmd.slice(12) as 'left' | 'center' | 'right'); break;
       case 'table-fit': this.setTable(id, fitDocColumns(t, f, lay.textW), 'Fit columns'); break;
-      case 'table-even': this.setTable(id, { ...t, cols: t.cols.map(() => Math.floor((Math.min(lay.textW, t.cols.reduce((a, b) => a + b, 0)) / t.cols.length) * 100) / 100) }, 'Even columns'); break;
-      case 'table-fill-width': this.setTable(id, { ...t, cols: t.cols.map((w) => (w * lay.textW) / t.cols.reduce((a, b) => a + b, 0)) }, 'Fit to page'); break;
+      case 'table-even': this.setTable(id, { ...t, cols: evenColumns(t.cols, lay.textW) }, 'Even columns'); break;
+      case 'table-fill-width': this.setTable(id, { ...t, cols: fillColumns(t.cols, lay.textW) }, 'Fit to page'); break;
       // (heading rows set here repeat at the top of each page, as Word's Repeat Header Rows)
       case 'table-head-more': this.setTable(id, { ...t, head: Math.min(t.rows.length, t.head + 1), noRepeat: undefined }, 'Heading rows'); break;
       case 'table-head-less': this.setTable(id, { ...t, head: Math.max(0, t.head - 1), noRepeat: undefined }, 'Heading rows'); break;
@@ -1027,12 +1027,7 @@ export class DocumentMode {
   shade(fill: string | undefined): void {
     const tg = this.tableTarget();
     if (!tg) return;
-    this.setTable(tg.id, mapCells(tg.t, (cell, r, c) => {
-      if (!this.inChosen(tg, r, c)) return cell;
-      const out = { ...cell, fill };
-      if (!fill) delete out.fill;
-      return out;
-    }), 'Shading');
+    this.setTable(tg.id, shadeCells(tg.t, (r, c) => this.inChosen(tg, r, c), fill), 'Shading');
   }
 
   /** Set the width of the column of the cell typed into (or of every column of a picked table). */
@@ -3112,8 +3107,8 @@ export class DocumentMode {
     this.cellAnchor = cell;
     // Border Painter: a click on a cell's edge gives it the pen's line
     if (this.tables.painting && cell) {
-      const d = { kind: 'paint' as const, done: new Set<string>() };
-      this.paintAt(p, d.done);
+      const d = { kind: 'paint' as const, drag: new PaintDrag(this.tables.pen) };
+      this.paintAt(p, d.drag);
       this.dragging = d;
       s.setPointerCapture(e.pointerId);
       return;
@@ -3273,7 +3268,7 @@ export class DocumentMode {
       this.view.scroller.style.cursor = 'move';
       return;
     }
-    if (d.kind === 'paint') { this.paintAt(p, d.done); return; }
+    if (d.kind === 'paint') { this.paintAt(p, d.drag); return; }
     if (d.kind === 'box') {
       if (this.clicks.n !== 1 || !f.box) return;
       // dragged out of the cell into others of its table: those cells are chosen together
@@ -3299,8 +3294,8 @@ export class DocumentMode {
     f.ed.setCaret(offsetAt(f.layout().text, p.x, p.y), true);
   }
 
-  /** Border Painter: the edge of the cell under a point nearest it gets the pen's line (each edge once a drag). */
-  private paintAt(p: { x: number; y: number }, done: Set<string>): void {
+  /** Border Painter: the edge of the cell under a point nearest it gets the pen's line (each edge once a drag; the drag one step of Undo). */
+  private paintAt(p: { x: number; y: number }, drag: PaintDrag): void {
     const f = this.file;
     const cell = this.cellAt(p);
     if (!f || !cell) return;
@@ -3314,13 +3309,9 @@ export class DocumentMode {
     const y1 = at.y;
     let y2 = at.y;
     for (let r = cell.r; r < cell.r + rowSpanOf(t, cell.r, cell.c); r++) y2 += tb.hs[r] ?? 0;
-    const sides: [BorderSide, number][] = [['top', p.y - y1], ['bottom', y2 - p.y], ['left', p.x - x1], ['right', x2 - p.x]];
-    sides.sort((a, b) => a[1] - b[1]);
-    const side = sides[0][0];
-    const key = `${cell.id}:${cell.r}:${cell.c}:${side}`;
-    if (done.has(key)) return;
-    done.add(key);
-    this.setTable(cell.id, paintEdge(t, cell.r, cell.c, side, this.tables.pen), 'Border Painter');
+    const side = nearestSide(p.x, p.y, x1, y1, x2, y2);
+    const next = drag.paint(t, cell.r, cell.c, side, cell.id);
+    if (next) this.setTable(cell.id, next, drag.count === 1 ? 'Border Painter' : null);
   }
 
   /** An in-line figure dragged to another place in the text: move it there (one undo step) and keep it picked. */
@@ -6178,14 +6169,7 @@ export class DocumentMode {
     for (const box of r.querySelectorAll<HTMLInputElement>('[data-tbl-look]')) {
       box.addEventListener('change', () => { this.tables.toggleLook(box.dataset.tblLook as keyof TableLook); this.focus(); });
     }
-    const penStyle = r.querySelector<HTMLSelectElement>('#doc-pen-style')!;
-    for (const [v, label] of BORDER_STYLES) penStyle.append(new Option(label, v));
-    penStyle.addEventListener('change', () => { this.tables.setPen({ style: penStyle.value as BorderLine['style'] }); this.focus(); });
-    const penWidth = r.querySelector<HTMLSelectElement>('#doc-pen-width')!;
-    for (const w of BORDER_WIDTHS) penWidth.append(new Option(`${w} pt`, String(w)));
-    penWidth.addEventListener('change', () => { this.tables.setPen({ w: Number(penWidth.value) }); this.focus(); });
-    const penColour = r.querySelector<HTMLInputElement>('#doc-pen-colour')!;
-    penColour.addEventListener('change', () => { this.tables.setPen({ color: penColour.value.toLowerCase() }); this.focus(); });
+    wirePen(this.penControls(), this.tables, () => this.focus());
     const shade = r.querySelector<HTMLInputElement>('#doc-tbl-shade')!;
     shade.addEventListener('change', () => { this.shade(shade.value.toLowerCase() === '#ffffff' ? undefined : shade.value); this.focus(); });
     const width = r.querySelector<HTMLInputElement>('#doc-tbl-width')!;
@@ -6197,6 +6181,11 @@ export class DocumentMode {
       if (this.file && v > 0) this.ed.setSelectedParas({ line: Math.abs(v - 1) < 1e-6 ? undefined : v, linePt: undefined, lineRule: undefined }, 'spacing');
       this.focus();
     });
+  }
+
+  /** The Table tab's Borders group: the pen the borders are drawn with. */
+  private penControls(): PenControls {
+    return penControlsIn(this.ribbon, (k) => `#doc-pen-${k === 'color' ? 'colour' : k}`);
   }
 
   private statusZoom: StatusZoom | null = null;
@@ -6379,13 +6368,7 @@ export class DocumentMode {
     press('table-gridlines', this.view.gridlines);
     press('show-marks', this.view.showMarks);
     press('nav-pane', this.nav.open);
-    const pen = this.tables.pen;
-    pick('#doc-pen-style', pen.style);
-    pick('#doc-pen-width', String(pen.w));
-    const penColour = this.ribbon.querySelector<HTMLInputElement>('#doc-pen-colour');
-    if (penColour && penColour !== active) penColour.value = pen.color;
-    const sw = this.ribbon.querySelector<HTMLElement>('#doc-pen-swatch');
-    if (sw) { const svg = penSwatch(pen); if (sw.innerHTML !== svg) sw.innerHTML = svg; }
+    showPen(this.penControls(), this.tables.pen);
     this.showZoom();
     this.updateStatus();
   }
@@ -6456,12 +6439,6 @@ function runLooks(runs: TextRun[]): CharLook[] {
     else for (let i = 0; i < r.text.length; i++) looks.push({ pos: 'base', italic });
   }
   return looks;
-}
-
-/** How many rows a cell reaches down (always one: cells join across, not down). */
-/** A table with each cell changed by a function. */
-function mapCells(t: TableData, f: (cell: TableData['rows'][number][number], r: number, c: number) => TableData['rows'][number][number]): TableData {
-  return { ...t, rows: t.rows.map((row, r) => row.map((cell, c) => f(cell, r, c))) };
 }
 
 /**

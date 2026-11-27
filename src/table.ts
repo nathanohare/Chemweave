@@ -534,6 +534,50 @@ export function mergeDown(t: TableData, r: number, c: number): TableData {
   };
 }
 
+/** The side of a cell (from x1, y1 to x2, y2) nearest a point: the edge Border Painter paints. */
+export function nearestSide(x: number, y: number, x1: number, y1: number, x2: number, y2: number): 'top' | 'bottom' | 'left' | 'right' {
+  const sides: ['top' | 'bottom' | 'left' | 'right', number][] = [['top', y - y1], ['bottom', y2 - y], ['left', x - x1], ['right', x2 - x]];
+  sides.sort((a, b) => a[1] - b[1]);
+  return sides[0][0];
+}
+
+/** A table with each cell changed by a function. */
+export function mapCells(t: TableData, f: (cell: TableCell, r: number, c: number) => TableCell): TableData {
+  return { ...t, rows: t.rows.map((row, r) => row.map((cell, c) => f(cell, r, c))) };
+}
+
+/** The cells `chosen` shaded with a colour, or (none) their shading taken off. */
+export function shadeCells(t: TableData, chosen: (r: number, c: number) => boolean, fill: string | undefined): TableData {
+  return mapCells(t, (cell, r, c) => {
+    if (!chosen(r, c)) return cell;
+    const out = { ...cell, fill };
+    if (!fill) delete out.fill;
+    return out;
+  });
+}
+
+/** The text of the cells `chosen` at the top, in the middle or at the bottom of their rows. */
+export function valignCells(t: TableData, chosen: (r: number, c: number) => boolean, v: 'top' | 'center' | 'bottom'): TableData {
+  return mapCells(t, (cell, r, c) => {
+    if (!chosen(r, c)) return cell;
+    const out: TableCell = { ...cell, valign: v === 'top' ? undefined : v };
+    if (!out.valign) delete out.valign;
+    return out;
+  });
+}
+
+/** Every column the same width, the table as wide as it was but no wider than the text (Distribute Columns). */
+export function evenColumns(cols: number[], textW: number): number[] {
+  const total = cols.reduce((a, b) => a + b, 0);
+  return cols.map(() => Math.floor((Math.min(textW, total) / cols.length) * 100) / 100);
+}
+
+/** The columns stretched (or shrunk) together to the width of the text (AutoFit to Window). */
+export function fillColumns(cols: number[], textW: number): number[] {
+  const total = cols.reduce((a, b) => a + b, 0);
+  return total > 0 ? cols.map((w) => (w * textW) / total) : cols.map(() => textW / cols.length);
+}
+
 export function setColumnWidth(t: TableData, c: number, w: number): TableData {
   const cols = [...t.cols];
   cols[c] = Math.max(4, w);

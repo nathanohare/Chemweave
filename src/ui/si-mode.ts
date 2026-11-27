@@ -23,7 +23,10 @@ import { askCrop, editableKind, renderEdited, sourceSize } from './si-crop';
 import { popupHost } from './popup-host';
 import type { CommentThread } from '../document/comments';
 import { freshBarrier, neighbourPage, pushBarrier, wheelPixels } from '../si/page-barrier';
-import { pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
+import { pageOf, pageSettings, storeHyphenation, storeWatermark } from '../si/page-setup';
+import { DocTablesUI, penControlsIn, showPen, wirePen, type PenControls } from './doc-tables-ui';
+import { PT_PER_CM, textWidthOf } from '../si/table-format';
+import { parseLength } from './doc-panel';
 import { siPreviewPrefs } from './mode-prefs';
 import { compoundSrc, gpSrc, parseSrc, sectionSrc, sourceAccess } from '../si/source-map';
 import { CUSTOM_TEXT_FILE, customShown, customTextJson, readCustomText, readCustomTextToChange } from '../si/custom-text';
@@ -240,6 +243,7 @@ const RIBBON = `
       <button role="tab" data-si-tab="references" aria-selected="false">References</button>
       <button role="tab" data-si-tab="review" aria-selected="false">Review</button>
       <button role="tab" data-si-tab="view" aria-selected="false">View</button>
+      <button role="tab" data-si-tab="tabledesign" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Design</button>
       <button role="tab" data-si-tab="table" aria-selected="false" class="rb-context" hidden title="Shown while you are in a table">Table Layout</button>
       <button role="tab" data-si-tab="figure" aria-selected="false" class="rb-context" hidden title="Shown while a figure is selected">Picture Format</button>
       <button role="tab" data-si-tab="place" aria-selected="false" class="rb-context" hidden title="Shown while a compound's structure or a figure is selected in the Live Preview">Picture Format</button>
@@ -310,7 +314,32 @@ const RIBBON = `
       <button class="rb-big" data-si="symbol" data-ic="symbol" title="Type a symbol (°, Å, ±, Greek letters, arrows…) where you are typing"><span class="rb-icon">Ω</span>Symbol</button>
     </div><div class="rb-label">Symbols</div></div>
   </div>
+  <div class="rb-panel" data-si-panel="tabledesign" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <label class="rb-field" title="Shading: the selected cells' background color (Select Table first for every cell)">Shading <input type="color" data-si-field="shade" value="#ffffff" /></label>
+        <button data-si-tbl="shade-none" title="Take the selected cells' shading off">No Shading</button>
+      </div>
+    </div><div class="rb-label">Shading</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <label class="rb-field" title="The line style the Borders menu and the Border Painter draw">Line <select data-si-pen="style"></select></label>
+        <label class="rb-field" title="How thick the line is, in points">Weight <select data-si-pen="width"></select></label>
+        <label class="rb-field" title="The line's color">Pen <input data-si-pen="color" type="color" value="#000000" /><span data-si-pen="swatch" class="pen-swatch"></span></label>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="borders" aria-haspopup="true" title="Borders: give the selected cells' edges the line chosen (all, outside, inside, one side, or none); the ACS rules stay where no border is set">Borders ▾</button>
+        <button data-si-tbl="painter" aria-pressed="false" title="Border Painter: click the edges of cells to give them the line chosen; drag along several. Esc stops">Border Painter</button>
+      </div>
+    </div><div class="rb-label">Borders</div></div>
+  </div>
   <div class="rb-panel" data-si-panel="table" hidden>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <button data-si-tbl="select-table" title="Select Table: select every cell, so the commands change the whole table">Select Table</button>
+        <button data-si-tbl="gridlines" aria-pressed="false" title="View Gridlines: faint dotted lines in the Live Preview on table edges with no border, to see the cells (they don't print; the SI page always shows its cells)">View Gridlines</button>
+      </div>
+    </div><div class="rb-label">Table</div></div>
     <div class="rb-group"><div class="rb-row">
       <div class="rb-col">
         <button data-si-tbl="row-above" title="A new row above the selected cells">Insert Above</button>
@@ -343,7 +372,25 @@ const RIBBON = `
         <button data-si-tbl="align-center" data-ic="align-hcenter" title="Center the selected cells' text (a whole column: the column)">Center</button>
         <button data-si-tbl="align-right" data-ic="align-right" title="Align the selected cells' text right (a whole column: the column)">Right</button>
       </div>
+      <div class="rb-col">
+        <button data-si-tbl="valign-top" aria-pressed="false" title="The selected cells' text at the top">Top</button>
+        <button data-si-tbl="valign-center" aria-pressed="false" title="The selected cells' text in the middle of the row (beside a tall structure)">Middle</button>
+        <button data-si-tbl="valign-bottom" aria-pressed="false" title="The selected cells' text at the bottom">Bottom</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="cell-margins" title="Cell Margins: room between each cell's edge and its text, for the whole table or the selected cell">Cell Margins…</button>
+      </div>
     </div><div class="rb-label">Alignment</div></div>
+    <div class="rb-group"><div class="rb-row">
+      <div class="rb-col">
+        <label class="rb-field" title="Width of the selected cells' columns, in cm (or type in, mm or pt); empty: the column fits its text">Width <input class="rb-text rb-num" data-si-field="col-width" spellcheck="false" /></label>
+        <button data-si-tbl="distribute" title="Distribute Columns: every column the same width">Distribute Columns</button>
+      </div>
+      <div class="rb-col">
+        <button data-si-tbl="fit-contents" title="AutoFit Contents: each column as wide as its text needs (no typed widths)">AutoFit Contents</button>
+        <button data-si-tbl="fit-window" title="AutoFit Window: the table as wide as the text, its columns keeping their shares">AutoFit Window</button>
+      </div>
+    </div><div class="rb-label">Cell Size</div></div>
     <div class="rb-group"><div class="rb-row">
       <button class="rb-big" data-si-tbl="picture" data-ic="picture" title="Put a picture file (PNG, JPG, SVG or PDF) in the selected cell, above its text"><span class="rb-icon">▣</span>Picture</button>
       <button class="rb-big" data-si-tbl="draw-structure" data-ic="structure" title="Draw a structure or scheme for the selected cell with the drawing tools (a picture made here is drawn again)"><span class="rb-icon">⌬</span>Draw Structure</button>
@@ -853,6 +900,16 @@ export class SiMode {
     // (the ribbon's buttons leave the typing where it is: formatting and table commands act there)
     this.ribbon.addEventListener('mousedown', (e) => { if ((e.target as HTMLElement).closest('[data-si-fmt], [data-si-tbl], [data-si="symbol"], [data-si="spelling"], [data-si-scheme="align"], [data-si-scheme="insert-structure"], [data-si="paste"], [data-si="cut"], [data-si="copy"], [data-si="select-all"], [data-si-paint], button[data-si-para], [data-si-pv]')) e.preventDefault(); });
     this.ribbon.addEventListener('dblclick', (e) => { if ((e.target as HTMLElement).closest('[data-si-paint]')) this.formatPainter(true); });
+    // Table Design ▸ Borders: the pen, as Document mode's
+    wirePen(this.penControls(), this.tableUI, () => this.activeTable?.refocus());
+    // (Esc stops Border Painter wherever the typing is: the cells are drawn again after each edge painted)
+    document.addEventListener('keydown', (e) => {
+      if (e.key !== 'Escape' || !this.tableUI.painting || !this.pane.isConnected || this.pane.offsetParent === null) return;
+      e.preventDefault();
+      e.stopPropagation();
+      this.tableUI.setPainting(false);
+      this.activeTable?.refocus();
+    }, true);
     this.ribbon.addEventListener('click', (e) => {
       const t = e.target as HTMLElement;
       const tab = t.closest<HTMLElement>('[data-si-tab]');
@@ -866,7 +923,7 @@ export class SiMode {
       if (fmt) { if (!(fmt instanceof HTMLInputElement)) this.format(fmt.dataset.siFmt!); return; }
       if (t.closest('[data-si-font]')) { this.projectSettings('output'); return; }
       const tbl = t.closest<HTMLElement>('[data-si-tbl]');
-      if (tbl) { void this.activeTable?.command(tbl.dataset.siTbl!); return; }
+      if (tbl) { this.tableCommand(tbl.dataset.siTbl!, tbl); return; }
       const sp = t.closest<HTMLElement>('[data-si-spectrum]');
       if (sp) { void this.spectraPage?.command(sp.dataset.siSpectrum!); return; }
       const sc = t.closest<HTMLElement>('[data-si-scheme]');
@@ -912,6 +969,14 @@ export class SiMode {
       if (f?.dataset.siField === 'fig-width') { void this.activeFigure?.setWidth(Number(f.value)); return; }
       const t = this.activeTable;
       if (!f || !t) return;
+      if (f.dataset.siField === 'shade') { void t.shade(f.value.toLowerCase() === '#ffffff' ? undefined : f.value.toLowerCase()); return; }
+      if (f.dataset.siField === 'col-width') {
+        const v = f.value.trim();
+        const pt = v ? parseLength(v, 'cm') : null;
+        if (v && (pt === null || pt <= 0)) { this.host.flash('Type a width, such as 2.5 (cm), 1 in or 30 mm; leave it empty for the column to fit its text.'); this.tableState(t); return; }
+        void t.setColumnWidth(pt === null ? null : pt / PT_PER_CM);
+        return;
+      }
       if (f.dataset.siField === 'head') void t.setHeaderRows(Number(f.value));
       else void t.setPictureWidth(Number(f.value));
     });
@@ -1332,11 +1397,69 @@ export class SiMode {
   /** A table's cell picked (or none): the Table Layout tab shows (or goes), with that table's state. */
   private tableChosen(t: SiTableEditor | null): void {
     const tab = this.ribbon.querySelector<HTMLElement>('[data-si-tab="table"]')!;
+    const design = this.ribbon.querySelector<HTMLElement>('[data-si-tab="tabledesign"]')!;
     if (t === this.activeTable && !tab.hidden === !!t) { if (t) this.tableState(t); return; }
     this.activeTable = t;
     tab.hidden = !t;
-    if (!t && tab.getAttribute('aria-selected') === 'true') this.showRibbonTab('home');
+    design.hidden = !t;
+    if (!t && this.tableUI.painting) this.tableUI.setPainting(false);
+    if (!t && (tab.getAttribute('aria-selected') === 'true' || design.getAttribute('aria-selected') === 'true')) this.showRibbonTab('home');
     if (t) this.tableState(t);
+  }
+
+  /**
+   * Table Design and Table Layout on the table picked: the Borders menu, the pen, Border Painter
+   * and Cell Margins are Document mode's (DocTablesUI), working on the SI table as a document's
+   * table (si/table-format.ts); the rest is the table editor's own.
+   */
+  private readonly tableUI = new DocTablesUI({
+    file: () => null,
+    target: () => {
+      const t = this.activeTable, td = t?.tableData();
+      return t && td ? { id: 0, ...t.at, t: td } : null;
+    },
+    block: () => this.activeTable?.block() ?? null,
+    setTable: (_id, td, kind) => { void this.activeTable?.setData(() => td, kind.replace(/\b[a-z]/g, (x) => x.toUpperCase())); },
+    textW: () => this.activeTable?.textWidth() ?? this.tableTextWidth(null),
+    flash: (m, ms) => this.host.flash(m, ms),
+    focus: () => this.activeTable?.refocus(),
+    leaveCell: () => {},
+    startCell: () => {},
+    changed: () => {
+      // (Border Painter on: the crosshair over every table's cells)
+      for (const x of this.tables) x.showPainting(this.tableUI.painting);
+      if (this.activeTable) this.tableState(this.activeTable);
+    },
+    inCell: () => !!this.activeTable?.oneCell,
+  });
+
+  /** View Gridlines (Table Layout): faint lines in the Live Preview on table edges with no border; off at first, as in Document mode. */
+  private gridlines = false;
+
+  /** The width of the text a section's tables are set in (Project Settings ▸ Page), in points: across the page turned on its side when the section is landscape, as the compiled SI has it. */
+  private tableTextWidth(s: SiSection | null): number {
+    const p = this.project;
+    const page = pageOf(p?.settings ?? {}, { w: 612, h: 792, top: 72, bottom: 72, left: 72, right: 72, header: 36, footer: 36 });
+    return textWidthOf(page, !!s && this.landscapeOf(s));
+  }
+
+  private tableCommand(cmd: string, b: HTMLElement): void {
+    const t = this.activeTable;
+    if (!t) return;
+    if (this.project?.readOnly && cmd !== 'gridlines' && cmd !== 'select-table') { this.host.flash('This SI project is open read-only.'); return; }
+    const r = b.getBoundingClientRect();
+    switch (cmd) {
+      case 'borders': this.tableUI.bordersMenu(r.left, r.bottom + 2, 'ACS Rules Only'); return;
+      case 'painter': this.tableUI.setPainting(!this.tableUI.painting); return;
+      // (in cm, as the Width box)
+      case 'cell-margins': void this.tableUI.cellMarginsDialog('cm'); return;
+      case 'gridlines':
+        this.gridlines = !this.gridlines;
+        if (this.preview) { this.preview.view.gridlines = this.gridlines; this.preview.view.redraw(); }
+        this.tableState(t);
+        return;
+    }
+    void t.command(cmd);
   }
 
   /** An X-ray structure's page shown (or none): the Crystal Structure tab shows (or goes). */
@@ -1620,6 +1743,22 @@ export class SiMode {
     w.value = st.width ? String(st.width) : '';
     w.disabled = st.width === null;
     for (const b of this.ribbon.querySelectorAll<HTMLButtonElement>('[data-si-tbl="remove-picture"]')) b.disabled = st.width === null;
+    const active = document.activeElement;
+    const cw = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="col-width"]')!;
+    if (cw !== active) cw.value = st.colWidth === null ? '' : String(st.colWidth);
+    cw.placeholder = st.colWidth === null ? 'Auto' : '';
+    const shade = this.ribbon.querySelector<HTMLInputElement>('[data-si-field="shade"]')!;
+    if (shade !== active) shade.value = st.fill ?? '#ffffff';
+    const press = (cmd: string, on: boolean) => { for (const b of this.ribbon.querySelectorAll<HTMLElement>(`[data-si-tbl="${cmd}"]`)) b.setAttribute('aria-pressed', String(on)); };
+    for (const v of ['top', 'center', 'bottom']) press(`valign-${v}`, st.valign === v);
+    press('painter', this.tableUI.painting);
+    press('gridlines', this.gridlines);
+    showPen(this.penControls(), this.tableUI.pen);
+  }
+
+  /** Table Design ▸ Borders: the pen's controls. */
+  private penControls(): PenControls {
+    return penControlsIn(this.ribbon, (k) => `[data-si-pen="${k}"]`);
   }
 
   /** Bold, italic, underline, subscript or superscript on the text being typed (the ribbon's Font buttons). */
@@ -2934,6 +3073,10 @@ export class SiMode {
       contentsOf: (m) => this.host.contentsOf(m),
       selectionChanged: (t) => this.tableState(t),
       remove: (t) => this.removeObject(s, 'table', t.id),
+      textWidth: () => this.tableTextWidth(s),
+      painter: () => (this.tableUI.painting ? this.tableUI.pen : null),
+      stopPainting: () => this.tableUI.setPainting(false),
+      step: (label, f) => this.change(p, label, f),
       pickCompound: async () => {
         const list = p.compounds.filter((c) => p.hasStructure(c));
         const [c] = await pickFromList('Compound', list, (x) => this.idOf(x), (x) => compoundName(x), 'No compound has a structure yet.');
@@ -4322,6 +4465,8 @@ export class SiMode {
       readFormats: (owner) => readPreviewFormats(asProject(owner).folder),
     });
     this.live.view = this.preview.view;
+    // (Table Layout ▸ View Gridlines: faint lines on the tables' edges with no border)
+    this.preview.view.gridlines = this.gridlines;
     this.preview.onPainting = (on) => this.ribbon.querySelector('[data-si-paint]')?.setAttribute('aria-pressed', String(on));
     this.preview.onScrollSettled = () => this.followPreview();
     // (the status bar's zoom percent follows a zoom the preview made itself: Page Width kept as the pane is resized)
