@@ -24,6 +24,8 @@ export interface MasterPanelHooks {
 
 const PH_NAME: Record<Placeholder, string> = { title: 'Title', subtitle: 'Subtitle', body: 'Text' };
 const CORNERS: [Corner, string][] = [['top-left', 'Top left'], ['top-right', 'Top right'], ['bottom-left', 'Bottom left'], ['bottom-right', 'Bottom right']];
+/** The kinds of box a value is typed into (the others show their value at once, however they were changed). */
+const TYPED = new Set(['text', 'number', 'search', 'url', 'email', 'tel', 'password']);
 const pct = (v: number) => String(Math.round(v * 1000) / 10);
 
 export class MasterPanel {
@@ -51,8 +53,13 @@ export class MasterPanel {
       else if (page === MASTER_PAGE) this.master(deck);
       else this.layout(deck);
     }
-    // (not while a value is being typed into the panel)
-    if (!this.el.contains(document.activeElement) || document.activeElement === document.body) for (const f of this.fills) f();
+    // Every control shows the current value, also right after one was clicked (buttons, boxes and lists
+    // keep the focus then). Only a box being typed into keeps what is typed in it.
+    const a = document.activeElement;
+    const typing = this.el.contains(a) && (a instanceof HTMLTextAreaElement || (a instanceof HTMLInputElement && TYPED.has(a.type))) ? a : null;
+    const typed = typing?.value;
+    for (const f of this.fills) f();
+    if (typing && typing.value !== typed) typing.value = typed!;
   }
 
   // ---------------------------------------------------------------- building blocks
@@ -183,7 +190,7 @@ export class MasterPanel {
     const italic = this.toggle('I', 'Italic', () => setRuns('Italic', 'italic', !text('italic')));
     italic.classList.add('mp-italic');
     this.fills.push(() => { bold.setAttribute('aria-pressed', String(!!text('bold'))); italic.setAttribute('aria-pressed', String(!!text('italic'))); });
-    this.row('Style', [bold, italic], isLayout ? { own: () => ownText('bold') || ownText('italic'), run: () => { setRuns('Bold', 'bold', undefined); setRuns('Italic', 'italic', undefined); } } : undefined);
+    this.row('Style', [bold, italic], isLayout ? { own: () => ownText('bold') || ownText('italic'), run: () => doc.edit('Bold and Italic', () => { setRuns('Bold', 'bold', undefined); setRuns('Italic', 'italic', undefined); }) } : undefined);
 
     this.sub('Paragraph');
     const aligns = (['left', 'center', 'right'] as const).map((j) => this.toggle(j === 'left' ? '⇤' : j === 'center' ? '↔' : '⇥', `Align ${j[0].toUpperCase()}${j.slice(1)}`, () => edit('Align', () => ({ justify: j }))));

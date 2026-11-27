@@ -70,19 +70,39 @@ export class ChartGallery {
   }
 
   private drawnFor = '';
+  /** The wait (ms) after the selection stops changing before the charts are drawn again. */
+  private static readonly SETTLE_MS = 200;
+  private settle = 0;
+  /** Which drawing of the charts is current (an older one stops when a newer begins). */
+  private round = 0;
 
-  /** Draw every kind again (from the selection as it is now); `ifMoved`: only when the selection has changed. */
+  /**
+   * Draw every kind again (from the selection as it is now); `ifMoved`: only when the selection
+   * has changed, and then once it has stopped changing for a moment (dragging over thousands of
+   * rows would draw them all at every step).
+   */
   refresh(ifMoved = false): void {
     if (!this.box.open) return;
     const src = this.source();
     const key = src ? `${src.sheet.name}!${src.range.r1},${src.range.c1}:${src.range.r2},${src.range.c2}` : '';
     if (ifMoved && key === this.drawnFor) return;
     this.drawnFor = key;
+    clearTimeout(this.settle);
+    if (ifMoved) this.settle = window.setTimeout(() => this.draw(), ChartGallery.SETTLE_MS);
+    else this.draw();
+  }
+
+  private draw(): void {
+    if (!this.box.open) return;
+    const src = this.source();
     const v = this.view();
+    const round = ++this.round;
     // only the state is shown; how it works is behind the "i" on the title
     this.note.textContent = src ? '' : 'Using example numbers.';
     this.note.hidden = !!src;
     this.list.replaceChildren();
+    // (the buttons come up at once, empty; each chart is drawn into its own a moment after the one before)
+    const todo: (() => void)[] = [];
     for (const [name, kinds] of GROUPS) {
       const h = document.createElement('h3');
       h.textContent = name;
@@ -93,25 +113,37 @@ export class ChartGallery {
         b.type = 'button';
         b.className = 'cg-item';
         b.title = chartTip(k);
-        let pic: HTMLCanvasElement | null = null;
-        try {
-          if (src && v.wb) {
-            const c = { ...chartFromRange(src.sheet, src.range, k), w: W, h: H };
-            pic = chartCanvas(c, chartData(v.wb, src.sheet, c), 1);
-          }
-        } catch { pic = null; }
-        if (!pic) {
-          const ex = newChartBox(k, W * 0.75, H * 0.75);
-          pic = chartCanvas({ ...ex.chart, w: W, h: H }, boxData(ex), 1);
-        }
-        pic.className = 'cg-pic';
+        const blank = document.createElement('canvas');
+        blank.className = 'cg-pic';
         const label = document.createElement('span');
         label.textContent = CHART_NAMES[k];
-        b.append(pic, label);
+        b.append(blank, label);
         b.addEventListener('click', () => { this.insert(k); });
         row.append(b);
+        todo.push(() => {
+          let pic: HTMLCanvasElement | null = null;
+          try {
+            if (src && v.wb) {
+              const c = { ...chartFromRange(src.sheet, src.range, k), w: W, h: H };
+              pic = chartCanvas(c, chartData(v.wb, src.sheet, c), 1);
+            }
+          } catch { pic = null; }
+          if (!pic) {
+            const ex = newChartBox(k, W * 0.75, H * 0.75);
+            pic = chartCanvas({ ...ex.chart, w: W, h: H }, boxData(ex), 1);
+          }
+          pic.className = 'cg-pic';
+          blank.replaceWith(pic);
+        });
       }
       this.list.append(h, row);
     }
+    const some = () => {
+      if (round !== this.round || !this.box.open) return;
+      const t0 = performance.now();
+      do todo.shift()!(); while (todo.length && performance.now() - t0 < 30);
+      if (todo.length) setTimeout(some, 0);
+    };
+    some();
   }
 }

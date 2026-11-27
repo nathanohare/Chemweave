@@ -10,8 +10,12 @@ const COMMENT_ID = 0x43464d57;
 /** A placeable header's key, in front of some files. */
 const PLACEABLE = 0x9ac6cdd7;
 
-/** The enhanced metafile held in a WMF's comments, or null when it holds none. */
+/** The enhanced metafile held in a WMF's comments, or null when it holds none (or the file is damaged: never throws). */
 export function emfInWmf(wmf: Uint8Array): Uint8Array | null {
+  try { return emfIn(wmf); } catch { return null; }
+}
+
+function emfIn(wmf: Uint8Array): Uint8Array | null {
   const v = new DataView(wmf.buffer, wmf.byteOffset, wmf.byteLength);
   if (wmf.length < 18) return null;
   let at = v.getUint32(0, true) === PLACEABLE ? 22 : 0;
@@ -23,7 +27,8 @@ export function emfInWmf(wmf: Uint8Array): Uint8Array | null {
     if (size < 6 || at + size > wmf.length) break;
     if (v.getUint16(at + 4, true) === META_ESCAPE && size >= 44 && v.getUint16(at + 6, true) === MFCOMMENT && v.getUint32(at + 10, true) === COMMENT_ID) {
       const piece = v.getUint32(at + 32, true), total = v.getUint32(at + 40, true);
-      if (at + 44 + piece > wmf.length || total === 0) return null;
+      // (a piece runs past its own record, or an EMF bigger than the WMF holding it: damaged)
+      if (44 + piece > size || total === 0 || total > wmf.length) return null;
       out ??= new Uint8Array(total);
       if (filled + piece > out.length) return null;
       out.set(wmf.subarray(at + 44, at + 44 + piece), filled);

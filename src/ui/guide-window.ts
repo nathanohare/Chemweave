@@ -53,16 +53,25 @@ export function slug(text: string): string {
 }
 
 /** `href` (relative to the page `from`, such as "guide/drawing.md") as a page of the guide and a heading, or null for a link elsewhere. */
-export function resolveLink(from: string, href: string): { page: string; anchor: string } | null {
+export function resolveLink(from: string, href: string): { page: string; anchor: string; outside?: string } | null {
   if (/^[a-z]+:/i.test(href)) return null;
   const [path, anchor = ''] = href.split('#');
   if (!path) return { page: from, anchor };
   const parts = from.split('/').slice(0, -1);
+  // a link that climbs out of docs/ (../CONTRIBUTING.md) names a file elsewhere in the repository
+  let climbed = false;
   for (const p of path.split('/')) {
-    if (p === '..') parts.pop();
+    if (p === '..') { if (parts.pop() === undefined) climbed = true; }
     else if (p !== '.') parts.push(p);
   }
-  return { page: parts.join('/'), anchor };
+  if (!climbed) return { page: parts.join('/'), anchor };
+  // `parts` lost the climbs above docs/, so work the repository path out again from the repository root
+  const repo = ['docs', ...from.split('/').slice(0, -1)];
+  for (const p of path.split('/')) {
+    if (p === '..') repo.pop();
+    else if (p !== '.') repo.push(p);
+  }
+  return { page: parts.join('/'), anchor, outside: repo.join('/') };
 }
 
 
@@ -125,6 +134,8 @@ export class GuideWindow {
       const href = a.getAttribute('href') ?? '';
       const to = resolveLink(this.page, href);
       if (!to) { this.openLink(href); return; }
+      // a file above docs/ (the contributing notes, the change files) is on GitHub, at its own place
+      if (to.outside !== undefined) { this.openLink(`${REPO_URL}/blob/main/${to.outside}${to.anchor ? '#' + to.anchor : ''}`); return; }
       if (to.page.endsWith('.md') && this.texts.has(to.page)) void this.go(to.page, to.anchor);
       // a contributor page that isn't built in (the UI style guide, code signing) opens on GitHub
       else if (to.page.endsWith('.md')) this.openLink(`${REPO_URL}/blob/main/docs/${to.page}${to.anchor ? '#' + to.anchor : ''}`);
@@ -155,7 +166,8 @@ export class GuideWindow {
   }
 
   private async go(page: string, anchor: string): Promise<void> {
-    if (this.page) this.history.push({ page: this.page, anchor: '' });
+    // a jump to a heading on the page already open is not a step Back has to undo
+    if (this.page && page !== this.page) this.history.push({ page: this.page, anchor: '' });
     await this.show(page, anchor);
   }
 
@@ -164,7 +176,7 @@ export class GuideWindow {
     if (to) void this.show(to.page, to.anchor);
   }
 
-  private async show(page: string, anchor: string): Promise<void> {
+  private async show(page: string, anchor: string, focus = true): Promise<void> {
     if (!this.texts.has(page)) page = 'README.md';
     const samePage = page === this.page;
     this.page = page;
@@ -191,13 +203,14 @@ export class GuideWindow {
       target.classList.add('gw-here');
     }
     else this.article.scrollTop = 0;
-    this.article.focus({ preventScroll: true });
+    if (focus) this.article.focus({ preventScroll: true });
   }
 
   /** Searching: the pages with the words, each with the headings whose sections have them. */
   private find(q: string): void {
     const words = q.toLowerCase().split(/\s+/).filter(Boolean);
-    if (!words.length) { void this.show(this.page, ''); return; }
+    // emptying the box shows the page again but leaves the cursor in the box, so typing carries on
+    if (!words.length) { void this.show(this.page, '', false); return; }
     const hits: { page: string; heading: string; anchor: string }[] = [];
     for (const [page, text] of this.texts) {
       let heading = this.titles.get(page)!, anchor = '', body = '';
@@ -205,8 +218,11 @@ export class GuideWindow {
         const lower = (heading + ' ' + body).toLowerCase();
         if (words.every((w) => lower.includes(w))) hits.push({ page, heading, anchor });
       };
+      let fence = false;
       for (const line of text.split('\n')) {
-        const h = /^#{1,6}\s+(.+)$/.exec(line);
+        if (/^\s*```/.test(line)) fence = !fence;
+        // a `#` line inside a code block is a comment, not a heading
+        const h = fence ? null : /^#{1,6}\s+(.+)$/.exec(line);
         if (h) { flush(); heading = h[1].trim(); anchor = slug(heading); body = ''; }
         else body += line + '\n';
       }

@@ -31,7 +31,7 @@ export class NotesPageView {
   }
 
   show(on: boolean): void {
-    if (!on) this.flush();
+    if (!on) { this.flush(); this.round++; }
     this.shown = on;
     this.el.hidden = !on;
     if (on) this.rebuild();
@@ -59,6 +59,9 @@ export class NotesPageView {
     const font = m.notesPage?.font || m.bodyFont || 'Arial';
     const size = (m.notesPage?.size ?? 12) * k;
     const at = (el: HTMLElement, b: Box) => Object.assign(el.style, { left: `${b.x * k}px`, top: `${b.y * k}px`, width: `${b.w * k}px`, height: `${b.h * k}px` });
+    // the slides' pictures are painted a few at a time after the pages are up (every one at once would hold the view back)
+    const round = ++this.round;
+    const todo: (() => void)[] = [];
     d.slides.forEach((s, i) => {
       const page = document.createElement('div');
       page.className = 'np-page';
@@ -80,7 +83,7 @@ export class NotesPageView {
       canvas.className = 'np-slide';
       canvas.title = `Slide ${i + 1}: click to edit it`;
       at(canvas, L.slide);
-      paintSlide(canvas, L.slide.w * k, L.slide.h * k, window.devicePixelRatio || 1, d.page(i), d.docOf(i));
+      todo.push(() => paintSlide(canvas, L.slide.w * k, L.slide.h * k, window.devicePixelRatio || 1, d.page(i), d.docOf(i)));
       canvas.addEventListener('click', () => this.hooks.open(i));
       const ta = document.createElement('textarea');
       ta.className = 'np-notes';
@@ -101,7 +104,19 @@ export class NotesPageView {
       this.el.append(label, page);
     });
     this.el.scrollTop = scroll;
+    const paintSome = () => {
+      if (round !== this.round) return;
+      const t0 = performance.now();
+      while (todo.length && performance.now() - t0 < 30) {
+        try { todo.shift()!(); } catch { /* left blank */ }
+      }
+      if (todo.length) setTimeout(paintSome, 0);
+    };
+    paintSome();
   }
+
+  /** Which building of the pages is current (the pictures of an older one stop being painted when a newer begins). */
+  private round = 0;
 
   /** Bring the current slide's page into view. */
   reveal(i: number): void {

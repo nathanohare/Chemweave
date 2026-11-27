@@ -162,15 +162,19 @@ export function tidyFocal(doc: Doc, before: ReadonlyMap<string, unknown>, from?:
   const touched = new Set<number>();
   const created = new Set<number>();
   let lost = 0;
+  /** Focal atoms taken out, and the bonds taken out (to find what they were joined to). */
+  const goneFocal = new Set<number>();
+  const goneBonds: { a1: number; a2: number }[] = [];
   for (const [key, was] of before) {
     const id = Number(key.slice(1));
     if (key[0] === 'a') {
       if (doc.atoms.has(id)) touched.add(id);
-      else if ((was as { focal?: boolean } | null)?.focal) lost++;
+      else if ((was as { focal?: boolean } | null)?.focal) goneFocal.add(id);
     } else if (key[0] === 'b') {
       const now = doc.bonds.get(id);
       const old = was as { a1: number; a2: number } | null;
       if (!old && now) created.add(id);
+      if (old && !now) goneBonds.push(old);
       for (const b of [old, now]) if (b) { touched.add(b.a1); touched.add(b.a2); }
       // a bond that was a focal point taken out: its ends let go too
       if (old && !now && doc.atoms.get(old.a1)?.focal && doc.atoms.get(old.a2)?.focal) {
@@ -179,6 +183,28 @@ export function tidyFocal(doc: Doc, before: ReadonlyMap<string, unknown>, from?:
         lost++;
       }
     }
+  }
+  // a focal atom taken out: the focal point it was part of (a bond's other end, the rest of a
+  // ring) goes back to the default too, and counts once for its structure
+  if (goneFocal.size) {
+    const group = new Map<number, number>([...goneFocal].map((id) => [id, id]));
+    const root = (id: number): number => { let r = id; while (group.get(r) !== r) r = group.get(r)!; return r; };
+    for (const b of goneBonds) {
+      const [p, q] = [b.a1, b.a2];
+      if (goneFocal.has(p) && goneFocal.has(q)) group.set(root(p), root(q));
+      for (const [gone, other] of [[p, q], [q, p]]) {
+        if (!goneFocal.has(gone) || !doc.atoms.get(other)?.focal) continue;
+        // (the marked atoms still joined to it, through bonds between marked atoms)
+        const stack = [other];
+        while (stack.length) {
+          const x = stack.pop()!;
+          if (!doc.atoms.get(x)?.focal) continue;
+          doc.updateAtom(x, { focal: undefined });
+          for (const n of doc.neighbors(x)) if (doc.atoms.get(n.id)?.focal) stack.push(n.id);
+        }
+      }
+    }
+    lost += new Set([...goneFocal].map(root)).size;
   }
   const done = new Set<number>();
   for (const start of touched) {

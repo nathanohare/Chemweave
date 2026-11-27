@@ -213,7 +213,8 @@ export class SnapshotKeeper {
         if (hit) { this.pages.delete(key); this.pages.set(key, hit); return hit.got; }
         await this.host.idle?.();
         const got = await draw(bytes, most);
-        if (!got?.length) return got;
+        // (pages that could not be drawn are tried again next time, not kept)
+        if (!got?.length || got.some((pg) => pg.failed)) return got;
         const chars = got.reduce((n, pg) => n + pg.src.length, 0);
         this.pages.set(key, { got, chars });
         this.pageChars += chars;

@@ -84,10 +84,20 @@ export function setUpShow(setup: ShowSetup | undefined, shows: CustomShow[], sli
     const timed = radio('ss-adv', 'Using timings, if present', !s.manual, 'Each slide advances automatically after its time (Rehearse Timings, or Transitions ▸ After)');
     adv.append(manual.l, timed.l);
     grid.append(type, opt, which, adv);
+    // a kiosk always loops and goes on by timings; what was chosen before it is given back when another type is picked
+    let chosen: { loop: boolean; timed: boolean } | null = s.type === 'kiosk' ? { loop: !!s.loop, timed: !s.manual } : null;
     const sync = () => {
       const kiosk = types.get('kiosk')!.checked;
       loop.i.disabled = kiosk;
-      if (kiosk) { loop.i.checked = true; timed.i.checked = true; }
+      if (kiosk) {
+        chosen ??= { loop: loop.i.checked, timed: timed.i.checked };
+        loop.i.checked = true;
+        timed.i.checked = true;
+      } else if (chosen) {
+        loop.i.checked = chosen.loop;
+        (chosen.timed ? timed : manual).i.checked = true;
+        chosen = null;
+      }
       manual.i.disabled = kiosk;
     };
     form.addEventListener('change', sync);

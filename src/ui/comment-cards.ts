@@ -48,8 +48,18 @@ export const looksOf = (text: string, runs: NoteRun[] | null): RunLook[] => {
   }
   return out;
 };
-export const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null =>
-  cleanNoteRuns([...text].map((c, i) => { const l = looks[i] ?? {}; return { text: c, bold: l.bold, italic: l.italic, underline: l.underline, strike: l.strike, sub: l.pos === 'sub', sup: l.pos === 'sup' }; }));
+export const runsOf = (text: string, looks: RunLook[]): NoteRun[] | null => {
+  // the looks are one for each UTF-16 unit (as the rich text box keeps them), so a character outside the
+  // Basic Multilingual Plane (an emoji, two units) takes the look of its first unit and moves on by two
+  const parts: NoteRun[] = [];
+  let at = 0;
+  for (const c of text) {
+    const l = looks[at] ?? {};
+    parts.push({ text: c, bold: l.bold, italic: l.italic, underline: l.underline, strike: l.strike, sub: l.pos === 'sub', sup: l.pos === 'sup' });
+    at += c.length;
+  }
+  return cleanNoteRuns(parts);
+};
 
 /**
  * A text box for a note: Enter saves (Shift+Enter starts a new line), Escape stops. Escape keeps
@@ -262,7 +272,7 @@ export function threadCard(c: CommentThread, opts: { active: boolean; editing: b
     reply.title = 'Answer this comment';
     reply.addEventListener('click', () => {
       bar.hidden = true;
-      const ta = noteBox({ text: '' }, 'Reply', (t, runs) => { if (t.trim()) a.reply(t, runs); else bar.hidden = false; }, () => { ta.el.remove(); bar.hidden = false; }, rich, people);
+      const ta = noteBox({ text: '' }, 'Reply', (t, runs) => { if (t.trim()) a.reply(t, runs); else { ta.el.remove(); bar.hidden = false; } }, () => { ta.el.remove(); bar.hidden = false; }, rich, people);
       card.insertBefore(ta.el, bar);
       ta.focus();
     });

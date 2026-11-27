@@ -9,8 +9,8 @@ import type { Player } from '../deck/playback';
 import type { Rect } from '../geom';
 import { keyOfLink, slideOfLink, SHOW_JUMPS } from '../links';
 
-/** A zoom to come back from: the zoom's slide and box, and the last slide before coming back. */
-interface Return { slide: number; rect: Rect; until: number }
+/** A zoom to come back from: the zoom's slide and box, the slides it zoomed into (`from` to `until`), and the last slide before coming back. */
+interface Return { slide: number; rect: Rect; from: number; until: number }
 
 export interface ShowActionHooks {
   /** Go to slide i (without its transition, as a link does). */
@@ -97,11 +97,11 @@ export class ShowActions {
         if (zoom.back) {
           const to = zoom.to ? slideOfLink(zoom.to) : null;
           const until = to !== null ? d.slides.findIndex((s) => s.id === to) : i;
-          this.returns.push({ slide: cur, rect: zoom.rect, until: until >= i ? until : i });
+          this.returns.push({ slide: cur, rect: zoom.rect, from: i, until: until >= i ? until : i });
         }
         this.player.zoom(i, zoom.rect);
         this.hooks.zoomed?.(i, zoom.rect, false);
-      } else this.hooks.go(i);
+      } else this.goTo(i);
       return;
     }
     if (link === '#grid') { this.hooks.grid?.(); return; }
@@ -116,17 +116,26 @@ export class ShowActions {
     if (link in SHOW_JUMPS) {
       if (link === '#next') this.hooks.next();
       else if (link === '#prev') this.hooks.prev();
-      else if (link === '#first') this.hooks.go(this.player.first);
-      else if (link === '#last') this.hooks.go(this.player.last);
+      else if (link === '#first') this.goTo(this.player.first);
+      else if (link === '#last') this.goTo(this.player.last);
       else if (link === '#end') this.hooks.end();
       else if (link === '#return') {
         // the slide before this one in the order they were shown
         const before = [...this.seen].reverse().find((i) => i !== cur);
-        if (before !== undefined) this.hooks.go(before);
+        if (before !== undefined) this.goTo(before);
       }
       return;
     }
     if (!link.startsWith('#')) this.hooks.open(link);
+  }
+
+  /**
+   * Go to slide i by a link or jump. A zoom to come back from is forgotten when this leaves the
+   * slides it zoomed into: the next click then goes on from where the link led, not back out.
+   */
+  private goTo(i: number): void {
+    this.returns = this.returns.filter((r) => i >= r.from && i <= r.until);
+    this.hooks.go(i);
   }
 
   /** Whether the next click comes back out of a zoom (the zoom's last slide has all played). */

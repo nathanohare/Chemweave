@@ -160,6 +160,21 @@ export function findDuplicate(refs: Reference[], r: Reference): Reference | null
   return null;
 }
 
+/** `findDuplicate` against one list, made quicker for asking about many references: true when a reference is already in `refs`. */
+export function duplicateFinder(refs: Reference[]): (r: Reference) => boolean {
+  const dois = new Set<string>();
+  const titles = new Set<string>();
+  for (const x of refs) {
+    const d = doiKey(x);
+    if (d) dois.add(d);
+    titles.add(`${titleKey(x)}\u0000${x.year}`);
+  }
+  return (r) => {
+    const d = doiKey(r);
+    return d ? dois.has(d) : !!r.title.trim() && titles.has(`${titleKey(r)}\u0000${r.year}`);
+  };
+}
+
 /**
  * The references of `found` (an imported file) that are neither in `existing` nor earlier in
  * `found` (by the rules of findDuplicate), each with an id not used yet.

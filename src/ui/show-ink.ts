@@ -66,6 +66,10 @@ export class ShowInk {
   private highlightColour = HIGHLIGHT_COLOURS[0];
   private ink = new Map<number, Stroke[]>();
   private drawing: Stroke | null = null;
+  /** The slide the stroke being drawn began on (a slide that comes by itself meanwhile doesn't take it). */
+  private drawingOn = -1;
+  /** Ends the listeners put on the show's own elements. */
+  private listening = new AbortController();
   private laserAt: Vec | null = null;
   private overlay = document.createElement('canvas');
   private bar: HTMLDivElement | null = null;
@@ -87,8 +91,11 @@ export class ShowInk {
     // a click that drew doesn't go on through the show
     o.addEventListener('click', (e) => e.stopPropagation());
     o.addEventListener('pointerleave', () => { if (this.tool === 'laser') this.setLaser(null); });
-    // the laser follows the mouse over the slide even when clicks go through to the show
-    canvas.parentElement?.addEventListener('pointermove', (e) => { if (this.tool === 'laser') this.setLaser(this.toSlide(e)); });
+    // the laser follows the mouse over the slide even when clicks go through to the show (and goes when the
+    // mouse leaves: with the laser on the overlay takes no pointer events, so it can't tell), until this is removed
+    const { signal } = this.listening;
+    canvas.parentElement?.addEventListener('pointermove', (e) => { if (this.tool === 'laser') this.setLaser(this.toSlide(e)); }, { signal });
+    canvas.parentElement?.addEventListener('pointerleave', () => { if (this.tool === 'laser') this.setLaser(null); }, { signal });
     if (controls) this.makeBar();
   }
 
@@ -162,7 +169,7 @@ export class ShowInk {
     g.clearRect(0, 0, pw, ph);
     const { x, y, k } = this.hooks.place();
     g.setTransform(k * dpr, 0, 0, k * dpr, x * dpr, y * dpr);
-    const lines = [...(this.ink.get(this.hooks.slide()) ?? []), ...(this.drawing ? [this.drawing] : [])];
+    const lines = [...(this.ink.get(this.hooks.slide()) ?? []), ...(this.drawing && this.drawingOn === this.hooks.slide() ? [this.drawing] : [])];
     for (const s of lines) {
       g.save();
       g.lineCap = 'round';
@@ -197,6 +204,7 @@ export class ShowInk {
   }
 
   remove(): void {
+    this.listening.abort();
     this.overlay.remove();
     this.bar?.remove();
     this.root.classList.remove('laser-on');
@@ -227,6 +235,7 @@ export class ShowInk {
     if (this.tool !== 'pen' && this.tool !== 'highlighter') return;
     const hl = this.tool === 'highlighter';
     this.drawing = { tool: this.tool, color: hl ? this.highlightColour : this.penColour, width: hl ? HIGHLIGHT_WIDTH : PEN_WIDTH, pts: [p] };
+    this.drawingOn = this.hooks.slide();
     this.paint();
   }
 
@@ -245,7 +254,7 @@ export class ShowInk {
     const d = this.drawing;
     this.drawing = null;
     if (!d) return;
-    const i = this.hooks.slide();
+    const i = this.drawingOn;
     const list = [...(this.ink.get(i) ?? []), d];
     this.ink.set(i, list);
     this.hooks.changed?.(i, list);

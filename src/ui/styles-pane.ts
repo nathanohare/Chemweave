@@ -11,7 +11,7 @@ import type * as rt from '../richtext';
 import { cssFamily } from '../text/layout';
 
 export interface StylesPaneHost {
-  doc(): { t: DocText; para: ParaStyle; look: rt.RunStyle } | null;
+  doc(): { t: DocText; para: ParaStyle; look: rt.RunStyle; /** Where the caret or selection is (anything that changes when it moves). */ at?: string } | null;
   applyPara(id: string): void;
   applyChar(id: string | null): void;
   newStyle(): void;
@@ -25,6 +25,8 @@ export class StylesPane {
   private list: HTMLDivElement;
   private preview: HTMLInputElement;
   private picked: { kind: 'para' | 'char'; id: string } | null = null;
+  /** Where the caret was when a style was clicked (a character style stays picked only while it is still there). */
+  private pickedAt: string | undefined;
   private del: HTMLButtonElement;
   private mod: HTMLButtonElement;
 
@@ -96,6 +98,14 @@ export class StylesPane {
     if (!d) return;
     const paraId = styleOf(d.t, d.para).id;
     const charId = d.look.cstyle;
+    // the style clicked is only the one Modify and Delete act on while it is still the one shown on: once the
+    // caret has moved to text in another style, they act on that one (the one highlighted)
+    // (a character style stays picked while the caret is still where it was clicked, even if that is in text
+    // with none: applying one to a word at the caret's edge can leave the caret just outside it)
+    if (this.picked) {
+      const moved = this.picked.kind === 'char' && d.at !== this.pickedAt;
+      if (this.picked.kind === 'para' ? this.picked.id !== paraId : moved || (!!charId && this.picked.id !== charId)) this.picked = null;
+    }
     const head = (text: string) => {
       const h = document.createElement('div');
       h.className = 'sp-head';
@@ -129,6 +139,7 @@ export class StylesPane {
       b.addEventListener('mousedown', (e) => e.preventDefault());
       b.addEventListener('click', () => {
         this.picked = { kind, id };
+        this.pickedAt = this.host.doc()?.at;
         if (kind === 'para') this.host.applyPara(id);
         else this.host.applyChar(id);
       });
