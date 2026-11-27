@@ -153,8 +153,10 @@ export class LiveStereo implements StereoInfo {
       if (this.cache.size > CACHE_MAX) this.cache.clear();
       part.forEach((p, k) => {
         this.cache.set(p.key, results[k]);
-        // a structure edited meanwhile is worked out again on the next pass
-        if ([...p.frag].every((id) => doc.atoms.has(id))) this.apply(p.frag, p.map, results[k], changedAtoms, changedBonds);
+        // a structure edited meanwhile (its atoms changed or gone) is worked out again on the next
+        // pass: labels from the drawing as it was are not shown on it, even for a moment
+        const edited = w.all || [...p.frag].some((id) => w.ids.has(id) || !doc.atoms.has(id));
+        if (!edited) this.apply(p.frag, p.map, results[k], changedAtoms, changedBonds);
       });
       this.report(changedAtoms, changedBonds);
     }

@@ -7,6 +7,7 @@ import { multipletHalfWidth, sampleSpectrum, type NmrQuality, type PredictedSpec
 import { lorentzian } from '../chem/nmr/spin';
 import { clampRange, clampYZoom, CLICK_PX, dragZoom, fullHeight, panRange, ppmAt, rangeFromDrag, stepZoom, wheelZoom, type PpmRange } from './nmr-view';
 import { GEAR } from './ribbon-live';
+import { minusText } from './minus-text';
 
 const esc = (s: string) => s.replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]!));
 
@@ -295,12 +296,12 @@ export function spectrumSvg(d: SpectrumData, o: DrawOpts & { overlay?: boolean }
   s += `<line x1="0" x2="${o.w}" y1="${o.h - bot + 0.5}" y2="${o.h - bot + 0.5}" class="sp-ax"/>`;
   if (o.cursor != null && o.cursor <= o.hi && o.cursor >= o.lo) {
     const x = xs(o.cursor), right = x > o.w - 60;
-    s += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${top}" y2="${o.h - bot}" class="sp-cursor"/><text x="${(x + (right ? -4 : 4)).toFixed(1)}" y="${o.h - bot - BASE_GAP - 4}" text-anchor="${right ? 'end' : 'start'}" class="sp-tick sp-cursor-at">${o.cursor.toFixed(d.nuc === '1H' ? 3 : 1)}</text>`;
+    s += `<line x1="${x.toFixed(1)}" x2="${x.toFixed(1)}" y1="${top}" y2="${o.h - bot}" class="sp-cursor"/><text x="${(x + (right ? -4 : 4)).toFixed(1)}" y="${o.h - bot - BASE_GAP - 4}" text-anchor="${right ? 'end' : 'start'}" class="sp-tick sp-cursor-at">${minusText(o.cursor.toFixed(d.nuc === '1H' ? 3 : 1))}</text>`;
   }
   for (const v of ticks(o.hi, o.lo, o.w)) {
     const x = xs(v);
     if (x < 6 || x > o.w - 6) continue;
-    s += `<line x1="${x}" x2="${x}" y1="${o.h - bot + 0.5}" y2="${o.h - bot + 3.5}" class="sp-ax"/><text x="${x}" y="${o.h - 3}" text-anchor="middle" class="sp-tick">${v}</text>`;
+    s += `<line x1="${x}" x2="${x}" y1="${o.h - bot + 0.5}" y2="${o.h - bot + 3.5}" class="sp-ax"/><text x="${x}" y="${o.h - 3}" text-anchor="middle" class="sp-tick">${minusText(v)}</text>`;
   }
   return s + '</svg>';
 }

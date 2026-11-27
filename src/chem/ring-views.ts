@@ -14,7 +14,7 @@
 // drawing and its mirror image differ, as they should. The flat drawing is read from its
 // wedges; a chair or boat is read back by fitting the template to it.
 
-import type { Doc, Bond, BondDisplay } from '../model';
+import { outsideValence, type Doc, type Bond, type BondDisplay } from '../model';
 import type { Vec } from '../geom';
 import { templateById } from './templates';
 import { ringBonds, ringsThroughBond } from './aromatic';
@@ -295,7 +295,7 @@ export function facesOf(doc: Doc, vr: ViewRing, fit: ViewFit = fitView(doc, vr))
 /** +1 for a wedge from this atom (towards the reader), −1 for a hashed wedge, 0 otherwise. */
 function wedgeFrom(b: Bond, at: number): number {
   if (b.order !== 1 || b.a1 !== at) return 0;
-  return b.display === 'wedge' || b.display === 'bold' ? 1 : b.display === 'hashWedge' || b.display === 'hash' ? -1 : 0;
+  return b.display === 'wedge' || b.display === 'hollowWedge' || b.display === 'bold' ? 1 : b.display === 'hashWedge' || b.display === 'hash' ? -1 : 0;
 }
 
 /** True when the ring is drawn as a chair or boat now (read from its shape). */
@@ -325,6 +325,8 @@ export function layoutRing(doc: Doc, vr: ViewRing, view: RingView, pos: number[]
   const ringAt: Vec[] = [];
   // where each substituent's first atom goes: direction from its ring atom, length (bond lengths), depth
   const subTo = new Map<number, { dir: Vec; len: number; depth?: number }>();
+  // flat view: substituents whose first atom is a stereocentre wedged on the bond to the ring
+  const ownWedges: { x: ViewRing['subs'][number]; ring: number; display: BondDisplay }[] = [];
   if (view === 'flat') {
     vr.ring.forEach((_, i) => ringAt.push({ x: centre.x + L * HEXAGON[pos[i]].x, y: centre.y + L * HEXAGON[pos[i]].y }));
     const nz = Math.sign(normalOf(ringAt.map((p): V3 => [p.x, p.y, 0]))[2]) || 1;
@@ -343,6 +345,10 @@ export function layoutRing(doc: Doc, vr: ViewRing, view: RingView, pos: number[]
         const f = faces.get(x.first) ?? 0;
         const b = doc.bonds.get(x.bond)!;
         const display: BondDisplay = f === 0 ? (wedgeFrom(b, id) ? 'solid' : b.display) : f * nz > 0 ? 'wedge' : 'hashWedge';
+        // a wedge that starts at the substituent shows the substituent's own stereocentre: it is
+        // moved to another of that centre's bonds (below, once the atoms are placed) so this bond
+        // can show the ring's face, or kept where it is when it can't be
+        if (wedgeFrom(b, x.first)) { if (f !== 0) ownWedges.push({ x, ring: id, display }); return; }
         if (display !== b.display || (f !== 0 && b.a1 !== id)) bonds.set(x.bond, { display, a1: f !== 0 ? id : b.a1, a2: f !== 0 ? x.first : b.a2 });
       });
     });
@@ -387,10 +393,54 @@ export function layoutRing(doc: Doc, vr: ViewRing, view: RingView, pos: number[]
     for (const id of x.branch) {
       const a = doc.atoms.get(id)!;
       const r = rot({ x: a.x - first.x, y: a.y - first.y }, turn);
-      moves.set(id, { x: to.x + r.x, y: to.y + r.y, depth: id === x.first ? t.depth : a.depth });
+      // the whole branch moves in depth with its first atom (in the flat view the first atom has
+      // none, and the rest keep their depths relative to it: another ring drawn as a chair
+      // further along stays a chair)
+      const shifted = (a.depth ?? 0) + (t.depth ?? 0) - (first.depth ?? 0);
+      const depth = id === x.first ? t.depth : t.depth === undefined && Math.abs(shifted) < 1e-9 ? undefined : shifted;
+      moves.set(id, { x: to.x + r.x, y: to.y + r.y, depth });
     }
   }
+  for (const w of ownWedges) moveOwnWedge(doc, w.x.first, w.x.bond, w.ring, w.display, moves, bonds);
   return { moves, bonds };
+}
+
+/**
+ * A substituent's first atom `c` is a stereocentre shown by a wedge on its bond to the ring atom
+ * `ring` (narrow end at c), and that bond is wanted for the ring's face (`face`, a wedge or
+ * hashed wedge from the ring atom). The centre's wedge goes onto another of its single bonds,
+ * wedged or hashed whichever keeps its handedness where the atoms now are; when none can, the
+ * bond keeps the centre's wedge (and the ring atom's face is not shown).
+ */
+function moveOwnWedge(doc: Doc, c: number, bond: number, ring: number, face: BondDisplay, moves: RingLayout['moves'], bonds: RingLayout['bonds']): void {
+  const at = (id: number): Vec => moves.get(id) ?? doc.atoms.get(id)!;
+  const b = doc.bonds.get(bond)!;
+  const nbrs = (doc.adj.get(c) ?? []).map((bid) => doc.bonds.get(bid)!).filter((x) => !outsideValence(x));
+  if (nbrs.length < 3 || nbrs.length > 4) return;
+  const other = (x: Bond) => (x.a1 === c ? x.a2 : x.a1);
+  // handedness from each neighbour's direction and how far it is lifted (+1 wedge, −1 hashed)
+  const hand = (z: (x: Bond) => number): number => {
+    const p = at(c);
+    const v = [...nbrs].sort((u, w) => other(u) - other(w)).map((x) => {
+      const q = at(other(x)), dx = q.x - p.x, dy = q.y - p.y, l = Math.hypot(dx, dy) || 1;
+      return [dx / l, dy / l, z(x)];
+    });
+    const det = (u: number[], w: number[], e: number[]) => u[0] * (w[1] * e[2] - w[2] * e[1]) - u[1] * (w[0] * e[2] - w[2] * e[0]) + u[2] * (w[0] * e[1] - w[1] * e[0]);
+    const minus = (u: number[], w: number[]) => u.map((t, k) => t - w[k]);
+    const d = v.length === 3 ? det(v[0], v[1], v[2]) : det(minus(v[1], v[0]), minus(v[2], v[0]), minus(v[3], v[0]));
+    return Math.abs(d) < 0.05 ? 0 : Math.sign(d);
+  };
+  const want = hand((x) => (x.id === bond ? wedgeFrom(b, c) : x.a1 === c ? wedgeFrom(x, c) : 0));
+  if (!want) return;
+  for (const x of nbrs) {
+    if (x.id === bond || x.order !== 1 || x.display !== 'solid' || other(x) === ring) continue;
+    for (const sign of [1, -1]) {
+      if (hand((y) => (y.id === x.id ? sign : y.id === bond ? 0 : y.a1 === c ? wedgeFrom(y, c) : 0)) !== want) continue;
+      bonds.set(x.id, { display: sign > 0 ? 'wedge' : 'hashWedge', a1: c, a2: other(x) });
+      bonds.set(bond, { display: face, a1: ring, a2: c });
+      return;
+    }
+  }
 }
 
 /** Put a layout into the drawing. Call inside an edit. */

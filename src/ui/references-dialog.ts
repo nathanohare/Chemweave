@@ -12,8 +12,9 @@
 
 import { withInfo } from './info-tip';
 import { addCloseX } from './window-x';
+import { parsePmids } from '../library/online';
 import type { DocText } from '../document/document';
-import { CITE_PRESETS, changedOptions, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
+import { CITE_PRESETS, changedOptions, knownStyle, citeFormat, preferredStyle, setPreferredStyle, type CiteFormat } from '../document/cite-styles';
 import {
   REF_TYPES, bibLabel, citeSuper, citeText, blankRef, citationNumbers, cleanRef, describe, fetchDoi, findDuplicate,
   formatReference, newRefId, newReferences, normaliseDoi, parseReferenceText, piecesText, shortLabel,
@@ -285,7 +286,7 @@ export interface StyleChoice { style: string; options: Partial<CiteFormat>; forN
  */
 export function editCiteStyle(style: string, options: Partial<CiteFormat>): Promise<StyleChoice | null> {
   return modal<StyleChoice>('cite-style-dialog', (d, done) => {
-    let cur = style in CITE_PRESETS ? style : Object.keys(CITE_PRESETS)[0];
+    let cur = knownStyle(style) ? style : Object.keys(CITE_PRESETS)[0];
     let f: CiteFormat = citeFormat(cur, options);
     const pick = el('select');
     for (const [k, p] of Object.entries(CITE_PRESETS)) pick.add(new Option(`${p.name} (${p.journals})`, k));
@@ -796,7 +797,7 @@ export class ReferencesDialog {
   /** The style of the file picked (or, until it has one, the person's own). */
   private style(): CiteStyle {
     const s = this.holder()?.citeStyle();
-    return s && s in CITE_PRESETS ? s : preferredStyle().style;
+    return knownStyle(s) ? s : preferredStyle().style;
   }
 
   private format(): CiteFormat {
@@ -853,7 +854,7 @@ export class ReferencesDialog {
     const got = await ask('Add by PubMed ID', [{ name: 'ids', label: 'PubMed IDs', value: '' }], {
       ok: 'Look Up', note: `One or more PubMed ids (31234567), or pubmed.ncbi.nlm.nih.gov links, separated by spaces or commas. The details come from PubMed (NCBI), which needs the internet; they are added to ${h.name}.`,
     });
-    const ids = [...(got?.ids ?? '').matchAll(/(\d{1,9})/g)].map((m) => m[1]);
+    const ids = parsePmids(got?.ids ?? '');
     if (!ids.length) return;
     let found: Reference[];
     try {

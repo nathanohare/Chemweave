@@ -342,6 +342,7 @@ describe('the keeper, with AutoSave on', () => {
       beforeWrite: (t, r, n, h) => keeper.beforeWrite(t, r, n, h),
       saved: (t, d, h, w) => keeper.saved(t, d, h, w),
       autoSaveFailed: (t, m) => keeper.autoSaveFailed(t, m),
+      written: (t) => keeper.written(t),
       opened: (t) => keeper.opened(t),
       dropped: (t) => keeper.dropped(t),
     });

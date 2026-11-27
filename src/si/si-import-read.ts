@@ -343,8 +343,10 @@ function docxParagraph(p: Element, styles: Styles): [Run[], number][] {
     if (ps) level = styles.level.get(pid) ?? 0;
     const ol = find(ppr, W, 'outlineLvl');
     if (ol && !level) {
+      // (levels 0 to 8 are Heading 1 to 9; 9, Word's Body Text, or none is no heading)
       const v = wAttr(ol, 'val') || '9';
-      if (/^\s*[-+]?\d+\s*$/.test(v)) level = Math.min(3, parseInt(v, 10) + 1);
+      const n = /^\s*[-+]?\d+\s*$/.test(v) ? parseInt(v, 10) : NaN;
+      if (n >= 0 && n <= 8) level = Math.min(3, n + 1);
     }
   }
   const pieces: Run[][] = [[]];
@@ -421,8 +423,8 @@ function openDocx(name: string, bytes: Uint8Array): { res: ReadResult; parts: El
         res.paras.push(newPara(runs, { heading: level, table: !!cell, objects: i === 0 ? objects : [], cell }));
       });
     } else if (is(child, W, 'tbl')) {
-      if (cell) {          // (a table in a table: its cells' text only)
-        for (const tc of Array.from(child.getElementsByTagNameNS(W, 'tc'))) walk(tc, cell);
+      if (cell) {          // (a table in a table: its cells' text only; a table in one of them is read once, through its cell)
+        for (const tr of own(child, 'tr')) for (const tc of own(tr, 'tc')) walk(tc, cell);
         return;
       }
       tables++;

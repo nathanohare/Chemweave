@@ -35,7 +35,7 @@ export function torsion(x: number[], a: number, b: number, c: number, d: number)
   const dot = (p: number[], q: number[]) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
   const b1 = v(a, b), b2 = v(b, c), b3 = v(c, d);
   const n1 = cross(b1, b2), n2 = cross(b2, b3);
-  const m = cross(n1, b2.map((t) => t / Math.sqrt(dot(b2, b2))));
+  const m = cross(b2.map((t) => t / Math.sqrt(dot(b2, b2))), n1);
   return Math.atan2(dot(m, n2), dot(n1, n2)) / RAD;
 }
 
@@ -82,7 +82,7 @@ export function vicinal3d(model: Model3d): Vicinal3d[] {
   const out: Vicinal3d[] = [];
   for (const bd of model.bonds) {
     const [c1, c2] = [bd.a, bd.b];
-    if (!sp3C(c1) || !sp3C(c2) || inSmallRing.has(c1) && inSmallRing.has(c2)) continue;
+    if (!sp3C(c1) || !sp3C(c2) || inSmallRing.has(c1) || inSmallRing.has(c2)) continue;
     const hs1 = nb[c1].filter(isH), hs2 = nb[c2].filter(isH);
     if (!hs1.length || !hs2.length) continue;
     // substituents (non-H, not the fragment carbons), with the β effect on Δχ

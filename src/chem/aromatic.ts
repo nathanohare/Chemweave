@@ -260,9 +260,36 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>, strict = false): Set<
   };
   const paired = new Map<number, number>();
   const chosen = new Set<number>();
-  const solve = (i: number): boolean => {
-    if (i === atoms.length) return true;
-    const a = atoms[i];
+  // Each ring system on its own: a system with no pattern fails at once, without trying every
+  // pattern of the systems before it again. A system whose atoms all need a double bond and are
+  // odd in number has none (each double bond pairs two of them).
+  const comp = new Map<number, number>();
+  const comps: number[][] = [];
+  for (const start of atoms) {
+    if (comp.has(start)) continue;
+    const list = [start];
+    comp.set(start, comps.length);
+    for (let k = 0; k < list.length; k++) for (const bid of doc.adj.get(list[k]) ?? []) {
+      if (!todo.has(bid)) continue;
+      const b = doc.bonds.get(bid)!;
+      const o = b.a1 === list[k] ? b.a2 : b.a1;
+      if (!comp.has(o)) { comp.set(o, comps.length); list.push(o); }
+    }
+    comps.push(list);
+  }
+  if (comps.some((c) => c.length % 2 === 1 && !c.some(optional))) return null;
+  let part: number[] = [];
+  // The search below tries the atoms in the order they come and keeps the first pattern, as
+  // before; it is given a number of steps. A system it can't settle in them (a large one with no
+  // pattern that isn't simply odd: two carbons too many, or an odd one with an N in it) is
+  // settled by a matching instead, which takes time in proportion to a power of the atoms, not
+  // to the patterns (review F380).
+  let steps = 0;
+  const STEPS = 20000;
+  const solve = (i: number): boolean | null => {
+    if (++steps > STEPS) return null;
+    if (i === part.length) return true;
+    const a = part[i];
     if (paired.has(a)) return solve(i + 1);
     for (const bid of doc.adj.get(a) ?? []) {
       if (!todo.has(bid)) continue;
@@ -270,12 +297,108 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>, strict = false): Set<
       const o = b.a1 === a ? b.a2 : b.a1;
       if (paired.has(o) || !room(a) || !room(o)) continue;
       paired.set(a, o); paired.set(o, a); chosen.add(bid);
-      if (solve(i + 1)) return true;
+      const r = solve(i + 1);
+      if (r !== false) return r;
       paired.delete(a); paired.delete(o); chosen.delete(bid);
     }
-    return optional(a) && solve(i + 1);
+    return optional(a) ? solve(i + 1) : false;
   };
-  return solve(0) ? chosen : null;
+  for (let k = 0; k < comps.length; k++) {
+    // (in the order the atoms come, as before: the same pattern is found)
+    part = atoms.filter((a) => comp.get(a) === k);
+    steps = 0;
+    const r = solve(0);
+    if (r === false) return null;
+    if (r === true) continue;
+    // too many steps: this system's part of the search is undone and a matching is used
+    for (const a of part) paired.delete(a);
+    for (const bid of [...chosen]) { const b = doc.bonds.get(bid)!; if (comp.get(b.a1) === k) chosen.delete(bid); }
+    const found = matchedBonds(doc, todo, part, optional, room);
+    if (!found) return null;
+    for (const bid of found) { const b = doc.bonds.get(bid)!; chosen.add(bid); paired.set(b.a1, b.a2); paired.set(b.a2, b.a1); }
+  }
+  return chosen;
+}
+
+/**
+ * Bonds among `todo` to make double so each atom of `part` that isn't optional has one: a
+ * matching that covers those atoms, found with Edmonds' blossom method (J. Edmonds, "Paths,
+ * trees, and flowers", Can. J. Math. 1965, 17, 449–467) on the ring system doubled, each optional
+ * atom joined to its own copy, where such a matching is a perfect matching. Null when there is none.
+ */
+function matchedBonds(doc: Doc, todo: Set<number>, part: number[], optional: (id: number) => boolean, room: (id: number) => boolean): number[] | null {
+  const n = part.length;
+  const index = new Map(part.map((a, i) => [a, i]));
+  const adj: number[][] = Array.from({ length: 2 * n }, () => []);
+  const bondOf = new Map<number, number>();
+  for (let i = 0; i < n; i++) {
+    const a = part[i];
+    if (!room(a) && !optional(a)) return null;
+    if (optional(a)) { adj[i].push(i + n); adj[i + n].push(i); }
+    if (!room(a)) continue;
+    for (const bid of doc.adj.get(a) ?? []) {
+      if (!todo.has(bid)) continue;
+      const b = doc.bonds.get(bid)!;
+      const j = index.get(b.a1 === a ? b.a2 : b.a1);
+      if (j === undefined || j <= i || !room(part[j])) continue;
+      adj[i].push(j); adj[j].push(i); adj[i + n].push(j + n); adj[j + n].push(i + n);
+      bondOf.set(i * n + j, bid);
+    }
+  }
+  const match = maximumMatching(adj);
+  if (match.some((m) => m < 0)) return null;
+  const out: number[] = [];
+  for (let i = 0; i < n; i++) if (match[i] >= 0 && match[i] < n && match[i] > i) out.push(bondOf.get(i * n + match[i])!);
+  return out;
+}
+
+/** A largest matching of a graph (any graph, odd rings too): each vertex's partner, or −1. Edmonds' blossom method. */
+function maximumMatching(adj: number[][]): number[] {
+  const n = adj.length;
+  const match = new Array<number>(n).fill(-1), p = new Array<number>(n).fill(-1), base = new Array<number>(n).fill(0);
+  const used = new Array<boolean>(n).fill(false), blossom = new Array<boolean>(n).fill(false);
+  const lca = (a: number, b: number) => {
+    const seen = new Array<boolean>(n).fill(false);
+    for (;;) { a = base[a]; seen[a] = true; if (match[a] < 0) break; a = p[match[a]]; }
+    for (;;) { b = base[b]; if (seen[b]) return b; b = p[match[b]]; }
+  };
+  const markPath = (v: number, b: number, child: number) => {
+    while (base[v] !== b) {
+      blossom[base[v]] = blossom[base[match[v]]] = true;
+      p[v] = child; child = match[v]; v = p[match[v]];
+    }
+  };
+  const findPath = (root: number): number => {
+    used.fill(false); p.fill(-1);
+    for (let i = 0; i < n; i++) base[i] = i;
+    used[root] = true;
+    const q = [root];
+    for (let h = 0; h < q.length; h++) {
+      const v = q[h];
+      for (const to of adj[v]) {
+        if (base[v] === base[to] || match[v] === to) continue;
+        if (to === root || (match[to] >= 0 && p[match[to]] >= 0)) {
+          const cur = lca(v, to);
+          blossom.fill(false);
+          markPath(v, cur, to); markPath(to, cur, v);
+          for (let i = 0; i < n; i++) if (blossom[base[i]]) { base[i] = cur; if (!used[i]) { used[i] = true; q.push(i); } }
+        } else if (p[to] < 0) {
+          p[to] = v;
+          if (match[to] < 0) return to;
+          used[match[to]] = true; q.push(match[to]);
+        }
+      }
+    }
+    return -1;
+  };
+  // a quick start: each vertex with a free neighbour paired with it
+  for (let v = 0; v < n; v++) if (match[v] < 0) for (const to of adj[v]) if (match[to] < 0) { match[v] = to; match[to] = v; break; }
+  for (let v = 0; v < n; v++) {
+    if (match[v] >= 0) continue;
+    let u = findPath(v);
+    while (u >= 0) { const pv = p[u], ppv = match[pv]; match[u] = pv; match[pv] = u; u = ppv; }
+  }
+  return match;
 }
 
 /** Is this 1½ bond in a ring of 1½ bonds (can a1 be reached from a2 along other 1½ bonds)? */

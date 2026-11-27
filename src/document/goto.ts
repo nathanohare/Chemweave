@@ -108,7 +108,8 @@ export function similarRanges(runs: TextRun[], at: number, base: (para: number) 
   for (const p of pieces) {
     if (p.key !== want) continue;
     const last = out[out.length - 1];
-    if (last && (last[1] === p.a || last[1] + 1 === p.a)) last[1] = p.b;
+    // (only where they touch: never across a different look, a paragraph break or a figure)
+    if (last && last[1] === p.a) last[1] = p.b;
     else out.push([p.a, p.b]);
   }
   return out;

@@ -50,6 +50,11 @@ export interface RestartTab {
   fitted?: boolean;
   /** Presentations and designs: the slide showing. */
   slide?: number;
+  /**
+   * Reopened, but its recovery copy couldn't be made then: this copy is all there is until one
+   * is (settleRestart lets it go then).
+   */
+  unsecured?: boolean;
 }
 
 export interface RestartList {
@@ -79,6 +84,8 @@ export interface RestartHooks {
   pause?(tab: Tab): void;
   /** Make recovery copies of the reopened tabs now (before the restart's own copies go). */
   secure?(): Promise<unknown>;
+  /** Whether a reopened tab's recovery copy holds it as it is now (when secure() didn't manage every tab). */
+  kept?(tab: Tab): boolean;
 }
 
 /** Tabs whose zoom and scroll are the canvas's (documents and sheets keep theirs elsewhere). */
@@ -187,6 +194,7 @@ export function parseRestart(text: string | null): RestartList | null {
     if (v && num(v.scale) && num(v.ox) !== undefined && num(v.oy) !== undefined) { e.view = { scale: v.scale as number, ox: v.ox as number, oy: v.oy as number }; e.fitted = t.fitted === true; }
     const s = num(t.slide);
     if (s !== undefined && s >= 0) e.slide = Math.floor(s);
+    if (t.unsecured === true) e.unsecured = true;
     return e;
   });
   // (another window of another window, or of itself, has no file to come back from)
@@ -210,6 +218,21 @@ export async function restartWaiting(store: KeepStore): Promise<boolean> {
 export async function noteRestart(store: KeepStore, note: string): Promise<void> {
   const list = await readList(store);
   if (list) await putText(store, `${FOLDER}/${LIST}`, JSON.stringify({ ...list, note }));
+}
+
+/**
+ * The recovery copies have the reopened tabs now (a later copy worked, or they were saved or
+ * closed): the restart's own copies kept for them go. Copies that couldn't be opened stay.
+ */
+export async function settleRestart(store: KeepStore): Promise<void> {
+  const list = await readList(store);
+  if (!list || !list.tabs.some((t) => t.unsecured)) return;
+  const rest = list.tabs.filter((t) => !t.unsecured);
+  if (!rest.length) { await store.remove(FOLDER); return; }
+  const keep: RestartList = { ...list, tabs: rest, active: -1 };
+  delete keep.split;
+  await putText(store, `${FOLDER}/${LIST}`, JSON.stringify(keep));
+  await tidy(store, keep);
 }
 
 /** Forget the tabs kept for a restart, and their copies. */
@@ -327,9 +350,16 @@ export async function reopenAfterRestart(ws: Workspace, store: KeepStore, hooks:
     setViews(ws.pane ?? ws.active);
   }
   // the unsaved tabs have recovery copies of their own before the restart's copies go
-  await hooks.secure?.().catch(() => {});
-  if (failed.length) {
-    const keep: RestartList = { kind: 'restart', made: list.made, tabs: failed.map((i) => ({ ...list.tabs[i], windowOf: undefined })), active: -1, tries };
+  // (if they couldn't be made, the restart's copies of the unsaved tabs are all there is: they stay for the next start)
+  // (tried twice: a write that failed once, such as a file held for a moment, may go the second time)
+  const attempt = () => (hooks.secure ? hooks.secure().then(() => true, () => false) : Promise.resolve(true));
+  const secured = (await attempt()) || (await attempt());
+  // only the tabs whose recovery copy is missing keep theirs here (one tab that can't be copied
+  // doesn't keep everyone's)
+  const unsecured = secured ? [] : list.tabs.flatMap((e, i) => (e.copy && opened[i] && !failed.includes(i) && !(hooks.kept?.(opened[i]!) ?? false) ? [i] : []));
+  const keepIdx = [...failed, ...unsecured];
+  if (keepIdx.length) {
+    const keep: RestartList = { kind: 'restart', made: list.made, tabs: keepIdx.map((i) => ({ ...list.tabs[i], windowOf: undefined, ...(unsecured.includes(i) ? { unsecured: true } : {}) })), active: -1, tries };
     await putText(store, `${FOLDER}/${LIST}`, JSON.stringify(keep));
     await tidy(store, keep);
   } else {

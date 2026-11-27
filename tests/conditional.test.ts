@@ -176,8 +176,14 @@ describe('tables', () => {
     expect(tableCellLook(t, 5, 0)).toBeNull();
   });
   it('keeps its stripes when rows are hidden by a filter', () => {
-    const hidden = (row: number) => row === 1;
-    expect(tableCellLook(t, 2, 0, hidden)?.fill).toBe('#dae3f3');
+    // the callback counts the hidden rows from `first` up to (not including) `row`
+    const hiddenOf = (rows: number[]) => (first: number, row: number) => rows.filter((x) => x >= first && x < row).length;
+    expect(tableCellLook(t, 2, 0, hiddenOf([1]))?.fill).toBe('#dae3f3');
+    // two hidden rows: row 3 is the first row showing, row 4 the second
+    expect(tableCellLook(t, 3, 0, hiddenOf([1, 2]))?.fill).toBe('#dae3f3');
+    expect(tableCellLook(t, 4, 0, hiddenOf([1, 2]))?.fill).toBeUndefined();
+    // a hidden row below the one asked about changes nothing
+    expect(tableCellLook(t, 2, 0, hiddenOf([3]))?.fill).toBeUndefined();
   });
   it('takes your own colours over the style\'s', () => {
     const own = { ...t, custom: { header: '#123456', band: '#eeeeee' } };

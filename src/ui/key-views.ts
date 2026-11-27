@@ -4,6 +4,7 @@
 // turns as a sheet; "Its real 3-D shape" builds the structure's shape first (as 3-D Perspective
 // does), so it turns as the molecule does.
 
+import { addInfo } from './info-tip';
 import type { Doc } from '../model';
 import { drawDrawing } from '../deck/slide-view';
 import { Turner } from '../deck/turn-render';
@@ -47,7 +48,6 @@ export function askKeyViews(o: KeyViewsOptions): Promise<KeyViewsResult | null> 
     const form = document.createElement('form');
     form.method = 'dialog';
     form.innerHTML = `<h2>3-D Rotation: Key Views</h2>
-      <p class="muted small">Drag to rotate the structure (Shift+drag rotates in the page plane; arrow keys rotate 15°), then click <b>Add Key View</b>. In the slide show, each click rotates to the next view.</p>
       <canvas class="kv-canvas" tabindex="0" role="img" aria-label="The structure: drag to rotate it"></canvas>
       <p class="kv-tools"><button type="button" data-act="add" class="primary-soft">+ Add Key View</button>
         <button type="button" data-act="update" disabled title="Replace the selected key view with the current view">Update View</button>
@@ -58,6 +58,7 @@ export function askKeyViews(o: KeyViewsOptions): Promise<KeyViewsResult | null> 
       <p class="muted small kv-note" hidden></p>
       <div class="kv-strip" role="list" aria-label="Key views, in the order they play"></div>
       <p class="ask-buttons"><button type="button" data-act="cancel">Cancel</button> <button type="submit" class="primary">Save Views</button></p>`;
+    addInfo(form.querySelector('h2'), 'Drag to rotate the structure (Shift+drag rotates in the page plane; arrow keys rotate 15°), then click Add Key View. In the slide show, each click rotates to the next view.');
     const $ = <T extends Element>(q: string) => form.querySelector<T>(q)!;
     const canvas = $<HTMLCanvasElement>('.kv-canvas');
     const strip = $<HTMLDivElement>('.kv-strip');

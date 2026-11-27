@@ -12,6 +12,7 @@ import { BOX_PAD, SHADOWS, borderRect, lookOf, styleOf, watermarkPlace, type Doc
 import { withStack, type TextLayout } from '../text/layout';
 import { geoDef, moveSteps, traceSteps } from '../design/geo';
 import type { DocLayout, PageBox, PlacedObject, TableBox } from './doc-layout';
+import { boxTextTop } from './doc-layout';
 import type { BorderLine, TableData } from '../model';
 import { coveringCell, rowSpanOf, spanOf } from '../table';
 import { DEFAULT_MARGINS, hasLines, resolveTable, strokeOf, type TableStyleDef } from './table-styles';
@@ -193,9 +194,26 @@ export function turnItems(items: Item[], o: { x: number; y: number; w: number; h
     }
     // words are turned with the figure but read the right way round (a PDF can't mirror them)
     const p = at(it.x, it.y);
-    const angle = ((((it.angle ?? 0) - turn.rot) % 360) + 360) % 360;
     const { angle: _a, ...rest } = it;
-    return { ...rest, ...p, ...(angle ? { angle } : {}) };
+    if (!mirrored) {
+      const angle = ((((it.angle ?? 0) - turn.rot) % 360) + 360) % 360;
+      return { ...rest, ...p, ...(angle ? { angle } : {}) };
+    }
+    // mirrored, the screen's words cover a box from their start along their (mirrored) way and
+    // across to the other side of their line: upright words put to cover the same box. Flipped
+    // across (Flip Horizontal) they read back from the far end; flipped over (Flip Vertical)
+    // they stand on the far side of the line, about a capital's height across.
+    const own = ((it.angle ?? 0) * Math.PI) / 180;
+    const W = it.widths.reduce((x, w) => x + w, 0);
+    const way = { x: Math.cos(own), y: -Math.sin(own) }, up = { x: -Math.sin(own), y: -Math.cos(own) };
+    const map = (d: { x: number; y: number }) => { const q = at(it.x + d.x, it.y + d.y); return { x: q.x - p.x, y: q.y - p.y }; };
+    const u = map(way), v = map(up);
+    const cap = 0.7 * it.size;
+    const across = turn.flipH;
+    const start = across ? { x: p.x + W * u.x, y: p.y + W * u.y } : { x: p.x + cap * v.x, y: p.y + cap * v.y };
+    const dir = across ? { x: -u.x, y: -u.y } : u;
+    const angle = ((Math.round(((Math.atan2(-dir.y, dir.x) * 180) / Math.PI) * 1e6) / 1e6 % 360) + 360) % 360;
+    return { ...rest, ...start, ...(angle ? { angle } : {}) };
   });
 }
 
@@ -268,7 +286,7 @@ export function layoutLinks(lay: TextLayout, runs: TextRun[] | LinkSpan[], ox: n
   return out;
 }
 
-/** A page's links for its PDF: in the body's text and in its text boxes. */
+/** A page's links for its PDF: in the body's text, its text boxes, its footnotes and endnotes, and its tables' cells. */
 function pageLinks(t: DocText, lay: DocLayout, p: PageBox, spans: LinkSpan[]): PdfLink[] {
   const found = layoutLinks(lay.text, spans, 0, 0, p.first, p.end);
   for (const o of lay.objects) {
@@ -276,6 +294,25 @@ function pageLinks(t: DocText, lay: DocLayout, p: PageBox, spans: LinkSpan[]): P
     if (o.page !== p.index || obj?.kind !== 'textbox') continue;
     const bl = lay.boxes.get(o.id);
     if (bl) found.push(...layoutLinks(bl, obj.runs, o.x + BOX_PAD.x, boxTextTop(obj, o, bl)));
+  }
+  // (a note's lines are laid out in place)
+  for (const n of lay.notes.values()) {
+    const obj = t.objects[n.id];
+    if (n.page === p.index && obj?.kind === 'note') found.push(...layoutLinks(n.lay, obj.runs, 0, 0));
+  }
+  // each cell where drawDocTable draws it
+  for (const [id, tb] of lay.tables) {
+    const obj = t.objects[id];
+    if (obj?.kind !== 'table') continue;
+    tb.rows.forEach((at, r) => {
+      if (at.page !== p.index) return;
+      tb.cells[r]?.forEach((cl, c) => {
+        const cell = obj.table.rows[r]?.[c];
+        if (!cl || !cell) return;
+        const m = tb.pads[r]?.[c] ?? DEFAULT_MARGINS;
+        found.push(...layoutLinks(cl, cell.runs, at.x + tb.xs[c] + m.left, at.y + m.top + tb.drop[r][c] - cl.box.y1));
+      });
+    });
   }
   const out: PdfLink[] = [];
   for (const f of found) {
@@ -401,12 +438,8 @@ export function traceGeo(ctx: Parameters<typeof traceSteps>[0], geo: string, at:
   if (lines && out.lines) traceSteps(ctx, moveSteps(out.lines, at.x, at.y));
 }
 
-/** Where a text box's text starts down the page: at its top, or a shape's in its middle (as PowerPoint puts it). */
-export function boxTextTop(o: { geo?: string }, at: { y: number; h: number }, bl: TextLayout): number {
-  const textH = bl.box.y2 - bl.box.y1;
-  const top = o.geo ? at.y + Math.max(BOX_PAD.y, (at.h - textH) / 2) : at.y + BOX_PAD.y;
-  return top - bl.box.y1;
-}
+// (boxTextTop lives with the layout, so typing into a box (doc-file.ts) and drawing it agree)
+export { boxTextTop };
 
 /** A recorded picture's shapes and text scaled and moved to fill a box. */
 export function placeItems(pic: Picture, at: { x: number; y: number; w: number; h: number }): Item[] {

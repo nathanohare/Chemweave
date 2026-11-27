@@ -68,7 +68,8 @@ export async function refineWithXtb(m: Model3d, opts: XtbOptions, run: XtbRunner
     }
     const xyz = opts.opt ? readXyz(r.xyz, m) : m.conformers[k].xyz;
     if (!xyz) throw new Error('xtb gave back a geometry with different atoms.');
-    out.push({ xyz, energy: r.energy * KCAL_PER_HARTREE });
+    // the conformer keeps how many equivalent forms it was found in (its degeneracy) for its share
+    out.push({ ...m.conformers[k], xyz, energy: r.energy * KCAL_PER_HARTREE, population: undefined });
     progress?.(k + 1, n);
   }
   if (!out.length) return m;

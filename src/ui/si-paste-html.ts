@@ -14,17 +14,24 @@ const attr = (t: string): string => esc(t).replace(/"/g, '&quot;');
 export const hasFormatting = (clean: string): boolean => /<(b|i|u|sub|sup)>|<span /.test(clean);
 
 const BLOCKS = new Set(['P', 'DIV', 'LI', 'TR', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6']);
+const CELLS = new Set(['TD', 'TH']);
+/** Elements that start on a line of their own (or a cell of their own): white space beside one is only the markup's. */
+const APART = new Set([...BLOCKS, ...CELLS, 'UL', 'OL', 'TABLE', 'TBODY', 'THEAD', 'TFOOT', 'BR', 'HR', 'BLOCKQUOTE', 'PRE']);
 
 /** The pasted HTML as plain text with only <b>, <i>, <u>, <sub>, <sup> and SI links (line breaks as <br> when `multiline`, else spaces). */
 export function cleanPastedHtml(html: string, multiline: boolean): string {
   const doc = new DOMParser().parseFromString(html, 'text/html');
   const out: string[] = [];
+  let startedAt = -1;
+  let startedIn: Element | null = null;
   const walk = (node: Node, look: Look): void => {
     if (node.nodeType === Node.TEXT_NODE) {
       // (a non-breaking space, as in "400\u00a0MHz", is kept: only ordinary white space is folded)
       // (a bare U+FFFC, a picture or equation's place in the copied text, is left out)
       const t = (node.textContent ?? '').replace(/\uFFFC/g, '').replace(/[\r\n\t ]+/g, ' ');
       if (!t) return;
+      // (the line break or indent of the HTML between two blocks is not text: it must not add a space or a second break)
+      if (t === ' ' && ((node.previousSibling instanceof Element && APART.has(node.previousSibling.tagName)) || (node.nextSibling instanceof Element && APART.has(node.nextSibling.tagName)))) return;
       let s = esc(t);
       if (look.pos) s = `<${look.pos}>${s}</${look.pos}>`;
       if (look.u) s = `<u>${s}</u>`;
@@ -63,8 +70,14 @@ export function cleanPastedHtml(html: string, multiline: boolean): string {
     if (tag === 'SUB' || va === 'sub') next.pos = 'sub';
     else if (tag === 'SUP' || va === 'super') next.pos = 'sup';
     else if (va === 'baseline') next.pos = '';
-    const block = BLOCKS.has(tag) && out.length > 0;
-    if (block) out.push(multiline ? '<br>' : ' ');
+    // (one break between blocks, not one for each that starts: a list item holding a paragraph is one line;
+    // the cells of a table row are kept apart by a space)
+    // (a block that starts right inside the one that just started adds none: <li><p>; a blank paragraph or a <br> before a block still counts)
+    const last = out[out.length - 1] ?? '';
+    const inside = startedAt === out.length && !!startedIn && startedIn !== node && startedIn.contains(node);
+    if (BLOCKS.has(tag) && out.length > 0 && !inside) { out.push(multiline ? '<br>' : ' '); startedAt = out.length; startedIn = node; }
+    else if (BLOCKS.has(tag) && out.length > 0) { startedIn = node; }
+    else if (CELLS.has(tag) && out.length > 0 && last !== '<br>' && !last.endsWith(' ')) out.push(' ');
     for (const k of node.childNodes) walk(k, next);
   };
   walk(doc.body, { b: false, i: false, u: false, pos: '' });

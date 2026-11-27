@@ -527,7 +527,10 @@ async function keysOf(facts: FactsOf, mol: string): Promise<Keys | null> {
         out = [f.inchikey, m?.inchikey ?? '', true, formulaOf(main.info)];
       }
     }
-  } catch { out = null; }
+  } catch {
+    // (the chemistry engine failed, not the structure: asked again next time, once it may work)
+    return null;
+  }
   if (keysMemo.size > 4000) keysMemo.clear();
   keysMemo.set(mol, out);
   return out;
@@ -660,7 +663,7 @@ export async function checkManuscript(p: SiProject, sources: Source[] | null, op
   for (const [key, mc] of ms) {
     const sc = si.get(key);
     if (!sc) {
-      if (extra.has(key)) continue; // a starting material labeled on a scheme: known, no data
+      if (extra.has(key) && !mc.hasData) continue; // a starting material labeled on a scheme: known, no data
       if (mc.hasData) {
         const data = dataText(mc);
         out.push(finding('missing_si', mc.label, `${mc.label}: the manuscript gives data for it (${data}) but no compound in the SI has this ID.`, PROBLEM, { ms_value: data, si_value: 'no compound with this ID', where: mc.where }));

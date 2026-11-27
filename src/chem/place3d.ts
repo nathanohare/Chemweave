@@ -57,11 +57,11 @@ export function placeView(doc: Doc, map: number[], view: [number, number, number
   return { unshown };
 }
 
-/** The stereocentres among these atoms that are drawn with a wedge or hashed wedge (its narrow end). */
+/** The stereocentres among these atoms that are drawn with a wedge, hollow wedge or hashed wedge (its narrow end). */
 export function wedgeCentres(doc: Doc, atomIds: Iterable<number>): Set<number> {
   const at = new Set(atomIds);
   const centres = new Set<number>();
-  for (const b of doc.bonds.values()) if ((b.display === 'wedge' || b.display === 'hashWedge') && at.has(b.a1) && at.has(b.a2)) centres.add(b.a1);
+  for (const b of doc.bonds.values()) if ((b.display === 'wedge' || b.display === 'hollowWedge' || b.display === 'hashWedge') && at.has(b.a1) && at.has(b.a2)) centres.add(b.a1);
   return centres;
 }
 
@@ -75,7 +75,7 @@ export function wedgeCentres(doc: Doc, atomIds: Iterable<number>): Set<number> {
  * Returns how many centres could not be shown.
  */
 export function redrawWedges(doc: Doc, centres: Set<number>, at: Set<number>, hydrogen?: (centre: number) => [number, number, number] | null): number {
-  for (const b of doc.bonds.values()) if (centres.has(b.a1) && (b.display === 'wedge' || b.display === 'hashWedge')) doc.updateBond(b.id, { display: 'solid' });
+  for (const b of doc.bonds.values()) if (centres.has(b.a1) && (b.display === 'wedge' || b.display === 'hollowWedge' || b.display === 'hashWedge')) doc.updateBond(b.id, { display: 'solid' });
   const taken = new Set<number>();
   const L = doc.style.bondLength || 14.4;
   const P = (id: number) => { const a = doc.atoms.get(id)!; return [a.x, a.y, a.depth ?? 0] as const; };

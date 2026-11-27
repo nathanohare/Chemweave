@@ -68,8 +68,10 @@ export class DocTablesUI {
     m.setAttribute('role', 'menu');
     const kept = this.host.file()?.t.tableStyles;
     const current = tg.t.style ?? (tg.t.lines === 'grid' ? 'TableGrid' : tg.t.lines === 'acs' ? '@acs' : '@none');
+    // (the gallery taken away by a pick also lets go of the keys and clicks it was watching)
+    let away: () => void = () => m.remove();
     const pick = (id: string) => {
-      m.remove();
+      away();
       const t = this.host.target();
       if (!t) return;
       let table: TableData;
@@ -116,7 +118,7 @@ export class DocTablesUI {
     clear.textContent = 'Clear (Table Grid, no shading)';
     clear.addEventListener('click', () => pick('TableGrid'));
     m.append(clear);
-    placePopup(m, x, y);
+    away = placePopup(m, x, y);
   }
 
   /** Turn one of the Table Style Options on or off. */
@@ -195,7 +197,9 @@ export class DocTablesUI {
     if (!got) return;
     const t = this.host.target();
     if (!t || t.id !== tg.id) return;
-    const read = (k: string, was: number) => { const v = parseLength(got[k] ?? '', unit); return v === null ? was : Math.max(0, Math.min(72, v)); };
+    // (a box left as it was shown keeps the exact value it came from: what is shown is rounded to a hundredth of an inch)
+    const shownAs: Record<string, string> = { top: len(base.top), bottom: len(base.bottom), left: len(base.left), right: len(base.right), ctop: len(mine.top), cbottom: len(mine.bottom), cleft: len(mine.left), cright: len(mine.right) };
+    const read = (k: string, was: number) => { if ((got[k] ?? '') === shownAs[k]) return was; const v = parseLength(got[k] ?? '', unit); return v === null ? was : Math.max(0, Math.min(72, v)); };
     const pad: CellMargins = { top: read('top', base.top), bottom: read('bottom', base.bottom), left: read('left', base.left), right: read('right', base.right) };
     let table: TableData = { ...t.t, pad };
     if (sameMargins(pad, DEFAULT_MARGINS)) delete table.pad;
@@ -212,6 +216,8 @@ export class DocTablesUI {
         })),
       };
     }
+    // nothing changed: no step of Undo
+    if (JSON.stringify(table) === JSON.stringify(t.t)) return;
     this.host.setTable(t.id, table, 'Cell margins');
   }
 
@@ -377,19 +383,25 @@ export function showPen(c: PenControls, pen: BorderLine): void {
   if (c.swatch) { const svg = penSwatch(pen); if (c.swatch.innerHTML !== svg) c.swatch.innerHTML = svg; }
 }
 
-function placePopup(m: HTMLElement, x: number, y: number): void {
+/** Put a pop-up where it was asked for; it goes away at a click outside it or Escape. Returns what takes it away at once, letting go of the clicks and keys. */
+function placePopup(m: HTMLElement, x: number, y: number): () => void {
   // where the keys went before (the caret's hidden field, in a table cell): Escape goes back there
   const back = document.activeElement;
   popupHost(back).append(m);
   const r = m.getBoundingClientRect();
   m.style.left = `${Math.max(4, Math.min(x, innerWidth - r.width - 4))}px`;
   m.style.top = `${Math.max(4, Math.min(y, innerHeight - r.height - 4))}px`;
-  const close = (e: Event) => {
-    if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
-    if (e instanceof PointerEvent && m.contains(e.target as Node)) return;
+  let gone = false;
+  const away = () => {
+    gone = true;
     m.remove();
     document.removeEventListener('pointerdown', close, true);
     document.removeEventListener('keydown', close, true);
+  };
+  const close = (e: Event) => {
+    if (e instanceof KeyboardEvent && e.key !== 'Escape') return;
+    if (e instanceof PointerEvent && m.contains(e.target as Node)) return;
+    away();
     if (e instanceof KeyboardEvent) {
       // Escape only closes the gallery: it doesn't also reach the page, where it leaves the cell and picks the whole table
       e.preventDefault();
@@ -397,5 +409,6 @@ function placePopup(m: HTMLElement, x: number, y: number): void {
       if (back instanceof HTMLElement && back.isConnected) back.focus({ preventScroll: true });
     }
   };
-  setTimeout(() => { document.addEventListener('pointerdown', close, true); document.addEventListener('keydown', close, true); });
+  setTimeout(() => { if (gone) return; document.addEventListener('pointerdown', close, true); document.addEventListener('keydown', close, true); });
+  return away;
 }

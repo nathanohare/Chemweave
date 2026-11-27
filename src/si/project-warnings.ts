@@ -169,8 +169,12 @@ function duplicateGpNames(p: SiProject): ProjectWarning[] {
   return out;
 }
 
-// (a CIF is read again only when it changes, as SI Assistant keeps it)
-const xrayCache = new Map<string, { cif: string; error: string }>();
+// (a CIF is read again only when it changes, as SI Assistant keeps it: one result for each X-ray
+// section, written over when its CIF, file or data block changes; a check of every section in turn
+// then finds them all however many sections the project has)
+const xrayCache = new Map<string, { file: string; wanted: string; cif: string; error: string }>();
+/** A bound on the sections kept, over all the projects opened (the oldest goes first). */
+const XRAY_CACHE_SIZE = 1024;
 
 /** Why an X-ray structure section can't be drawn ('' when it can). */
 export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
@@ -180,9 +184,9 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   const cif = await p.folder.readText(join(s.folder, file));
   if (cif === null) return `The CIF file ${name} is missing from the section's folder.`;
   const wanted = text(s.data.block);
-  const key = `${s.folder}/${file}\u0000${wanted}`;
+  const key = `${p.folder.where}\u0000${s.folder}`;
   const hit = xrayCache.get(key);
-  if (hit && hit.cif === cif) return hit.error;
+  if (hit && hit.file === file && hit.wanted === wanted && hit.cif === cif) return hit.error;
   let error = '';
   try {
     const blocks = readCif(cif).filter((b) => b.rows('_atom_site_label').length);
@@ -191,8 +195,9 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   } catch (e) {
     error = e instanceof CrystalError ? e.message : `${name} could not be read: ${e instanceof Error ? e.message : String(e)}`;
   }
-  if (xrayCache.size > 20) xrayCache.clear();
-  xrayCache.set(key, { cif, error });
+  xrayCache.delete(key);
+  while (xrayCache.size >= XRAY_CACHE_SIZE) xrayCache.delete(xrayCache.keys().next().value!);
+  xrayCache.set(key, { file, wanted, cif, error });
   return error;
 }
 
@@ -214,7 +219,7 @@ function authorsOf(r: Json): string[] {
 
 /** "Fulmer 2010", "Fulmer & Miller 2010", "Smith et al. 2020": how a reference is named in lists. */
 function shortLabel(r: Json): string {
-  const names = (Array.isArray(r.authors) ? r.authors : []).map((a) => surname(String(a ?? ''))).filter(Boolean);
+  const names = authorsOf(r).map(surname).filter(Boolean);
   const who = !names.length ? (text(r.title) || 'Untitled').slice(0, 30) : names.length === 1 ? names[0] : names.length === 2 ? `${names[0]} & ${names[1]}` : `${names[0]} et al.`;
   return `${who} ${text(r.year).trim()}`.trim();
 }

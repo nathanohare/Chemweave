@@ -11,7 +11,7 @@
 import type { ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
 import { fitParas, paraCount, paraRange } from '../text/paragraphs';
-import { defaultStyles, setParaStyle, styleOf, type BreakKind, type DocText } from './document';
+import { defaultStyles, setParaStyles, styleOf, type BreakKind, type DocText } from './document';
 
 export type DocViewKind = 'print' | 'read' | 'web' | 'outline' | 'draft';
 
@@ -84,7 +84,8 @@ export function hiddenParas(t: DocText, o: OutlineState): Set<number> {
   if (o.level > 0) levels.forEach((L, p) => { if (!L || L > o.level) out.add(p); });
   for (const p of o.collapsed) {
     if (p >= levels.length || !levels[p] || out.has(p)) continue;
-    for (let q = p + 1; q < subtreeEnd(levels, p); q++) out.add(q);
+    const end = subtreeEnd(levels, p);
+    for (let q = p + 1; q < end; q++) out.add(q);
   }
   return out;
 }
@@ -170,13 +171,22 @@ export function changeLevel(t: DocText, o: OutlineState, first: number, last: nu
   t = withHeadings(t);
   const paras = allParas(t);
   const levels = paras.map((ps) => outlineLevel(t, ps));
-  const [a, b] = block(t, o, first, last);
+  const hidden = hiddenParas(t, o);
+  const [, b] = block(t, o, first, last);
   const folded = new Set(o.collapsed);
-  // a folded heading's hidden lower headings move with it (by promote and demote)
+  // what is shown of first..last changes; of what Outline hides there, only headings, and only by
+  // promote and demote (body text folded away or below the level shown stays body text)
   const moving = new Set<number>();
-  for (let p = first; p <= last; p++) moving.add(p);
-  for (let p = a; p <= b; p++) if (levels[p] && [...moving].some((q) => folded.has(q) && q < p)) moving.add(p);
-  let out = t;
+  for (let p = first; p <= last; p++) {
+    if (!hidden.has(p) || (levels[p] && (op === 'promote' || op === 'demote'))) moving.add(p);
+  }
+  // a folded heading's hidden lower headings move with it (by promote and demote)
+  let foldedAbove = false;
+  for (let p = first; p <= b; p++) {
+    if (p > last && levels[p] && foldedAbove) moving.add(p);
+    if (moving.has(p) && folded.has(p)) foldedAbove = true;
+  }
+  const want = new Map<number, string>();
   for (const p of [...moving].sort((x, y) => x - y)) {
     const L = levels[p];
     let to: number | null = null;
@@ -191,9 +201,10 @@ export function changeLevel(t: DocText, o: OutlineState, first: number, last: nu
       }
     } else if (op === 'demote' && L && L < 9) to = L + 1;
     if (to === null || to === L) continue;
-    out = setParaStyle(out, p, p, to ? HEADING(to) : 'Normal');
+    want.set(p, to ? HEADING(to) : 'Normal');
   }
-  return out;
+  // (all in one pass over the text)
+  return want.size ? setParaStyles(t, (p) => want.get(p) ?? null) : t;
 }
 
 /**

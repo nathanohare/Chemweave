@@ -109,7 +109,7 @@ export class AssistantBar {
     links.append(
       button('Request Log', () => this.showLog(), 'ai-link', `Every question sent, kept ${requestLogPlace()}`),
       this.looks,
-      button('Settings', () => void this.host.openSettings().then(() => { this.applyLook(); return this.refresh(); }), 'ai-link', 'Edit > Settings > AI Model'),
+      button('Settings', () => void this.host.openSettings().then(() => { this.applyLook(); return this.refresh(); }), 'ai-link', 'Edit ▸ Settings ▸ AI Model'),
     );
     foot.append(this.chips, links);
     box.append(row, foot);

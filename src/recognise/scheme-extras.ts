@@ -322,10 +322,18 @@ export function chemWord(w: string): string {
     else if (c === ';' && (inner || /(O|Ph)$/.test(before))) out += sub(before, after);
     else out += c;
   }
-  // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI); not CIP and the like
-  out = out.replace(/(^|[A-Z0-9(])CI(?=$|[A-Z0-9,)(/;])/g, '$1Cl');
-  // O read as a nought beside a subscript or element (H20 is H2O, Et20 is Et2O)
-  out = out.replace(/([A-Za-z)]\d)0(?=$|[^0-9])/g, '$1O');
+  // l read as I: Cl (HCI, CICO2Et, TBDPSCI, NaCI, AcCI), before the end, a subscript, a bracket
+  // or a formula going on (ClCO2Et, NaClO4, ClSO3H, ClPPh2, ClSiMe3); not the words CIP, CIS and
+  // the like. After a small letter only in a word that starts as a formula does (Na, Ac, Ms)
+  out = out.replace(/(^|[A-Za-z0-9(])CI(?=$|[0-9,)(/;]|[CO](?![a-z])|(?:S|P|Si)[A-Z0-9])/g, (all, pre: string) =>
+    (/[a-z]/.test(pre) && !/^[A-Z]/.test(out) ? all : `${pre}Cl`));
+  // O read as a nought after a subscript 2 or 3 of an element or group that takes an O (H20 is
+  // H2O, Et20, (Boc)20, Boc20, Ag20, Cu20, Na20, N20, CH30H); never in a compound's label (S10,
+  // S20) or a formula's count of hydrogens after its carbons (C10H20, C9H20O)
+  out = out.replace(/([A-Za-z)]+)([23])0(?=$|[^0-9])/g, (all, pre: string, d: string, at: number) => {
+    if (/^H$/.test(pre) && /C\d+$/.test(out.slice(0, at))) return all;
+    return /(?:H|D|N|Et|Ac|Bz|Tf|Ms|Ts|Piv|Me|Boc|Ph|Bn|Ag|Cu|Cs|Na|Li|K|Rb|Hg|Tl|Cl|\))$/.test(pre) ? `${pre}${d}O` : all;
+  });
   return out;
 }
 

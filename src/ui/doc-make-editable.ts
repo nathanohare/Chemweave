@@ -49,10 +49,20 @@ export async function pictureForReading(o: Picture): Promise<{ p: Pixels; ptPerP
   if (!p) return null;
   const c = o.crop;
   if (c && (c.l || c.t || c.r || c.b)) {
-    const x = Math.round(c.l * p.width), y = Math.round(c.t * p.height);
-    const w = Math.max(1, Math.round((1 - c.l - c.r) * p.width)), h = Math.max(1, Math.round((1 - c.t - c.b) * p.height));
-    const data = new Uint8ClampedArray(w * h * 4);
-    for (let row = 0; row < h; row++) data.set(p.data.subarray(((y + row) * p.width + x) * 4, ((y + row) * p.width + x + w) * 4), row * w * 4);
+    // the frame the picture is shown in, edge by edge, as pixels of it: what lies outside the picture (a
+    // cropping that reaches outward, as Word allows) is white, as it is on the page
+    const W = p.width, H = p.height;
+    const x0 = Math.round(c.l * W), x1 = Math.round((1 - c.r) * W), y0 = Math.round(c.t * H), y1 = Math.round((1 - c.b) * H);
+    const w = Math.max(1, x1 - x0), h = Math.max(1, y1 - y0);
+    if (w * h > 25e6) return null;
+    const data = new Uint8ClampedArray(w * h * 4).fill(255);
+    const from = Math.max(x0, 0), to = Math.min(x0 + w, W);
+    if (to > from) {
+      for (let row = 0; row < h; row++) {
+        const sy = y0 + row;
+        if (sy >= 0 && sy < H) data.set(p.data.subarray((sy * W + from) * 4, (sy * W + to) * 4), (row * w + (from - x0)) * 4);
+      }
+    }
     p = { width: w, height: h, data };
   }
   return { p, ptPerPx: (o.w * (o.scale ?? 1)) / p.width };
@@ -66,7 +76,11 @@ async function vectorPixels(o: Picture, most: number): Promise<Pixels | null> {
     const img = new Image();
     img.src = src;
     await img.decode();
-    const w0 = o.w || img.naturalWidth * 0.75, h0 = o.h || img.naturalHeight * 0.75;
+    // o.w × o.h is the part left after cropping; the whole image (that is drawn here, then cropped) is larger by what was cut off
+    const cr = o.crop;
+    // (with no size, the image's own is already the whole image)
+    const w0 = o.w ? o.w / Math.max(0.01, 1 - (cr?.l ?? 0) - (cr?.r ?? 0)) : img.naturalWidth * 0.75;
+    const h0 = o.h ? o.h / Math.max(0.01, 1 - (cr?.t ?? 0) - (cr?.b ?? 0)) : img.naturalHeight * 0.75;
     const k = Math.min(300 / 72, most / Math.max(1, w0, h0));
     const c = document.createElement('canvas');
     c.width = Math.max(1, Math.round(w0 * k));
@@ -213,7 +227,60 @@ export async function makeEditable(host: MakeEditableHost, pic: Picture, choice:
   return r ? madeFrom(pic, r, choice, ds) : null;
 }
 
-/** The same structure in the other style, from the picture kept (nothing is read again); null when it can't be redone. */
+/**
+ * Whether a structure is still exactly what the reader found, in the style it has now: every atom,
+ * bond, caption, arrow and shape with all it has (colors, fonts, line and arrow kinds, sizes, where
+ * it lies), atoms and ends of arrows to a tenth of a point (as saving and opening again rounds
+ * them). Anything else different is a change made by hand. (Ids may differ: bonds are matched by
+ * the atoms they join.)
+ */
+function sameReading(was: Contents, now: Contents): boolean {
+  if (was.atoms.length !== now.atoms.length || was.bonds.length !== now.bonds.length || was.captions.length !== now.captions.length
+    || was.arrows.length !== now.arrows.length || was.shapes.length !== now.shapes.length) return false;
+  const ids = new Map(now.atoms.map((a, i) => [a.id, was.atoms[i].id]));
+  const same = (a: unknown, b: unknown, key = ''): boolean => {
+    if (typeof a === 'number' && typeof b === 'number') {
+      if (key === 'a1' || key === 'a2') return ids.get(b) === a;
+      return Math.abs(a - b) <= 0.1;
+    }
+    if (Array.isArray(a) || Array.isArray(b)) {
+      if (!Array.isArray(a) || !Array.isArray(b) || a.length !== b.length) return false;
+      return a.every((v, i) => same(v, b[i], key === 'multi' ? 'a1' : ''));
+    }
+    if (a && b && typeof a === 'object' && typeof b === 'object') {
+      const keys = (o: object) => Object.entries(o).filter(([k, v]) => k !== 'id' && v !== undefined).map(([k]) => k);
+      const ka = keys(a), kb = keys(b);
+      if (ka.length !== kb.length) return false;
+      return ka.every((k) => k in b && same((a as Record<string, unknown>)[k], (b as Record<string, unknown>)[k], k));
+    }
+    return a === b;
+  };
+  return was.atoms.every((a, i) => same(a, now.atoms[i]))
+    && was.bonds.every((a, i) => same(a, now.bonds[i]))
+    && was.captions.every((a, i) => same(a, now.captions[i]))
+    && was.arrows.every((a, i) => same(a, now.arrows[i]))
+    && was.shapes.every((a, i) => same(a, now.shapes[i]));
+}
+
+/** What a structure kept by hand has for the other style's size: everything scaled by k about (cx, cy), as bond lengths change. */
+function scaledAbout(c: Contents, k: number, cx: number, cy: number): Contents {
+  if (!(k > 0) || Math.abs(k - 1) < 1e-6) return c;
+  const x = (v: number) => cx + (v - cx) * k, y = (v: number) => cy + (v - cy) * k;
+  return {
+    atoms: c.atoms.map((a) => ({ ...a, x: x(a.x), y: y(a.y) })),
+    bonds: c.bonds,
+    captions: c.captions.map((a) => ({ ...a, x: x(a.x), y: y(a.y) })),
+    arrows: c.arrows.map((r) => ({ ...r, tail: { x: x(r.tail.x), y: y(r.tail.y) }, head: { x: x(r.head.x), y: y(r.head.y) }, headLength: r.headLength * k, headWidth: r.headWidth * k })),
+    shapes: c.shapes.map((s) => ({ ...s, x1: x(s.x1), y1: y(s.y1), x2: x(s.x2), y2: y(s.y2) })),
+  };
+}
+
+/**
+ * The same structure in the other style (nothing is read again); null when it can't be redone.
+ * What the person changed in the structure after Make Editable (an atom put right, a bond fixed,
+ * a label added) is kept: only its look and size change then (to the other style's bond length). A structure
+ * still as it was read is drawn afresh from what was read, in the style chosen.
+ */
 export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Promise<Drawing | null> {
   const fp = d.fromPicture;
   // a figure drawn by hand: what is drawn in it takes the look (or the document's style)
@@ -224,8 +291,32 @@ export async function restyle(d: Drawing, choice: StyleChoice, ds: DocStyle): Pr
   if (!fp?.parts?.length) return null;
   const shown = await pictureForReading(fp.picture);
   if (!shown) return null;
+  // as it was read, in the style it has now: when that is what is there, nothing was changed by hand
+  const was = editableOf(fp.parts, shown.p, shown.ptPerPx, fp.style, ds, fp.texts);
+  if (!sameReading(was.contents, d.contents)) {
+    if (choice === 'match' && !fp.look) return null;
+    // what was put right by hand stays, drawn at the other style's bond length (about the middle of the picture) and in its look
+    const to = editableOf(fp.parts, shown.p, shown.ptPerPx, choice, ds, fp.texts);
+    const k = was.at.w > 0 ? to.at.w / was.at.w : 1;
+    const sized = scaledAbout(d.contents, k, was.at.x + was.at.w / 2, was.at.y + was.at.h / 2);
+    return { ...d, contents: withLook(sized, choice === 'match' ? fp.look! : null, ds, true), fromPicture: { ...fp, style: choice } };
+  }
   const e = editableOf(fp.parts, shown.p, shown.ptPerPx, choice, ds, fp.texts);
-  return { ...drawingFor(fp.picture, e, choice, fp.parts, { w: shown.p.width, h: shown.p.height }, fp.texts), ...(d.float ? { float: structuredClone(d.float) } : {}), ...(d.look ? { look: d.look } : {}), ...(d.alt ? { alt: d.alt } : {}) };
+  const made = drawingFor(fp.picture, e, choice, fp.parts, { w: shown.p.width, h: shown.p.height }, fp.texts);
+  // what the structure has as an object (where it floats, its look, size, turn, names) stays as it is now; so does tracing and the alt text, cleared or not
+  const { alt: _alt, wordPr: _wordPr, float: _float, look: _look, ...rest } = made;
+  return {
+    ...rest,
+    ...(d.float ? { float: structuredClone(d.float) } : {}),
+    ...(d.look ? { look: d.look } : {}),
+    ...(d.alt ? { alt: d.alt } : {}),
+    ...(d.wordPr ? { wordPr: { ...d.wordPr } } : {}),
+    ...(d.scale !== undefined ? { scale: d.scale } : {}),
+    ...(d.rot !== undefined ? { rot: d.rot } : {}),
+    ...(d.flipH ? { flipH: d.flipH } : {}),
+    ...(d.flipV ? { flipV: d.flipV } : {}),
+    fromPicture: { ...made.fromPicture!, ...(fp.trace ? { trace: fp.trace } : {}) },
+  };
 }
 
 /** The picture back as it was before Make Editable. */
