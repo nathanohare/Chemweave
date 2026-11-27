@@ -1273,6 +1273,29 @@ export class Deck {
     this.onChange();
   }
 
+  /** How many steps Undo can take back now (to join the steps a command made after this, with joinSince). */
+  get historyLength(): number { return this.undoList.length; }
+
+  /**
+   * The deck's own steps made since the history was `length` long become one step, named `label`
+   * (a command that made them one after another: narration recorded with its timings). Steps on a
+   * slide's own drawing are left as they are.
+   */
+  joinSince(length: number, label: string): void {
+    const parts = this.undoList.slice(length);
+    if (parts.length < 2 || length < 0) return;
+    const deck = parts.filter((e): e is Extract<HistoryEntry, { kind: 'deck' }> => e.kind === 'deck');
+    if (deck.length !== parts.length) return;
+    this.undoList.length = length;
+    const slides = new Set(deck.map((e) => e.slide));
+    this.undoList.push({
+      kind: 'deck', label,
+      undo: () => { for (const e of [...deck].reverse()) e.undo(); },
+      redo: () => { for (const e of deck) e.redo(); },
+      slide: slides.size === 1 ? deck[0].slide : undefined,
+    });
+  }
+
   canUndo(): boolean { return this.undoList.length > 0; }
   canRedo(): boolean { return this.redoList.length > 0; }
   /** The name of the step Undo (or Redo) would take back: a slide's own step, or the deck change. */

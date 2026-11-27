@@ -65,6 +65,19 @@ export function uniqueName(stem: string, ext: string, used: Set<string>): string
   return name;
 }
 
+/**
+ * As uniqueName, and also not the name of a file already in the folder written to (`taken` says
+ * whether one is), so converting into a folder never writes over a file there: the new file
+ * gets a " (2)" name instead. A folder that can't be checked (`taken` fails) stops it, with why.
+ */
+export async function freeBatchName(stem: string, ext: string, used: Set<string>, taken: (name: string) => Promise<boolean>): Promise<string> {
+  for (let tries = 0; tries < 10000; tries++) {
+    const name = uniqueName(stem, ext, used);
+    if (!(await taken(name))) return name;
+  }
+  throw new Error(`every name for ${stem}.${ext} is taken in the folder`);
+}
+
 const stemOf = (file: string) => file.replace(/\.[^.\\/]+$/, '');
 const extensionOf = (file: string) => /\.([^.\\/]+)$/.exec(file)?.[1].toLowerCase() ?? '';
 

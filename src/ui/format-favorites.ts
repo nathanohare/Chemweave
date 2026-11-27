@@ -11,7 +11,7 @@ import { fitRibbons } from './ribbon-fit';
 import { scrollBehavior } from './motion';
 
 export type { FormatFavorite } from '../favorites';
-export { FAVORITES_MAX, parseFavorites, withFavorite } from '../favorites';
+export { FAVORITES_MAX, parseFavorites, renamedFavorite, withFavorite } from '../favorites';
 import type { FormatFavorite } from '../favorites';
 
 /** A name not yet taken: "Favorite 3". */
