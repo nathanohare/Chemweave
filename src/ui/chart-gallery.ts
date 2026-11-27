@@ -4,6 +4,7 @@
 // try another, and redraws when the selection changes.
 
 import { FloatBox } from './float-box';
+import { addInfo } from './info-tip';
 import type { SheetView } from './sheet-view';
 import type { Sheet } from '../sheet/workbook';
 import { CHART_NAMES, chartData, chartFromRange, type ChartKind } from '../sheet/chart';
@@ -23,6 +24,11 @@ const GROUPS: [string, ChartKind[]][] = [
 
 const W = 300, H = 186;
 
+/** A chart button's tooltip: no article to get wrong (an area chart), and the name keeps its capitals. */
+export function chartTip(k: ChartKind): string {
+  return `Insert Chart: ${CHART_NAMES[k]}`;
+}
+
 export class ChartGallery {
   private box: FloatBox;
   private list: HTMLDivElement;
@@ -32,6 +38,7 @@ export class ChartGallery {
     this.box = new FloatBox('Charts', () => {});
     this.box.el.classList.add('chart-gallery');
     this.box.el.querySelector<HTMLElement>('.fb-pin')?.setAttribute('hidden', '');
+    addInfo(this.box.el.querySelector('.fb-title'), 'Each chart is drawn from the cells selected, with their header row. Click one to insert it. With no numbers selected, the charts use example numbers.');
     this.note = document.createElement('p');
     this.note.className = 'cg-note muted';
     this.list = document.createElement('div');
@@ -72,7 +79,9 @@ export class ChartGallery {
     if (ifMoved && key === this.drawnFor) return;
     this.drawnFor = key;
     const v = this.view();
-    this.note.textContent = src ? 'Each chart is drawn from the cells selected. Click one to insert it.' : 'Select the numbers to chart (with their header row) to see them here. These use example numbers.';
+    // only the state is shown; how it works is behind the "i" on the title
+    this.note.textContent = src ? '' : 'Using example numbers.';
+    this.note.hidden = !!src;
     this.list.replaceChildren();
     for (const [name, kinds] of GROUPS) {
       const h = document.createElement('h3');
@@ -83,7 +92,7 @@ export class ChartGallery {
         const b = document.createElement('button');
         b.type = 'button';
         b.className = 'cg-item';
-        b.title = `Insert a ${CHART_NAMES[k].toLowerCase()} chart`;
+        b.title = chartTip(k);
         let pic: HTMLCanvasElement | null = null;
         try {
           if (src && v.wb) {

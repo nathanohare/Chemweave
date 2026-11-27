@@ -465,7 +465,7 @@ export class SheetFormatting {
     spacer.style.flex = '1';
     buttons.append(
       btn('New Rule…', () => { d.close(); void this.ruleDialog(null).then(() => this.manage()); }),
-      btn('Change…', () => void change()),
+      btn('Edit Rule…', () => void change()),
       btn('Delete', remove),
       btn('▲', () => move(-1)),
       btn('▼', () => move(1)),

@@ -93,7 +93,7 @@ All the drawing tools and keyboard shortcuts work on a design page, so you can d
 
 ### Pictures with a white background
 
-Insert a PNG or JPEG (a logo, say), select it, and click **Remove white…** in the **Style** panel. You can remove only the white joined to the edges, or all white, and set how near to white counts. Undo puts the white back.
+Insert a PNG or JPEG (a logo, say), select it, and click **Remove White…** in the **Style** panel. You can remove only the white joined to the edges, or all white, and set how near to white counts. Undo puts the white back.
 
 **Picture Format** (on the ribbon, in the panel or on right-click) does more: it removes a background of any color, recolors, corrects and crops pictures to shapes, and keeps the picture itself as it was, so you can change your mind later. See [Presentation: Picture Format](slides.md#picture-format).
 
@@ -126,7 +126,7 @@ Three layouts read more than words from each line:
 
 A date can be a month (`Mar`, `March 2026`, `2026-03`), a quarter (`Q3`, `Q3 2026`), a day (`14 Mar 2026`, `Mar 14`, `2026-03-14`) or a counted step (`Week 3`, `Day 10`). Join two with a dash, `to`, `until` or `through` for a range, which runs from the start of the first to the end of the last; `3 – 7 Mar` and `Week 2 – 5` work too. A date with no year borrows one from the other end of its range or from the line above, and a range that would run backwards (`Nov – Feb`) carries on into the next year. The time scale is marked in days, weeks, months, quarters or years, whichever fits. Retyping a step's or task's words in its shape keeps its lane or dates.
 
-Below the text, choose the colors (the accent color, shades of it, colorful, light, outline only, black and white for journals, or grays), the accent color itself (from the drawing's colors, your palettes, or **More colors…** for any color), rounded corners and a shadow. The text is made as big as fits, the same size in every shape; type a size to fix it.
+Below the text, choose the colors (the accent color, shades of it, colorful, light, outline only, black and white for journals, or grays), the accent color itself (from the drawing's colors, your palettes, or **More Colors…** for any color), rounded corners and a shadow. The text is made as big as fits, the same size in every shape; type a size to fix it.
 
 ### Holding structures in a diagram
 
