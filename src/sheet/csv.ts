@@ -43,34 +43,41 @@ export function parseDelimited(text: string, sep: ',' | '\t' | ';' | 'auto' = 'a
 }
 
 /**
- * The separator a table of text most likely uses: tab, then semicolon or comma. Semicolon wins when
- * every line has the same number of them (outside quotes), as in a European file whose numbers use
- * decimal commas (1,5;2,5), where commas can outnumber the semicolons; otherwise the more common one.
+ * The separator a table of text most likely uses: tab, then semicolon or comma. Semicolon wins
+ * when every line has the same number of them (outside quotes) and the commas either aren't the
+ * same on every line or all sit between digits, as in a European file whose numbers use decimal
+ * commas (1,5;2,5), where commas can outnumber the semicolons. Otherwise the more common one.
  */
 export function detectSeparator(text: string): ',' | '\t' | ';' {
   const head = text.slice(0, 20000);
-  let tabs = 0, commas = 0, semis = 0, quoted = false;
-  // Semicolons on each line, outside quotes; a line cut off at the end of the head is left out.
-  const perLine: number[] = [];
-  let lineSemis = 0, lineHasText = false;
-  for (const ch of head) {
+  let tabs = 0, commas = 0, semis = 0, quoted = false, decimalCommas = true;
+  // semicolons and commas on each line, outside quotes; a line cut off at the end of the head is left out
+  const semiLines: number[] = [], commaLines: number[] = [];
+  let lineSemis = 0, lineCommas = 0, lineHasText = false;
+  const endLine = () => {
+    if (lineHasText) { semiLines.push(lineSemis); commaLines.push(lineCommas); }
+    lineSemis = 0; lineCommas = 0; lineHasText = false;
+  };
+  const digit = (ch: string | undefined) => ch !== undefined && ch >= '0' && ch <= '9';
+  for (let i = 0; i < head.length; i++) {
+    const ch = head[i];
     if (ch === '"') { quoted = !quoted; lineHasText = true; }
-    else if (!quoted && (ch === '\n' || ch === '\r')) {
-      if (lineHasText) perLine.push(lineSemis);
-      lineSemis = 0;
-      lineHasText = false;
-    } else {
+    else if (!quoted && (ch === '\n' || ch === '\r')) endLine();
+    else {
       lineHasText = true;
       if (!quoted) {
         if (ch === '\t') tabs++;
-        else if (ch === ',') commas++;
-        else if (ch === ';') { semis++; lineSemis++; }
+        else if (ch === ',') {
+          commas++; lineCommas++;
+          if (!digit(head[i - 1]) || !digit(head[i + 1])) decimalCommas = false;
+        } else if (ch === ';') { semis++; lineSemis++; }
       }
     }
   }
-  if (lineHasText && head.length === text.length) perLine.push(lineSemis);
+  if (head.length === text.length) endLine();
   if (tabs) return '\t';
-  if (perLine.length >= 2 && perLine[0] > 0 && perLine.every((n) => n === perLine[0])) return ';';
+  const same = (counts: number[]) => counts.length > 0 && counts[0] > 0 && counts.every((n) => n === counts[0]);
+  if (same(semiLines) && (!same(commaLines) || (commas > 0 && decimalCommas))) return ';';
   return semis > commas ? ';' : ',';
 }
 

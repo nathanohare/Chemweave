@@ -78,6 +78,16 @@ describe('F287: a substructure search the engine could not do', () => {
     expect(s.hiddenRows.has(1)).toBe(false);
   });
 
+  it('a part to look for that cannot be written as a structure is not a miss either', async () => {
+    const chem = new SheetChem(engine(), molfileOf);
+    const q: Contents = { atoms: [], bonds: [], arrows: [], shapes: [], captions: [] };
+    const a = makeStructure(drawn('CCC'));
+    chem.substructure(a, q);
+    await chem.settled();
+    expect(chem.substructure(a, q)).toBeNull();
+    expect(chem.substructureError(q)).toBe('There is no structure in this cell');
+  });
+
   it('a failed engine is reported too', async () => {
     const eng: ChemEngine = { ready: true, props: async () => [], substructure: async () => { throw new Error('worker stopped'); } };
     const chem = new SheetChem(eng, molfileOf);

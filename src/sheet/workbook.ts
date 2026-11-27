@@ -370,7 +370,7 @@ class CountedMap<K, V> extends Map<K, V> {
  * Blocks of cells up to this many keep formatting in their empty cells too (whole rows and
  * columns, and blocks larger than this, change only the cells in use).
  */
-const SMALL_BLOCK = 250_000;
+const SMALL_BLOCK = 50_000;
 
 export class Sheet {
   readonly uid = nextSheetUid++;
@@ -745,9 +745,29 @@ export class Sheet {
   /** Borders round and inside a range, as Excel's border button sets them. */
   setBorders(r: Range, how: 'all' | 'outside' | 'none' | 'bottom' | 'top' | 'thick-bottom' | 'top-bottom', style: BorderStyle = 'thin'): void {
     const b: Border = { style };
-    // the whole of a block, empty cells too, as patchStyle formats it (whole rows and columns: the cells in use)
-    const used = this.smallBlock(r) ? r : this.clip(r);
-    if (!used) return;
+    // the whole of a block, empty cells too, as patchStyle formats it; along whole rows or columns
+    // (and in blocks too large for that) only as far as the cells in use, but always the block's
+    // own first row and column, so its top, left and (for rows) bottom edges are drawn
+    const wholeCols = r.r1 === 0 && r.r2 >= MAX_ROWS - 1, wholeRows = r.c1 === 0 && r.c2 >= MAX_COLS - 1;
+    const small = this.smallBlock(r);
+    const used: Range = {
+      r1: r.r1, c1: r.c1,
+      r2: wholeCols || (!small && !wholeRows) ? Math.min(r.r2, Math.max(this.lastRow, this.lastDataRow, r.r1)) : r.r2,
+      c2: wholeRows || (!small && !wholeCols) ? Math.min(r.c2, Math.max(this.lastCol, r.c1)) : r.c2,
+    };
+    // whole columns: the columns' own formatting takes the sides that run down them, so cells typed later show them
+    if (wholeCols && (how === 'all' || how === 'none' || how === 'outside')) {
+      for (let col = r.c1; col <= Math.min(r.c2, MAX_COLS - 1); col++) {
+        const sides: Partial<Record<Side, Border | undefined>> = {};
+        if (how === 'none') Object.assign(sides, { top: undefined, right: undefined, bottom: undefined, left: undefined });
+        else if (how === 'all') Object.assign(sides, { top: b, right: b, bottom: b, left: b });
+        else { if (col === r.c1) sides.left = b; if (col === r.c2) sides.right = b; }
+        if (!Object.keys(sides).length) continue;
+        const old = this.colStyles.get(col);
+        const borders = { ...old?.borders, ...sides } as Partial<Record<Side, Border>>;
+        this.put('colStyles', this.colStyles, col, patchStyleWith({ ...old, borders: undefined }, { borders }));
+      }
+    }
     for (let row = used.r1; row <= used.r2; row++) {
       for (let col = used.c1; col <= used.c2; col++) {
         const sides: Partial<Record<Side, Border | undefined>> = {};
@@ -1001,8 +1021,11 @@ export class Sheet {
       const seen: (string | undefined)[] = [];
       for (let col = r.c1; col <= r.c2; col++) {
         const c = this.cell(row, col);
-        // a cell an array spilled into is copied as its value, as in Excel
-        const input = this.effectiveInput(row, col) ?? (this.spillOwner.has(keyOf(row, col)) ? valueInput(this.value(row, col)) || undefined : undefined);
+        // a cell an array spilled into is copied as its value, as in Excel, unless the array's own
+        // formula is copied too (it fills those cells again where it is pasted)
+        const owner = this.spillOwner.get(keyOf(row, col));
+        const ownerCopied = owner !== undefined && inRange(r, rowOf(owner), colOf(owner));
+        const input = this.effectiveInput(row, col) ?? (owner !== undefined && !ownerCopied ? valueInput(this.value(row, col)) || undefined : undefined);
         const style = this.styleAt(row, col);
         const runs = runsOf(c);
         line.push(input || c?.structure || style || c?.link ? { input, structure: c?.structure, style, ...(c?.link ? { link: c.link } : {}), ...(runs ? { runs } : {}), ...(c?.compound ? { compound: c.compound } : {}), ...(c?.array ? { array: { ...c.array } } : {}) } : undefined);
@@ -1071,7 +1094,8 @@ export class Sheet {
         // a cell copied as it is keeps its rich text and its Compound card
         const same = !!s.cell?.input && input === s.cell.input;
         const runs = same ? runsOf(s.cell) : undefined;
-        this.setCell(r, c, { input: keepsDef ? undefined : input, structure: s.cell?.structure, style: s.cell?.style, link: s.cell?.link, ...(runs ? { runs } : {}), ...(same && s.cell?.compound ? { compound: s.cell.compound } : {}) });
+        const array = s.cell?.array && input?.startsWith('=') ? { array: { ...s.cell.array } } : {};
+        this.setCell(r, c, { input: keepsDef ? undefined : input, structure: s.cell?.structure, style: s.cell?.style, link: s.cell?.link, ...(runs ? { runs } : {}), ...(same && s.cell?.compound ? { compound: s.cell.compound } : {}), ...array });
       }
     }
   }
@@ -1309,7 +1333,8 @@ export class Sheet {
     const before = this.filter && Object.keys(this.filter.conditions).length ? this.filterRows() : null;
     this.assign('filter', f ? { range: { ...f.range }, conditions: { ...f.conditions } } : null);
     if (before) {
-      const now = this.filterRows();
+      // with no conditions left (or no filter), every row the old filter could have hidden shows again
+      const now = f && Object.keys(f.conditions).length ? this.filterRows() : null;
       for (const r of [...this.hiddenRows.keys()]) if (r >= before.r1 && r <= before.r2 && (!now || r < now.r1 || r > now.r2)) this.setRowHidden(r, false);
     }
     this.applyFilter();
@@ -2287,7 +2312,8 @@ export class Workbook {
     for (const s of new Set(typed.map((t) => t.s))) s.valuesGen++;
     for (const i of todo) g.nodes[i].s.valuesGen++;
     // a conditional format's formula may read another sheet (=Sheet1!$A$1>5): its looks are worked out again
-    for (const s of this.sheets) if (s.condFormats.length) s.valuesGen++;
+    // (only rules that can: ones naming a sheet, or any when the workbook has defined names)
+    for (const s of this.sheets) if (s.condFormats.length && (this.names.length || s.condFormats.some((cf) => JSON.stringify(cf.rule).includes('!')))) s.valuesGen++;
     this.settleVolatile(g);
     // an array now a different size: what reads the cells around it needs the full order again
     return !this.spillsMoved;

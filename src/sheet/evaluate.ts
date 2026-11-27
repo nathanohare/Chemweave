@@ -862,15 +862,14 @@ function call(name: string, argNodes: Node[], host: EvalHost): Arg {
       }
     }
   }
-  if ((name === 'SUMIF' || name === 'AVERAGEIF') && argNodes.length === 3) {
-    const [r, c, t] = argNodes;
-    const sized = r.t === 'ref' && t.t === 'ref' ? sumRangeSized(r.v, t.v) : null;
-    if (sized) argNodes = [r, c, { t: 'ref', v: sized }];
-  }
   const args = argNodes.map((a, i) => {
     const v = evalNode(a, host);
     // text in a single cell that is named is left out of a sum, as in a range (only typed text is read as a number)
-    if ((BY_REFERENCE.has(name) || (i === 0 && RANGE_FIRST.has(name))) && a.t === 'ref' && a.v.kind === 'cell' && !isBlock(v) && !isError(v)) return { block: [[v]], h: 1, w: 1 } as Block;
+    if (BY_REFERENCE.has(name) && a.t === 'ref' && a.v.kind === 'cell' && !isBlock(v) && !isError(v)) return { block: [[v]], h: 1, w: 1 } as Block;
+    // the range (and SUMIF's sum range) of the criteria functions, as the cell it is
+    if ((i === 0 || i === 2) && RANGE_FIRST.has(name) && a.t === 'ref' && a.v.kind === 'cell' && !a.v.broken && !isBlock(v) && !isError(v)) {
+      return { block: [[v]], h: 1, w: 1, at: { r: a.v.a.row, c: a.v.a.col }, ...(a.v.sheet !== undefined ? { sheet: a.v.sheet } : {}) } as Block;
+    }
     return v;
   });
   const k = Math.min(LIFTED[name] ?? 0, args.length);

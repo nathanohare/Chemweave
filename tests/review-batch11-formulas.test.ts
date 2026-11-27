@@ -45,6 +45,16 @@ describe('F272: semicolon files with decimal commas', () => {
   it('still reads a comma file whose text has an odd semicolon as comma-separated', () => {
     expect(detectSeparator('name,notes\nA,x;y\nB,z')).toBe(',');
   });
+
+  it('reads a comma file with one semicolon on every line as comma-separated', () => {
+    expect(detectSeparator('1a,7.26 (m; 5H),88\n1b,7.30 (d; 2H),91')).toBe(',');
+    expect(detectSeparator('Smith; John,1,2\nDoe; Jane,3,4')).toBe(',');
+  });
+
+  it('reads a single semicolon row with decimal commas', () => {
+    expect(detectSeparator('1,5;2,5;3,5;4,5')).toBe(';');
+    expect(detectSeparator('a;b;c')).toBe(';');
+  });
 });
 
 describe('F276: a broken reference to another sheet reads back as #REF!', () => {
@@ -158,13 +168,24 @@ describe('F1111: SORT and SORTBY keep blanks last when descending', () => {
     const wb = sheetWith({ A1: '3', A3: '1', C1: '=SORT(A1:A3,1,-1)' });
     expect(val(wb, 'C1')).toBe(3);
     expect(val(wb, 'C2')).toBe(1);
-    expect([null, 0]).toContain(val(wb, 'C3'));
+    // the blank comes last; a spilled empty cell shows 0, as Excel spills it (Microsoft Support, "Dynamic array formulas")
+    expect(val(wb, 'C3')).toBe(0);
   });
 
   it('SORTBY(A1:A3,A1:A3,-1) gives 3, 1, blank', () => {
     const wb = sheetWith({ A1: '3', A3: '1', C1: '=SORTBY(A1:A3,A1:A3,-1)' });
     expect(val(wb, 'C1')).toBe(3);
     expect(val(wb, 'C2')).toBe(1);
+  });
+});
+
+describe('F1112: SUMIF over a LET name', () => {
+  it('sizes the sum range like the range the name holds', () => {
+    const cells: Record<string, string> = {};
+    for (let r = 1; r <= 10; r++) { cells[`A${r}`] = '1'; cells[`B${r}`] = '2'; }
+    const wb = sheetWith({ ...cells, D1: '=LET(r,A1:A10,SUMIF(r,">0",B1))' });
+    // ten matches of 2, as SUMIF(A1:A10,">0",B1) (Microsoft Support, SUMIF function)
+    expect(val(wb, 'D1')).toBe(20);
   });
 });
 
@@ -241,11 +262,18 @@ describe('F1081: which text counts as SMILES', () => {
     // SMILES grammar: Weininger, J. Chem. Inf. Comput. Sci. 1988, 28, 31
     for (const s of ['CCO', 'c1ccccc1', 'CC(=O)Oc1ccccc1C(=O)O', '[Na+].[Cl-]', 'ClCCl', 'C1CC%10CC1%10']) expect(readsAsSmiles(s)).toBe(true);
     for (const s of ['Aspirin', 'Ethanol', 'Benzene', 'THF', 'DCM', 'Pd', 'C1CC', 'CC(C', '12']) expect(readsAsSmiles(s)).toBe(false);
+    // aromatic (lower-case) atoms stand only in rings, so element symbols and Boc are not SMILES
+    for (const s of ['Boc', 'Co', 'Cs', 'Os', 'Sn', 'Pb', 'Sb', 'No']) expect(readsAsSmiles(s)).toBe(false);
+    // * is an attachment point (OpenSMILES)
+    expect(readsAsSmiles('*CC')).toBe(true);
   });
 
   it('does not list a column of names as a SMILES column', () => {
     const wb = sheetWith({ A1: 'Name', B1: 'Mass', A2: 'Aspirin', A3: 'Ethanol', A4: 'Benzene', B2: '180.16', B3: '46.07', B4: '78.11' });
     expect(structureColumns(wb.sheet, { r1: 0, c1: 0, r2: 3, c2: 1 })).toEqual([]);
+    // a reagent column of abbreviations made of atom letters
+    const reagents = sheetWith({ A1: 'Reagent', A2: 'NBS', A3: 'NCS', A4: 'PCC', A5: 'NIS' });
+    expect(structureColumns(reagents.sheet, { r1: 0, c1: 0, r2: 4, c2: 0 })).toEqual([]);
     const wb2 = sheetWith({ A1: 'SMILES', A2: 'CCO', A3: 'c1ccccc1' });
     expect(structureColumns(wb2.sheet, { r1: 0, c1: 0, r2: 2, c2: 0 }).map((c) => c.col)).toEqual([0]);
   });

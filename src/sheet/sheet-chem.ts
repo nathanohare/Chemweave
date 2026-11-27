@@ -235,7 +235,12 @@ export class SheetChem implements ChemHost {
       for (const q of matches) {
         const qm = this.molfile(q.query).molblock;
         const items = [...q.items.values()];
-        if (!qm) { for (const it of items) this.keep(this.matches, it.key, false); continue; }
+        // a part to look for that can't be written as a structure: no row can be told, and why is kept
+        if (!qm) {
+          for (const it of items) this.keep(this.matches, it.key, null);
+          if (!this.matchErrors.has(q.qid)) this.matchErrors.set(q.qid, this.molfile(q.query).problem ?? 'The part to look for could not be read as a structure.');
+          continue;
+        }
         const asked: string[] = [];
         const inputs: string[] = [];
         const got = await this.inputs(items, (it) => it.input());
@@ -248,7 +253,7 @@ export class SheetChem implements ChemHost {
         if (!inputs.length) continue;
         // a molecule the engine could not check (a query too deep, a failed engine) is neither a
         // match nor a miss: null, with the reason kept for the query
-        const failed = (why: string) => { if (!this.matchErrors.has(q.qid)) this.matchErrors.set(q.qid, why); };
+        const failed = (why: string) => { this.matchErrors.set(q.qid, why); };
         jobs.push(this.engine.substructure(qm, inputs).then(
           (res) => {
             asked.forEach((k, i) => {
@@ -257,7 +262,7 @@ export class SheetChem implements ChemHost {
               else { this.keep(this.matches, k, null); failed(res.error ?? 'The chemistry engine could not check this structure'); }
             });
           },
-          (e) => { asked.forEach((k) => this.keep(this.matches, k, null)); failed(`The chemistry engine failed: ${String(e)}`); },
+          (e) => { asked.forEach((k) => this.keep(this.matches, k, null)); failed(`The chemistry engine stopped${e instanceof Error && e.message ? `: ${e.message}` : ''}.`); },
         ));
       }
       for (const [ref, want] of hammetts) {

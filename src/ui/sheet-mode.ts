@@ -1459,7 +1459,7 @@ export class SheetMode {
     if (s.filter) {
       // (a table keeps its filter buttons, as Excel makes tables: the file says the filter is off)
       this.edit('Filter off', (sh) => sh.setFilter(null));
-      this.host.flash('Filter off: every row shows.');
+      this.host.flash('Filter off: the rows it hid show again.');
       return;
     }
     const { r, c } = v.sel.active;
@@ -1501,9 +1501,15 @@ export class SheetMode {
     if (rows && cond) {
       let shown = 0;
       for (let r = rows.r1; r <= rows.r2; r++) if (!s.hiddenRows.has(r)) shown++;
-      const failed = cond.kind === 'substructure' ? this.chem.substructureError(cond.query) : undefined;
-      if (failed) this.host.flash(`Some structures couldn't be searched (${failed}), so their rows still show. ${shown} of ${rows.r2 - rows.r1 + 1} rows show.`, 8000);
-      else this.host.flash(`${shown} of ${rows.r2 - rows.r1 + 1} rows show.`);
+      // rows this search could not tell (the engine's reason, if it gave one, as a sentence of its own)
+      let untold = 0;
+      if (cond.kind === 'substructure') for (let r = rows.r1; r <= rows.r2; r++) if (s.passes(r, col, cond) === null) untold++;
+      const total = `${shown} of ${rows.r2 - rows.r1 + 1} rows show.`;
+      if (untold) {
+        const why = cond.kind === 'substructure' ? this.chem.substructureError(cond.query)?.trim() : undefined;
+        const reason = why ? ` ${why}${/[.!?]$/.test(why) ? '' : '.'}` : '';
+        this.host.flash(`${total} ${untold === 1 ? '1 structure' : `${untold} structures`} couldn't be searched, so ${untold === 1 ? 'its row still shows' : 'their rows still show'}.${reason}`, 8000);
+      } else this.host.flash(total);
     }
   }
 

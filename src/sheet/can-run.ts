@@ -42,10 +42,13 @@ export function tableHere(s: Sheet, sel: SheetSelection): boolean {
  * Does text read as SMILES: only atoms SMILES can write without brackets (B C N O P S F Cl Br I,
  * and aromatic b c n o p s), atoms in brackets, bonds, branches and ring numbers, with the
  * branches and rings closed (Weininger, J. Chem. Inf. Comput. Sci. 1988, 28, 31; OpenSMILES)?
- * So CCO and c1ccccc1 do, and names such as Aspirin, Ethanol, THF or DCM don't.
+ * Aromatic atoms (lower case) only ever stand in rings, so text with one and no ring number
+ * (Boc, Co, Cs, Sn, Pb) isn't SMILES. So CCO, c1ccccc1 and *CC do, and names such as Aspirin,
+ * Ethanol, THF, DCM or Pd don't. (Short capital abbreviations made of atom letters, NBS or PCC,
+ * can't be told from SMILES here: see looksLikeSmilesColumn.)
  */
 export function readsAsSmiles(text: string): boolean {
-  let depth = 0, atoms = 0;
+  let depth = 0, atoms = 0, aromatic = false, ringNumbers = false;
   const rings = new Set<string>();
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
@@ -56,29 +59,41 @@ export function readsAsSmiles(text: string): boolean {
       atoms++;
       i = end;
     } else if ((ch === 'C' && text[i + 1] === 'l') || (ch === 'B' && text[i + 1] === 'r')) { atoms++; i++; }
-    else if ('BCNOPSFIbcnops'.includes(ch)) atoms++;
+    else if ('BCNOPSFI*'.includes(ch)) atoms++;
+    else if ('bcnops'.includes(ch)) { atoms++; aromatic = true; }
     else if (ch === '(') depth++;
     else if (ch === ')') { if (--depth < 0) return false; }
-    else if (ch >= '0' && ch <= '9') { if (!rings.delete(ch)) rings.add(ch); }
-    else if (ch === '%' && /^\d\d$/.test(text.slice(i + 1, i + 3))) { const n = text.slice(i, i + 3); if (!rings.delete(n)) rings.add(n); i += 2; }
+    else if (ch >= '0' && ch <= '9') { ringNumbers = true; if (!rings.delete(ch)) rings.add(ch); }
+    else if (ch === '%' && /^\d\d$/.test(text.slice(i + 1, i + 3))) { ringNumbers = true; const n = text.slice(i, i + 3); if (!rings.delete(n)) rings.add(n); i += 2; }
     else if (!'-=#$:/\\.'.includes(ch)) return false;
   }
-  return atoms > 0 && depth === 0 && rings.size === 0;
+  return atoms > 0 && depth === 0 && rings.size === 0 && (!aromatic || ringNumbers);
+}
+
+/**
+ * Does a column's text read as SMILES: two cells or more that do, at least one of them with
+ * something only SMILES has (a bond, branch, ring number, bracket or aromatic atom) or longer
+ * than an abbreviation (so NBS, NCS and PCC in a reagent column don't count).
+ */
+function looksLikeSmilesColumn(texts: string[]): boolean {
+  const smiles = texts.filter((t) => t.length > 1 && readsAsSmiles(t));
+  return smiles.length > 1 && smiles.some((t) => t.length > 3 || /[-=#$:/\\.()[\]%0-9bcnops*]/.test(t));
 }
 
 /** Columns holding structures or SMILES in a table (the first 200 rows of each column are looked at). */
 export function structureColumns(s: Sheet, R: Range): { col: number; label: string }[] {
   const out: { col: number; label: string }[] = [];
   for (let c = R.c1; c <= R.c2; c++) {
-    let structures = 0, smiles = 0;
+    let structures = 0;
+    const texts: string[] = [];
     for (let r = R.r1; r <= Math.min(R.r2, R.r1 + 200); r++) {
       if (s.cell(r, c)?.structure) structures++;
       else {
         const v = s.values.get(keyOf(r, c));
-        if (typeof v === 'string' && v.length > 1 && readsAsSmiles(v)) smiles++;
+        if (typeof v === 'string') texts.push(v);
       }
     }
-    if (structures || smiles > 1) {
+    if (structures || looksLikeSmilesColumn(texts)) {
       const head = s.values.get(keyOf(R.r1, c));
       out.push({ col: c, label: `Column ${colName(c)}${typeof head === 'string' && head ? ` (${head})` : ''}${structures ? '' : ' — SMILES'}` });
     }

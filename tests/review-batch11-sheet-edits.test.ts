@@ -10,6 +10,9 @@ import { Workbook } from '../src/sheet/workbook';
 import { CellError } from '../src/sheet/values';
 import { MAX_ROWS } from '../src/sheet/refs';
 import type { CompoundCard } from '../src/sheet/compound';
+import { MAX_COLS } from '../src/sheet/refs';
+import { pasteSpecial } from '../src/sheet/data-tools';
+import { paintCells } from '../src/format-painter';
 
 const A = (s: string) => {
   const m = /^([A-Z]+)(\d+)$/.exec(s)!;
@@ -57,6 +60,29 @@ describe('F294: borders on empty cells', () => {
     const s = wb.sheet;
     wb.edit('Borders', () => s.setBorders({ r1: 0, c1: 0, r2: 1, c2: 1 }, 'all'));
     expect(s.styleAt(1, 1)?.borders?.bottom).toBeTruthy();
+  });
+});
+
+describe('F294: borders on whole rows and columns', () => {
+  it('Outside Borders on whole rows past the data draws their top and bottom', () => {
+    const wb = sheetWith({ A1: '1', B2: '2' });
+    const s = wb.sheet;
+    wb.edit('Borders', () => s.setBorders({ r1: 49, c1: 0, r2: 59, c2: MAX_COLS - 1 }, 'outside'));
+    expect(s.styleAt(49, 0)?.borders?.top).toBeTruthy();
+    expect(s.styleAt(59, 1)?.borders?.bottom).toBeTruthy();
+    expect(s.styleAt(54, 1)?.borders).toBeFalsy();
+  });
+
+  it('All Borders on whole columns reaches cells typed there later', () => {
+    const wb = sheetWith({ A1: '1' });
+    const s = wb.sheet;
+    wb.edit('Borders', () => s.setBorders({ r1: 0, c1: 2, r2: MAX_ROWS - 1, c2: 3 }, 'all'));
+    expect(s.colStyles.get(2)?.borders?.left).toBeTruthy();
+    wb.edit('Type', () => s.setInput(700, 3, '5'));
+    expect(s.styleAt(700, 3)?.borders?.right).toBeTruthy();
+    wb.undo();
+    wb.undo();
+    expect(s.colStyles.get(2)).toBeUndefined();
   });
 });
 
@@ -125,6 +151,47 @@ describe('F297: Copy, Cut and Fill keep Compound cards and array formulas', () =
     expect(s.cell(2, 0)?.compound?.cid).toBe(2244);
   });
 
+  it('Paste Special ▸ All keeps the card and rich text', () => {
+    const wb = new Workbook();
+    const s = wb.sheet;
+    wb.edit('Compound', () => {
+      s.setCompound(0, 0, card);
+      s.setRichInput(1, 0, 'Note: draft', [{ text: 'Note', bold: true }, { text: ': draft' }] as never);
+    });
+    const block = s.copy({ r1: 0, c1: 0, r2: 1, c2: 0 });
+    wb.edit('Paste Special', () => pasteSpecial(s, { row: 0, col: 2 }, block, { what: 'all' }));
+    expect(s.cell(0, 2)?.compound?.cid).toBe(2244);
+    expect(s.cell(1, 2)?.runs).toEqual(s.cell(1, 0)?.runs);
+  });
+
+  it('copying a whole legacy array block pastes it as one array, not #SPILL!', () => {
+    const wb = new Workbook();
+    const s = wb.sheet;
+    wb.edit('Array', () => {
+      for (let r = 0; r < 3; r++) s.setInput(r, 0, String(r + 1));
+      s.setCell(0, 2, { input: '=A1:A3*2', array: { rows: 3, cols: 1 } });
+    });
+    expect(s.value(1, 2)).toBe(4);
+    const block = s.copy({ r1: 0, c1: 2, r2: 2, c2: 2 });
+    wb.edit('Paste', () => s.paste({ row: 0, col: 4 }, block));
+    expect(s.cell(0, 4)?.array).toEqual({ rows: 3, cols: 1 });
+    // pasted two columns right, the formula reads C1:C3 (2, 4, 6) and doubles it
+    expect(s.value(0, 4)).toBe(4);
+    expect(s.value(2, 4)).toBe(12);
+  });
+
+  it('Fill keeps a legacy array formula one', () => {
+    const wb = new Workbook();
+    const s = wb.sheet;
+    wb.edit('Array', () => {
+      s.setInput(0, 0, '1');
+      s.setInput(0, 1, '2');
+      s.setCell(0, 3, { input: '=A1:B1*2', array: { rows: 1, cols: 2 } });
+    });
+    wb.edit('Fill Down', () => s.fill({ r1: 0, c1: 3, r2: 0, c2: 3 }, { r1: 0, c1: 3, r2: 1, c2: 3 }));
+    expect(s.cell(1, 3)?.array).toEqual({ rows: 1, cols: 2 });
+  });
+
   it('a moved legacy array formula is still one', () => {
     const wb = new Workbook();
     const s = wb.sheet;
@@ -166,6 +233,23 @@ describe('F296: copying whole columns', () => {
     expect(s.colStyles.get(3)?.numFmt).toBe('0.0');
     expect(s.styleAt(500, 3)?.numFmt).toBe('0.0');
   });
+
+  it('Format Painter from a whole column onto two whole columns, quickly', () => {
+    const wb = sheetWith({ A1: '1', A2: '2' });
+    const s = wb.sheet;
+    const colA = { r1: 0, c1: 0, r2: MAX_ROWS - 1, c2: 0 };
+    wb.edit('Format', () => s.patchStyle(colA, { bold: true }));
+    const block = s.copy(colA);
+    const t0 = performance.now();
+    wb.edit('Format Painter', () => paintCells(s, block, { r1: 0, c1: 2, r2: MAX_ROWS - 1, c2: 3 }));
+    expect(performance.now() - t0).toBeLessThan(1000);
+    expect(s.colStyles.get(2)?.bold).toBe(true);
+    expect(s.colStyles.get(3)?.bold).toBe(true);
+    expect(s.styleAt(500, 3)?.bold).toBe(true);
+    // a single cell clicked takes the whole column it is in
+    wb.edit('Format Painter', () => paintCells(s, block, { r1: 4, c1: 5, r2: 4, c2: 5 }));
+    expect(s.styleAt(500, 5)?.bold).toBe(true);
+  });
 });
 
 describe('F298: filters leave rows hidden by hand alone', () => {
@@ -186,6 +270,18 @@ describe('F298: filters leave rows hidden by hand alone', () => {
     expect(s.hiddenRows.has(6)).toBe(false);
     expect(s.hiddenRows.has(0)).toBe(true);
     expect(s.hiddenRows.has(1)).toBe(true);
+  });
+
+  it('a filter with no conditions put in place of one with conditions shows the rows it hid', () => {
+    const wb = sheetWith({ A1: 'Name', A2: 'a', A3: 'b', A4: 'c' });
+    const s = wb.sheet;
+    const range = { r1: 0, c1: 0, r2: 3, c2: 0 };
+    wb.edit('Filter', () => s.setFilter({ range, conditions: { 0: { kind: 'values', allowed: ['a'] } } }));
+    expect(s.hiddenRows.has(2)).toBe(true);
+    // a query refreshing into the table resets the filter this way
+    wb.edit('Refresh', () => s.setFilter({ range, conditions: {} }));
+    expect(s.hiddenRows.has(2)).toBe(false);
+    expect(s.hiddenRows.has(3)).toBe(false);
   });
 
   it('taking the last condition away shows the rows it hid', () => {
@@ -331,5 +427,12 @@ describe('F290: banded rows in a long table', () => {
     // row 4 follows row 2 in the stripes, as row 3 is hidden
     expect(s.shownStyleAt(4, 0)?.fill).toBe(s.shownStyleAt(1, 0)?.fill);
     expect(s.shownStyleAt(4, 0)?.fill).not.toBe(s.shownStyleAt(2, 0)?.fill);
+    // several hidden rows: the stripe of each row showing follows its place among the rows showing
+    wb.edit('Hide', () => { s.setRowHidden(6, true); s.setRowHidden(7, true); s.setRowHidden(20, true); });
+    const shown = [];
+    for (let r = 1; r <= 30; r++) if (!s.hiddenRows.has(r)) shown.push(r);
+    const first = s.shownStyleAt(shown[0], 0)?.fill, second = s.shownStyleAt(shown[1], 0)?.fill;
+    expect(first).not.toBe(second);
+    shown.forEach((r, i) => expect(s.shownStyleAt(r, 0)?.fill).toBe(i % 2 ? second : first));
   });
 });

@@ -211,7 +211,12 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
  * Where cells picked up with the brush go: a single cell clicked takes the whole block (as many
  * rows and columns as were picked); a range dragged over is filled, the block repeated across it.
  */
-export function cellPaintTarget(block: { rows: number; cols: number }, target: Range): Range {
+export function cellPaintTarget(block: { rows: number; cols: number; colStyles?: unknown[] }, target: Range): Range {
+  // whole columns picked up go onto whole columns, from the column clicked or across those dragged over
+  if (block.colStyles) {
+    const single = target.c1 === target.c2 && target.r1 === target.r2;
+    return { r1: 0, c1: target.c1, r2: block.rows - 1, c2: single ? target.c1 + block.cols - 1 : Math.max(target.c2, target.c1 + block.cols - 1) };
+  }
   if (target.r1 === target.r2 && target.c1 === target.c2) return { r1: target.r1, c1: target.c1, r2: target.r1 + block.rows - 1, c2: target.c1 + block.cols - 1 };
   return target;
 }
@@ -223,6 +228,16 @@ export function paintCells(sheet: Sheet, block: CellBlock, target: Range): Range
   // the block as it is (whole columns: only their rows in use, with the columns' own formatting)
   if (rows === block.rows && cols === block.cols) {
     sheet.paste({ row: to.r1, col: to.c1 }, { ...block, origin: null }, 'formats');
+    return to;
+  }
+  // whole columns over more columns: the block once for each group of its columns, so each column
+  // takes the picked column's own formatting and only the rows in use are visited
+  if (block.colStyles && to.r1 === 0 && rows === block.rows) {
+    for (let c = to.c1; c <= to.c2; c += block.cols) {
+      const n = Math.min(block.cols, to.c2 - c + 1);
+      const part: CellBlock = { rows: block.rows, cols: n, cells: block.cells.map((line) => line.slice(0, n)), origin: null, colStyles: block.colStyles.slice(0, n) };
+      sheet.paste({ row: 0, col: c }, part, 'formats');
+    }
     return to;
   }
   const cells = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => block.cells[i % block.rows]?.[j % block.cols]));
