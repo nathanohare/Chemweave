@@ -10868,7 +10868,7 @@ function command(name: string): boolean {
     if (!ANY_TAB.has(name) && docMode.run(name)) return true;
     if (!ANY_TAB.has(name) && !DOC_ANY.has(name)) return false;
   }
-  if (ws.active.mode === 'design' && (SLIDE_ONLY.has(name) || layoutPickId(name) !== null)) {
+  if (ws.active.mode === 'design' && (SLIDE_ONLY.has(name) || name.startsWith('layout-'))) {
     flash('A design is one page: use Page Size and Background on the Design ribbon. For several pages, use File ▸ New ▸ Blank presentation.');
     return true;
   }

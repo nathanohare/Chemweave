@@ -46,4 +46,27 @@ describe('grid structure pictures', () => {
     expect(made.length).toBeGreaterThan(0);
     expect(made.length).toBeLessThan(20);
   });
+
+  it('makes every makeable picture even after many that cannot be made', () => {
+    const wb = new Workbook(['Data']);
+    // 7 structures that can't be made (more than one frame's budget of 6), then 4 that can
+    wb.edit('fill', () => { for (let r = 0; r < 11; r++) wb.sheets[0].setStructure(r, 0, drawing); });
+    const bad = new Set([0, 1, 2, 3, 4, 5, 6].map((r) => wb.sheets[0].cell(r, 0)!.structure!.id));
+    const cache = new Map<number, HTMLCanvasElement>();
+    const host = new Proxy({
+      structureBox: () => ({ w: 100, h: 75 }),
+      structureBitmap: (s: Structure, scale: number) => {
+        if (cache.has(s.id)) return cache.get(s.id)!;
+        if (scale >= 0 || bad.has(s.id)) return null;
+        const c = document.createElement('canvas'); cache.set(s.id, c); return c;
+      },
+    } as Partial<SheetViewHost>, { get: (t, k) => (k in t ? t[k as keyof typeof t] : () => false) }) as SheetViewHost;
+    const root = document.createElement('div');
+    document.body.append(root);
+    const view = new SheetView(root, host);
+    view.show(wb);
+    settle();
+    expect(frames).toHaveLength(0);
+    expect(cache.size).toBe(4);
+  });
 });

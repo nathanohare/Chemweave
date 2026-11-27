@@ -1839,8 +1839,11 @@ export class SheetView {
     }
     if (pic) this.ctx.drawImage(pic, dx, dy, dw, dh);
     else {
-      // left for a later frame only when this frame's budget ran out: one that can't be made isn't tried again every frame
-      if (!tried) this.pendingPictures = true;
+      // left for a later frame only when this frame's budget ran out: one that can't be made isn't
+      // tried again every frame, and gives its turn back (failing costs nothing) so it can't keep
+      // the pictures after it from being made
+      if (tried) budget.n++;
+      else this.pendingPictures = true;
       this.ctx.fillStyle = '#f3f4f6';
       this.ctx.fillRect(dx, dy, dw, dh);
     }
