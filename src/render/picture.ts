@@ -4,7 +4,8 @@
 import { Doc } from '../model';
 import { Renderer, withMeasure, pictureMeasure, pictureCharWidth } from './renderer';
 import { VectorContext, VecPath, Item, itemBounds } from './vector';
-import { itemsToEmf, EmfBox } from './emf';
+import { itemsToEmf, itemsToEmfWithPictures, EmfBox } from './emf';
+import { imagePixels } from './images';
 import { itemsToSvg } from './svg';
 
 export interface Picture {
@@ -30,8 +31,14 @@ export function recordPicture(doc: Doc, margin = 2, /** Change the renderer firs
   return { items: ctx.items, box: { x1: b.x1 - margin, y1: b.y1 - margin, x2: b.x2 + margin, y2: b.y2 + margin } };
 }
 
+/** The picture as an EMF without the pictures (photos) in it: for where its pixels can't be read (no browser, or no time to wait). */
 export function pictureEmf(p: Picture): Uint8Array {
   return itemsToEmf(p.items, p.box);
+}
+
+/** The picture as an EMF, photos and other pictures in it too (their pixels read through the browser). */
+export function pictureEmfWithPictures(p: Picture): Promise<Uint8Array> {
+  return p.items.some((it) => it.kind === 'image') ? itemsToEmfWithPictures(p.items, p.box, imagePixels) : Promise.resolve(itemsToEmf(p.items, p.box));
 }
 
 export function pictureSvg(p: Picture): string {

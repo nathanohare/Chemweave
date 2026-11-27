@@ -172,10 +172,15 @@ let fallbackFamilies: Promise<FallbackFamily[]> | null = null;
 
 /** Font files that may draw a character a PDF's text can't draw with its own fonts (Chinese, Japanese, Hebrew, Arabic, symbols). */
 export const pdfFallbackFonts: PdfFallbackSource = async (ch, text) => {
-  fallbackFamilies ??= Promise.all(FALLBACK_PACKAGES.map(async (pkg) => {
-    const load = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
-    return load ? [fallbackFamily(pkg, await load())] : [];
-  })).then((x) => x.flat());
+  if (!fallbackFamilies) {
+    const made = Promise.all(FALLBACK_PACKAGES.map(async (pkg) => {
+      const load = Object.entries(FALLBACK_RANGES).find(([path]) => path.includes(`/@fontsource/${pkg}/`))?.[1];
+      return load ? [fallbackFamily(pkg, await load())] : [];
+    })).then((x) => x.flat());
+    fallbackFamilies = made;
+    // a package that failed to load (a chunk fetch that failed) isn't kept: the next PDF tries again
+    made.catch(() => { if (fallbackFamilies === made) fallbackFamilies = null; });
+  }
   return fallbackPicks(await fallbackFamilies, [ch], text).flatMap(({ pkg, subset }) => {
     const url = Object.entries(FALLBACK_WOFF).find(([path]) => path.endsWith(`/@fontsource/${pkg}/files/${pkg}-${subset}-400-normal.woff`))?.[1];
     return url ? [{ key: url, load: async () => woffToSfnt(new Uint8Array(await (await fetch(url)).arrayBuffer())) }] : [];

@@ -165,8 +165,8 @@ fn stopped(name: &str, e: &reqwest::Error) -> String {
     }
 }
 
-/// One file of the pack, for the reader to load.
-#[tauri::command]
+/// One file of the pack, for the reader to load (off the main thread: the encoder is about 140 MB).
+#[tauri::command(async)]
 pub fn pack_read(app: tauri::AppHandle, pack: String, name: String) -> Result<tauri::ipc::Response, String> {
     if !safe_name(&name) {
         return Err("Not a file of the pack.".into());

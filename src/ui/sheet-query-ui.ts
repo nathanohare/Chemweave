@@ -675,7 +675,7 @@ export class SheetQueries {
     }
     if (target.kind === 'here') {
       const own = place && place.sheet === target.sheet ? place.table : null;
-      const R = resultRange(target.at, t, own ? addedColumns(target.sheet, own, t, old ?? q).length : 0);
+      const R = resultRange(target.at, t, own ? addedColumns(target.sheet, own, t, old ?? q).length : 0, !!own?.totals);
       const p = loadProblem(target.sheet, R, own);
       if (p) return p;
       if (wouldCover(target.sheet, R, own)) {
@@ -748,7 +748,7 @@ export class SheetQueries {
       return { label: 'Refresh', cover: false, write: () => { wb.setQueries(wb.queries.map((x) => (x.id === q.id ? { ...x, refreshed: new Date().toISOString() } : x))); return null; } };
     }
     const at = { row: place.table.range.r1, col: place.table.range.c1 };
-    const R = resultRange(at, t, addedColumns(place.sheet, place.table, t, cur).length);
+    const R = resultRange(at, t, addedColumns(place.sheet, place.table, t, cur).length, !!place.table.totals);
     const p = loadProblem(place.sheet, R, place.table);
     if (p) return { problem: `${q.name}: ${p}` };
     return {

@@ -33,7 +33,7 @@ export interface SiSpectraHost {
   /** A structure as SVG markup, in the project's style. */
   pictureOf(mol: string): string | null;
   /** The pages of a PDF as pictures (null when it can't be read). */
-  pdfPages(bytes: Uint8Array): Promise<{ src: string; w: number; h: number }[] | null>;
+  pdfPages(bytes: Uint8Array): Promise<{ src: string; w: number; h: number; failed?: boolean }[] | null>;
   /** The part of a picture that isn't blank margin (auto-crop). */
   contentBox(src: string): Promise<Crop | null>;
   /** Where a picture has ink (a structure box placed on blank space). */
@@ -52,7 +52,7 @@ const PT_PX = 1.1;            // the preview: pixels to a point at 100 %
 const PAGE_BODY = { w: 6.5 * 72, h: 9 * 72 - 40 };
 /** The spectrum last shown for each compound (its page opens on it again). */
 const lastShown = new Map<string, string>();
-type Pages = { src: string; w: number; h: number }[];
+type Pages = { src: string; w: number; h: number; failed?: boolean }[];
 /**
  * Pages of spectrum files drawn lately, for each project open (forgotten with it), by the file's
  * path and its bytes' length and fingerprint: a file replaced under the same name (a corrected
@@ -171,13 +171,15 @@ export class SiSpectraPage {
           pages = mime && px && px.w > 0 ? [{ src: dataUrl(bytes, mime), w: px.w, h: px.h }] : null;
         }
         kept.delete(path);
-        if (pages) {
+        // (pages that could not be drawn are tried again next time, not kept)
+        if (pages && !pages.some((pg) => pg.failed)) {
           kept.set(path, { key: bkey, pages });
           while (kept.size > PAGES_KEPT) kept.delete(kept.keys().next().value!);
         }
       }
       if (!pages?.length) { out.push({ key, item, file, page: 1, pages: 1, src: null, aspect: 1.3, crop: null, problem: pages === null ? 'This file is missing or can’t be read as a picture or PDF.' : 'This PDF has no pages.' }); continue; }
-      pages.forEach((pg, i) => out.push({ key, item, file, page: i + 1, pages: pages!.length, src: pg.src, aspect: pg.h / pg.w, crop: null }));
+      // (a page that could not be drawn keeps its place and number, and says so)
+      pages.forEach((pg, i) => out.push({ key, item, file, page: i + 1, pages: pages!.length, src: pg.failed ? null : pg.src, aspect: pg.h / pg.w, crop: null, ...(pg.failed ? { problem: `Page ${i + 1} of this PDF could not be drawn; Compile prints a box in its place.` } : {}) }));
     }
     this.entries = out;
     const last = lastShown.get(c.id);

@@ -141,22 +141,38 @@ export class FindInFilesWindow {
     this.setQuery(sel.smiles, sel.label);
   }
 
+  /** The row for a structure found. */
+  private rowFor(h: Hit, i: number): HTMLTableRowElement {
+    const folder = h.path.slice(0, h.path.length - fileOf(h.path).length).replace(/[\\/]$/, '');
+    const tr = el('tr', {},
+      el('td', { textContent: fileOf(h.path) }),
+      el('td', { textContent: spotText(h.structure.spot) }),
+      el('td', { textContent: h.structure.label ?? '' }),
+      el('td', { textContent: h.exact ? 'the same' : 'containing it' }),
+      el('td', { className: 'muted', textContent: folder }));
+    tr.dataset.n = String(i);
+    tr.title = `${h.path}\n${h.structure.smiles ?? ''}`;
+    if (i === this.picked) tr.classList.add('picked');
+    return tr;
+  }
+
+  /** How many of the hits have a row in the list now. */
+  private rowsShown = 0;
+
+  /** Make the whole list again (the selection changed, or the search began or ended). */
   private fill(): void {
-    const rows = this.hits.map((h, i) => {
-      const folder = h.path.slice(0, h.path.length - fileOf(h.path).length).replace(/[\\/]$/, '');
-      const tr = el('tr', {},
-        el('td', { textContent: fileOf(h.path) }),
-        el('td', { textContent: spotText(h.structure.spot) }),
-        el('td', { textContent: h.structure.label ?? '' }),
-        el('td', { textContent: h.exact ? 'the same' : 'containing it' }),
-        el('td', { className: 'muted', textContent: folder }));
-      tr.dataset.n = String(i);
-      tr.title = `${h.path}\n${h.structure.smiles ?? ''}`;
-      if (i === this.picked) tr.classList.add('picked');
-      return tr;
-    });
+    const rows = this.hits.map((h, i) => this.rowFor(h, i));
     if (!rows.length) rows.push(el('tr', {}, el('td', { colSpan: 5, className: 'muted', textContent: this.running ? 'Searching…' : 'Nothing found yet.' })));
     this.body.replaceChildren(...rows);
+    this.rowsShown = this.hits.length;
+  }
+
+  /** While searching: add rows for the hits found since the last paint, leaving the rows already there. */
+  private addRows(): void {
+    if (this.rowsShown === this.hits.length) return;
+    if (this.rowsShown === 0) this.body.replaceChildren(); // ("Searching…")
+    this.body.append(...this.hits.slice(this.rowsShown).map((h, k) => this.rowFor(h, this.rowsShown + k)));
+    this.rowsShown = this.hits.length;
   }
 
   private async openPicked(): Promise<void> {
@@ -170,19 +186,33 @@ export class FindInFilesWindow {
     if (this.running) return;
     const folder = this.folder.value.trim();
     if (!folder) { this.host.flash('Choose a folder to search first.'); return; }
+    // running from here, so a second Enter or click while a typed name is being looked up does not start a second search
+    this.running = true;
+    this.stop = false;
+    this.go.textContent = 'Stop';
+    try {
+      await this.run(folder);
+    } finally {
+      this.running = false;
+      this.go.textContent = 'Search';
+      this.fill();
+    }
+  }
+
+  private async run(folder: string): Promise<void> {
     let smiles = this.drawn?.text === this.query.value ? this.drawn.smiles : '';
     if (!smiles) {
       if (!this.query.value.trim()) { this.host.flash('Type a name or SMILES, or select a structure and click Use Selected.', 6000); return; }
+      const was = this.status.textContent;
+      this.status.textContent = 'Reading the structure…';
       const got = await this.host.toSmiles(this.query.value.trim().replace(/^[^:\s]{1,12}:\s+/, ''));
-      if (typeof got !== 'string') { this.host.flash(got.error, 8000); return; }
+      if (typeof got !== 'string') { this.host.flash(got.error, 8000); this.status.textContent = was; return; }
+      if (this.stop) { this.status.textContent = 'Stopped.'; return; }
       smiles = got;
     }
     const mode = this.mode.value as SearchMode;
-    this.running = true;
-    this.stop = false;
     this.hits = [];
     this.picked = -1;
-    this.go.textContent = 'Stop';
     this.status.textContent = 'Listing the files…';
     this.fill();
     try {
@@ -199,7 +229,7 @@ export class FindInFilesWindow {
           if (Date.now() - lastPaint < 120 && done < total) return;
           lastPaint = Date.now();
           this.status.textContent = `Searching ${done} of ${total}: ${fileOf(path)}`;
-          this.fill();
+          this.addRows();
         },
         hit: (h) => { this.hits.push(h); },
       });
@@ -212,10 +242,6 @@ export class FindInFilesWindow {
       if (r.hits.length) this.picked = 0;
     } catch (e) {
       this.status.textContent = e instanceof Error ? e.message : String(e);
-    } finally {
-      this.running = false;
-      this.go.textContent = 'Search';
-      this.fill();
     }
   }
 }

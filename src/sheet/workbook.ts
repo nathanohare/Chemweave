@@ -2520,6 +2520,7 @@ export class Workbook {
     return {
       formulaAt: (f, home, row, col) => this.formulaAt(s, f, home, row, col),
       sheetNamed: (name) => this.sheetNamed(name),
+      formulaArg: (f, home) => this.formulaArg(s, f, home.row, home.col),
     };
   }
 

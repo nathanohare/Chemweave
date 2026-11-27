@@ -6,7 +6,7 @@
 import type { Sheet, Cell, CellBlock, CellStyle } from './workbook';
 import { valueInput } from './workbook';
 import { Range, keyOf, rowOf, colOf, inRange, MAX_ROWS, MAX_COLS } from './refs';
-import { shiftFormula, transposeFormula, formulaRefs, type RefToken } from './formula';
+import { shiftFormula, transposeFormula, formulaRefs, mapRefs, type RefToken } from './formula';
 import { Value, isError, readTyped, compareValues, sigFigs15, CellError } from './values';
 import { serialParts, dateSerial, daysInMonth } from './dates';
 import { copyNote } from './notes';
@@ -82,8 +82,14 @@ export function findPattern(o: FindOptions, global = false): RegExp {
   const t = o.text;
   for (let i = 0; i < t.length; i++) {
     const ch = t[i];
-    if (ch === '~' && i + 1 < t.length && '*?~'.includes(t[i + 1])) { src += '\\' + t[++i]; continue; }
-    if (ch === '*') src += '[\\s\\S]*?';
+    if (ch === '~' && i + 1 < t.length && '*?~'.includes(t[i + 1])) {
+      // ~~ is a tilde, which needs no escape (and with the u flag must not have one)
+      const lit = t[++i];
+      src += lit === '~' ? '~' : '\\' + lit;
+      continue;
+    }
+    // Replace takes * greedily, so it replaces the rest of the run as Excel does ("Pd*" on Pd(OAc)2 is the whole text)
+    if (ch === '*') src += global ? '[\\s\\S]*' : '[\\s\\S]*?';
     else if (ch === '?') src += '[\\s\\S]';
     else src += ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   }
@@ -128,7 +134,8 @@ export function findCells(s: Sheet, o: FindOptions, within: Range | null = null)
 export function replaceIn(text: string, o: FindOptions, by: string): string {
   if (o.whole) return findPattern(o).test(text) ? by : text;
   // the replacement is taken as it is ($ has no special meaning)
-  return text.replace(findPattern(o, true), () => by);
+  // an empty match (a lone * after a greedy match has taken the text) is not a hit
+  return text.replace(findPattern(o, true), (m) => (m === '' && text !== '' ? m : by));
 }
 
 /**
@@ -201,7 +208,9 @@ export function goToSpecial(s: Sheet, sel: Range, active: { r: number; c: number
   const types = o.types ?? { numbers: true, text: true, logicals: true, errors: true };
   switch (o.kind) {
     case 'notes':
-      for (const k of s.notes.keys()) if (!area || isSingle(sel) || inRange(area, rowOf(k), colOf(k))) keys.push(k);
+      // every note when one cell is selected; otherwise the notes inside the selection itself
+      // (a note can sit on an empty cell past the last one in use)
+      for (const k of s.notes.keys()) if (isSingle(sel) || inRange(sel, rowOf(k), colOf(k))) keys.push(k);
       break;
     case 'constants':
       each((r, c) => { const cell = s.cell(r, c); return !!cell?.input && !cell.input.startsWith('=') && !s.defAt(r, c) && ofType(s.values.get(keyOf(r, c)), types); });
@@ -260,58 +269,105 @@ export function goToSpecial(s: Sheet, sel: Range, active: { r: number; c: number
       const byRow = o.kind === 'rowdiff';
       const comparison = (r: number, c: number) => (byRow ? [r, active.c] : [active.r, c]);
       const look = (r: number, c: number): string => {
-        const input = s.effectiveInput(r, c);
-        // formulas compare by what they work out relative to their cell (=A2*2 and =A3*2 are alike)
-        if (input?.startsWith('=')) return 'f' + shiftFormula(input, -r, -c);
         const v = s.values.get(keyOf(r, c));
         return s.cell(r, c)?.structure ? 's' + String(v) : 'v' + (v === undefined || v === null ? '' : typeof v === 'string' ? v.toLowerCase() : String(v));
       };
+      const broken = (f: string) => formulaRefs(f).filter((x) => x.broken).length;
+      // formulas compare by what they work out relative to their cell (=A2*2 and =A3*2 are alike):
+      // each is moved to the comparison cell, where it must read as that cell's own formula (moving
+      // both to A1 would turn every reference left of or above them into #REF!)
+      const differs = (r: number, c: number, cr: number, cc: number): boolean => {
+        const a = s.effectiveInput(r, c), b = s.effectiveInput(cr, cc);
+        const af = !!a?.startsWith('='), bf = !!b?.startsWith('=');
+        if (!af && !bf) return look(r, c) !== look(cr, cc);
+        if (!af || !bf) return true;
+        const moved = shiftFormula(a!, cr - r, cc - c);
+        if (broken(moved) !== broken(a!)) return true;
+        return moved !== mapRefs(b!, (x) => x);
+      };
       for (let r = R.r1; r <= R.r2; r++) for (let c = R.c1; c <= R.c2; c++) {
         const [cr, cc] = comparison(r, c);
-        if ((r !== cr || c !== cc) && look(r, c) !== look(cr, cc)) keys.push(keyOf(r, c));
+        if ((r !== cr || c !== cc) && differs(r, c, cr, cc)) keys.push(keyOf(r, c));
       }
       break;
     }
     case 'precedents': {
+      // every block a formula reads is selected whole (=SUM(A1:A25000) selects all of A1:A25000);
+      // for every level, the formulas inside those blocks are followed in turn
       const R = s.clip(sel) ?? sel;
-      const seen = new Set<number>();
+      const blocks: Range[] = [];
+      const named = new Set<string>();
+      const visited = new Set<number>();
       let frontier: number[] = [];
       for (let r = R.r1; r <= R.r2; r++) for (let c = R.c1; c <= R.c2; c++) frontier.push(keyOf(r, c));
       while (frontier.length) {
         const next: number[] = [];
         for (const k of frontier) {
+          if (visited.has(k)) continue;
+          visited.add(k);
           for (const ref of sameSheetRefs(s, rowOf(k), colOf(k))) {
             const clip = s.clip(ref) ?? ref;
-            for (let r = clip.r1; r <= Math.min(clip.r2, clip.r1 + 5000); r++) for (let c = clip.c1; c <= Math.min(clip.c2, clip.c1 + 500); c++) {
-              const kk = keyOf(r, c);
-              if (seen.has(kk)) continue;
-              seen.add(kk);
-              next.push(kk);
+            const id = `${clip.r1}:${clip.c1}:${clip.r2}:${clip.c2}`;
+            if (named.has(id)) continue;
+            named.add(id);
+            blocks.push(clip);
+            if (!o.allLevels) continue;
+            // the cells in it that could hold a formula of their own
+            if ((clip.r2 - clip.r1 + 1) * (clip.c2 - clip.c1 + 1) <= 200000) {
+              for (let r = clip.r1; r <= clip.r2; r++) for (let c = clip.c1; c <= clip.c2; c++) next.push(keyOf(r, c));
+            } else {
+              for (const kk of new Set([...s.formulas.keys(), ...s.cells.keys()])) if (inRange(clip, rowOf(kk), colOf(kk))) next.push(kk);
             }
           }
         }
-        frontier = o.allLevels ? next : [];
+        frontier = next;
       }
-      for (const k of seen) keys.push(k);
-      break;
+      // overlapping blocks (=SUM(A1:A10)+A5) as blocks that don't overlap, so no cell counts twice
+      const apart: Range[] = [];
+      for (const b of blocks) {
+        let pieces = [b];
+        for (const o of apart) pieces = pieces.flatMap((p) => cut(p, o));
+        apart.push(...pieces);
+      }
+      return apart.length ? apart : null;
     }
     case 'dependents': {
       // formulas on this sheet that read the selected cells (and, for every level, those reading them)
-      const formulas: { k: number; refs: Range[] }[] = [];
-      for (const k of s.formulas.keys()) formulas.push({ k, refs: sameSheetRefs(s, rowOf(k), colOf(k)) });
-      const R = s.clip(sel) ?? sel;
-      let targets: Range[] = [R];
-      const seen = new Set<number>();
-      while (targets.length) {
-        const found: Range[] = [];
-        for (const f of formulas) {
-          if (seen.has(f.k)) continue;
-          if (f.refs.some((x) => targets.some((t) => x.r1 <= t.r2 && t.r1 <= x.r2 && x.c1 <= t.c2 && t.c1 <= x.c2))) {
-            seen.add(f.k);
-            found.push({ r1: rowOf(f.k), c1: colOf(f.k), r2: rowOf(f.k), c2: colOf(f.k) });
+      // (a reference to a few cells is looked up by cell, so a chain of running totals is followed
+      // one formula at a time rather than by reading every formula again at each level)
+      const SMALL = 64;
+      const byCell = new Map<number, number[]>();
+      const wide: { k: number; refs: Range[] }[] = [];
+      const all: { k: number; refs: Range[] }[] = [];
+      for (const k of s.formulas.keys()) {
+        const refs = sameSheetRefs(s, rowOf(k), colOf(k));
+        all.push({ k, refs });
+        const big = refs.filter((x) => (x.r2 - x.r1 + 1) * (x.c2 - x.c1 + 1) > SMALL);
+        if (big.length) wide.push({ k, refs: big });
+        for (const x of refs) {
+          if ((x.r2 - x.r1 + 1) * (x.c2 - x.c1 + 1) > SMALL) continue;
+          for (let r = x.r1; r <= x.r2; r++) for (let c = x.c1; c <= x.c2; c++) {
+            const at = keyOf(r, c);
+            const list = byCell.get(at);
+            if (list) list.push(k); else byCell.set(at, [k]);
           }
         }
-        targets = o.allLevels ? found : [];
+      }
+      const R = s.clip(sel) ?? sel;
+      const overlaps = (x: Range, t: Range) => x.r1 <= t.r2 && t.r1 <= x.r2 && x.c1 <= t.c2 && t.c1 <= x.c2;
+      const seen = new Set<number>();
+      // the first level: every formula reading the selection
+      let found: number[] = [];
+      for (const f of all) if (f.refs.some((x) => overlaps(x, R))) { seen.add(f.k); found.push(f.k); }
+      while (o.allLevels && found.length) {
+        const next: number[] = [];
+        const add = (k: number) => { if (!seen.has(k)) { seen.add(k); next.push(k); } };
+        for (const t of found) for (const k of byCell.get(t) ?? []) add(k);
+        if (wide.length) {
+          const cells = found.map((k) => ({ r1: rowOf(k), c1: colOf(k), r2: rowOf(k), c2: colOf(k) }));
+          for (const f of wide) if (!seen.has(f.k) && f.refs.some((x) => cells.some((t) => overlaps(x, t)))) add(f.k);
+        }
+        found = next;
       }
       for (const k of seen) keys.push(k);
       break;
@@ -498,8 +554,18 @@ export function pasteSpecial(s: Sheet, at: { row: number; col: number }, block: 
     if (src) {
       const rules = src.sheet.validations.filter((v) => v.ranges.some((x) => x.r1 <= src.range.r2 && src.range.r1 <= x.r2 && x.c1 <= src.range.c2 && src.range.c1 <= x.c2));
       const rest = s.validations.map((v) => ({ ...v, ranges: v.ranges.flatMap((x) => cut(x, target)) })).filter((v) => v.ranges.length);
-      const moved = rules.map((v) => ({ ...v, ranges: [target] }));
-      s.setValidations([...rest, ...moved.slice(0, 1)]);
+      // each rule goes where its own cells go (a list over column A and a number rule over
+      // column B land over the first and second pasted columns), turned with Transpose
+      const place = (x: Range): Range[] => {
+        const r1 = Math.max(x.r1, src.range.r1), r2 = Math.min(x.r2, src.range.r2), c1 = Math.max(x.c1, src.range.c1), c2 = Math.min(x.c2, src.range.c2);
+        if (r1 > r2 || c1 > c2) return [];
+        const dr = r1 - src.range.r1, dr2 = r2 - src.range.r1, dc = c1 - src.range.c1, dc2 = c2 - src.range.c1;
+        const p = o.transpose ? { r1: at.row + dc, r2: at.row + dc2, c1: at.col + dr, c2: at.col + dr2 } : { r1: at.row + dr, r2: at.row + dr2, c1: at.col + dc, c2: at.col + dc2 };
+        const out = { r1: p.r1, c1: p.c1, r2: Math.min(p.r2, target.r2), c2: Math.min(p.c2, target.c2) };
+        return out.r1 <= out.r2 && out.c1 <= out.c2 ? [out] : [];
+      };
+      const moved = rules.map((v) => ({ ...v, ranges: v.ranges.flatMap(place) })).filter((v) => v.ranges.length);
+      s.setValidations([...rest, ...moved]);
     }
     return target;
   }
@@ -625,10 +691,14 @@ export function splitText(text: string, o: SplitOptions): string[] {
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     if (q && ch === q) {
-      if (inQuote && text[i + 1] === q) { cur += q; i++; continue; }
-      inQuote = !inQuote;
-      quoted = true;
-      continue;
+      if (inQuote) {
+        if (text[i + 1] === q) { cur += q; i++; continue; }
+        inQuote = false;
+        continue;
+      }
+      // as Excel: the qualifier opens a quoted piece only at the start of a field; elsewhere
+      // (5" pipe) it is an ordinary character
+      if (cur === '' && !quoted) { inQuote = true; quoted = true; continue; }
     }
     if (!inQuote && seps.includes(ch)) {
       if (o.consecutive && cur === '' && !quoted && out.length && i > 0 && seps.includes(text[i - 1])) continue;
@@ -785,9 +855,11 @@ export function advancedRows(s: Sheet, f: AdvancedFilter): number[] {
   if (C) {
     for (let cr = C.r1 + 1; cr <= C.r2; cr++) {
       const tests: Test[] = [];
+      let blank = true;
       for (let cc = C.c1; cc <= C.c2; cc++) {
         const input = s.effectiveInput(cr, cc);
         if (!input) continue;
+        blank = false;
         const head = s.shownText(C.r1, cc).trim().toLowerCase();
         const col = heads.get(head);
         if (input.startsWith('=') && col === undefined) {
@@ -802,7 +874,8 @@ export function advancedRows(s: Sheet, f: AdvancedFilter): number[] {
         const t = criterionTest(crit as string | number | boolean);
         tests.push((r) => t(s.value(r, col), s.shownText(r, col)));
       }
-      if (tests.length) ways.push(tests);
+      // a blank criteria row matches every record, as in Excel (an empty list of tests is always met)
+      if (tests.length || blank) ways.push(tests);
     }
   }
   const out: number[] = [];

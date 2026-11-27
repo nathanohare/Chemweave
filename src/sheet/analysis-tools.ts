@@ -204,7 +204,9 @@ export function autoBins(xs: number[]): number[] {
   const k = Math.max(1, Math.round(Math.sqrt(xs.length)));
   if (hi === lo) return [lo];
   const w = (hi - lo) / k;
-  return Array.from({ length: k + 1 }, (_, i) => lo + i * w);
+  // the last edge is the largest number itself (lo + k·w can round to just below it, which would
+  // put the largest number in More)
+  return Array.from({ length: k + 1 }, (_, i) => (i === k ? hi : lo + i * w));
 }
 
 export function histogram(data: number[], o: HistogramOptions): ToolOutput | string {

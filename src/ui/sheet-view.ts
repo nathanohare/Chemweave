@@ -10,7 +10,7 @@
 import { Workbook, Sheet, Structure, CellStyle, Side, growToMerges, countOn } from '../sheet/workbook';
 import { Range, MAX_ROWS, MAX_COLS, colName, rangeName, normRange, inRange, keyOf, rowOf, colOf, cellName, sheetNameProblem } from '../sheet/refs';
 import { formatValue, generalFitting } from '../sheet/numfmt';
-import { readTyped, isError, CellError, maxOf, minOf } from '../sheet/values';
+import { readTyped, isError, CellError } from '../sheet/values';
 import { chemPieces, showsChem } from '../sheet/cell-text';
 import { type RunLook, type TextRun, type ToggleLook, looksOf, lookPieces, runsOf, runsForInput, looksForInput, sameRuns } from '../sheet/rich-text';
 import { RichInput } from './rich-input';
@@ -33,7 +33,7 @@ import { breakLines, withSetup, toggleBreak, type PrintPage } from '../sheet/pag
 import { defaultPaper } from '../print-layout';
 import { BRUSH } from '../editor/cursors';
 import { OutlineGroup, outlineGroups, maxLevel, setCollapsed, showLevel } from '../sheet/outline';
-import { SparklineGroup, sparkShape, sparkSource, sparklineAt } from '../sheet/sparklines';
+import { SparklineGroup, sparkShape, sparkSource, sparklineAt, groupLimits, sparkLimits } from '../sheet/sparklines';
 import { headerRuns, paperSize, DEFAULT_MARGINS } from '../sheet/page-setup';
 import { themeOf } from '../sheet/themes';
 import { MAX_CELLS, lastLine } from './sheet-lines';
@@ -1722,10 +1722,7 @@ export class SheetView {
       });
       c.values.set(g, values);
       const all = values.flat().filter((v): v is number => v !== null);
-      c.limits.set(g, {
-        min: typeof g.minAxis === 'number' ? g.minAxis : g.minAxis === 'group' && all.length ? minOf(all, g.kind === 'column' ? 0 : Infinity) : undefined,
-        max: typeof g.maxAxis === 'number' ? g.maxAxis : g.maxAxis === 'group' && all.length ? maxOf(all) : undefined,
-      });
+      c.limits.set(g, groupLimits(g, all));
     }
     return { values, ...c.limits.get(g) };
   }
@@ -1735,7 +1732,7 @@ export class SheetView {
     const { values, min, max } = this.sparkValues(s, g);
     const vals = values[g.items.findIndex((i) => i.row === it.row && i.col === it.col)] ?? [];
     const nums = vals.filter((v): v is number => v !== null);
-    const lim = min !== undefined || max !== undefined ? { min: min ?? minOf(nums), max: max ?? maxOf(nums) } : undefined;
+    const lim = sparkLimits(g, nums, { min, max });
     const shape = sparkShape(g, vals, w - 2, h - 2, lim);
     const ctx = this.ctx;
     ctx.save();
