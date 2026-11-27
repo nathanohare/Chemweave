@@ -1735,6 +1735,24 @@ export class Workbook {
     return e.after ?? e.before ?? null;
   }
 
+  /**
+   * Take back the last step as if it had never been made, when it is still the last one and has
+   * this label (a preview the person canceled: Goal Seek's answer, Solver's): it leaves nothing
+   * to undo or redo. False when something else has been done since.
+   */
+  retract(label: string): boolean {
+    if (this.tx) return false;
+    const e = this.undoList[this.undoList.length - 1];
+    if (!e || e.label !== label) return false;
+    this.undoList.pop();
+    for (let i = e.changes.length - 1; i >= 0; i--) this.applyChange(e.changes[i], 'before');
+    // (counted as a change, so a file saved while the preview showed is known to differ)
+    this.edits++;
+    this.recalcAfter(e.changes, 'before');
+    this.onChange();
+    return true;
+  }
+
   private applyChange(c: Change, which: 'before' | 'after'): void {
     const v = c[which];
     if (c.field === 'sheets') {

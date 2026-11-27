@@ -929,8 +929,17 @@ export class SheetMode {
     if (!wb) return;
     if (!wb.queries.length) { this.pivots.refreshAll(); return; }
     this.host.flash(`Refreshing ${wb.queries.length} quer${wb.queries.length > 1 ? 'ies' : 'y'}…`, 60000);
-    const problems = await this.queries.refreshQueries();
-    const piv = this.pivots.refreshAll(true);
+    // the sources are read first; then the queries' tables and the PivotTables are written as one step
+    const read = await this.queries.readQueries();
+    const problems = [...read.problems];
+    let piv: ReturnType<SheetPivots['refreshAll']> = { count: 0, problems: [] };
+    this.view.commitEdit();
+    wb.edit('Refresh All', () => {
+      problems.push(...read.write());
+      piv = this.pivots.refreshAll(true);
+    }, this.view.place());
+    this.view.refresh();
+    this.queries.refreshPane();
     problems.push(...piv.problems);
     const done = [`${wb.queries.length} quer${wb.queries.length > 1 ? 'ies' : 'y'}`, ...(piv.count ? [`${piv.count} PivotTable${piv.count > 1 ? 's' : ''}`] : [])].join(' and ');
     this.host.flash(problems.length ? problems.join(' ') : `Refreshed ${done}.`, problems.length ? 9000 : 3000);
@@ -2430,6 +2439,8 @@ export class SheetMode {
     if (i >= 0 && i !== wb.active) this.view.goSheet(i);
     this.view.refresh();
     if (i >= 0) this.view.select(p.sel, { r: p.sel.r1, c: p.sel.c1 });
+    // (the Fields window shows the PivotTable as Undo or Redo left it)
+    this.pivots.workbookChanged();
   }
 
   selectAll(): void {

@@ -145,7 +145,9 @@ export class SheetOutline {
     const s = this.view.sheet;
     const t = this.host.table();
     if (!s || !t) { this.host.flash('Click in a table of data first (with a header row).'); return; }
-    const R: Range = { ...t.data, r1: t.header ?? t.data.r1 };
+    // (with no header row found, the first row of data would be taken for the headings and left out of the subtotals)
+    if (t.header === null) { this.host.flash('Subtotal needs a header row: type a heading over each column of the data first.', 6000); return; }
+    const R: Range = { ...t.data, r1: t.header };
     if (R.r2 <= R.r1) { this.host.flash('Subtotal needs a header row and rows of data under it.'); return; }
     const cols: [string, string][] = [];
     for (let c = R.c1; c <= R.c2; c++) cols.push([String(c), s.shownText(R.r1, c) || `Column ${colName(c)}`]);
@@ -155,12 +157,16 @@ export class SheetOutline {
     const box = w.group('Add subtotal to');
     // the last column that holds numbers is ticked, as in Excel
     let lastNum = -1;
-    for (let c = R.c1; c <= R.c2; c++) if (typeof s.value(R.r1 + 1, c) === 'number') lastNum = c;
+    for (let c = R.c1; c <= R.c2; c++) for (let r = R.r1 + 1; r <= R.r2; r++) if (typeof s.value(r, c) === 'number') { lastNum = c; break; }
     const ticks = cols.map(([c, name]) => [Number(c), w.check(name, Number(c) === lastNum, box)] as const);
     const replace = w.check('Replace current subtotals', true);
     const breaks = w.check('Page break between groups', false);
     const below = w.check('Summary below data', !s.outline?.summaryAbove);
+    // the window floats beside the sheet, so it may be used after another sheet is showing
+    const stillHere = () => (this.view.sheet === s ? null : `Go back to ${s.name} to add subtotals there (the window was opened on it).`);
     w.actions('OK', () => {
+      const away = stillHere();
+      if (away) return away;
       const picked = ticks.filter(([, b]) => b.checked).map(([c]) => c);
       if (!picked.length) return 'Select at least one column to add a subtotal to.';
       let out: Range | string = R;
@@ -171,6 +177,8 @@ export class SheetOutline {
       this.view.select(out);
       return undefined;
     }, [['Remove All', () => {
+      const away = stillHere();
+      if (away) { w.error(away); return; }
       let out = R;
       this.host.edit('Remove subtotals', (sh) => { out = removeSubtotals(sh, R); }, () => out);
       w.close();

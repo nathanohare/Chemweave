@@ -1,0 +1,15 @@
+Fixed: Spreadsheet: Data Analysis ▸ Moving Average and Exponential Smoothing work when the input is on another sheet, and no longer hang when the whole column is typed as the input range.
+Fixed: Spreadsheet: Goal Seek and Solver are one step to undo, and Cancel leaves nothing to undo; Solver keeps the model, the answer and the Answer Report in the same step, says "Solving…" before it starts, and keeps an Integer Optimality or Constraint Precision of 0.
+Fixed: Spreadsheet: Data Table, Sparklines (Insert and Edit Group) and Subtotal act on the sheet their window was opened on, and Subtotal says so when another sheet is showing; Edit Group no longer leaves two sparklines in one cell.
+Fixed: Spreadsheet: Solver's Constraint box follows the Relation of the constraint picked in the list; Number of Samples and Number of Random Numbers typed as words are refused with a message.
+Fixed: Spreadsheet: Freeze Panes no longer fills the window with frozen rows when used far down a sheet, and Split on a sheet with frozen panes undoes in one step.
+Fixed: Spreadsheet: Data ▸ Clear shows rows an Advanced Filter hid even when the sheet has a filter; Series keeps Step Value open for Date, and Custom Sort starts again on a sensible row or column when Sort Left to Right is ticked.
+Fixed: Spreadsheet: Subtotal says it needs a header row instead of taking the first row of data for one, and ticks a column of numbers even when its first row is blank.
+Fixed: Spreadsheet: Insert Function on a formula with two calls (=IF(…)+IF(…)) opens the function list instead of rewriting the formula and dropping arguments.
+Fixed: Spreadsheet: Esc in New Name leaves nothing behind, Enter in the Name Manager's Filter box no longer closes it, renaming a name changes only the formulas that use that name (not a same-named name of another scope), and Create Names from Selection asks before replacing a name.
+Fixed: Spreadsheet: Compound look-ups still work for names with a space at the end and say how many cells were made; Refresh Compound Data leaves cells that were changed meanwhile alone.
+Fixed: Spreadsheet: a chart of a table of more than 10,000 rows covers all of it and is made quickly; changing a chart to Pie and back keeps its grid lines; the Insert into Cells note lists only what is written.
+Fixed: Spreadsheet: Refresh All is one step to undo and no longer writes a grown PivotTable over cells without asking; Refresh in Queries & Connections says when the replace question was answered Cancel.
+Fixed: Spreadsheet: the PivotTable Fields window stays on when it is replaced by another window, shows the PivotTable as Undo and Redo leave it, and shows a refused change as refused.
+Fixed: Spreadsheet: in the Query Editor, Change Source… keeps the delimiter, Records or Item chosen and leaves the editor as it was when the file can't be read, the preview is quicker on big files, and editing a query that is only a connection keeps it a connection.
+Under the hood: tests for the spreadsheet analysis, data, formulas, chart, compound, sparkline, PivotTable and query windows (review batch 27); the workbook can take back a preview step that was canceled.

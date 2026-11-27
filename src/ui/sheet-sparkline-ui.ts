@@ -93,12 +93,17 @@ export class SheetSparklines {
       if (p.sheet !== home) return 'Put the sparklines on this sheet.';
       const g = makeSparklines(kind, d.range, p.range, d.sheet !== home ? d.sheet.name : undefined);
       if (typeof g === 'string') return g;
-      this.host.edit('Insert sparklines', (sh) => {
+      // on the sheet the window was opened on, whichever sheet is showing now (cells can be picked on another)
+      this.view.commitEdit();
+      wb.edit('Insert sparklines', () => {
         const taken = new Set(g.items.map((it) => `${it.row},${it.col}`));
         // a cell holds one sparkline: the new one replaces any there
-        const kept = sh.sparklines.map((x) => ({ ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) })).filter((x) => x.items.length);
-        sh.setSparklines([...kept, g]);
-      });
+        const kept = home.sparklines.map((x) => ({ ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) })).filter((x) => x.items.length);
+        home.setSparklines([...kept, g]);
+      }, this.view.place());
+      const at = wb.sheets.indexOf(home);
+      if (at >= 0 && at !== wb.active) this.view.goSheet(at);
+      this.view.refresh();
       this.view.select(p.range);
       return undefined;
     });
@@ -259,7 +264,17 @@ export class SheetSparklines {
       if (p.sheet !== s) return 'Put the sparklines on this sheet.';
       const made = makeSparklines(g.kind, d.range, p.range, d.sheet !== s ? d.sheet.name : undefined);
       if (typeof made === 'string') return made;
-      this.host.edit('Edit sparklines', (sh) => sh.setSparklines(sh.sparklines.map((x) => (x.id === g.id ? { ...g, items: made.items } : x))));
+      if (!wb.sheets.includes(s)) return 'The sheet this window was opened on is gone.';
+      this.view.commitEdit();
+      // on the sheet the group is on, whichever sheet is showing now
+      wb.edit('Edit sparklines', () => {
+        // a cell holds one sparkline: the cells the group now has are taken from any other group
+        const taken = new Set(made.items.map((it) => `${it.row},${it.col}`));
+        s.setSparklines(s.sparklines
+          .map((x) => (x.id === g.id ? { ...g, items: made.items } : { ...x, items: x.items.filter((it) => !taken.has(`${it.row},${it.col}`)) }))
+          .filter((x) => x.items.length));
+      }, this.view.place());
+      this.view.refresh();
       return undefined;
     });
     w.show();

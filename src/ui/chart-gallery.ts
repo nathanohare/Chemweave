@@ -10,7 +10,6 @@ import type { Sheet } from '../sheet/workbook';
 import { CHART_NAMES, chartData, chartFromRange, type ChartKind } from '../sheet/chart';
 import { newChartBox, boxData } from '../sheet/chart-box';
 import { chartCanvas } from '../render/chart-draw';
-import { currentRegion } from './sheet-chart-ui';
 import type { Range } from '../sheet/refs';
 
 /** The kinds in groups, as Excel's Insert Chart window has them. */
@@ -64,7 +63,7 @@ export class ChartGallery {
     if (R.r1 === R.r2 && R.c1 === R.c2) {
       if (s.value(R.r1, R.c1) === null) return null;
       const t = s.tableAt(R.r1, R.c1);
-      R = t ? t.range : currentRegion(s, R.r1, R.c1);
+      R = t ? t.range : s.currentRegion(R.r1, R.c1);
     } else R = s.clip(R) ?? R;
     return R.r1 === R.r2 && R.c1 === R.c2 ? null : { sheet: s, range: R };
   }
