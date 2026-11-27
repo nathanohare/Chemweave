@@ -525,7 +525,12 @@ export class DocPanel {
     this.row(s, 'Number format', this.select('hf-format', FORMATS.map((v) => [v, [1, 2, 3].map((n) => pageNumText(n, v)).join(', ')]), (v) => this.changeSec('Page numbers', () => ({ format: v as Section['format'] }))),
       'Front matter is often numbered i, ii, iii, and the text after a section break 1, 2, 3');
     this.check(s, 'hf-continue', 'Continue from previous section', (v) => this.changeSec('Page numbers', (x) => ({ restart: v ? undefined : x.restart ?? 1 })));
-    this.row(s, 'First page number', this.input('hf-start', (v) => { if (v.trim() === '') return; const n = Math.round(Number(v)); if (Number.isFinite(n) && n >= 1) this.changeSec('Page numbers', () => ({ restart: n })); }));
+    this.row(s, 'First page number', this.input('hf-start', (v) => {
+      // (0 is allowed, as in Word: the page after a cover is then 1; a box cleared or not a number goes back to what the section has)
+      const n = Math.round(Number(v));
+      if (v.trim() !== '' && Number.isFinite(n) && n >= 0) this.changeSec('Page numbers', () => ({ restart: n }));
+      else this.update();
+    }));
     this.check(s, 'hf-first', 'Number the first page', (v) => hf((h) => ({ ...h, onFirst: v })), 'Leave off for a title page');
     // a first page and even pages of their own (Word's Different First Page and Different Odd & Even Pages)
     const blank = (): HfZones => ({ header: ['', '', ''], footer: ['', '', ''] });
@@ -604,6 +609,12 @@ export class DocPanel {
       format.style.display = o?.kind === 'picture' && !o.chart ? '' : 'none';
       own.style.display = isBox ? 'none' : '';
     }
+    // named styles belong to the document's own paragraphs: while a table cell, text box or note is
+    // typed in, they are left alone (not applied to the paragraph that holds the box) until the text is clicked
+    const inBox = !!f.box;
+    const why = 'Styles are for the text of the document: click it first (not inside a table cell, text box or note)';
+    for (const [k, el] of this.fields) if (k === 'p-style' || k.startsWith('s-')) { (el as HTMLInputElement).disabled = inBox; el.title = inBox ? why : ''; }
+    this.sections.style.querySelectorAll('button').forEach((b) => { b.disabled = inBox; });
     // the paragraph
     const p = ed.currentPara();
     const st = styleOf(t, p);

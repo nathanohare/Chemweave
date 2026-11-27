@@ -11,6 +11,7 @@ import { join } from 'node:path';
 import type { Pixels } from '../src/recognise/picture';
 import { readPng } from './png-pixels';
 
+vi.setConfig({ testTimeout: 60000 });
 let decoded: Pixels | null = null;
 vi.mock('../src/ui/import-structures', () => ({ decodePicture: vi.fn(async () => decoded) }));
 
@@ -40,11 +41,15 @@ describe('Cropped pictures as pixels (F459)', () => {
     expect(reds(got!.p)).toEqual([1, 2, 11, 12]);
   });
 
-  it('cropping outward (Word allows a negative crop) takes the whole picture, not garbage from the end of the buffer', async () => {
+  it('cropping outward (Word allows a negative crop) shows the picture inside white margins, at the frame\'s own scale', async () => {
     decoded = grid();
-    const got = await pictureForReading({ kind: 'picture', src: PNG, w: 30, h: 20, crop: { l: -0.2, t: -0.2, r: 0, b: 0 } });
-    expect([got!.p.width, got!.p.height]).toEqual([3, 2]);
-    expect(reds(got!.p)).toEqual([0, 1, 2, 10, 11, 12]);
+    // a frame 30 pt wide reaching 0.2 of the picture (0.6 of a pixel: one column) out to the left; the top is at the picture's edge
+    const got = await pictureForReading({ kind: 'picture', src: PNG, w: 30, h: 20, crop: { l: -0.2, t: -0.1, r: 0, b: 0 } });
+    expect([got!.p.width, got!.p.height]).toEqual([4, 2]);
+    // (a white column first: nothing is there; then the picture's own columns)
+    expect(reds(got!.p)).toEqual([255, 0, 1, 2, 255, 10, 11, 12]);
+    // 30 pt over 4 pixels
+    expect(got!.ptPerPx).toBeCloseTo(7.5, 6);
   });
 
   it('a crop that rounds past the bottom keeps the last rows', async () => {
@@ -73,6 +78,12 @@ describe('A cropped drawn picture (F069)', () => {
     expect(got!.p.height / got!.p.width).toBeCloseTo(2, 1);
     // and a point is the same number of pixels each way
     expect(got!.ptPerPx).toBeCloseTo(50 / got!.p.width, 6);
+  });
+
+  it('with no size on the page, the image\'s own size is the whole image (not stretched again by the crop)', async () => {
+    // a square 200 x 200 image with half cut off its left side leaves a tall half
+    const got = await pictureForReading({ kind: 'picture', src: SVG, w: 0, h: 0, crop: { l: 0.5, t: 0, r: 0, b: 0 } });
+    expect(got!.p.height / got!.p.width).toBeCloseTo(2, 1);
   });
 
   it('an uncropped one is as it was', async () => {
@@ -115,6 +126,38 @@ describe('Changing the style of a made-editable structure (F070, F460)', () => {
     expect(got!.alt).toBeUndefined();
   });
 
+  // the same drawing read as if it were at 150 dpi: its bonds are 28.8 pt long as read, twice the 14.4 pt of the ACS Document 1996 style
+  const at150 = 72 / 150;
+  const pic150: Picture = { kind: 'picture', src: PNG, w: px.width * at150, h: px.height * at150 };
+  const made150 = (choice: 'match' | 'default') => madeFrom(pic150, { p: px, ptPerPx: at150, parts, problems: [] }, choice, ACS_1996).drawing;
+  const bondLen = (c: { atoms: { id: number; x: number; y: number }[]; bonds: { a1: number; a2: number }[] }, skip: number) => {
+    const at = (id: number) => c.atoms.find((a) => a.id === id)!;
+    const b = c.bonds.find((x) => x.a1 !== skip && x.a2 !== skip)!;
+    return Math.hypot(at(b.a1).x - at(b.a2).x, at(b.a1).y - at(b.a2).y);
+  };
+
+  it('a structure put right by hand is drawn at the other style\'s bond length (not left at the first one)', async () => {
+    const d0 = made150('match');
+    expect(bondLen(d0.contents, d0.contents.atoms[0].id)).toBeGreaterThan(25);
+    const atoms = d0.contents.atoms.map((a, i) => (i === 0 ? { ...a, x: a.x + 5 } : a));
+    decoded = px;
+    const got = await restyle({ ...d0, contents: { ...d0.contents, atoms } }, 'default', ACS_1996);
+    expect(got).not.toBeNull();
+    // (ACS Document 1996: a fixed bond length of 14.4 pt)
+    expect(bondLen(got!.contents, got!.contents.atoms[0].id)).toBeCloseTo(14.4, 0);
+  });
+
+  it('colors, bond colors and the rest put on by hand stay too', async () => {
+    const d0 = made('default');
+    const atoms = d0.contents.atoms.map((a, i) => (i === 1 ? { ...a, color: '#ff0000' } : a));
+    const bonds = d0.contents.bonds.map((b, i) => (i === 0 ? { ...b, color: '#00aa00' } : b));
+    decoded = px;
+    const got = await restyle({ ...d0, contents: { ...d0.contents, atoms, bonds } }, 'match', ACS_1996);
+    expect(got).not.toBeNull();
+    expect(got!.contents.atoms[1].color).toBe('#ff0000');
+    expect(got!.contents.bonds[0].color).toBe('#00aa00');
+  });
+
   it('what was put right by hand after Make Editable stays when the style is changed', async () => {
     const d0 = made('default');
     // an atom moved, a label added
@@ -123,8 +166,10 @@ describe('Changing the style of a made-editable structure (F070, F460)', () => {
     decoded = px;
     const got = await restyle(d, 'match', ACS_1996);
     expect(got).not.toBeNull();
-    expect(got!.contents.atoms[0].x).toBe(atoms[0].x);
-    expect(got!.contents.atoms[0].y).toBe(atoms[0].y);
+    // the atom moved by hand is still where it was put, to the others: all the structure is drawn at the other style's size
+    const k = bondLen(got!.contents, atoms[0].id) / bondLen(d.contents, atoms[0].id);
+    expect(got!.contents.atoms[0].x - got!.contents.atoms[1].x).toBeCloseTo(k * (atoms[0].x - atoms[1].x), 4);
+    expect(got!.contents.atoms[0].y - got!.contents.atoms[1].y).toBeCloseTo(k * (atoms[0].y - atoms[1].y), 4);
     expect(got!.contents.atoms.length).toBe(atoms.length);
     expect(got!.contents.bonds.length).toBe(d.contents.bonds.length);
     expect(got!.fromPicture!.style).toBe('match');

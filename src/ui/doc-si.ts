@@ -93,9 +93,10 @@ export class DocSiUI {
     if (!link) return;
     const linkedNow = link.path !== cur?.path || link.title !== cur?.title;
     if (linkedNow) f.ed.update({ ...f.t, siLink: link } as DocText, 'Link SI');
+    const linkedAs = f.t;
     if (!cur) this.host.reveal?.();
     // (what the link brings in is one step of Undo with the link, as the Make Compound Numbers window says)
-    await this.update(got.typed === 'true', true, false, linkedNow);
+    await this.update(got.typed === 'true', true, false, linkedNow ? linkedAs : undefined);
   }
 
   /**
@@ -103,7 +104,7 @@ export class DocSiUI {
    * Compound Number fields, after showing which). `quiet`: the document was only shown again, so
    * nothing is said unless something points at what the SI no longer has.
    */
-  async update(typed = false, say = false, quiet = false, withLink = false): Promise<void> {
+  async update(typed = false, say = false, quiet = false, linked?: DocText): Promise<void> {
     const f = this.f;
     const got = await this.view(say, quiet);
     if (!got || this.f !== f || !f) return;
@@ -124,8 +125,8 @@ export class DocSiUI {
       }
     }
     const up = updateSiFields(t, got.view);
-    // (`withLink`: the link was just made, and what it brings in joins that step)
-    if (up.t !== f.t) f.ed.update(up.t, withLink ? null : made ? 'Make compound numbers' : 'Update from SI');
+    // (`linked`: the text the link was just made in; what it brings in joins that step, unless the text was typed in since: that step is the typing's)
+    if (up.t !== f.t) f.ed.update(up.t, linked && f.t === linked ? null : made ? 'Make compound numbers' : 'Update from SI');
     if (!say && !up.missing.length) return;
     const parts = [made ? `${made} compound number${made === 1 ? '' : 's'} made` : '', changed.length ? `renumbered by first mention: ${changed.map((x) => `${x.from}→${x.to}`).join(', ')}` : '', up.changed ? `${up.changed} SI label${up.changed === 1 ? '' : 's'} updated` : '', up.missing.length ? `${up.missing.length} point${up.missing.length === 1 ? 's' : ''} at something no longer in the SI` : ''].filter(Boolean);
     this.host.flash(`Linked to “${short(got.link.title, 40)}”${parts.length ? ': ' + parts.join('; ') : ': up to date'}.`, 8000);

@@ -60,8 +60,25 @@ describe('Line spacing in a table cell (F481)', () => {
   });
 });
 
+describe('Styles while a table cell is typed in (F481)', () => {
+  it('the Style controls are left off, so no style is put on the paragraph that holds the table', async () => {
+    const table = { kind: 'table', table: { cols: [100], rows: [[{ runs: [{ text: 'Cell' }], paras: [{}] }]], head: 0 } };
+    const { dm, f } = await docMode({ runs: [{ text: 'Body ' }], paras: [{}], objects: { 2: table } as never });
+    f.ed.update({ ...f.t, runs: [...f.t.runs, objectRun(2, {})] }, 'Insert table');
+    const sel = panelOf(dm).fields.get('p-style') as HTMLSelectElement;
+    const size = panelOf(dm).fields.get('s-size') as HTMLInputElement;
+    (dm as unknown as { panel: { update(): void } }).panel.update();
+    expect(sel.disabled).toBe(false);
+    (dm as unknown as { startCell(id: number, r: number, c: number): boolean }).startCell(2, 0, 0);
+    (dm as unknown as { panel: { update(): void } }).panel.update();
+    expect(sel.disabled).toBe(true);
+    expect(size.disabled).toBe(true);
+    expect(sel.title).toMatch(/click it first/);
+  });
+});
+
 describe('First page number (F482)', () => {
-  it('clearing the box leaves the numbering alone, and so does 0', async () => {
+  it('clearing the box leaves the numbering alone, and 0 is a number (a cover page left unnumbered)', async () => {
     const { dm, f } = await docMode({ runs: [{ text: 'x' }], paras: [{}] });
     const box = panelOf(dm).fields.get('hf-start') as HTMLInputElement;
     const was = JSON.stringify(f.t);
@@ -72,11 +89,17 @@ describe('First page number (F482)', () => {
     box.dispatchEvent(new Event('focus'));
     box.value = '0';
     box.dispatchEvent(new Event('change'));
-    expect(JSON.stringify(f.t)).toBe(was);
+    expect(JSON.stringify(f.t)).not.toBe(was);
+    expect(box.value).toBe('0');
+    box.dispatchEvent(new Event('focus'));
+    box.value = 'x';
+    box.dispatchEvent(new Event('change'));
+    // not a number: the box shows what the section has
+    expect(box.value).toBe('0');
     box.dispatchEvent(new Event('focus'));
     box.value = '5';
     box.dispatchEvent(new Event('change'));
-    expect(JSON.stringify(f.t)).not.toBe(was);
+    expect(box.value).toBe('5');
   });
 });
 

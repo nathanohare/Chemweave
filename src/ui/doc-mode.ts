@@ -2979,12 +2979,13 @@ export class DocumentMode {
       if (hit !== null && hit !== b?.id && this.file.t.objects[hit]?.kind === 'note') this.startBox(hit, p);
       // a box typed in stays only when the pointer is in it: on the body's text, the menu is about the body (as a click there leaves the box)
       const box = this.file.box;
-      if (box && !box.hf) {
-        const inside = box.cell ? !!cell && cell.id === box.id && cell.r === box.cell.r && cell.c === box.cell.c : this.objectAt(e.clientX, e.clientY) === box.id;
+      if (box) {
+        const inside = box.hf ? !!this.view.hfAt(e.clientX, e.clientY)
+          : box.cell ? !!cell && cell.id === box.id && cell.r === box.cell.r && cell.c === box.cell.c : this.objectAt(e.clientX, e.clientY) === box.id;
         if (!inside) this.stopBox();
       }
       // (the offset in the text the pointer is on: the box's, when it is in one)
-      const into = this.file.box && !this.file.box.hf ? this.file.box.ed.layout() : this.file.layout().text;
+      const into = this.file.box ? this.file.box.ed.layout() : this.file.layout().text;
       const o = offsetAt(into, p.x, p.y);
       if (this.contextMenu(o, e.clientX, e.clientY)) e.preventDefault();
     });

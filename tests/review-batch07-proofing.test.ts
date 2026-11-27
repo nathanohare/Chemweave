@@ -61,6 +61,22 @@ describe('Change after the text moved on (F079)', () => {
     expect(f.ed.text).toBe('Well, Say teh word');
   });
 
+  it('does not change a one-character slip at the old place when the same character lies there after an edit', () => {
+    const f = new DocFile({ ...newDocument(), runs: [{ text: 'a b , c' }], paras: [{}] } as DocText);
+    const { speller: sp } = speller();
+    const host = { file: () => f, speller: () => sp, checks: () => ({ spell: [] as [number, number][], issues: [] }), addWord() {}, ignoreWord() {}, show() {}, flash() {}, focus() {} } as DocProofingHost;
+    const ui = new DocProofingUI(host);
+    ui.spelling();
+    // the pane stops at the space before the comma (a single space: offset 3)
+    expect(document.querySelector('.proof-pane')?.textContent).toMatch(/Space before/);
+    // the first two characters are deleted: the text is "b , c", and offset 3 is now the space after the comma
+    f.ed.replace(0, 2, [], undefined, 'type');
+    expect(f.ed.text).toBe('b , c');
+    [...document.querySelectorAll<HTMLButtonElement>('.proof-pane button')].find((b) => b.textContent === 'Change')!.click();
+    // (the space after the comma is not taken out in its place)
+    expect(f.ed.text).not.toBe('b ,c');
+  });
+
   it('changes the word when it is still there', () => {
     const f = new DocFile({ ...newDocument(), runs: [{ text: 'Say teh word' }], paras: [{}] } as DocText);
     const { speller: sp } = speller();

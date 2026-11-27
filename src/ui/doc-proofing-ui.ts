@@ -101,7 +101,7 @@ export class DocProofingUI {
   /** The grammar slips of the text last checked (they depend only on the text: kept while it is the same). */
   private grammarOf: { t: unknown; list: ProofProblem[] } | null = null;
   /** The document and the words the pane is showing a problem in: to leave it alone when the text has moved on. */
-  private shownIn: { file: DocFile; text: string } | null = null;
+  private shownIn: { file: DocFile; t: unknown; text: string } | null = null;
 
   constructor(private host: DocProofingHost) {}
 
@@ -151,14 +151,15 @@ export class DocProofingUI {
   }
 
   /**
-   * Whether the problem shown is still where it was: the same document, with the same words at
+   * Whether the problem shown is still where it was: the same document and text, with the same words at
    * its place. When it isn't (the text was typed in, undone, or another document came up since),
    * the pane looks again from where it was, and nothing is changed at the old place.
    */
   private stillThere(p: ProofProblem): boolean {
     const f = this.host.file();
     const here = this.shownIn;
-    if (f && here && here.file === f && rt.plainText(f.t.runs).slice(p.start, p.end) === here.text) return true;
+    // (the text is replaced by every edit, so the same text is the same offsets: the same words by chance, one character of a slip, do not do)
+    if (f && here && here.file === f && here.t === f.t && rt.plainText(f.t.runs).slice(p.start, p.end) === here.text) return true;
     this.host.flash('The text has changed since it was found: looking again.');
     this.next();
     return false;
@@ -194,7 +195,7 @@ export class DocProofingUI {
     }
     this.current = p ?? null;
     const f = this.host.file();
-    this.shownIn = p && f ? { file: f, text: rt.plainText(f.t.runs).slice(p.start, p.end) } : null;
+    this.shownIn = p && f ? { file: f, t: f.t, text: rt.plainText(f.t.runs).slice(p.start, p.end) } : null;
     this.render();
     if (p) this.host.show(p.start, p.end);
   }

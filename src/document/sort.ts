@@ -138,5 +138,5 @@ export function sortTableRows(tb: TableData, o: SortOptions): TableData {
   const texts = body.map((row) => row.map((c) => sortText(c.runs)).join('\u0001'));
   const order = sortOrder(texts, { ...o, sep: '\u0001' });
   // (each row keeps its height)
-  return { ...tb, rows: [...tb.rows.slice(0, head), ...order.map((i) => body[i])], ...rowHeights(tb, (h) => h.splice(head, h.length - head, ...order.map((i) => h[head + i]))) };
+  return { ...tb, ...(o.header === false && tb.head ? { head: 0 } : {}), rows: [...tb.rows.slice(0, head), ...order.map((i) => body[i])], ...rowHeights(tb, (h) => h.splice(head, h.length - head, ...order.map((i) => h[head + i]))) };
 }

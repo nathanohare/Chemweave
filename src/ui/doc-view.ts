@@ -219,7 +219,6 @@ export class DocView {
     return this.file?.view.kind ?? 'print';
   }
 
-  /** One long sheet with no pages (Web Layout, Outline, Draft). */
   /**
    * In the views without pages: the lines (and the document's y range) that are on the screen,
    * with some room above and below (a tall line or a figure's edge).
@@ -237,6 +236,7 @@ export class DocView {
     return first < end ? { first, end, top, bottom } : { first: p.first, end: p.first, top, bottom };
   }
 
+  /** One long sheet with no pages (Web Layout, Outline, Draft). */
   private get endless(): boolean {
     return continuous(this.kind);
   }

@@ -157,6 +157,22 @@ describe('Right-click on the body while typing in a box (F071)', () => {
     p.view.scroller.dispatchEvent(new MouseEvent('contextmenu', { clientX: 5, clientY: 5, bubbles: true, cancelable: true }));
     expect(f.box).toBeNull();
   });
+
+  it('in a header being typed in: leaves it for the body text, stays for the header', async () => {
+    const { dm, f } = await docMode({ runs: [{ text: 'Body text' }], paras: [{}] });
+    const p = priv(dm);
+    const hfAt = vi.spyOn(p.view as unknown as { hfAt(x: number, y: number): unknown }, 'hfAt');
+    p.startHf(0 as never, 'header' as never);
+    expect(f.box?.hf).toBeTruthy();
+    // the pointer on the header: the menu is about it, the box stays
+    hfAt.mockReturnValue({ page: 0, kind: 'header' });
+    p.view.scroller.dispatchEvent(new MouseEvent('contextmenu', { clientX: 5, clientY: 5, bubbles: true, cancelable: true }));
+    expect(f.box?.hf).toBeTruthy();
+    // the pointer on the body: the header is left, and the menu is not made of the header's text
+    hfAt.mockReturnValue(null);
+    p.view.scroller.dispatchEvent(new MouseEvent('contextmenu', { clientX: 5, clientY: 5, bubbles: true, cancelable: true }));
+    expect(f.box).toBeNull();
+  });
 });
 
 describe('Read Mode and tabs (F462)', () => {
@@ -224,6 +240,39 @@ describe('A link to a heading (F467)', () => {
     f.ed.undo();
     expect(f.t.runs.some((r) => r.link)).toBe(false);
     expect(f.t.paras.some((q) => q.marks?.length)).toBe(false);
+  });
+});
+
+describe('A link to a heading from a table cell (F467)', () => {
+  it('the hidden bookmark and the link are one step of Undo while typing in the cell', async () => {
+    const { dm, f } = await docMode({ runs: [{ text: 'Intro\n' }, objectRun(2, {})], paras: [{ style: 'Heading1' }, {}], objects: { 2: table } as never });
+    const p = priv(dm);
+    p.startCell(2 as never, 0 as never, 0 as never);
+    f.textEd.select(0, 5);
+    link = { link: '#heading:0', text: 'Entry' };
+    await p.editLink();
+    const cellRuns = () => (f.t.objects[2] as { table: { rows: { runs: { link?: string }[] }[][] } }).table.rows[0][0].runs;
+    expect(cellRuns().some((r) => r.link)).toBe(true);
+    expect(f.t.paras.some((q) => q.marks?.length)).toBe(true);
+    f.ed.undo();
+    expect(cellRuns().some((r) => r.link)).toBe(false);
+    expect(f.t.paras.some((q) => q.marks?.length)).toBe(false);
+  });
+});
+
+describe('A letter of a compound number typed in a table cell (F488)', () => {
+  it('the link, the number and its letter are one step of Undo while typing in the cell', async () => {
+    const { dm, f } = await docMode({ runs: [{ text: 'Made ' }, objectRun(3, {}), { text: ' and ' }, objectRun(2, {})], paras: [{}], objects: { 2: table, 3: { kind: 'seq', name: 'Compound' } } as never });
+    const p = priv(dm);
+    p.startCell(2 as never, 0 as never, 0 as never);
+    f.textEd.setCaret(f.textEd.text.length);
+    const cell = () => (f.t.objects[2] as { table: { rows: { runs: { text: string; obj?: number }[] }[][] } }).table.rows[0][0].runs;
+    const before = JSON.stringify(f.t);
+    (priv(dm).siUi as unknown as { mention(seq: number, letters: string, key: string, link: boolean): void }).mention(3, 'd', 'k1', true);
+    expect(cell().length).toBeGreaterThan(1);
+    expect((f.t.objects[3] as { si?: Record<string, string> }).si).toEqual({ d: 'k1' });
+    f.ed.undo();
+    expect(JSON.stringify(f.t)).toBe(before);
   });
 });
 

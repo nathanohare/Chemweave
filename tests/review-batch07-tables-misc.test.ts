@@ -89,10 +89,14 @@ describe('Table style gallery (F490)', () => {
 describe('Sort Table with the heading box unchecked (F484)', () => {
   const firsts = (t: TableData) => t.rows.map((r) => rt.plainText(r[0].runs));
   it('sorts the heading row with the others when it is said not to be a heading', () => {
-    expect(firsts(sortTableRows(grid(), { keys: [{ field: 0, type: 'text' }], header: false }))).toEqual(['a', 'b', 'Entry']);
+    const sorted = sortTableRows(grid(), { keys: [{ field: 0, type: 'text' }], header: false });
+    expect(firsts(sorted)).toEqual(['a', 'b', 'Entry']);
+    // and the table has no heading row left (the one at the top, 'a', is not styled or repeated as one)
+    expect(sorted.head ?? 0).toBe(0);
   });
   it('keeps the heading row at the top when it is, or when nothing is said', () => {
     expect(firsts(sortTableRows(grid(), { keys: [{ field: 0, type: 'text' }], header: true }))).toEqual(['Entry', 'a', 'b']);
+    expect(sortTableRows(grid(), { keys: [{ field: 0, type: 'text' }], header: true }).head).toBe(1);
     expect(firsts(sortTableRows(grid(), { keys: [{ field: 0, type: 'text' }] }))).toEqual(['Entry', 'a', 'b']);
   });
 });
@@ -134,6 +138,21 @@ describe('Linking an SI (F487)', () => {
     f.ed.undo();
     expect(f.t.siLink).toBeUndefined();
     expect((f.t.objects[7] as { text: string }).text).toBe('old');
+  });
+});
+
+describe('What a link brings in, when the text was typed in meanwhile (F487)', () => {
+  it('is a step of its own, not part of the typing', async () => {
+    const { f, ui } = siSetup({ runs: [{ text: 'See ' }, objectRun(7, {})], paras: [{}], siLink: { path: '/p', title: 'P' }, objects: { 7: { kind: 'si', what: 'label', key: 't1', text: 'old' } } } as never);
+    const linkedAs = f.t;
+    // typed in after the link was made (while the SI was being read)
+    f.ed.replace(0, 0, [{ text: 'Well, ' }], undefined, 'type');
+    await ui.update(false, false, false, linkedAs);
+    expect((f.t.objects[7] as { text: string }).text).toBe('Table S1');
+    f.ed.undo();
+    // only what the link brought in is undone: the typing stays
+    expect((f.t.objects[7] as { text: string }).text).toBe('old');
+    expect(f.ed.text).toBe('Well, See \uFFFC');
   });
 });
 
