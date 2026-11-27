@@ -31,6 +31,20 @@ export const QM_METHODS: Record<QmProgram, string[]> = {
   orca: ['B3LYP D3BJ def2-SVP', 'r2SCAN-3c', 'B97-3c', 'M062X def2-TZVP', 'wB97X-D3 def2-TZVP', 'PBE0 D3BJ def2-TZVP'],
 };
 
+/**
+ * The method to write for a program: the one typed, unless it is spelled for the other program
+ * (ORCA's "B3LYP D3BJ def2-SVP" in a Gaussian input, Gaussian's "B3LYP/def2SVP" in an ORCA one),
+ * when the program's usual one stands in; empty means the usual one.
+ */
+export function methodFor(program: QmProgram, typed: string): string {
+  const m = typed.trim();
+  if (!m) return QM_METHODS[program][0];
+  if (program === 'orca') return m.includes('/') ? QM_METHODS.orca[0] : m;
+  // Gaussian writes method/basis; ORCA's spellings (the listed ones, D3BJ, def2-…, the -3c methods) have no slash
+  const orcaStyle = QM_METHODS.orca.some((x) => x.toLowerCase() === m.toLowerCase()) || (!m.includes('/') && /\bD3BJ\b|\bdef2-|-3c\b/i.test(m));
+  return orcaStyle ? QM_METHODS.gaussian[0] : m;
+}
+
 /** Total charge and the lowest multiplicity (2S+1) for a model's atoms: 1 for an even number of electrons, 2 for an odd one. */
 export function chargeAndMultiplicity(m: Model3d): { charge: number; multiplicity: number } {
   const charge = m.atoms.reduce((s, a) => s + a.charge, 0);

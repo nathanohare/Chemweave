@@ -145,6 +145,8 @@ export function showLabCalculator(start: CalcStart = {}): Promise<void> {
     }
     const fromEquiv = () => {
       const lim = read(limiting), e = read(equiv);
+      // no equivalents yet: the amount already typed gives them
+      if (lim !== undefined && e === undefined) { solveAmounts(); return; }
       if (lim === undefined || e === undefined) return;
       given = 'mmol';
       write(mmol, lim * e);
