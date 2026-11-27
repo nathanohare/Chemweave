@@ -42,19 +42,35 @@ export function parseDelimited(text: string, sep: ',' | '\t' | ';' | 'auto' = 'a
   return rows;
 }
 
-/** The separator a table of text most likely uses: tab, then comma or semicolon (whichever is more common outside quotes). */
+/**
+ * The separator a table of text most likely uses: tab, then semicolon or comma. Semicolon wins when
+ * every line has the same number of them (outside quotes), as in a European file whose numbers use
+ * decimal commas (1,5;2,5), where commas can outnumber the semicolons; otherwise the more common one.
+ */
 export function detectSeparator(text: string): ',' | '\t' | ';' {
   const head = text.slice(0, 20000);
   let tabs = 0, commas = 0, semis = 0, quoted = false;
+  // Semicolons on each line, outside quotes; a line cut off at the end of the head is left out.
+  const perLine: number[] = [];
+  let lineSemis = 0, lineHasText = false;
   for (const ch of head) {
-    if (ch === '"') quoted = !quoted;
-    else if (!quoted) {
-      if (ch === '\t') tabs++;
-      else if (ch === ',') commas++;
-      else if (ch === ';') semis++;
+    if (ch === '"') { quoted = !quoted; lineHasText = true; }
+    else if (!quoted && (ch === '\n' || ch === '\r')) {
+      if (lineHasText) perLine.push(lineSemis);
+      lineSemis = 0;
+      lineHasText = false;
+    } else {
+      lineHasText = true;
+      if (!quoted) {
+        if (ch === '\t') tabs++;
+        else if (ch === ',') commas++;
+        else if (ch === ';') { semis++; lineSemis++; }
+      }
     }
   }
+  if (lineHasText && head.length === text.length) perLine.push(lineSemis);
   if (tabs) return '\t';
+  if (perLine.length >= 2 && perLine[0] > 0 && perLine.every((n) => n === perLine[0])) return ';';
   return semis > commas ? ';' : ',';
 }
 

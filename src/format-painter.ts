@@ -220,6 +220,11 @@ export function cellPaintTarget(block: { rows: number; cols: number }, target: R
 export function paintCells(sheet: Sheet, block: CellBlock, target: Range): Range {
   const to = cellPaintTarget(block, target);
   const rows = to.r2 - to.r1 + 1, cols = to.c2 - to.c1 + 1;
+  // the block as it is (whole columns: only their rows in use, with the columns' own formatting)
+  if (rows === block.rows && cols === block.cols) {
+    sheet.paste({ row: to.r1, col: to.c1 }, { ...block, origin: null }, 'formats');
+    return to;
+  }
   const cells = Array.from({ length: rows }, (_, i) => Array.from({ length: cols }, (_, j) => block.cells[i % block.rows]?.[j % block.cols]));
   sheet.paste({ row: to.r1, col: to.c1 }, { rows, cols, cells, origin: null }, 'formats');
   return to;

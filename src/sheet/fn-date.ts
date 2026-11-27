@@ -109,10 +109,13 @@ const workday = (intl: boolean): FnDef => ({
     let d = start;
     // whole weeks at once while no holiday is near
     const working = 7 - weekend.filter(Boolean).length;
+    const holidays = [...hol];
     while (left) {
-      if (Math.abs(left) > working + 1 && ![...hol].some((h) => (step > 0 ? h > d && h <= d + 7 : h < d && h >= d - 7))) {
+      if (Math.abs(left) > working + 1 && !holidays.some((h) => (step > 0 ? h > d && h <= d + 7 : h < d && h >= d - 7))) {
         d += 7 * step;
         left -= working * step;
+        // a huge number of days runs off the calendar at once instead of week by week for ever
+        if (d < 0 || d > LAST_DAY) return ERR.num('The day falls outside the dates Excel can hold');
         continue;
       }
       d += step;

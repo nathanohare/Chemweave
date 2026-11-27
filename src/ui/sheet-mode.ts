@@ -1501,7 +1501,9 @@ export class SheetMode {
     if (rows && cond) {
       let shown = 0;
       for (let r = rows.r1; r <= rows.r2; r++) if (!s.hiddenRows.has(r)) shown++;
-      this.host.flash(`${shown} of ${rows.r2 - rows.r1 + 1} rows show.`);
+      const failed = cond.kind === 'substructure' ? this.chem.substructureError(cond.query) : undefined;
+      if (failed) this.host.flash(`Some structures couldn't be searched (${failed}), so their rows still show. ${shown} of ${rows.r2 - rows.r1 + 1} rows show.`, 8000);
+      else this.host.flash(`${shown} of ${rows.r2 - rows.r1 + 1} rows show.`);
     }
   }
 

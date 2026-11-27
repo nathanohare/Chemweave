@@ -145,6 +145,10 @@ function readRef(src: string, i: number): { ref: RefToken; end: number } | null 
     if (m) { sheet = m[1]; j += m[0].length; }
   }
   const s = src.slice(j);
+  // Sheet2!#REF!: a reference to cells that are gone, as refText writes it (and Excel saves it)
+  if (sheet !== undefined && s.slice(0, 5).toUpperCase() === '#REF!') {
+    return { ref: { sheet, kind: 'cell', a: { row: 0, col: 0, absRow: false, absCol: false }, broken: true }, end: j + 5 };
+  }
   // the character after a reference can't continue a name or open a function call
   const ends = (k: number) => !/^[A-Za-z0-9_.(!]/.test(src.slice(j + k));
   let m = /^(\$?[A-Za-z]{1,3}\$?\d{1,7}):(\$?[A-Za-z]{1,3}\$?\d{1,7})/.exec(s);

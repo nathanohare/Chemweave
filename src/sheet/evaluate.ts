@@ -28,6 +28,8 @@ export interface EvalHost {
   block(sheet: string | undefined, r: Range): Value[][];
   /** False when a formula names a sheet that isn't there. */
   hasSheet(name: string): boolean;
+  /** Do two sheet names (undefined: the formula's own sheet) name the same sheet? */
+  sameSheet?(a: string | undefined, b: string | undefined): boolean;
   /**
    * The properties of the molecule in a cell (a drawn structure, or SMILES typed in it), or of
    * SMILES given as text. Errors: #BUSY! while the chemistry engine is working them out,
@@ -304,7 +306,7 @@ const FUNCTIONS: Record<string, FnDef> = {
   INTERCEPT: { min: 2, max: 2, fn: lineStat((p) => p.intercept) },
   RSQ: { min: 2, max: 2, fn: lineStat((p) => (p.syy === 0 ? ERR.div0() : (p.sxy * p.sxy) / (p.sxx * p.syy))) },
   CORREL: { min: 2, max: 2, fn: lineStat((p) => (p.syy === 0 ? ERR.div0() : p.sxy / Math.sqrt(p.sxx * p.syy))) },
-  STEYX: { min: 2, max: 2, fn: lineStat((p) => (p.xs.length < 3 ? ERR.div0() : Math.sqrt((p.syy - (p.sxy * p.sxy) / p.sxx) / (p.xs.length - 2)))) },
+  STEYX: { min: 2, max: 2, fn: lineStat((p) => (p.xs.length < 3 ? ERR.div0() : Math.sqrt(Math.max(0, p.syy - (p.sxy * p.sxy) / p.sxx) / (p.xs.length - 2)))) },
   // FORECAST(x, known y's, known x's): the line's value at x
   FORECAST: {
     min: 3, max: 3,
@@ -385,7 +387,8 @@ const FUNCTIONS: Record<string, FnDef> = {
       if (isError(x)) return x;
       if (isError(b)) return b;
       if (x <= 0 || b <= 0 || b === 1) return ERR.num();
-      return Math.log(x) / Math.log(b);
+      // base 10 exactly, as LOG10 (Math.log(1000) / Math.log(10) is 2.9999999999999996)
+      return b === 10 ? Math.log10(x) : Math.log(x) / Math.log(b);
     },
   },
   POWER: { min: 2, max: 2, fn: (args) => binary('^', scalar(args[0]), scalar(args[1])) },
@@ -742,7 +745,7 @@ function refOf(n: Node, host: EvalHost): RefToken | CellError {
     const v = host.vars?.get(n.v.toUpperCase());
     if (isBlock(v as Arg) && (v as Block).at) {
       const b = v as Block;
-      return blockRef(undefined, b.at!.r, b.at!.c, b.at!.r + b.h - 1, b.at!.c + b.w - 1);
+      return blockRef(b.sheet, b.at!.r, b.at!.c, b.at!.r + b.h - 1, b.at!.c + b.w - 1);
     }
   }
   return ERR.value('A cell reference is needed here');
@@ -810,7 +813,22 @@ function indirectRef(argNodes: Node[], host: EvalHost): RefToken | CellError {
 }
 
 /** The functions that add up, average, rank or spread the numbers they are given. */
-const BY_REFERENCE = new Set(['SUM', 'PRODUCT', 'NPV', 'AVERAGE', 'MIN', 'MAX', 'MEDIAN', 'SKEW', 'KURT', 'MODE', 'STDEV', 'STDEVP', 'VAR', 'VARP', 'STDEV.S', 'STDEV.P', 'VAR.S', 'VAR.P']);
+const BY_REFERENCE = new Set(['SUM', 'PRODUCT', 'NPV', 'AVERAGE', 'MIN', 'MAX', 'MEDIAN', 'SKEW', 'KURT', 'MODE', 'STDEV', 'STDEVP', 'VAR', 'VARP', 'STDEV.S', 'STDEV.P', 'VAR.S', 'VAR.P', 'COUNT']);
+
+/** The functions whose first argument is a range even when it is one cell: COUNTIF(A1,"Pd"). */
+const RANGE_FIRST = new Set(['COUNTIF', 'SUMIF', 'AVERAGEIF']);
+
+/**
+ * SUMIF and AVERAGEIF read their sum range from its top-left cell, as large as the range tested,
+ * as Excel does: SUMIF(A1:A10,">0",B1) adds B1:B10. Null when either reference can't be sized.
+ */
+export function sumRangeSized(range: RefToken, sum: RefToken): RefToken | null {
+  if (range.broken || sum.broken || range.spill || sum.spill) return null;
+  const R = refRange(range), T = refRange(sum);
+  if (T.r2 - T.r1 === R.r2 - R.r1 && T.c2 - T.c1 === R.c2 - R.c1) return null;
+  const sized = blockRef(sum.sheet, T.r1, T.c1, Math.min(MAX_ROWS - 1, T.r1 + R.r2 - R.r1), Math.min(MAX_COLS - 1, T.c1 + R.c2 - R.c1));
+  return isError(sized) ? null : sized;
+}
 
 function call(name: string, argNodes: Node[], host: EvalHost): Arg {
   // a LAMBDA named by LET
@@ -844,10 +862,15 @@ function call(name: string, argNodes: Node[], host: EvalHost): Arg {
       }
     }
   }
-  const args = argNodes.map((a) => {
+  if ((name === 'SUMIF' || name === 'AVERAGEIF') && argNodes.length === 3) {
+    const [r, c, t] = argNodes;
+    const sized = r.t === 'ref' && t.t === 'ref' ? sumRangeSized(r.v, t.v) : null;
+    if (sized) argNodes = [r, c, { t: 'ref', v: sized }];
+  }
+  const args = argNodes.map((a, i) => {
     const v = evalNode(a, host);
     // text in a single cell that is named is left out of a sum, as in a range (only typed text is read as a number)
-    if (BY_REFERENCE.has(name) && a.t === 'ref' && a.v.kind === 'cell' && !isBlock(v) && !isError(v)) return { block: [[v]], h: 1, w: 1 } as Block;
+    if ((BY_REFERENCE.has(name) || (i === 0 && RANGE_FIRST.has(name))) && a.t === 'ref' && a.v.kind === 'cell' && !isBlock(v) && !isError(v)) return { block: [[v]], h: 1, w: 1 } as Block;
     return v;
   });
   const k = Math.min(LIFTED[name] ?? 0, args.length);
@@ -965,16 +988,35 @@ function duplicate(argNodes: Node[], host: EvalHost): Value {
   const me = mol.inchikey || mol.smiles;
   const range = refRange(b.v);
   const ids = host.identities(b.v.sheet, range);
-  const sameSheet = (a.v.sheet ?? '').toLowerCase() === (b.v.sheet ?? '').toLowerCase();
+  // the formula's own sheet named or not (DUPLICATE(B2,Sheet1!B:B) on Sheet1) is the same sheet
+  const sameSheet = host.sameSheet ? host.sameSheet(a.v.sheet, b.v.sheet) : (a.v.sheet ?? '').toLowerCase() === (b.v.sheet ?? '').toLowerCase();
+  const index = identityIndex(ids);
+  for (const [i, j] of index.first.get(me) ?? []) {
+    const row = range.r1 + i, col = range.c1 + j;
+    if (sameSheet && row === a.v.a.row && col === a.v.a.col) continue;
+    return (b.v.sheet !== undefined && !sameSheet ? `${b.v.sheet}!` : '') + cellName(row, col);
+  }
+  return index.busy ? ERR.busy() : '';
+}
+
+/** Where each molecule of an identities block first appears (its first two cells), worked out once per block. */
+const identityIndexes = new WeakMap<object, { first: Map<string, [number, number][]>; busy: boolean }>();
+function identityIndex(ids: (string | CellError | null)[][]): { first: Map<string, [number, number][]>; busy: boolean } {
+  let got = identityIndexes.get(ids);
+  if (got) return got;
+  const first = new Map<string, [number, number][]>();
   let busy = false;
   for (let i = 0; i < ids.length; i++) {
     for (let j = 0; j < ids[i].length; j++) {
-      const row = range.r1 + i, col = range.c1 + j;
-      if (sameSheet && row === a.v.a.row && col === a.v.a.col) continue;
       const id = ids[i][j];
-      if (id === me) return (b.v.sheet !== undefined && !sameSheet ? `${b.v.sheet}!` : '') + cellName(row, col);
-      if (isError(id) && id.code === '#BUSY!') busy = true;
+      if (typeof id === 'string') {
+        const at = first.get(id);
+        if (!at) first.set(id, [[i, j]]);
+        else if (at.length < 2) at.push([i, j]);
+      } else if (isError(id) && id.code === '#BUSY!') busy = true;
     }
   }
-  return busy ? ERR.busy() : '';
+  got = { first, busy };
+  identityIndexes.set(ids, got);
+  return got;
 }

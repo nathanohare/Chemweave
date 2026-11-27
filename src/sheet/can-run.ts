@@ -38,6 +38,34 @@ export function tableHere(s: Sheet, sel: SheetSelection): boolean {
   return false;
 }
 
+/**
+ * Does text read as SMILES: only atoms SMILES can write without brackets (B C N O P S F Cl Br I,
+ * and aromatic b c n o p s), atoms in brackets, bonds, branches and ring numbers, with the
+ * branches and rings closed (Weininger, J. Chem. Inf. Comput. Sci. 1988, 28, 31; OpenSMILES)?
+ * So CCO and c1ccccc1 do, and names such as Aspirin, Ethanol, THF or DCM don't.
+ */
+export function readsAsSmiles(text: string): boolean {
+  let depth = 0, atoms = 0;
+  const rings = new Set<string>();
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (ch === '[') {
+      const end = text.indexOf(']', i + 1);
+      // [13CH4], [Na+], [nH]: an element (maybe after an isotope number) inside
+      if (end < 0 || !/^\d*(?:[A-Z][a-z]?|[bcnops]|se|as)/.test(text.slice(i + 1, end))) return false;
+      atoms++;
+      i = end;
+    } else if ((ch === 'C' && text[i + 1] === 'l') || (ch === 'B' && text[i + 1] === 'r')) { atoms++; i++; }
+    else if ('BCNOPSFIbcnops'.includes(ch)) atoms++;
+    else if (ch === '(') depth++;
+    else if (ch === ')') { if (--depth < 0) return false; }
+    else if (ch >= '0' && ch <= '9') { if (!rings.delete(ch)) rings.add(ch); }
+    else if (ch === '%' && /^\d\d$/.test(text.slice(i + 1, i + 3))) { const n = text.slice(i, i + 3); if (!rings.delete(n)) rings.add(n); i += 2; }
+    else if (!'-=#$:/\\.'.includes(ch)) return false;
+  }
+  return atoms > 0 && depth === 0 && rings.size === 0;
+}
+
 /** Columns holding structures or SMILES in a table (the first 200 rows of each column are looked at). */
 export function structureColumns(s: Sheet, R: Range): { col: number; label: string }[] {
   const out: { col: number; label: string }[] = [];
@@ -47,7 +75,7 @@ export function structureColumns(s: Sheet, R: Range): { col: number; label: stri
       if (s.cell(r, c)?.structure) structures++;
       else {
         const v = s.values.get(keyOf(r, c));
-        if (typeof v === 'string' && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(v) && /[a-z]|[A-Z].*[A-Z0-9(=]/.test(v) && v.length > 1) smiles++;
+        if (typeof v === 'string' && v.length > 1 && readsAsSmiles(v)) smiles++;
       }
     }
     if (structures || smiles > 1) {
