@@ -92,6 +92,37 @@ describe('F920: the Live Preview of one section numbers its heading as Compile d
     expect(lines(doc)[at]).toBe('1.1. Inner');
     expect(doc.paras[at]?.style ?? '').toMatch(/2$/);
   });
+
+  it('counts the headings typed in its section’s text before it, as the whole SI does', async () => {
+    const f = folder();
+    const proj = json(f, 'project.json');
+    put(f, 'project.json', { ...proj, heading_format: { levels: ['1'], chain: true, end: '.', text: true }, section_tree: [{ id: 's-wide0001', children: [{ id: 's-inner001' }] }, ...(proj.section_tree as Json[])] });
+    put(f, 'sections/s-wide0001_wide/section.json', { id: 's-wide0001', type: 'text', name: 'Wide' });
+    f.files.set('sections/s-wide0001_wide/content.txt', new TextEncoder().encode('Wide text.\n# Typed\nMore text.'));
+    put(f, 'sections/s-inner001_inner/section.json', { id: 's-inner001', type: 'text', name: 'Inner' });
+    f.files.set('sections/s-inner001_inner/content.txt', new TextEncoder().encode('Inner text.'));
+    const p = await SiProject.open(f);
+    const whole = lines((await compileSi(p, host())).doc);
+    const typed = whole.find((l) => l.endsWith('Typed'))!;
+    const inner = whole.find((l) => l.endsWith('Inner'))!;
+    // (the typed heading is the first under Wide, so Inner is the second)
+    expect(typed).toMatch(/^\d+\.1\. Typed$/);
+    expect(inner).toMatch(/^\d+\.2\. Inner$/);
+    const preview = lines((await compileSi(p, host(), { kind: 'section', id: 's-inner001' })).doc);
+    expect(preview).toContain(inner);
+  });
+
+  it('a Spectra section is previewed with its number in the SI', async () => {
+    const f = folder();
+    put(f, 'project.json', { ...json(f, 'project.json'), journal_style: 'Wiley' });
+    // (a spectrum file, so the Spectra section, the third top section, prints)
+    f.files.set(`${C2A}/spectra/2a_1H.pdf`, new Uint8Array([37, 80, 68, 70]));
+    const p = await SiProject.open(f);
+    const whole = lines((await compileSi(p, host())).doc).find((l) => l.endsWith('Spectra'));
+    expect(whole).toBe('3. Spectra');
+    const preview = lines((await compileSi(p, host(), { kind: 'section', id: 's-d79a6040' })).doc);
+    expect(preview).toContain(whole);
+  });
 });
 
 describe('F213 and F919: counting the spectra pages before a compound’s', () => {

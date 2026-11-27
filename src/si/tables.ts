@@ -280,6 +280,7 @@ export function pasteCells(t: Json, r: number, c: number, cells: Json[][]): void
   squareUp(t);
   const rows = rowsOf(t);
   const width = Math.max(0, ...cells.map((x) => x.length));
+  if (!cells.length || !width) return;   // (nothing pasted: no merged cell is split)
   while (colCount(t) < c + width) insertColumn(t, colCount(t));
   while (rows.length < r + cells.length) insertRow(t, rows.length);
   // (merged cells the paste lands on are split first, so nothing is left half covered)

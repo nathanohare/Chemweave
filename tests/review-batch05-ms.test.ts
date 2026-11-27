@@ -10,7 +10,7 @@ import type { Source } from '../src/si/ms-read';
 import { quantities } from '../src/si/ms-parse';
 import { readMzxml, readReportBytes, reportListing } from '../src/si/ms-reports';
 import { readReportFile } from '../src/si/report-files';
-import { hrmsSpecies } from '../src/si/checks';
+import { hrmsSpecies, saltIonLabel } from '../src/si/checks';
 import * as chem from '../src/si/chem';
 import { impurityMatch, defaultImpurityTable } from '../src/si/nmr';
 import { MemoryFolder } from '../src/si/folder';
@@ -138,11 +138,21 @@ describe('F917: the pieces of a structure too large for SMILES', () => {
     const second = sp.choices![2][0];
     expect(hrmsSpecies(facts, { species: second })!.info).toBe(b);
   });
+  it('a salt’s ion label names the counter-ion when M is a piece without SMILES', () => {
+    const anion = chem.infoFromCounts(chem.parseMFormulaAndCharge('Br')[0], -1);
+    const cation = chem.infoFromCounts(chem.parseMFormulaAndCharge('C40H30N')[0], 1);
+    const whole = chem.infoFromCounts(chem.parseMFormulaAndCharge('C40H30BrN')[0], 0);
+    const facts = { info: whole, generic: [], pieces: [{ smiles: '[Br-]', info: anion, counterIon: true, copies: 1, drawn: 0 }, { smiles: '', info: cation, counterIon: false, copies: 1, drawn: 1 }] } as unknown as chem.MolFacts;
+    const key = hrmsSpecies(facts, {})!.choices!.find((c) => c[2] === cation)![0];
+    expect(saltIonLabel(facts, { species: key }, '[M]+')).toBe('[M-Br]+');
+    // (the whole structure as M: no salt label)
+    expect(saltIonLabel(facts, { species: hrmsSpecies(facts, {})!.choices![0][0] }, '[M]+')).toBeNull();
+  });
 });
 
 describe('F934: residual CHCl₃ in CD₃OD', () => {
-  // (H. E. Gottlieb, V. Kotlyar, A. Nudelman, J. Org. Chem. 1997, 62, 7512, Table 1, and
-  // G. R. Fulmer et al., Organometallics 2010, 29, 2176, Table 1: chloroform CH in CD3OD, δ 7.90)
+  // (G. R. Fulmer et al., Organometallics 2010, 29, 2176, Table 1, row "chloroform CH", column CD3OD:
+  // δ 7.90; checked against the published table)
   it('is at 7.90', () => {
     expect(impurityMatch('CD3OD', '1H', 7.90, true, defaultImpurityTable())).toMatch(/chloroform/);
   });

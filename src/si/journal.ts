@@ -298,7 +298,7 @@ export class JournalFolder implements SiFolder {
     const path = norm(rel);
     if (UNRECORDED.test(path)) { await this.inner.remove(rel); return; }
     while (this.busy) await this.busy;
-    if (await this.inner.exists(path)) await this.moved(path, this.holding(path));
+    await this.tracked(async () => { if (await this.inner.exists(path)) await this.moved(path, this.holding(path)); });
   }
 
   private async wrote(rel: string, bytes: Uint8Array, write: () => Promise<void>): Promise<void> {
@@ -306,7 +306,14 @@ export class JournalFolder implements SiFolder {
     if (UNRECORDED.test(path)) { await write(); return; }
     while (this.busy) await this.busy;
     // (Undo and Redo wait for it, from reading what the file held to writing it down)
-    const job = this.wroteNow(path, bytes, write);
+    await this.tracked(() => this.wroteNow(path, bytes, write));
+  }
+
+  /** Writes, moves and removals being made now: Undo and Redo wait for them, so none is written down in the wrong step. */
+  private readonly writing = new Set<Promise<void>>();
+
+  private async tracked(run: () => Promise<void>): Promise<void> {
+    const job = run();
     this.writing.add(job);
     try {
       await job;
@@ -314,9 +321,6 @@ export class JournalFolder implements SiFolder {
       this.writing.delete(job);
     }
   }
-
-  /** Writes being made now (see wrote). */
-  private readonly writing = new Set<Promise<void>>();
 
   private async wroteNow(path: string, bytes: Uint8Array, write: () => Promise<void>): Promise<void> {
     // (read every time: the step may end while the file is being written, and the next step then needs what the file held)
@@ -340,7 +344,7 @@ export class JournalFolder implements SiFolder {
 
   async move(from: string, to: string): Promise<void> {
     while (this.busy) await this.busy;
-    await this.moved(norm(from), norm(to));
+    await this.tracked(() => this.moved(norm(from), norm(to)));
   }
 
   /** Emptying the Trash (or deleting one item from it) moves it to the holding folder, so it can be undone until the project closes. */
@@ -349,8 +353,7 @@ export class JournalFolder implements SiFolder {
     if (UNRECORDED.test(path)) { await this.inner.removeTrash(rel); return; }
     if (!isTrashPath(path)) throw new Error(`Only the project's Trash can be emptied this way (not ${rel}).`);
     while (this.busy) await this.busy;
-    if (!(await this.inner.exists(path))) return;
-    await this.moved(path, this.holding(path));
+    await this.tracked(async () => { if (await this.inner.exists(path)) await this.moved(path, this.holding(path)); });
   }
 }
 

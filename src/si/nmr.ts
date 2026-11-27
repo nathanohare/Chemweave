@@ -190,7 +190,9 @@ export const protonCount = (text: string): number => peaks(text).reduce((n, p) =
 
 // ---------------------------------------------------------------- solvent and impurity peaks
 
-/** ¹H singlets, by solvent. */
+/** ¹H singlets, by solvent. (The CD₃OD and CD₂Cl₂ rows checked against Fulmer et al. 2010, Table 1:
+ * chloroform CH 7.90 in CD₃OD and 7.32 in CD₂Cl₂; in CD₂Cl₂ water 1.52, acetone 2.12, ethyl acetate CH₃CO 2.00,
+ * methanol CH₃ 3.42.) */
 const PROTON_SINGLETS: Record<string, [number, string][]> = {
   CDCl3: [[7.26, 'residual CHCl₃'], [1.56, 'water'], [2.17, 'acetone'], [2.10, 'acetonitrile or acetic acid'], [7.36, 'benzene'], [5.30, 'CH₂Cl₂'], [2.62, 'DMSO'], [3.71, '1,4-dioxane'], [2.05, 'ethyl acetate'], [3.49, 'methanol'], [2.36, 'toluene (CH₃)'], [8.02, 'DMF'], [2.96, 'DMF'], [2.88, 'DMF'], [0.07, 'silicone grease'], [1.28, 'tert-butanol'], [4.33, 'nitromethane']],
   'DMSO-d6': [[2.50, 'residual DMSO'], [3.33, 'water'], [2.09, 'acetone'], [2.07, 'acetonitrile'], [7.37, 'benzene'], [5.76, 'CH₂Cl₂'], [8.32, 'chloroform'], [1.99, 'ethyl acetate'], [3.16, 'methanol'], [2.30, 'toluene (CH₃)'], [7.95, 'DMF'], [2.89, 'DMF'], [2.73, 'DMF'], [3.57, '1,4-dioxane']],

@@ -59,6 +59,28 @@ describe('F223: restoring a spectrum whose name is taken again', () => {
     expect(new TextDecoder().decode(f.files.get(`${dir}/pasted 1H (2).emf`))).toBe('emf-first');
     expect(new TextDecoder().decode(f.files.get(`${dir}/pasted 1H.emf`))).toBe('emf-second');
   });
+
+  it('an original that cannot be put back stays in the Trash as files to move by hand', async () => {
+    const f = example();
+    const p = await SiProject.open(f);
+    const c = p.compounds[0];
+    const def = ALL_FIELDS.get('spectra')!;
+    if (!fieldKeys(c).includes('spectra')) await p.addField(c, { key: 'spectra' });
+    const dir = `${c.folder}/${def.subdir || 'spectra'}`;
+    f.files.set(`${dir}/pasted 1H.svg`, enc('<svg>first</svg>'));
+    f.files.set(`${dir}/pasted 1H.emf`, enc('emf-first'));
+    valuesOf(c).spectra = [{ file: 'pasted 1H.svg', type: '1H', original: 'pasted 1H.emf' }];
+    await p.saveCompound(c);
+    await p.removeAttachment(c, def, 'pasted 1H.svg');
+    const entry = (await listTrash(p)).find((e) => e.kind === 'compound_file')!;
+    const move = f.move.bind(f);
+    f.move = async (from, to) => { if (from.endsWith('.emf') && !to.toLowerCase().includes('trash')) throw new Error('locked'); await move(from, to); };
+    const message = await restoreFromTrash(p, entry.id);
+    expect(message).toMatch(/pasted 1H\.emf could not be put back beside it; it is still in the Trash .*to move back by hand/);
+    const left = await listTrash(p);
+    expect(left.some((e) => e.kind === 'compound_file')).toBe(false);
+    expect(left.some((e) => e.kind === 'incomplete' && e.name.includes('pasted 1H.emf'))).toBe(true);
+  });
 });
 
 describe('F924: a write under way when Undo is asked for', () => {
@@ -74,6 +96,21 @@ describe('F924: a write under way when Undo is asked for', () => {
     expect(await j.undo()).toBe('Change');
     await saving;
     expect(await mem.readText('a.txt')).toBe('1');
+    expect(j.history(false)).toBe('First');
+  });
+  it('a move under way is finished, and recorded, before Undo runs', async () => {
+    const mem = new MemoryFolder('j');
+    const j = new JournalFolder(mem);
+    await j.step('First', () => j.writeText('a/x.txt', '1'));
+    const move = mem.move.bind(mem);
+    let slow = true;
+    mem.move = async (from, to) => { if (slow) { slow = false; await tick(30); } await move(from, to); };
+    const moving = j.move('a/x.txt', 'a/y.txt');
+    await tick(5);
+    expect(await j.undo()).toBe('Change');
+    await moving;
+    expect(await mem.readText('a/x.txt')).toBe('1');
+    expect(await mem.exists('a/y.txt')).toBe(false);
     expect(j.history(false)).toBe('First');
   });
 });
@@ -191,6 +228,27 @@ describe('F943 and F948: scheme pages when a file can’t be moved or written', 
     await expect(E.setBoxStructure(p, k, String(box.id), 'mol\n')).rejects.toThrow();
     expect(box.picture).toBe('editor/pasted.png');
     expect(f.files.has(`${k.folder}/editor/pasted.png`)).toBe(true);
+  });
+
+  it('a picture that can’t go to the Trash stays, and leaves no MOL file that nothing names', async () => {
+    const f = example();
+    const p = await SiProject.open(f);
+    const k = p.schemes.find((x) => x.id === SCHEME)!;
+    const box = E.editorData(k).starting[0];
+    delete box.structure;
+    box.picture = 'editor/pasted.png';
+    f.files.set(`${k.folder}/editor/pasted.png`, new Uint8Array([0x89, 0x50, 0x4e, 0x47]));
+    await p.saveScheme(k);
+    const mols = (): string[] => [...f.files.keys()].filter((x) => x.startsWith(`${k.folder}/editor/`) && x.endsWith('.mol'));
+    const before = mols();
+    const move = f.move.bind(f);
+    f.move = async (from, to) => { if (from.endsWith('pasted.png')) throw new Error('locked'); return move(from, to); };
+    await expect(E.setBoxStructure(p, k, String(box.id), 'mol\n')).rejects.toThrow();
+    expect(box.picture).toBe('editor/pasted.png');
+    // (the new MOL file is the box's structure, beside the picture it keeps)
+    const made = mols().filter((x) => !before.includes(x));
+    expect(made.map((x) => x.slice(k.folder.length + 1))).toEqual([String(box.structure)]);
+    expect(((json(f, `${k.folder}/scheme.json`).editor as Json).starting as Json[])[0]).toMatchObject({ picture: 'editor/pasted.png', structure: box.structure });
   });
 });
 

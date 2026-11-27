@@ -22,7 +22,7 @@ import type { ImportedSpectrum } from './si-import-apply';
 import { drawingLabels, drawingStructures, type StructureTools } from './si-import-structures';
 import { linePlain, toLines, type DocObject } from './si-import-read';
 import type { PdfPages } from './si-import-pdf';
-import { guarded, guardedAt, notAfter } from '../regex-behind';
+import { guarded, notAfter } from '../regex-behind';
 
 // a nucleus or another spectrum type named in a header or title
 const NUCLEUS_SRC = String.raw`(?<mass>\d{1,3})\s*(?<el>[A-Z][a-z]?)(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*-?\s*NMR\b`;
@@ -156,7 +156,6 @@ export function matchScore(peaks: number[], report: string, kind: string): numbe
 const reportsOf = (c: ImportedCompound | undefined, kind: string): string[] =>
   ((c?.values.nmr ?? []) as { nucleus?: string; text?: string }[]).filter((r) => r.nucleus === kind).map((r) => r.text ?? '');
 
-/** [the compound whose report of this nucleus the peaks fit clearly best, its score]; ['', 0] when none fits well or two fit about as well. */
 /** Each report's peaks, read once (every spectrum of an import is matched against every report). */
 const parsedReports = new Map<string, ReturnType<typeof reportPeaks>>();
 function parsedReport(report: string): ReturnType<typeof reportPeaks> {
@@ -169,6 +168,7 @@ function parsedReport(report: string): ReturnType<typeof reportPeaks> {
   return got;
 }
 
+/** [the compound whose report of this nucleus the peaks fit clearly best, its score]; ['', 0] when none fits well or two fit about as well. */
 export function bestByPeaks(peaks: number[], kind: string, compounds: ImportedCompound[]): [string, number] {
   const scored: [number, string][] = [];
   for (const c of compounds) {
@@ -370,22 +370,26 @@ function settle(spectra: ImportedSpectrum[]): void {
 
 // ---------------------------------------------------------------------- PDF
 
-const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // STEREO (si-import.ts) without its "?", ending the text before the ID, itself not inside a word
 const STEREO_BEFORE = /(?:^|[^\w-])(?:\((?:[RSEZ](?:,\s*[RSEZ])*|rac|ent|±|[+−-])\)-|rac-|ent-|\(±\)-)$/;
+const WORDLIKE = /[\w-]/;
+const ID_THEN_NUCLEUS = /^\d{1,3}[A-Z]/;
 
-/** Each compound ID's pattern for findId, made once (it is asked for every short line of every spectrum page). */
-const idPatterns = new Map<string, RegExp>();
-function idPattern(cid: string): RegExp {
-  let re = idPatterns.get(cid);
-  if (!re) {
-    if (idPatterns.size >= 5000) idPatterns.clear();
-    // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
-    re = guardedAt(new RegExp(`${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g'),
-      (at, s) => at === 0 || !/[\w-]/.test(s[at - 1]) || STEREO_BEFORE.test(s.slice(Math.max(0, at - 40), at)));
-    idPatterns.set(cid, re);
+/**
+ * Where compound ID `cid` is written in `text` on its own (found by a plain text search, not a
+ * pattern made from the ID): not inside a word, or after its stereo prefix ("(±)-3", "(S)-2a",
+ * "rac-5", which is not part of the ID), and followed by the end, a character not of a word, or a
+ * nucleus run on ("9a13C NMR").
+ */
+function idPlaces(text: string, cid: string): number[] {
+  const out: number[] = [];
+  for (let at = text.indexOf(cid); at >= 0; at = text.indexOf(cid, at + 1)) {
+    const end = at + cid.length;
+    const after = end >= text.length || !WORDLIKE.test(text[end]) || ID_THEN_NUCLEUS.test(text.slice(end));
+    const before = at === 0 || !WORDLIKE.test(text[at - 1]) || STEREO_BEFORE.test(text.slice(Math.max(0, at - 40), at));
+    if (after && before) out.push(at);
   }
-  return re;
+  return out;
 }
 
 /** The first compound ID in a header ("2a — 1H NMR…", "1H NMR of 2", "9a13C NMR"). */
@@ -393,12 +397,11 @@ export function findId(text: string, ids: string[]): string {
   let best: [number, string] | null = null;
   for (const cid of ids) {
     if (!cid) continue;
-    const re = idPattern(cid);
-    for (const m of text.matchAll(re)) {
-      const end = m.index + m[0].length;
+    for (const index of idPlaces(text, cid)) {
+      const end = index + cid.length;
       // not the nucleus itself ("1H", "13C": an ID "1" or "13" must not match there)
       if (/^[A-Z][a-z]?\b/.test(text.slice(end)) && /^\d+$/.test(cid)) continue;
-      if (!best || m.index < best[0] || (m.index === best[0] && cid.length > best[1].length)) best = [m.index, cid];
+      if (!best || index < best[0] || (index === best[0] && cid.length > best[1].length)) best = [index, cid];
     }
   }
   return best ? best[1] : '';

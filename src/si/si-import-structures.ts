@@ -146,9 +146,11 @@ async function drawnStructures(objects: DocObject[], tools: StructureTools): Pro
     let cdxml: string;
     try { cdxml = cdxToCdxml(obj.cdx); } catch { return; }
     const structures = drawingStructures(cdxml, tools);
-    // (a charged structure without a label is a counter-ion when a structure of the opposite charge,
-    // labeled or larger, takes it: the larger ion of an unlabeled salt is the compound)
-    const ions = structures.filter((s) => s.charge && !s.label && structures.some((o) => o !== s && o.charge * s.charge < 0 && (!!o.label || o.atoms > s.atoms)));
+    // (a charged structure without a label is a counter-ion, or a reagent salt's ion ("AgOTf" drawn beside
+    // the compound), when the drawing has a labeled or neutral structure; in a drawing of only unlabeled
+    // ions it is a counter-ion when a larger ion of the opposite charge takes it: that one is the compound)
+    const others = structures.some((s) => !!s.label || (!s.charge && s.atoms > 1));
+    const ions = structures.filter((s) => s.charge && !s.label && (others || structures.some((o) => o !== s && o.charge * s.charge < 0 && o.atoms > s.atoms)));
     const used = new Set<Structure>();
     const mains: [string, string][] = [];
     for (const s of structures) {

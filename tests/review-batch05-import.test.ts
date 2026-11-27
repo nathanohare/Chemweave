@@ -6,7 +6,7 @@ import { describe, expect, it } from 'vitest';
 import { strToU8, zipSync } from 'fflate';
 import * as Rd from '../src/si/si-import-read';
 import * as I from '../src/si/si-import';
-import type { ImportedSection } from '../src/si/si-import-text';
+import type { ImportedFigure, ImportedSection } from '../src/si/si-import-text';
 import { linkCitations, splitEntries } from '../src/si/si-import-refs';
 import { isDigit, rx } from '../src/si/py';
 import { assignStructures, drawingLabels, drawingStructures } from '../src/si/si-import-structures';
@@ -27,6 +27,13 @@ describe('F216: plain-numbered reference lists', () => {
       ['3', 'Lee, M. Nature 2012, 1, 1.'],
     ]);
   });
+  it('starts an entry whatever follows its number: "(a)", a lower-case particle or a quote', () => {
+    const got = splitEntries(['1 Smith, J. Org. Lett. 2010, 12, 1.', '2 (a) Jones, K. Org. Lett. 2011, 13, 5. (b) Lee, M. Nature 2012, 1, 1.', '3 van der Berg, A. Science 2013, 2, 2.', '4 “A title,” Chem 2014, 3, 3.']);
+    expect(got.map(([n]) => n.replace(/[a-z]$/, ''))).toEqual(expect.arrayContaining(['1', '2', '3', '4']));
+    expect(got.find(([n]) => n === '3')?.[1]).toBe('van der Berg, A. Science 2013, 2, 2.');
+    expect(got.find(([n]) => n === '4')?.[1]).toBe('“A title,” Chem 2014, 3, 3.');
+    expect(got.some(([, t]) => t.includes('van der Berg') && t.includes('Jones'))).toBe(false);
+  });
 });
 
 describe('F217: bracketed locants in names are not citations', () => {
@@ -34,8 +41,13 @@ describe('F217: bracketed locants in names are not citations', () => {
   it('keeps benzo[d][1,3]dioxole, [3,3]-sigmatropic, [5]helicene and cucurbit[7]uril', () => {
     for (const t of ['benzo[d][1,3]dioxole-5-carbaldehyde', 'a [3,3]-sigmatropic rearrangement', 'the [5]helicene', 'cucurbit[7]uril']) expect(linkCitations(t, refs)).toBe(t);
   });
-  it('still links a citation', () => {
+  it('keeps an unhyphenated reaction order: "a [3,3] sigmatropic", "a [1,2] shift"', () => {
+    for (const t of ['a [3,3] sigmatropic rearrangement', 'a [1,2] shift', 'the [2,3] Wittig rearrangement']) expect(linkCitations(t, refs)).toBe(t);
+  });
+  it('still links a citation, and both of "[1]-[3]"', () => {
     expect(linkCitations('as reported [1,3].', refs)).toBe('as reported@cite{r-1,r-3}.');
+    expect(linkCitations('as reported [1]-[3].', refs)).toBe('as reported@cite{r-1}-@cite{r-3}.');
+    expect(linkCitations('as in ref. [2] alkylation', refs)).toBe('as in ref.@cite{r-2} alkylation');
   });
 });
 
@@ -50,6 +62,7 @@ describe('F222: an optical rotation without "="', () => {
   it('still reads the forms with "="', () => {
     expect(I.parseRotation('[α]D25 = −12.4 (c 1.00, CHCl3).')).toEqual({ value: '-12.4', temperature: '25', c: '1.00', solvent: 'CHCl3' });
     expect(I.parseRotation('[α]D 20 = +3.1')).toMatchObject({ value: '+3.1', temperature: '20' });
+    expect(I.parseRotation('[α]D 22.5 = +10.2 (c 0.5, MeOH)')).toMatchObject({ value: '+10.2', temperature: '22.5', c: '0.5' });
   });
 });
 
@@ -185,6 +198,18 @@ describe('F954: an unlabeled drawing of a salt', () => {
     // (both fragments, joined)
     expect(c.structure.split(',')).toHaveLength(2);
   });
+  it('takes a reagent salt drawn beside an unlabeled compound as no compound of its own', async () => {
+    nid = 600;
+    // (the compound, then "AgOTf": a one-atom cation and a larger anion)
+    const d = cdxml(fragment(100, 100, 6) + fragment(300, 100, 1, 1) + fragment(330, 100, 5, -1));
+    const obj: Rd.DocObject = { kind: 'chemdraw', prog: 'ChemDraw.Document.6.0', name: '', picture: null, picture_name: '', group: 0, width_in: null, cdx: cdxmlToCdx(d) };
+    const plan = I.analyse([para('**Hexane (3a).** Colorless oil (10 mg, 50%).')]);
+    plan.objects = [obj];
+    plan.own_objects = plan.compounds.map(() => [obj]);
+    await assignStructures(plan, tools);
+    const c = plan.compounds.find((x) => x.cid === '3a')!;
+    expect(c.structure).toBe('mol:612');   // (the six-atom fragment's id)
+  });
 });
 
 // ---------------------------------------------------------------- writing into a project
@@ -217,5 +242,29 @@ describe('F950: merging an import keeps values of fields taken off the page', ()
     const plan = I.analyse([para('**Anisole (2a).** Colorless oil (9 mg, 75%).')]);
     await A.applyPlan(proj, plan, 'b.docx', { sectionId: first.section_id });
     expect((valuesOf(proj.compound(first.created[0])).yield as Json).percent).toBe('80');
+  });
+});
+
+describe('F955: the short lines above a PDF figure’s caption', () => {
+  const figure = (extra: Partial<ImportedFigure>): ImportedFigure => ({
+    kind: 'cut', data: null, ext: '.png', caption: 'A caption.', label: 'Figure S1', table: null, page: 1, top: 100, bottom: 300,
+    is_table: false, keep: true, width_cm: null, below: [400, 600], below_labels: [], cut_below: true, above_labels: ['Step 1', 'Step 2'], ...extra,
+  });
+  const apply = async (fig: ImportedFigure): Promise<string> => {
+    const plan = I.analyse([para('Results', { heading: 1 }), para('Some text here.')]);
+    const s = plan.sections.find((x) => x.kind === 'text')!;
+    s.text = 'Some text here.\n!figure{f1} A caption.';
+    s.figures.set('f1', fig);
+    const proj = await SiProject.create(new MemoryFolder('P'), 'P');
+    await A.applyPlan(proj, plan, 'si.pdf');
+    const sec = proj.sections.find((x) => x.name === 'Results')!;
+    return proj.readSectionText(sec);
+  };
+  it('are put back as text when the picture was cut from below the caption, or not cut at all', async () => {
+    expect(await apply(figure({}))).toMatch(/Step 1\nStep 2/);
+    expect(await apply(figure({ cut_below: false }))).toMatch(/Step 1\nStep 2/);
+  });
+  it('are left out when the picture was cut from above the caption (they are in it)', async () => {
+    expect(await apply(figure({ cut_below: false, data: new Uint8Array([0x89, 0x50, 0x4e, 0x47]) }))).not.toMatch(/Step 1/);
   });
 });

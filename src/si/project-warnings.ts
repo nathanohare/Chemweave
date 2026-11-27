@@ -169,10 +169,12 @@ function duplicateGpNames(p: SiProject): ProjectWarning[] {
   return out;
 }
 
-// (a CIF is read again only when it changes, as SI Assistant keeps it)
-const xrayCache = new Map<string, { cif: string; error: string }>();
-/** How many CIFs the check keeps the result of (the oldest goes first): more than a project has X-ray sections. */
-const XRAY_CACHE_SIZE = 64;
+// (a CIF is read again only when it changes, as SI Assistant keeps it: one result for each X-ray
+// section, written over when its CIF, file or data block changes; a check of every section in turn
+// then finds them all however many sections the project has)
+const xrayCache = new Map<string, { file: string; wanted: string; cif: string; error: string }>();
+/** A bound on the sections kept, over all the projects opened (the oldest goes first). */
+const XRAY_CACHE_SIZE = 1024;
 
 /** Why an X-ray structure section can't be drawn ('' when it can). */
 export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
@@ -182,10 +184,9 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   const cif = await p.folder.readText(join(s.folder, file));
   if (cif === null) return `The CIF file ${name} is missing from the section's folder.`;
   const wanted = text(s.data.block);
-  const key = `${p.folder.where}\u0000${s.folder}/${file}\u0000${wanted}`;
+  const key = `${p.folder.where}\u0000${s.folder}`;
   const hit = xrayCache.get(key);
-  // (kept the most recently used: the oldest goes first)
-  if (hit && hit.cif === cif) { xrayCache.delete(key); xrayCache.set(key, hit); return hit.error; }
+  if (hit && hit.file === file && hit.wanted === wanted && hit.cif === cif) return hit.error;
   let error = '';
   try {
     const blocks = readCif(cif).filter((b) => b.rows('_atom_site_label').length);
@@ -196,7 +197,7 @@ export async function xrayError(p: SiProject, s: SiSection): Promise<string> {
   }
   xrayCache.delete(key);
   while (xrayCache.size >= XRAY_CACHE_SIZE) xrayCache.delete(xrayCache.keys().next().value!);
-  xrayCache.set(key, { cif, error });
+  xrayCache.set(key, { file, wanted, cif, error });
   return error;
 }
 

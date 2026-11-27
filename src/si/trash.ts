@@ -108,6 +108,10 @@ export async function restoreFromTrash(p: SiProject, id: string): Promise<string
     // (its description is set aside, so the Trash shows the rest as an unfinished deletion)
     await p.folder.move(join(folder, 'entry.json'), join(folder, `.restored-${newId('t').slice(2)}`)).catch(() => {});
     return `${message} Some files deleted with it were not put back, because the Trash's description of them is damaged; they are still in the Trash (${left.map((e) => e.name).join(', ')}).`;
+  } else if (!(await p.folder.exists(join(folder, item)))) {
+    // (the item is back but a file deleted with it is not: its description is set aside, so the
+    // Trash shows that file as an unfinished deletion to move back by hand, not an item that can't be restored)
+    await p.folder.move(join(folder, 'entry.json'), join(folder, `.restored-${newId('t').slice(2)}`)).catch(() => {});
   }
   return message;
 }
@@ -307,7 +311,7 @@ const RESTORE: Record<string, Restore> = {
     }
     list.push({ ...kept, file: pick });
     await p.saveCompound(c);
-    const left = stuck.length ? ` ${stuck.join(', ')} could not be put back beside it; ${stuck.length === 1 ? 'it is' : 'they are'} still in the Trash.` : '';
+    const left = stuck.length ? ` ${stuck.join(', ')} could not be put back beside it; ${stuck.length === 1 ? 'it is' : 'they are'} still in the Trash (${folder}), to move back by hand.` : '';
     return `Restored ${pick} to “${str(e.info.compound_name) || 'the compound'}”.${left}`;
   },
 

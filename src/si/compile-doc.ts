@@ -1489,7 +1489,7 @@ class Compiler {
       if (c) { this.spectraDone = true; await this.spectraSection(p.sections.find((x) => x.type === 'spectra') ?? null, 1, [c]); }
     } else {
       const s = p.sections.find((x) => x.id === only.id);
-      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; await this.spectraSection(s, 1); }
+      if (s?.type === 'spectra') { this.excluded.delete(s.id); this.excluded.delete('spectra'); this.spectraDone = true; this.seedCounters(s); await this.spectraSection(s, this.depthOf(s)); }
       // (a section's spectra are left out: Compile shows them)
       // (at its own level, numbered on from the headings before it, as Compile prints it)
       else if (s) { this.excluded.delete(s.id); this.spectraDone = true; this.seedCounters(s); await this.section(s, this.depthOf(s)); }
@@ -1505,8 +1505,10 @@ class Compiler {
 
   /**
    * The heading numbers counted so far when Compile reaches section `s` (for the live preview of
-   * one section): the sections before it at each of its levels that print a heading, and General
-   * Information's heading before the first top one when it is numbered.
+   * one section): the sections before it at each of its levels that print a heading, the headings
+   * typed at that level in its parent's text, and General Information's heading before the first
+   * top one when it is numbered. (A Spectra section prints its heading when it prints something:
+   * here, when a compound it shows has a spectrum file or an HRMS report it prints.)
    */
   private seedCounters(s: SiSection): void {
     const path: SiSection[] = [];
@@ -1515,11 +1517,18 @@ class Compiler {
     const info = dict(this.p.settings.general_information);
     const generalTitle = info.heading === undefined ? 'General Information' : str(info.heading).trim();
     const general = !!f?.text && this.included('general') && !!(this.texts.get('general') ?? '').trim() && !!generalTitle;
-    const heads = (x: SiSection): boolean => !this.excluded.has(x.id) && (x.type === 'spectra' ? !this.excluded.has('spectra') : x.type === 'file' ? !!str(x.data.heading).trim() : true);
+    const firstSpectra = this.p.sections.find((x) => x.type === 'spectra');
+    const spectraPrints = (x: SiSection): boolean => {
+      const defaults = sectionDefaults(x, this.p.settings);
+      return this.includedCompounds(this.p.top).some((c) => spectrumItems(c).some(([, i]) => !!partText(i.file)) || (!this.excluded.has('hrms_reports') && printsReports(c, defaults)));
+    };
+    const heads = (x: SiSection): boolean => !this.excluded.has(x.id) && (x.type === 'spectra' ? !this.excluded.has('spectra') && x === firstSpectra && spectraPrints(x) : x.type === 'file' ? !!str(x.data.heading).trim() : true);
+    // (headings typed in a text section's text, one level below it, come before its sub-sections)
+    const typed = (x: SiSection | null): number => (x?.type === 'text' && f?.text ? parseMarkup(this.texts.get(x.id) ?? '').filter((q) => q.heading === 1 && q.runs.length && !q.table && !q.figure && !q.image).length : 0);
     this.counters = path.map((n, i) => {
       const parent = i ? path[i - 1] : null;
       const siblings = parent ? parent.children : this.p.top;
-      const before = siblings.slice(0, Math.max(0, siblings.indexOf(n))).filter(heads).length + (i === 0 && general ? 1 : 0);
+      const before = siblings.slice(0, Math.max(0, siblings.indexOf(n))).filter(heads).length + (i === 0 && general ? 1 : 0) + typed(parent);
       return before + (n === s ? 0 : 1);
     });
   }

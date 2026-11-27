@@ -245,7 +245,14 @@ export async function setBoxStructure(p: SiProject, k: SiScheme, id: string, mol
   // (the structure is written first: when it can't be, the box keeps its picture, on disk and here)
   const rel = own.structure.length ? text(f.box.structure) : await freePath(p, k, text(f.box.id), '.mol');
   await p.folder.writeText(join(k.folder, rel), molblock.endsWith('\n') ? molblock : molblock + '\n');
-  await trashSuperseded(p, k, f.box, { picture: own.picture, structure: [] });
+  try {
+    await trashSuperseded(p, k, f.box, { picture: own.picture, structure: [] });
+  } catch (e) {
+    // (the picture couldn't go to the Trash: the box keeps it, and the MOL file made for it now becomes
+    // its structure, so no file is left that nothing names; drawing again writes over that file)
+    if (!own.structure.length) { f.box.structure = rel; await p.saveScheme(k).catch(() => {}); }
+    throw e;
+  }
   for (const key of ['picture', ...PICTURE_KEYS]) delete f.box[key];
   f.box.structure = rel;
   await p.saveScheme(k);

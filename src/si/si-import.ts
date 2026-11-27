@@ -444,11 +444,12 @@ export function parseMp(text: string): Values {
 
 export function parseRotation(text: string): Values {
   // (the temperature and line, "D20", "20D", "^{20}_{D}" or "D 20", then "=", ":", a space or the
-  // sign before the value: "[α]D20 +12.3" is +12.3, not a temperature "D20 +12." and a value "3")
-  const m = search(rx('\\[\\s*[αa]\\s*\\]\\s*(?P<a>[^=:\\s(]*)(?:\\s+(?P<b>[^=:\\s(+\\-−–\\d][^=:\\s(]*|\\d{1,3}(?![\\d.,])))?(?:\\s*[=:]\\s*|\\s+|(?=[+\\-−–]))(?P<v>[+\\-−–]?\\s*\\d+(?:\\.\\d+)?)'), text);
+  // sign before the value: "[α]D20 +12.3" is +12.3, not a temperature "D20 +12." and a value "3";
+  // a temperature with decimals only before "=" or ":", "[α]D 22.5 = +10.2")
+  const m = search(rx('\\[\\s*[αa]\\s*\\]\\s*(?P<a>[^=:\\s(]*)(?:\\s+(?P<b>[^=:\\s(+\\-−–\\d][^=:\\s(]*|\\d{1,3}(?:\\.\\d+)?(?=\\s*[=:])|\\d{1,3}(?![\\d.,])))?(?:\\s*[=:]\\s*|\\s+|(?=[+\\-−–]))(?P<v>[+\\-−–]?\\s*\\d+(?:\\.\\d+)?)'), text);
   if (!m) return {};
   const value: Values = { value: m.group('v')!.replaceAll(' ', '').replaceAll('−', '-').replaceAll('–', '-') };
-  const temp = /\d+/.exec((m.group('a') ?? '') + (m.group('b') ?? ''));
+  const temp = /\d+(?:\.\d+)?/.exec((m.group('a') ?? '') + (m.group('b') ?? ''));
   if (temp) value.temperature = temp[0];
   const [inside] = paren(lstrip(text.slice(m.end), ' ,'), 0);
   if (inside) {

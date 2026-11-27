@@ -29,7 +29,8 @@ const MARKERS: [string, string, RegExp][] = [
   ['bracket', '\\[\\s*{n}\\s*\\]', /^\[\s*(\d{1,3})\s*\]\s*\S/],
   // (a whole number, not the start of a longer one or of a decimal: "2" of "2010" or "2.5" is no entry's)
   ['dot', '{n}\\.(?!\\d)', /^(\d{1,3})\.\s+\S/],
-  ['plain', '{n}(?![\\d.,])(?=\\s+[A-ZÀ-ɏ])', /^(\d{1,3})\s+[A-ZÀ-ɏ]/],
+  // (any text may follow the number: "2 (a) B. Jones", "3 van der Waals", "4 “Title”")
+  ['plain', '{n}(?![\\d.,])', /^(\d{1,3})\s+[A-ZÀ-ɏa-z(“‘"']/],
 ];
 
 /** [the numbering style of a list starting with `first`, its first number]. */
@@ -301,6 +302,9 @@ export function numbersOf(spec: string): string[] | null {
 // Words a superscript number after which is not a citation: units, substituent labels and groups, single letters.
 const NOT_BEFORE = rx('(?:(?:[A-Za-z]|[a-zµμ]?m|[kM]?Hz|[kmµμ]?[gL]|[mµμ]?mol|[mµ]?M|min|cm|mm|nm|Å|eV|kJ|kcal|cal|bar|Pa|ppm|Ar|Het|Nu|PG|Ln|Me|Et|Pr|Bu|Ph|Bn|Ts|Ms|Tf|Ac|Bz|Boc|Cbz|Si|Sn|Ge|Pd|Pt|Rh|Ir|Ru|Cu|Ni|Co|Fe|Zn|Mg|Li|Na|Cs|Al|Ti|Zr)\\s?)$', '', (m, t) => m.index === 0 || !/[A-Za-z]/.test(t[m.index - 1]));
 
+/** Words after a bracketed pair that make it a reaction's order ("[3,3] sigmatropic", "[1,2] shift", "[2,3] Wittig"), not a citation. */
+const REACTION_ORDER = /^\s+(?:sigmatropic|shifts?|rearrangements?|migrations?|cycloadditions?|annulations?|dipolar|electrocycli[cz]\w*|cyclizations?|hydride|alkyl|aryl|Wittig|Brook|Stevens|Meisenheimer|Claisen|Cope)\b/i;
+
 /** Numbered citations in imported text (stored text format) as the program's citations of those references. */
 export function linkCitations(markup: string, numbers: Map<string, string[]>): string {
   if (!numbers.size || !markup) return markup;
@@ -317,11 +321,12 @@ export function linkCitations(markup: string, numbers: Map<string, string[]>): s
     if (!before || isSpace(before.slice(-1)) || search(NOT_BEFORE, before) || (after && (isUpper(after) || isDigit(after)))) return m[0];   // (an isotope "^{13}C", a unit, R^{1}…)
     return cite(m.group(1)!) ?? m[0];
   }, markup);
-  // (not a ring locant or a name's bracket: "benzo[d][1,3]dioxole", "[3,3]-sigmatropic", "cucurbit[7]uril")
+  // (not a ring locant or a name's bracket: "benzo[d][1,3]dioxole", "[3,3]-sigmatropic", "cucurbit[7]uril",
+  // nor the order of a shift or cycloaddition: "a [3,3] sigmatropic", "a [1,2] shift"; but "[1]-[3]" is cited)
   const text = out;
   out = sub(rx('\\s?\\[(\\d+[a-z]?(?:\\s*[,–—-]\\s*\\d+[a-z]?)*)\\]'), (m) => {
-    const after = text.slice(m.end, m.end + 1);
-    if (/[\p{L}\p{N}\-‐‑]/u.test(after)) return m[0];
+    const rest = text.slice(m.end, m.end + 40);
+    if (/^[\p{L}\p{N}]/u.test(rest) || /^[-‐‑]\p{L}/u.test(rest) || (m.group(1)!.includes(',') && REACTION_ORDER.test(rest))) return m[0];
     return cite(m.group(1)!) ?? m[0];
   }, out);
   return out;
