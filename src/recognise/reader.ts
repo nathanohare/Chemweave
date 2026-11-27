@@ -63,7 +63,12 @@ class LocalReader {
       await new Promise<void>((resolve, reject) => {
         w.onmessage = (e: MessageEvent<RecogniseResponse>) => {
           const m = e.data;
-          if (m.type === 'ready') { w.onmessage = (ev) => this.receive(ev.data); resolve(); }
+          if (m.type === 'ready') {
+            w.onmessage = (ev) => this.receive(ev.data);
+            // from now on an error stops the reads waiting, and the next read starts the reader again
+            w.onerror = (ev) => this.stopped(w, new Error('The structure reader stopped unexpectedly: ' + (ev.message || 'unknown error') + '. Try again.'));
+            resolve();
+          }
           else if (m.type === 'error') reject(new Error(m.message));
         };
         w.onerror = (e) => reject(new Error('The structure reader could not start: ' + (e.message || 'unknown error')));
@@ -73,6 +78,17 @@ class LocalReader {
     })();
     this.loading.catch(() => { this.loading = null; this.worker?.terminate(); this.worker = null; });
     return this.loading;
+  }
+
+  /** The worker failed after it was ready: fail what waits for it, and let the next read load it again. */
+  private stopped(w: Worker, e: Error): void {
+    if (this.worker !== w) return;
+    const waiting = [...this.pending.values()];
+    this.pending.clear();
+    w.terminate();
+    this.worker = null;
+    this.loading = null;
+    for (const p of waiting) p.fail(e);
   }
 
   private receive(m: RecogniseResponse): void {
@@ -113,15 +129,36 @@ export async function readWithAi(prefs: AiPrefs, png: string): Promise<ReadResul
   return { kind: 'smiles', smiles, note, ms: Math.round(performance.now() - t0) };
 }
 
+const count = (w: string, c: string) => w.split(c).length - 1;
+/** JSON's control-character escapes, by the character they make. */
+const CONTROL: Record<string, string> = { '\n': 'n', '\t': 't', '\r': 'r', '\b': 'b', '\f': 'f' };
+
 /** The SMILES and note in a model's answer (JSON, perhaps in a code block or with words round it). */
 export function parseAiAnswer(text: string): { smiles: string; note: string } {
   const json = /\{[\s\S]*\}/.exec(text)?.[0];
   if (json) {
     try {
       const o = JSON.parse(json) as { smiles?: unknown; note?: unknown };
-      return { smiles: typeof o.smiles === 'string' ? o.smiles.trim() : '', note: typeof o.note === 'string' ? o.note.trim() : '' };
+      // a single backslash before n, t, r, b or f is JSON's control character, but in a SMILES it
+      // was a stereo bond ("C/C=C\n1…" read as a new line): put the backslash back
+      const smiles = typeof o.smiles === 'string' ? o.smiles.trim().replace(/[\n\t\r\b\f]/g, (c) => '\\' + CONTROL[c]) : '';
+      return { smiles, note: typeof o.note === 'string' ? o.note.trim() : '' };
     } catch { /* not JSON after all */ }
   }
-  const line = text.trim().split(/\s+/).find((w) => /^[A-Za-z0-9@+\-[\]()=#$/\\%.:*]+$/.test(w) && /[A-Z]/i.test(w));
-  return { smiles: line ?? '', note: '' };
+  // JSON the parser refuses, most often a stereo bond's backslash not doubled ("C/C=C\C")
+  const raw = /"smiles"\s*:\s*"([^"]*)"/.exec(text);
+  if (raw) {
+    const note = /"note"\s*:\s*"([^"]*)"/.exec(text)?.[1] ?? '';
+    return { smiles: raw[1].replace(/\\\\/g, '\\').trim(), note: note.replace(/\\\\/g, '\\').trim() };
+  }
+  // words round a SMILES: a word that only a SMILES would be (brackets, bonds, ring numbers, or
+  // organic atoms only: CCO), never a plain English word ("The", "Here")
+  const words = text.trim().split(/\s+/).map((w) => w.replace(/^[`'"“‘]+|[`'"”’,;:]+$/g, '').replace(/\.$/, ''));
+  const smiles = (w: string) => /^[A-Za-z0-9@+\-[\]()=#$/\\%.:*]+$/.test(w) && /[A-Za-z]/.test(w) && w.length > 1
+    && count(w, '(') === count(w, ')') && count(w, '[') === count(w, ']');
+  // first a word with a SMILES's own marks (ring numbers, brackets, bonds); then one of capital
+  // organic atoms only (CCO, ClCCl), so "No", "In", "Is", "On" and "So" are never taken
+  const marked = words.find((w) => smiles(w) && /[0-9()=#@[\]/\\]/.test(w));
+  const plain = words.find((w) => smiles(w) && /^(?:Cl|Br|[BCNOSPFI])+$/.test(w));
+  return { smiles: marked ?? plain ?? '', note: '' };
 }

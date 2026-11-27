@@ -197,6 +197,17 @@ export function multiplet(partners: [number, number][], merge = 1.0, min = 1.7):
 
 export interface ProtonGroup { atoms: number[]; shift: number; n: number; mult: string; j: number[] }
 
+/**
+ * How many protons on `other` a coupling stands for. A terminal =CH2 gives two couplings to the
+ * CH= beside it, one 'trans' and one 'cis', each to ONE of its protons (styrene's CH= is a dd,
+ * J 17.6 and 10.9 Hz, not a tt); a fluorine is one nucleus; otherwise all of the atom's protons.
+ */
+export function partnerCount(g: JGraph, c: Coupling, other: number): number {
+  if (g.atoms[other].el === 'F') return 1;
+  if ((c.kind === 'trans' || c.kind === 'cis') && g.atoms[other].h === 2) return 1;
+  return g.atoms[other].h;
+}
+
 /** Proton groups (hydrogens on atoms with the same environment code are equivalent) with their
  *  predicted first-order multiplets. shifts: predicted 1H shift per heavy atom (NaN when none). */
 export function protonGroups(g: JGraph, shifts: number[], codes: string[]): ProtonGroup[] {
@@ -217,7 +228,7 @@ export function protonGroups(g: JGraph, shifts: number[], codes: string[]): Prot
       const other = c.a === rep ? c.b : c.a;
       if (other === rep) { partners.push([c.j, 1]); continue; } // geminal / vinyl pair partner
       if (same.has(other) && g.atoms[other].el !== 'F') continue; // equivalent protons do not split each other
-      partners.push([c.j, g.atoms[other].el === 'F' ? 1 : g.atoms[other].h]);
+      partners.push([c.j, partnerCount(g, c, other)]);
     }
     const m = multiplet(partners, MULT_OPTS.merge, MULT_OPTS.min);
     out.push({ atoms, shift: atoms.reduce((t, i) => t + shifts[i], 0) / atoms.length, n: atoms.reduce((t, i) => t + g.atoms[i].h, 0), mult: m.mult, j: m.j });
