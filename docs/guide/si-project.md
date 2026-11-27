@@ -153,7 +153,7 @@ Click **References** in the list. The **References** tab adds a reference by DOI
 |---|---|
 | **Output** | Journal style (ACS, Wiley or RSC), the HRMS tolerance in ppm, and which NMR reports are added for you |
 | **Headings** | How headings are numbered |
-| **Page** | Header, footer and page numbers |
+| **Page** | Header, Footer and Page Numbers |
 | **Labels** | The words and numbering for figures, tables and schemes |
 | **Layout** | Where compound structures and figures go and how the text wraps around them |
 | **Structures** | The drawing style of structures |

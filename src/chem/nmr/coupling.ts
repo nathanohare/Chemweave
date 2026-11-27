@@ -150,7 +150,11 @@ export function predictCouplings(g: JGraph): Coupling[] {
   at.forEach((f, fi) => {
     if (f.el !== 'F') return;
     for (const p of nbs[fi]) {
-      if (at[p.n].h) add(p.n, fi, at[p.n].h === 1 && hyb(p.n) === 2 ? 80 : at[p.n].h === 3 ? 0 : 47.5, 'HF-gem');
+      // Geminal H–F: 46.4 Hz in CH3F (Pretsch, Bühlmann, Badertscher, Structure Determination of
+      // Organic Compounds, 4th ed., Springer 2009, H–F coupling constants; to be checked against the
+      // book). The 80 Hz (sp2 CH) and 47.5 Hz (sp3 CH2F/CHF) values predate this note and have no
+      // checked source yet.
+      if (at[p.n].h) add(p.n, fi, at[p.n].h === 1 && hyb(p.n) === 2 ? 80 : at[p.n].h === 3 ? 46.4 : 47.5, 'HF-gem');
       for (const q of nbs[p.n]) {
         if (q.n === fi || !at[q.n].h) continue;
         if (at[q.n].arom && at[p.n].arom) add(q.n, fi, 8.8, 'HF-ortho');
@@ -197,6 +201,17 @@ export function multiplet(partners: [number, number][], merge = 1.0, min = 1.7):
 
 export interface ProtonGroup { atoms: number[]; shift: number; n: number; mult: string; j: number[] }
 
+/**
+ * How many protons on `other` a coupling stands for. A terminal =CH2 gives two couplings to the
+ * CH= beside it, one 'trans' and one 'cis', each to ONE of its protons (styrene's CH= is a dd,
+ * J 17.6 and 10.9 Hz, not a tt); a fluorine is one nucleus; otherwise all of the atom's protons.
+ */
+export function partnerCount(g: JGraph, c: Coupling, other: number): number {
+  if (g.atoms[other].el === 'F') return 1;
+  if ((c.kind === 'trans' || c.kind === 'cis') && g.atoms[other].h === 2) return 1;
+  return g.atoms[other].h;
+}
+
 /** Proton groups (hydrogens on atoms with the same environment code are equivalent) with their
  *  predicted first-order multiplets. shifts: predicted 1H shift per heavy atom (NaN when none). */
 export function protonGroups(g: JGraph, shifts: number[], codes: string[]): ProtonGroup[] {
@@ -217,7 +232,7 @@ export function protonGroups(g: JGraph, shifts: number[], codes: string[]): Prot
       const other = c.a === rep ? c.b : c.a;
       if (other === rep) { partners.push([c.j, 1]); continue; } // geminal / vinyl pair partner
       if (same.has(other) && g.atoms[other].el !== 'F') continue; // equivalent protons do not split each other
-      partners.push([c.j, g.atoms[other].el === 'F' ? 1 : g.atoms[other].h]);
+      partners.push([c.j, partnerCount(g, c, other)]);
     }
     const m = multiplet(partners, MULT_OPTS.merge, MULT_OPTS.min);
     out.push({ atoms, shift: atoms.reduce((t, i) => t + shifts[i], 0) / atoms.length, n: atoms.reduce((t, i) => t + g.atoms[i].h, 0), mult: m.mult, j: m.j });

@@ -102,7 +102,7 @@ const para = { list: oneOf('bullet', 'number'), level: 0, cont: true, soft: true
   border: null, shade: '', xe: [null], ta: [null], cc: '' } satisfies Record<keyof ParaStyle, Spec>;
 const pin = { on: oneOf('atom', 'bond', 'gap'), ref: ids, at: pt, hand: 0, was: pt, len: 0, dir: pt } satisfies Record<keyof Pin, Spec>;
 const frame = { atoms: ids, captions: ids, arrows: ids, shapes: ids, padX: 0, padY: 0, fit: true } satisfies Record<keyof Frame, Spec>;
-const stereoLabel = { text: '', dx: 0, dy: 0, size: length, italic: true, manual: true, offset: true, fromFile: true } satisfies Record<keyof StereoLabel, Spec>;
+const stereoLabel = { text: '', dx: 0, dy: 0, size: length, italic: true, manual: true, offset: true, fromFile: true, typedOver: { text: '', fromFile: true } } satisfies Record<keyof StereoLabel, Spec>;
 const numberLabel = { dx: 0, dy: 0, size: length, color: '', face: 0 } satisfies Record<keyof NonNullable<Atom['numberLabel']>, Spec>;
 const highlight = { shape: '', ends: '', size: 0, fit: true, shadow: true, soft: true, smooth: true, centre: true, softAmount: 0, softSide: '',
   transparency: 0, fill: '', colour2: '', gradAngle: 0, pattern: '', patternColour: '', patternSize: 0, line: '', lineColour: '', lineWidth: 0,

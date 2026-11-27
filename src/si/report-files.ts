@@ -90,9 +90,10 @@ export function forgetReports(): void { cache.clear(); }
  * gives them); a file that can't be opened just now is tried again next time.
  */
 export async function readReportFile(folder: SiFolder, dir: string, name: string, pdfText?: PdfText): Promise<ReportData> {
-  const path = dir ? `${dir}/${name}` : name;
   const listing = await folder.entries(dir).catch(() => []);
   const entry = listing.find((e) => e.name === name) ?? listing.find((e) => e.name.toLowerCase() === name.toLowerCase());
+  // (the file as the folder names it: found whatever its case, it is read by that name)
+  const path = dir ? `${dir}/${entry?.name ?? name}` : entry?.name ?? name;
   let key: string | null = null;
   if (entry) {
     if (entry.modified) key = [folder.where, path, entry.size ?? '', entry.modified, entry.folder ? 'folder' : 'file'].join('\0');
@@ -106,7 +107,8 @@ export async function readReportFile(folder: SiFolder, dir: string, name: string
   let bytes: Uint8Array | null;
   try { bytes = await folder.readBytes(path); } catch (e) { return notOpened(name, e instanceof Error ? e.name : 'Error'); }
   if (!bytes && entry) return notOpened(name);
-  const d = await readReport(bytes, name, pdfText, readInBackground);
+  // (a copy goes to the worker: the folder may hold these very bytes, as the in-memory one does)
+  const d = await readReport(bytes, name, pdfText, (b, n) => readInBackground(b.slice(), n));
   return bytes ? remember(key, d) : d;
 }
 

@@ -28,8 +28,8 @@ export interface Fit {
 }
 
 export const FIT_NAMES: Record<FitKind, string> = {
-  linear: 'Straight line', poly2: 'Polynomial (x²)', poly3: 'Polynomial (x³)', exp: 'Exponential', log: 'Logarithmic', power: 'Power',
-  order1: 'First-order decay', order2: 'Second-order decay', arrhenius: 'Arrhenius (k against T)', eyring: 'Eyring (k against T)', hammett: 'Hammett (against σ)',
+  linear: 'Linear', poly2: 'Polynomial (x²)', poly3: 'Polynomial (x³)', exp: 'Exponential', log: 'Logarithmic', power: 'Power',
+  order1: 'First-Order Decay', order2: 'Second-Order Decay', arrhenius: 'Arrhenius (k Against T)', eyring: 'Eyring (k Against T)', hammett: 'Hammett (Against σ)',
 };
 
 /** The chemistry fits, in menu order (Excel has none of them). */
@@ -205,7 +205,8 @@ export function fitEquation(f: Fit, digits = 4): string {
       const parts: string[] = [];
       for (let i = f.coef.length - 1; i >= 0; i--) {
         const c = f.coef[i];
-        if (i > 0 && c === 0) continue;
+        // a zero term is left out (y = 2x for a line through the origin), but a lone zero stays
+        if (c === 0 && (i > 0 || parts.length)) continue;
         const term = i === 0 ? '' : i === 1 ? 'x' : `x${i === 2 ? '²' : '³'}`;
         if (!parts.length) parts.push(`${n(c)}${term}`);
         else parts.push(`${signed(c)}${term}`);

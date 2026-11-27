@@ -102,7 +102,8 @@ function insertAt(runs: Run[], index: number, t: string): Run[] {
   return out.filter((r) => r.text);
 }
 
-const NMR_HEADER = /^\s*\d{1,3}\s*[A-Z][a-z]?(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*NMR/;
+// (the mass number may be typed with plain or superscript digits: "1H NMR" or "¹H NMR")
+const NMR_HEADER = /^\s*[\d⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3}\s*[A-Z][a-z]?(?:\s*\{\s*[\d⁰¹²³⁴⁵⁶⁷⁸⁹]{1,3}\s*[A-Z][a-z]?\s*\})?\s*NMR/;
 
 /** One peak report as a sentence, starting with its bold "¹H NMR". */
 export function nmrSentence(report: Json, o: BlockOptions, src?: { text: string; field: string }): Run[] {

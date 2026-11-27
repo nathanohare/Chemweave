@@ -75,14 +75,14 @@ export function askProperties(opts: PropertyDialogOptions): Promise<PropertyAnsw
   return new Promise((resolve) => {
     const d = document.createElement('dialog');
     d.className = 'ask prop-dialog';
-    d.setAttribute('aria-label', 'Insert property columns');
+    d.setAttribute('aria-label', 'Insert Property Columns');
     const form = document.createElement('form');
     form.method = 'dialog';
-    form.innerHTML = `<h2 data-info="Each property gets a column that is calculated from the structure in the same row, and updates when the structure changes. Type over any value to replace it; Reset to Calculated restores it.">Insert property columns</h2>
+    form.innerHTML = `<h2 data-info="Each property gets a column that is calculated from the structure in the same row, and updates when the structure changes. Type over any value to replace it; Reset to Calculated restores it.">Insert Property Columns</h2>
       <label class="ask-row"><span>Structures in</span><select name="col"></select></label>
       <div class="prop-list" role="group" aria-label="Properties"></div>
-      <section class="hm-section" aria-label="Hammett constants" hidden>
-        <h3>Hammett constants <span class="muted">(Hansch, Leo and Taft, Chem. Rev. 1991)</span></h3>
+      <section class="hm-section" aria-label="Hammett Constants" hidden>
+        <h3>Hammett Constants <span class="muted">(Hansch, Leo and Taft, Chem. Rev. 1991)</span></h3>
         <div class="hm-body">
           <div class="hm-pic" aria-hidden="true"></div>
           <div>

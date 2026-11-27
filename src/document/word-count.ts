@@ -4,7 +4,7 @@
 // "2,4-dinitrophenyl" are one word each, as Word counts them).
 
 import type { TextRun } from '../model';
-import { OBJECT_CHAR, flatRuns, type DocText } from './document';
+import { OBJECT_CHAR, usedObjects, type DocText } from './document';
 
 export interface TextCounts {
   words: number;
@@ -41,6 +41,22 @@ export const addCounts = (a: TextCounts, b: TextCounts): TextCounts => ({ words:
 const textOf = (runs: TextRun[]) => runs.map((r) => (r.obj !== undefined ? '' : r.text)).join('');
 
 /**
+ * The text as counted: figures and other objects left out, and each table cell's text (of
+ * tables inside cells too) on lines of its own, so cells count as their own words and paragraphs.
+ */
+function countedText(runs: TextRun[], objects: DocText['objects'], seen = new Set<number>()): string {
+  let out = '';
+  for (const r of runs) {
+    if (r.obj === undefined) { out += r.text; continue; }
+    const o = objects[r.obj];
+    if (o?.kind !== 'table' || seen.has(r.obj)) continue;
+    seen.add(r.obj);
+    for (const row of o.table.rows) for (const c of row) out += `\n${countedText(c.runs, objects, seen)}\n`;
+  }
+  return out;
+}
+
+/**
  * The counts of a document: its text and the text in its tables, with the text of its text boxes
  * and notes when `extras` is on. `range` counts only the selected text (from the text itself).
  */
@@ -49,10 +65,12 @@ export function countDocument(t: Pick<DocText, 'runs' | 'objects'>, extras: bool
   if (range) {
     const text = t.runs.map((r) => r.text).join('').slice(range[0], range[1]);
     out = countText(text);
-  } else out = countText(textOf(flatRuns(t)));
+  } else out = countText(countedText(t.runs, t.objects));
   if (!extras || range) return out;
-  for (const o of Object.values(t.objects)) {
-    if (o.kind === 'textbox' || o.kind === 'note') out = addCounts(out, countText(textOf(o.runs)));
+  // (those still in the document: one whose place was deleted is gone from it, though kept until saving)
+  for (const id of usedObjects(t)) {
+    const o = t.objects[id];
+    if (o?.kind === 'textbox' || o?.kind === 'note') out = addCounts(out, countText(textOf(o.runs)));
   }
   return out;
 }

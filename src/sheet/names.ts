@@ -53,10 +53,12 @@ export function resolveName(list: readonly DefinedName[], name: string, home: Sh
 
 /** The cells a name stands for, when it is just a block of cells (=Sheet1!$C$2:$C$40); null otherwise. */
 export function nameTarget(formula: string): { sheet: string | null; range: Range } | null {
-  const m = /^=?(?:'((?:[^']|'')+)'|([A-Za-z_][\w.]*))?(!?)(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)$/.exec(formula.trim());
-  if (!m || (!m[3] && (m[1] || m[2]))) return null;
-  const range = parseRange(m[4].toUpperCase());
-  return range ? { sheet: m[3] ? (m[1] ?? m[2]).replace(/''/g, "'") : null, range } : null;
+  // the sheet and its ! are one optional unit, so AB5 is read as column AB, not as sheet A with B5
+  const m = /^=?(?:(?:'((?:[^']|'')+)'|([A-Za-z_][\w.]*))!)?(\$?[A-Za-z]{1,3}\$?\d+(?::\$?[A-Za-z]{1,3}\$?\d+)?)$/.exec(formula.trim());
+  if (!m) return null;
+  const range = parseRange(m[3].toUpperCase());
+  const sheet = m[1] ?? m[2];
+  return range ? { sheet: sheet !== undefined ? sheet.replace(/''/g, "'") : null, range } : null;
 }
 
 /** What a name for some cells refers to, as Excel writes it: =Sheet1!$A$1:$C$9. */

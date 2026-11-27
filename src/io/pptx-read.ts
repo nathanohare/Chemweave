@@ -149,6 +149,13 @@ interface Xf { sx: number; sy: number; tx: number; ty: number }
 const IDENTITY: Xf = { sx: 1, sy: 1, tx: 0, ty: 0 };
 const apply = (t: Xf, x: number, y: number): Vec => ({ x: t.tx + t.sx * x, y: t.ty + t.sy * y });
 
+/** An xsd:boolean attribute's value: on for "1" and "true". */
+const isOn = (v: string | null): boolean => v === '1' || v === 'true';
+
+/** Shapes that look the same flipped either way (a flip of one changes nothing to warn of). */
+const FLIP_SAME = new Set(['rect', 'roundRect', 'ellipse', 'flowChartProcess', 'flowChartAlternateProcess', 'octagon', 'plus', 'diamond', 'flowChartDecision', 'frame', 'donut', 'flowChartConnector']);
+const FLIP_WARNING = 'Some flipped shapes and pictures came in unflipped.';
+
 /** The box of a shape (its a:xfrm or p:xfrm), in points on the slide. */
 function boxOf(xfrmEl: Element | null, t: Xf): (Rect & { rot: number; flipH: boolean; flipV: boolean }) | null {
   const off = kid(xfrmEl, 'off'), ext = kid(xfrmEl, 'ext');
@@ -158,7 +165,8 @@ function boxOf(xfrmEl: Element | null, t: Xf): (Rect & { rot: number; flipH: boo
   return {
     x1: a.x, y1: a.y, x2: a.x + w, y2: a.y + h,
     rot: Number(xfrmEl!.getAttribute('rot') ?? 0) / 60000,
-    flipH: xfrmEl!.getAttribute('flipH') === '1', flipV: xfrmEl!.getAttribute('flipV') === '1',
+    // (xsd:boolean: "1" or "true")
+    flipH: isOn(xfrmEl!.getAttribute('flipH')), flipV: isOn(xfrmEl!.getAttribute('flipV')),
   };
 }
 
@@ -342,24 +350,39 @@ class Reader {
   /** Each slide's mark as a keyframe's slide of a canvas slide (null for other slides), by its place. */
   private partsRead: (PartRead | null)[] = [];
 
+  /** Slide, layout and master parts read so far (each is read once, not again for every slide that uses it). */
+  private parts = new Map<string, Part | null>();
+
   private part(path: string | null): Part | null {
     if (!path) return null;
+    if (this.parts.has(path)) return this.parts.get(path)!;
     const doc = this.r.xml(path);
-    if (!doc) return null;
-    const cSld = kids(doc.documentElement).find((k) => k.localName === 'cSld') ?? null;
-    return { path, doc, tree: kid(cSld, 'spTree') };
+    const cSld = doc ? kids(doc.documentElement).find((k) => k.localName === 'cSld') ?? null : null;
+    const got = doc ? { path, doc, tree: kid(cSld, 'spTree') } : null;
+    this.parts.set(path, got);
+    return got;
   }
+
+  /** Each tags part's tags, read once (a shape's are asked for several times). */
+  private tagParts = new Map<string, Record<string, string> | null>();
 
   private tagsOf(from: string, holder: Element | null): Record<string, string> {
     const out: Record<string, string> = {};
     for (const t of kids(kid(holder, 'custDataLst'), 'tags')) {
       const rel = this.r.rels(from).get(rAttr(t, 'id') ?? '');
-      const doc = rel ? this.r.xml(rel.target) : null;
-      if (!doc) continue;
-      const raw: Record<string, string> = {};
-      for (const tag of Array.from(doc.getElementsByTagNameNS(NS.p, 'tag'))) raw[tag.getAttribute('name') ?? ''] = tag.getAttribute('val') ?? '';
-      // long values written in pieces, joined again
-      Object.assign(out, joinTagPieces(raw, () => this.warnings.add(CUT_TAG_WARNING)));
+      if (!rel) continue;
+      let got = this.tagParts.get(rel.target);
+      if (got === undefined) {
+        const doc = this.r.xml(rel.target);
+        if (doc) {
+          const raw: Record<string, string> = {};
+          for (const tag of Array.from(doc.getElementsByTagNameNS(NS.p, 'tag'))) raw[tag.getAttribute('name') ?? ''] = tag.getAttribute('val') ?? '';
+          // long values written in pieces, joined again
+          got = joinTagPieces(raw, () => this.warnings.add(CUT_TAG_WARNING));
+        } else got = null;
+        this.tagParts.set(rel.target, got);
+      }
+      if (got) Object.assign(out, got);
     }
     // a value PowerPoint cut short (one written whole by an older version, before long ones were written in pieces)
     if (Object.values(out).some(tagLooksCut)) this.warnings.add(CUT_TAG_WARNING);
@@ -423,7 +446,7 @@ class Reader {
     const joined = joinCanvases(slides, this.partsRead, this.options.edited ?? 'canvas');
     slides = joined.slides;
     const place = (k: number) => (k < 0 ? k : joined.place[k] ?? k);
-    placeSlideLinks(slides, new Map([...this.slideIds].map(([id, k]) => [id, place(k)])));
+    placeSlideLinks(slides, new Map([...this.slideIds].map(([id, k]) => [id, place(k)])), place);
     // the slides' ids in the file (as PowerPoint's sections name them)
     const sldIds = kids(kid(root, 'sldIdLst'), 'sldId').filter((x) => { const t = rels.get(rAttr(x, 'id') ?? '')?.target; return !!t && this.r.has(t); }).map((x) => x.getAttribute('id') ?? '');
     let sections = readSections(root, sldIds);
@@ -1589,6 +1612,7 @@ class Reader {
       ...(phPic !== undefined && !video ? { phPic } : {}),
       ...(click ? { link: click } : {}), ...(zoom && click ? { zoom } : {}), ...turn(box),
     });
+    if (box.flipH || box.flipV) this.warnings.add(FLIP_WARNING);
   }
 
   /**
@@ -1842,7 +1866,8 @@ class Reader {
     const match = (tree: Element | null, byIdx: boolean) => kids(tree, 'sp').find((sp) => {
       const p = phOf(sp);
       if (!p) return false;
-      if (byIdx && ph.idx !== null && p.idx === ph.idx) return true;
+      // first by its idx alone (Two Content's two type-less placeholders, idx 1 and 2), then by its type
+      if (byIdx) return ph.idx !== null && p.idx === ph.idx;
       return isTitle(ph.type) ? isTitle(p.type) : p.type === ph.type || (ph.type === 'subTitle' && p.type === 'body' && !byIdx) || (isBody(ph.type) && p.type === 'body' && !byIdx);
     });
     const l = match(layout?.tree ?? null, true) ?? match(layout?.tree ?? null, false);
@@ -1881,6 +1906,8 @@ class Reader {
     if (!box) return;
     const prst = kid(spPr, 'prstGeom')?.getAttribute('prst') ?? (kid(spPr, 'custGeom') ? 'cust' : 'rect');
     if (!ph && LINE_PRST.test(prst)) { this.line(sp, spPr, t, doc); return; }
+    // (shapes here aren't mirrored: a flipped arrow or callout points the other way, said so)
+    if ((box.flipH || box.flipV) && !FLIP_SAME.has(prst)) this.warnings.add(FLIP_WARNING);
     if (!ph) {
       // a design shape saved here, or a PowerPoint shape that is one (in designs, boxes and ovals too)
       const geoTag = this.tagsOf(s.path, kid(sp, 'nvSpPr', 'nvPr'))[TAG.geo];
@@ -2192,7 +2219,8 @@ class Reader {
     if (sh) {
       out.shadow = true;
       const n = (a: string) => Number(sh.getAttribute(a) ?? 0);
-      out.shadowSize = +(fromEmu(String(n('dist'))) || 3).toFixed(2);
+      // (dist is 0 when not given, ECMA-376 part 1, 20.1.8.49: a centred shadow, not one 3 pt off)
+      out.shadowSize = +fromEmu(String(n('dist'))).toFixed(2);
       const blur = fromEmu(String(n('blurRad')));
       if (blur) out.shadowBlur = +blur.toFixed(2);
       out.shadowAngle = Math.round(n('dir') / 60000) % 360;
@@ -3012,15 +3040,31 @@ const dropUndefined = (r: TextRun): Partial<TextRun> => Object.fromEntries(Objec
  * Links to slides as their places (#slide-n=2): links PowerPoint made are read that way, and links
  * kept in our own tags name the slide's id when it was saved (#slide=7), turned into its place here.
  */
-function placeSlideLinks(slides: PptxSlide[], ids: Map<number, number>): void {
-  for (const s of slides) {
-    const json = JSON.stringify(s.contents);
-    if (!json.includes('"#slide=')) continue;
-    s.contents = JSON.parse(json.replace(/"#slide=(\d+)"/g, (all, id) => {
-      const i = ids.get(Number(id));
-      return i === undefined || i < 0 ? all : `"#slide-n=${i}"`;
-    }));
+function placeSlideLinks(slides: PptxSlide[], ids: Map<number, number>, place: (k: number) => number = (k) => k): void {
+  const fix = (v: string): string | null => {
+    // a link PowerPoint made, by its slide's place in the file: its place once canvases' keyframe slides are one
+    const n = /^#slide-n=(\d+)$/.exec(v);
+    if (n) { const i = place(Number(n[1])); return i < 0 || i === Number(n[1]) ? null : `#slide-n=${i}`; }
+    const m = /^#slide=(\d+)$/.exec(v);
+    const i = m ? ids.get(Number(m[1])) : undefined;
+    return i === undefined || i < 0 ? null : `#slide-n=${i}`;
+  };
+  // (looked for value by value, not by writing out the slide, pictures and all, as one string)
+  for (const s of slides) s.contents = relink(s.contents, fix) as Contents;
+}
+
+/** A value with each text in it that `fix` changes (links to slides) changed, copied only where something changed. */
+function relink(v: unknown, fix: (s: string) => string | null): unknown {
+  if (typeof v === 'string') return v.startsWith('#slide') ? fix(v) ?? v : v;
+  if (!v || typeof v !== 'object') return v;
+  if (Array.isArray(v)) {
+    let out: unknown[] | null = null;
+    v.forEach((x, i) => { const y = relink(x, fix); if (y !== x) (out ??= v.slice())[i] = y; });
+    return out ?? v;
   }
+  let out: Record<string, unknown> | null = null;
+  for (const [k, x] of Object.entries(v)) { const y = relink(x, fix); if (y !== x) (out ??= { ...(v as Record<string, unknown>) })[k] = y; }
+  return out ?? v;
 }
 
 function merge(runs: TextRun[]): TextRun[] {
@@ -3146,7 +3190,8 @@ function joinCanvases(slides: PptxSlide[], parts: (PartRead | null)[], want: 'ca
       ...(keep.anims?.length ? { anims: keep.anims } : {}),
       ...(keep.transition ? { transition: keep.transition } : {}), ...(keep.background ? { background: keep.background } : {}),
       ...(keep.hideGraphics ? { hideGraphics: true } : {}), ...(keep.hidden ? { hidden: true } : {}),
-      ...(s.comments?.length ? { comments: s.comments } : {}), ...(s.hf ? { hf: s.hf } : {}),
+      // (the comments on every keyframe slide of the canvas)
+      ...(slides.slice(i, j).some((x) => x.comments?.length) ? { comments: slides.slice(i, j).flatMap((x) => x.comments ?? []) } : {}), ...(s.hf ? { hf: s.hf } : {}),
     });
     i = j;
   }

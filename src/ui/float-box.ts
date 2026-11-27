@@ -112,7 +112,7 @@ export class FloatBox {
 
   private wireDrag(head: HTMLElement): void {
     head.addEventListener('pointerdown', (e) => {
-      if ((e.target as HTMLElement).closest('button') || e.button !== 0) return;
+      if ((e.target as HTMLElement).closest('button, .info-icon') || e.button !== 0) return;
       e.preventDefault();
       const r = this.el.getBoundingClientRect();
       const dx = e.clientX - r.left, dy = e.clientY - r.top;

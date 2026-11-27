@@ -3,12 +3,17 @@
 // bringing what is under it), and the places a search finds, each with the words round it.
 
 import type { DocText } from '../document/document';
-import { headingAt, headingsOf, levelsOf, moveHeading, searchDocument, shownHeadings, type NavHit } from '../document/navigation';
+import { headingAt, headingsOf, levelsOf, moveHeading, searchDocument, shownHeadings, type NavHeading, type NavHit } from '../document/navigation';
 import { subtreeEnd } from '../document/doc-views';
 import { popupMenu } from './sheet-view';
 
+/** The most results listed at once (a common word has thousands; Enter still goes through all of them). */
+export const MOST_LISTED = 500;
+
 export interface DocNavHost {
   text(): DocText | null;
+  /** Which document is shown (anything that tells one from another), so what is kept for one isn't shown for the next. */
+  file?(): unknown;
   /** The paragraph the caret is in (the document's text). */
   caretPara(): number;
   /** Put the caret at the start of a paragraph and scroll it to the top. */
@@ -33,8 +38,16 @@ export class DocNav {
   private count: HTMLElement;
   private tabs: HTMLButtonElement[];
   private tab: 'headings' | 'results' = 'headings';
-  private folded = new Set<number>();
+  /** The folded headings, each by its level, its words and which of those it is (not its paragraph number, which an edit above it moves). */
+  private folded = new Set<string>();
   private hits: NavHit[] = [];
+  /** What the lists were made from: the text, the file, the words searched and the tab, to leave them alone when only the caret moved. */
+  private shownT: DocText | null = null;
+  private shownFile: unknown;
+  private shownTab: 'headings' | 'results' | null = null;
+  private searchedT: DocText | null = null;
+  private searchedQ = '';
+  private heads: NavHeading[] = [];
   private queued = false;
   private dragFrom: number | null = null;
 
@@ -91,8 +104,33 @@ export class DocNav {
     this.queued = true;
     requestAnimationFrame(() => {
       this.queued = false;
-      if (this.search.value.trim()) this.runSearch(false);
-      else this.render();
+      const t = this.host.text();
+      const file = this.host.file?.();
+      // another document: what was kept for the last one (folds, the result being visited) goes
+      if (file !== this.shownFile) { this.folded.clear(); this.at = -1; this.searchedT = null; this.shownT = null; }
+      const q = this.search.value;
+      // the words are looked for again only when the text changed (not for the caret moving)
+      if (q.trim() && (t !== this.searchedT || q !== this.searchedQ)) { this.runSearch(false); return; }
+      if (t === this.shownT && file === this.shownFile && this.tab === this.shownTab) { this.markHere(); return; }
+      this.render();
+    });
+  }
+
+  /** Only the caret moved: the heading it is under is marked, and nothing is built again. */
+  private markHere(): void {
+    if (this.tab !== 'headings') return;
+    const here = headingAt(this.heads, this.host.caretPara());
+    for (const row of this.list.querySelectorAll<HTMLElement>('.nav-item')) row.classList.toggle('nav-here', row.dataset.para === String(here));
+  }
+
+  /** A heading's key for folding: its level, its words and which of those it is (the second "Methods" is not the first). */
+  private foldKeys(heads: NavHeading[]): string[] {
+    const seen = new Map<string, number>();
+    return heads.map((h) => {
+      const base = `${h.level}|${h.text}`;
+      const n = seen.get(base) ?? 0;
+      seen.set(base, n + 1);
+      return `${base}|${n}`;
     });
   }
 
@@ -100,6 +138,11 @@ export class DocNav {
     const t = this.host.text();
     const q = this.search.value;
     this.hits = t && q.trim() ? searchDocument(t, q) : [];
+    // new words start from the first result; the same words in changed text keep the place, within the results there are now
+    if (q !== this.searchedQ) this.at = -1;
+    else this.at = Math.min(this.at, this.hits.length - 1);
+    this.searchedT = t;
+    this.searchedQ = q;
     this.count.textContent = q.trim() ? `${this.hits.length} result${this.hits.length === 1 ? '' : 's'}` : '';
     if (show) this.host.showFound(q.trim() ? q : null);
     this.render();
@@ -110,7 +153,8 @@ export class DocNav {
   /** Enter in the search box: the next (or previous) result. */
   private step(dir: 1 | -1): void {
     if (!this.hits.length) return;
-    this.at = (this.at + dir + this.hits.length) % this.hits.length;
+    // (none visited yet: Enter goes to the first, Shift+Enter to the last)
+    this.at = this.at < 0 ? (dir > 0 ? 0 : this.hits.length - 1) : (this.at + dir + this.hits.length) % this.hits.length;
     this.host.goToHit(this.hits[this.at]);
     // the keys stay in the search box (going to the hit focuses the page, where the next Enter
     // would replace the selected hit with a paragraph break)
@@ -121,9 +165,16 @@ export class DocNav {
   private render(): void {
     const t = this.host.text();
     this.list.replaceChildren();
+    this.shownT = t;
+    this.shownFile = this.host.file?.();
+    this.shownTab = this.tab;
     if (!t) return;
     if (this.tab === 'results') { this.renderResults(); return; }
     const heads = headingsOf(t);
+    this.heads = heads;
+    const keys = this.foldKeys(heads);
+    const index = new Map(heads.map((h, k) => [h, k]));
+    const foldedParas = new Set(heads.filter((_, k) => this.folded.has(keys[k])).map((h) => h.para));
     if (!heads.length) {
       const p = document.createElement('p');
       p.className = 'nav-empty';
@@ -132,10 +183,11 @@ export class DocNav {
       return;
     }
     const here = headingAt(heads, this.host.caretPara());
-    const shown = shownHeadings(heads, this.folded);
+    const shown = shownHeadings(heads, foldedParas);
     const minLevel = Math.min(...heads.map((h) => h.level));
     shown.forEach((h) => {
-      const i = heads.indexOf(h);
+      const i = index.get(h)!;
+      const key = keys[i];
       const kids = i + 1 < heads.length && heads[i + 1].level > h.level;
       const row = document.createElement('div');
       row.className = 'nav-item';
@@ -147,13 +199,13 @@ export class DocNav {
       const fold = document.createElement('button');
       fold.type = 'button';
       fold.className = 'nav-fold';
-      fold.textContent = kids ? (this.folded.has(h.para) ? '▸' : '▾') : '';
+      fold.textContent = kids ? (this.folded.has(key) ? '▸' : '▾') : '';
       fold.tabIndex = -1;
       fold.disabled = !kids;
-      fold.title = kids ? (this.folded.has(h.para) ? 'Show the headings under this one' : 'Hide the headings under this one') : '';
+      fold.title = kids ? (this.folded.has(key) ? 'Show the headings under this one' : 'Hide the headings under this one') : '';
       fold.addEventListener('click', (e) => {
         e.stopPropagation();
-        if (this.folded.has(h.para)) this.folded.delete(h.para); else this.folded.add(h.para);
+        if (this.folded.has(key)) this.folded.delete(key); else this.folded.add(key);
         this.render();
       });
       const label = document.createElement('span');
@@ -161,7 +213,7 @@ export class DocNav {
       label.textContent = h.text || '(empty heading)';
       label.title = h.text;
       row.append(fold, label);
-      if (kids) row.setAttribute('aria-expanded', String(!this.folded.has(h.para)));
+      if (kids) row.setAttribute('aria-expanded', String(!this.folded.has(key)));
       row.addEventListener('click', () => this.host.goToPara(h.para));
       row.addEventListener('contextmenu', (e) => {
         e.preventDefault();
@@ -170,7 +222,7 @@ export class DocNav {
           ['Demote', () => this.host.level(h.para, 'demote'), h.level < 9],
           null,
           ['Expand All', () => { this.folded.clear(); this.render(); }],
-          ['Collapse All', () => { for (const x of heads) this.folded.add(x.para); this.render(); }],
+          ['Collapse All', () => { for (const k of keys) this.folded.add(k); this.render(); }],
           null,
           ['Delete Heading and Content', () => this.host.deleteBlock(h.para)],
         ]);
@@ -202,7 +254,7 @@ export class DocNav {
         if (after) {
           const levels = levelsOf(t);
           // (an open heading: first under it, before the heading after it)
-          to = this.folded.has(h.para) || !kids ? subtreeEnd(levels, h.para) : heads[i + 1].para;
+          to = this.folded.has(key) || !kids ? subtreeEnd(levels, h.para) : heads[i + 1].para;
         }
         const moved = moveHeading(t, from, to);
         if (moved) this.host.apply(moved.t, 'Move heading', moved.para);
@@ -245,7 +297,7 @@ export class DocNav {
       this.list.append(p);
       return;
     }
-    this.hits.forEach((hit, i) => {
+    this.hits.slice(0, MOST_LISTED).forEach((hit, i) => {
       const row = document.createElement('button');
       row.type = 'button';
       row.className = 'nav-hit';
@@ -257,5 +309,11 @@ export class DocNav {
       row.addEventListener('click', () => { this.at = i; this.host.goToHit(hit); this.render(); });
       this.list.append(row);
     });
+    if (this.hits.length > MOST_LISTED) {
+      const more = document.createElement('p');
+      more.className = 'nav-empty';
+      more.textContent = `The first ${MOST_LISTED} of ${this.hits.length} results are listed. Enter in the box above goes to each of them in turn.`;
+      this.list.append(more);
+    }
   }
 }

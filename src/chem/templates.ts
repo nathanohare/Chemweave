@@ -7,7 +7,7 @@ import data from './templates.json';
 import conformerData from './conformers.json';
 import metalData from './metal-templates.json';
 import ligandData from './ligand-library.json';
-import type { Doc, BondDisplay } from '../model';
+import { turnedOverWedge, type Doc, type BondDisplay } from '../model';
 import { Vec, add, sub, mul, dist, angleOf, DEG } from '../geom';
 import { elementNumber, SYMBOLS } from './elements';
 import { atomAt, MERGE_FRACTION } from './chemgeom';
@@ -306,7 +306,7 @@ export function placeTemplate(doc: Doc, t: Template, pl: Placement, opts: PlaceO
     else if (o === 2 && ((shared.has(a) && hasDouble(a)) || (shared.has(b) && hasDouble(b)))) o = 1;
     // a mirror image needs its wedges swapped to keep the same stereochemistry
     let d: BondDisplay = display ?? 'solid';
-    if (pl.mirror) d = d === 'wedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d;
+    if (pl.mirror) d = turnedOverWedge(d);
     doc.addBond(a, b, o, d, extra);
   });
   for (const [m, members, display] of t.hapto ?? []) bondHapto(doc, ids[m], members.map((i) => ids[i]), display ?? 'solid');

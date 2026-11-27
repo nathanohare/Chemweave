@@ -22,7 +22,7 @@ import type { ImportedSpectrum } from './si-import-apply';
 import { drawingLabels, drawingStructures, type StructureTools } from './si-import-structures';
 import { linePlain, toLines, type DocObject } from './si-import-read';
 import type { PdfPages } from './si-import-pdf';
-import { guarded, guardedAt, notAfter } from '../regex-behind';
+import { guarded, notAfter } from '../regex-behind';
 
 // a nucleus or another spectrum type named in a header or title
 const NUCLEUS_SRC = String.raw`(?<mass>\d{1,3})\s*(?<el>[A-Z][a-z]?)(?:\s*\{\s*\d{1,3}\s*[A-Z][a-z]?\s*\})?\s*-?\s*NMR\b`;
@@ -140,8 +140,9 @@ export function emfPeaks(data: Uint8Array): number[] {
  * of the spectrum's peaks the report explains.
  */
 export function matchScore(peaks: number[], report: string, kind: string): number {
-  const reported = reportPeaks(report);
-  if (peaks.length < 3 || !reported.length) return 0;
+  if (peaks.length < 3) return 0;
+  const reported = parsedReport(report);
+  if (!reported.length) return 0;
   const tol = kind === '13C' ? 0.06 : kind === '19F' ? 0.15 : 0.02;
   const spans = reported.map((p) => {
     const [lo, hi] = p.end !== null ? [p.shift, p.end] : [p.shift, p.shift];
@@ -154,6 +155,18 @@ export function matchScore(peaks: number[], report: string, kind: string): numbe
 
 const reportsOf = (c: ImportedCompound | undefined, kind: string): string[] =>
   ((c?.values.nmr ?? []) as { nucleus?: string; text?: string }[]).filter((r) => r.nucleus === kind).map((r) => r.text ?? '');
+
+/** Each report's peaks, read once (every spectrum of an import is matched against every report). */
+const parsedReports = new Map<string, ReturnType<typeof reportPeaks>>();
+function parsedReport(report: string): ReturnType<typeof reportPeaks> {
+  let got = parsedReports.get(report);
+  if (!got) {
+    if (parsedReports.size >= 5000) parsedReports.clear();
+    got = reportPeaks(report);
+    parsedReports.set(report, got);
+  }
+  return got;
+}
 
 /** [the compound whose report of this nucleus the peaks fit clearly best, its score]; ['', 0] when none fits well or two fit about as well. */
 export function bestByPeaks(peaks: number[], kind: string, compounds: ImportedCompound[]): [string, number] {
@@ -357,23 +370,38 @@ function settle(spectra: ImportedSpectrum[]): void {
 
 // ---------------------------------------------------------------------- PDF
 
-const escapeRe = (s: string): string => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 // STEREO (si-import.ts) without its "?", ending the text before the ID, itself not inside a word
 const STEREO_BEFORE = /(?:^|[^\w-])(?:\((?:[RSEZ](?:,\s*[RSEZ])*|rac|ent|±|[+−-])\)-|rac-|ent-|\(±\)-)$/;
+const WORDLIKE = /[\w-]/;
+const ID_THEN_NUCLEUS = /^\d{1,3}[A-Z]/;
+
+/**
+ * Where compound ID `cid` is written in `text` on its own (found by a plain text search, not a
+ * pattern made from the ID): not inside a word, or after its stereo prefix ("(±)-3", "(S)-2a",
+ * "rac-5", which is not part of the ID), and followed by the end, a character not of a word, or a
+ * nucleus run on ("9a13C NMR").
+ */
+function idPlaces(text: string, cid: string): number[] {
+  const out: number[] = [];
+  for (let at = text.indexOf(cid); at >= 0; at = text.indexOf(cid, at + 1)) {
+    const end = at + cid.length;
+    const after = end >= text.length || !WORDLIKE.test(text[end]) || ID_THEN_NUCLEUS.test(text.slice(end));
+    const before = at === 0 || !WORDLIKE.test(text[at - 1]) || STEREO_BEFORE.test(text.slice(Math.max(0, at - 40), at));
+    if (after && before) out.push(at);
+  }
+  return out;
+}
 
 /** The first compound ID in a header ("2a — 1H NMR…", "1H NMR of 2", "9a13C NMR"). */
 export function findId(text: string, ids: string[]): string {
   let best: [number, string] | null = null;
   for (const cid of ids) {
     if (!cid) continue;
-    // (the ID on its own, or after its stereo prefix: "(±)-3", "(S)-2a", "rac-5", which is not part of the ID)
-    const re = guardedAt(new RegExp(`${escapeRe(cid)}(?=$|[^\\w-]|\\d{1,3}[A-Z])`, 'g'),
-      (at, s) => at === 0 || !/[\w-]/.test(s[at - 1]) || STEREO_BEFORE.test(s.slice(Math.max(0, at - 40), at)));
-    for (const m of text.matchAll(re)) {
-      const end = m.index + m[0].length;
+    for (const index of idPlaces(text, cid)) {
+      const end = index + cid.length;
       // not the nucleus itself ("1H", "13C": an ID "1" or "13" must not match there)
       if (/^[A-Z][a-z]?\b/.test(text.slice(end)) && /^\d+$/.test(cid)) continue;
-      if (!best || m.index < best[0] || (m.index === best[0] && cid.length > best[1].length)) best = [m.index, cid];
+      if (!best || index < best[0] || (index === best[0] && cid.length > best[1].length)) best = [index, cid];
     }
   }
   return best ? best[1] : '';
@@ -391,7 +419,8 @@ export async function pdfSpectra(pdf: PdfPages, plan: ImportPlan, pages: number[
     const [width, height] = size;
     const lines = toLines(spans);
     const headers = lines.filter((L) => { const t = linePlain(L); return HEADER.test(t) && t.length < 160; });
-    const pageIds = new Set(lines.map((L) => linePlain(L)).filter((t) => /^[\w′'\-\s()±+−,]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
+    // (each different short line once)
+    const pageIds = new Set([...new Set(lines.map((L) => linePlain(L)))].filter((t) => /^[\w′'\-\s()±+−,]{1,40}$/.test(t)).map((t) => findId(t, ids)).filter(Boolean));
     const left = spans.length ? Math.min(...spans.map((s) => s.x0)) : 36;
     const right = spans.length ? Math.max(...spans.map((s) => s.x1)) : 576;
     const bottomText = lines.filter((L) => L.base > 0.9 * height);    // (page numbers, footers)

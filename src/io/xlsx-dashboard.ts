@@ -13,6 +13,7 @@ import { Chart, Series, SeriesData, chartData, refText } from '../sheet/chart';
 import {
   Dashboard, Tile, AGGREGATE_NAMES, groupSeries, tileMask, kpiValue, resolveSource, shownRows, columnOf, sourceName,
 } from '../sheet/dashboard';
+import { maxOf } from './min-max';
 
 /** How wide the dashboard is laid out for Excel, in pixels (about a laptop screen). */
 export const EXCEL_DASH_WIDTH = 1200;
@@ -61,7 +62,7 @@ export function dashboardStandIn(book: Workbook, s: Sheet): { sheet: Sheet; data
           // cells under the chart, and the Excel chart reads those
           const shown = groupSeries(chartData(book, book.sheet, t.chart, mask), t.chart.kind, t.group);
           const scatter = t.chart.kind === 'scatter';
-          const n = Math.max(0, ...shown.map((d) => d.ys.length));
+          const n = Math.max(0, maxOf(shown.map((d) => d.ys.length)));
           const ref = (c: number, r1: number, r2: number) => refText(s.name, { r1, c1: c, r2, c2: c });
           const series: Series[] = [];
           later.push(() => {

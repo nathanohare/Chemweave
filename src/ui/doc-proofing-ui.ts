@@ -32,30 +32,37 @@ export interface ProofProblem {
   start: number;
   end: number;
   message: string;
-  /** What it could be changed to, best first. */
-  choices: string[];
+  /** What it could be changed to, best first (a spelling's are worked out when first asked for: the pane shows one problem at a time). */
+  readonly choices: string[];
   /** For a chemistry slip, the edits its fix makes. */
   issue?: Issue;
 }
 
 /** Every problem in the document's text, in order: spelling, grammar and chemistry formatting. */
-export function proofProblems(text: string, spell: [number, number][], issues: Issue[], speller: Speller | null, grammar = true): ProofProblem[] {
+export function proofProblems(text: string, spell: [number, number][], issues: Issue[], speller: Speller | null, grammar: boolean | ProofProblem[] = true): ProofProblem[] {
   const out: ProofProblem[] = [];
   for (const [a, b] of spell) {
     const w = text.slice(a, b);
-    out.push({ kind: 'spelling', start: a, end: b, message: 'Not in the dictionary', choices: speller?.suggestions(w) ?? [] });
+    // (looking for a word's suggestions is slow for one the dictionary knows nothing like: only for the one being shown)
+    let got: string[] | null = null;
+    out.push({ kind: 'spelling', start: a, end: b, message: 'Not in the dictionary', get choices() { return got ??= speller?.suggestions(w) ?? []; } });
   }
   for (const i of issues) out.push({ kind: 'chemistry', start: i.start, end: i.end, message: i.message, choices: [i.fixed], issue: i });
-  if (grammar) {
-    let at = 0;
-    for (const para of text.split('\n')) {
-      for (const g of grammarIssues(para)) out.push({ kind: 'grammar', start: g.start + at, end: g.end + at, message: g.message, choices: g.fix !== undefined ? [g.fix] : [] });
-      at += para.length + 1;
-    }
-  }
+  if (grammar) out.push(...(Array.isArray(grammar) ? grammar : grammarProblems(text)));
   // a grammar slip inside a misspelled word is left for the spelling
   out.sort((a, b) => a.start - b.start || (a.kind === 'spelling' ? -1 : 1));
   return out.filter((p, i) => i === 0 || !(p.kind === 'grammar' && out.slice(0, i).some((q) => q.kind !== 'grammar' && q.start <= p.start && q.end >= p.end)));
+}
+
+/** The grammar slips in a text, paragraph by paragraph. */
+export function grammarProblems(text: string): ProofProblem[] {
+  const out: ProofProblem[] = [];
+  let at = 0;
+  for (const para of text.split('\n')) {
+    for (const g of grammarIssues(para)) out.push({ kind: 'grammar', start: g.start + at, end: g.end + at, message: g.message, choices: g.fix !== undefined ? [g.fix] : [] });
+    at += para.length + 1;
+  }
+  return out;
 }
 
 /** The words a thesaurus gives for a word (Datamuse: same meaning, then related). */
@@ -91,6 +98,10 @@ export class DocProofingUI {
   /** Grammar checked as well as spelling (Word's "Check grammar with spelling"). */
   grammar = true;
   private skipped = new Set<string>();
+  /** The grammar slips of the text last checked (they depend only on the text: kept while it is the same). */
+  private grammarOf: { t: unknown; list: ProofProblem[] } | null = null;
+  /** The document and the words the pane is showing a problem in: to leave it alone when the text has moved on. */
+  private shownIn: { file: DocFile; t: unknown; text: string } | null = null;
 
   constructor(private host: DocProofingHost) {}
 
@@ -133,8 +144,25 @@ export class DocProofingUI {
     const f = this.host.file();
     if (!f) return [];
     const c = this.host.checks();
-    return proofProblems(rt.plainText(f.t.runs), c.spell, c.issues, this.host.speller(), this.grammar)
-      .filter((p) => !this.skipped.has(`${p.kind}:${p.start}:${rt.plainText(f.t.runs).slice(p.start, p.end)}`));
+    const text = rt.plainText(f.t.runs);
+    if (this.grammar && this.grammarOf?.t !== f.t) this.grammarOf = { t: f.t, list: grammarProblems(text) };
+    return proofProblems(text, c.spell, c.issues, this.host.speller(), this.grammar && this.grammarOf ? this.grammarOf.list : false)
+      .filter((p) => !this.skipped.has(`${p.kind}:${p.start}:${text.slice(p.start, p.end)}`));
+  }
+
+  /**
+   * Whether the problem shown is still where it was: the same document and text, with the same words at
+   * its place. When it isn't (the text was typed in, undone, or another document came up since),
+   * the pane looks again from where it was, and nothing is changed at the old place.
+   */
+  private stillThere(p: ProofProblem): boolean {
+    const f = this.host.file();
+    const here = this.shownIn;
+    // (the text is replaced by every edit, so the same text is the same offsets: the same words by chance, one character of a slip, do not do)
+    if (f && here && here.file === f && here.t === f.t && rt.plainText(f.t.runs).slice(p.start, p.end) === here.text) return true;
+    this.host.flash('The text has changed since it was found: looking again.');
+    this.next();
+    return false;
   }
 
   /** Review > Spelling & Grammar (F7): the pane, starting at the caret. */
@@ -166,6 +194,8 @@ export class DocProofingUI {
       p = all.find((x) => x.start < this.startedAt);
     }
     this.current = p ?? null;
+    const f = this.host.file();
+    this.shownIn = p && f ? { file: f, t: f.t, text: rt.plainText(f.t.runs).slice(p.start, p.end) } : null;
     this.render();
     if (p) this.host.show(p.start, p.end);
   }
@@ -246,7 +276,7 @@ export class DocProofingUI {
 
   private change(p: ProofProblem, to: string | undefined): void {
     const f = this.host.file();
-    if (!f || to === undefined) return;
+    if (!f || to === undefined || !this.stillThere(p)) return;
     if (p.issue) f.ed.fix(p.issue.edits, 'fix');
     else f.ed.fix([{ start: p.start, end: p.end, text: p.kind === 'spelling' ? matchCase(to, rt.plainText(f.t.runs).slice(p.start, p.end)) : to }], 'spell');
     this.pos = p.start + (p.issue ? 0 : to.length) + (p.issue ? 1 : 0);
@@ -255,7 +285,7 @@ export class DocProofingUI {
 
   private changeAll(p: ProofProblem, to: string | undefined): void {
     const f = this.host.file();
-    if (!f || to === undefined) return;
+    if (!f || to === undefined || !this.stillThere(p)) return;
     const text = rt.plainText(f.t.runs);
     const word = text.slice(p.start, p.end);
     const same = this.problems().filter((q) => q.kind === p.kind && text.slice(q.start, q.end) === word && q.message === p.message);
@@ -271,12 +301,17 @@ export class DocProofingUI {
   async lookUp(near?: HTMLElement | null): Promise<void> {
     const f = this.host.file();
     if (!f) return;
-    const ed = f.ed;
+    // the text being typed in (a table cell, a text box or a note too), not the document's own
+    const ed = f.textEd;
     const text = ed.text;
     let a = ed.start, b = ed.end;
     if (a === b) {
       while (a > 0 && /[\p{L}'’-]/u.test(text[a - 1])) a--;
       while (b < text.length && /[\p{L}'’-]/u.test(text[b])) b++;
+    } else {
+      // a selection with a space at either end: the word is what is between, and that is what is replaced (the spaces stay)
+      while (a < b && /\s/.test(text[a])) a++;
+      while (b > a && /\s/.test(text[b - 1])) b--;
     }
     const word = text.slice(a, b).trim();
     if (!word || word.includes('\n')) { this.host.flash('Put the cursor in a word (or select one) to look it up.'); return; }
@@ -310,7 +345,7 @@ export class DocProofingUI {
         btn.title = `Put “${w}” in place of “${word}”`;
         btn.addEventListener('mousedown', (e) => e.preventDefault());
         btn.addEventListener('click', () => {
-          if (this.host.file() !== f || ed.text.slice(a, b).trim() !== word) { this.host.flash('The text has changed: look the word up again.'); return; }
+          if (this.host.file() !== f || f.textEd !== ed || ed.text.slice(a, b).trim() !== word) { this.host.flash('The text has changed: look the word up again.'); return; }
           ed.fix([{ start: a, end: b, text: w }], 'Thesaurus');
           box.close();
           this.host.focus();

@@ -78,7 +78,7 @@ export function blankRef(type: RefType = 'article', id = newRefId()): Reference 
  * (from a damaged file) falls back to empty rather than stopping the document from opening.
  */
 export function cleanRef(r: Partial<Record<keyof Reference, unknown>>): Reference {
-  const type = typeof r.type === 'string' && r.type in REF_TYPES ? (r.type as RefType) : 'article';
+  const type = typeof r.type === 'string' && Object.hasOwn(REF_TYPES, r.type) ? (r.type as RefType) : 'article';
   const id = r.id !== undefined && r.id !== null && r.id !== '' && typeof r.id !== 'object' ? String(r.id) : newRefId();
   const out = blankRef(type, id);
   let authors = r.authors;
@@ -102,6 +102,22 @@ export function normaliseDoi(text: string): string {
   t = t.replace(/^(?:https?:\/\/)?(?:dx\.)?doi\.org\//i, '');
   t = t.replace(/^doi:\s*/i, '');
   return t.trim();
+}
+
+/**
+ * The DOIs in some typed or pasted text: one to a line, or separated by spaces. A comma or semicolon
+ * is part of a DOI where it is inside one (older Wiley DOIs, "10.1002/(SICI)…>3.0.CO;2-2");
+ * it ends one only at the end of a word ("10.1021/a, 10.1021/b") or before the next DOI starts.
+ */
+export function splitDois(text: string): string[] {
+  const out: string[] = [];
+  for (const word of (text ?? '').split(/\s+/)) {
+    for (const part of word.split(/[,;](?=(?:https?:\/\/|doi:|10\.))/i)) {
+      const doi = part.replace(/[,;]+$/, '');
+      if (doi) out.push(doi);
+    }
+  }
+  return out;
 }
 
 /** A person's family name ("Fulmer" from "Fulmer, Gregory R."). */
@@ -258,10 +274,14 @@ const LATEX_LETTERS: Record<string, string> = { o: 'ø', O: 'Ø', ss: 'ß', ae: 
 /** BibTeX's LaTeX as plain text: {\"o} → ö, {\ss} → ß, -- → –, $_2$ → 2, other commands and braces dropped. */
 export function delatex(text: string): string {
   let t = text.replace(/\\textendash\b\s?|--/g, '–').replace(/\\textemdash\b\s?/g, '—');
-  t = t.replace(/\\(['`^"~=.uvcHkr])\s*(?:\{\s*(\\i|[A-Za-z])\s*\}|(\\i|[A-Za-z]))/g, (_m, mark: string, a?: string, b?: string) => {
+  const accent = (_m: string, mark: string, a?: string, b?: string) => {
     const letter = (a ?? b ?? '') === '\\i' ? 'i' : (a ?? b ?? '');
     return (letter + (LATEX_ACCENTS[mark] ?? '')).normalize('NFC');
-  });
+  };
+  // a sign's mark may touch its letter (\'e); a letter's mark (\u, \v, \c, \H, \k, \r) needs a
+  // brace or a space, as in LaTeX, or it is the start of a command's name (\url, \ce, \rm)
+  t = t.replace(/\\(['`^"~=.])\s*(?:\{\s*(\\i|[A-Za-z])\s*\}|(\\i|[A-Za-z]))/g, accent);
+  t = t.replace(/\\([uvcHkr])(?:\s*\{\s*(\\i|[A-Za-z])\s*\}|\s+(\\i|[A-Za-z]))/g, accent);
   t = t.replace(/\{?\\(ss|ae|AE|aa|AA|o|O|l|L)\}?(?![A-Za-z])/g, (_m, k: string) => LATEX_LETTERS[k]);
   t = t.replace(/\\&/g, '&').replace(/\$_\{?(\d+)\}?\$/g, '$1').replace(/\\[a-zA-Z]+\s*/g, '');
   return t.replace(/[{}]/g, '').replace(/\s+/g, ' ').trim();
@@ -345,8 +365,8 @@ interface RisEntry { tags: Record<string, string>; AU: string[] }
 
 function risRef({ tags: e, AU }: RisEntry): Reference {
   const type = ({ JOUR: 'article', JFULL: 'article', EJOUR: 'article', BOOK: 'book', CHAP: 'chapter', THES: 'thesis', ELEC: 'web' } as Record<string, RefType>)[e.TY] ?? 'misc';
-  let pages = e.SP ?? '';
-  if (e.EP) pages = `${pages}–${e.EP}`;
+  // (an end page alone is the page: no dash with nothing before it)
+  const pages = e.SP && e.EP ? `${e.SP}–${e.EP}` : e.SP || e.EP || '';
   return cleanRef({
     type, authors: AU, title: e.TI || e.T1 || '',
     journal: e.J2 || e.JO || e.JA || e.T2 || e.JF || '',
@@ -364,7 +384,11 @@ export function parseRis(text: string): Reference[] {
     if (!m) continue;
     const [, tag, v] = m;
     const value = v.trim();
-    if (tag === 'TY') cur = { tags: { TY: value }, AU: [] };
+    if (tag === 'TY') {
+      // a record with no ER line before the next one: kept, not lost
+      if (cur) refs.push(risRef(cur));
+      cur = { tags: { TY: value }, AU: [] };
+    }
     else if (!cur) continue;
     else if (tag === 'ER') { refs.push(risRef(cur)); cur = null; }
     else if (tag === 'AU' || tag === 'A1') cur.AU.push(value);

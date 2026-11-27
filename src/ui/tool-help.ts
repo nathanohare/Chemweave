@@ -79,7 +79,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
     case 'ring':
       return {
         what: 'Click empty space, an atom (spiro; Alt+click to attach by a bond) or a bond (fused). Drag to orient.',
-        steps: ['Click a space, atom or bond', 'Drag to turn'],
+        steps: ['Click a space, atom or bond', 'Drag to rotate'],
         keys: [['Alt', 'Attach by a bond'], ['Shift', 'Swap double bonds'], ...(t.aromatic ? [['Ctrl', 'Aromatic circle'] as [string, string]] : [])],
         dragKeys: [['Shift', 'Swap double bonds'], ...(t.aromatic ? [['Ctrl', 'Aromatic circle'] as [string, string]] : [])],
       };
@@ -111,7 +111,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
     case 'template':
       return {
         what: 'Click empty space to place it (drag to rotate), a bond to fuse it, or an atom to attach it (Alt: attach by a new bond, or spiro at the atom).',
-        steps: ['Click a space, bond or atom', 'Drag to turn'],
+        steps: ['Click a space, bond or atom', 'Drag to rotate'],
         keys: [['Alt', 'Join the other way']],
         dragKeys: [['Tab', 'Next fit (Shift+Tab: back)']],
       };
@@ -129,7 +129,7 @@ export function toolHelp(name: string, t: Tool | undefined): ToolHelp {
         what: t.real
           ? 'Drag a structure to rotate its 3-D shape; wedges and bold bonds set which shape is meant.'
           : 'Drag a structure to tilt it in 3-D as a flat sheet.',
-        steps: ['Drag a structure to rotate it', 'Or select it and drag a tilt handle to turn one way only'],
+        steps: ['Drag a structure to rotate it', 'Or select it and drag a tilt handle to rotate it one way only'],
         keys: [],
         dragKeys: [['Shift', 'Snap to 15°']],
       };

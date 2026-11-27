@@ -40,18 +40,24 @@ const mid = (b: Rect): Vec => ({ x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 });
  */
 export function withLabels(doc: Doc, us: Unit[], bond: number): Unit[] {
   const structures = us.filter((u) => u.atoms.length);
-  const out = us.filter((u) => !isLabelOf(doc, u, structures, bond));
+  // each caption's structure worked out once (not again for every structure)
+  const labelsOf = new Map<Unit, Unit[]>();
+  const owned = new Set<Unit>();
+  for (const c of us) {
+    const o = labelOwner(doc, c, structures, bond);
+    if (!o) continue;
+    owned.add(c);
+    const l = labelsOf.get(o);
+    if (l) l.push(c); else labelsOf.set(o, [c]);
+  }
+  const out = us.filter((u) => !owned.has(u));
   return out.map((u) => {
     if (!u.atoms.length) return u;
-    const labels = us.filter((c) => c !== u && labelOwner(doc, c, structures, bond) === u);
+    const labels = labelsOf.get(u) ?? [];
     if (!labels.length) return u;
     const box = labels.reduce((r, c) => ({ x1: Math.min(r.x1, c.box.x1), y1: Math.min(r.y1, c.box.y1), x2: Math.max(r.x2, c.box.x2), y2: Math.max(r.y2, c.box.y2) }), u.box);
     return { ...u, captions: [...u.captions, ...labels.flatMap((c) => c.captions)], box };
   });
-}
-
-function isLabelOf(doc: Doc, c: Unit, structures: Unit[], bond: number): boolean {
-  return !!labelOwner(doc, c, structures, bond);
 }
 
 /** The structure a lone caption numbers, if it is one. */

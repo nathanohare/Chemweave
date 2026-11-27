@@ -5,7 +5,7 @@
 // wedges. A residue drawn upside down (side chain down) has its wedges swapped so it keeps its
 // configuration, and a D-amino acid has all of its wedges swapped (its mirror image).
 
-import type { BondDisplay } from '../model';
+import { turnedOverWedge, type BondDisplay } from '../model';
 import { TEMPLATES, type Template, type TemplateAtom, type TemplateBond } from './templates';
 
 /** One residue: its one-letter code and whether it is the D-amino acid. */
@@ -166,7 +166,7 @@ const apply = (k: Fit, x: number, y: number): [number, number] => {
   return [k.c * x - k.s * yy + k.tx, k.s * x + k.c * yy + k.ty];
 };
 
-const swapWedge = (d: BondDisplay | undefined): BondDisplay | undefined => (d === 'wedge' ? 'hashWedge' : d === 'hashWedge' ? 'wedge' : d);
+const swapWedge = (d: BondDisplay | undefined): BondDisplay | undefined => (d ? turnedOverWedge(d) : d);
 
 const r3 = (v: number) => Math.round(v * 1000) / 1000;
 

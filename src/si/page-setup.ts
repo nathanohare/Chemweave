@@ -121,17 +121,20 @@ export function pageOf(settings: Json, base: PageSetup): PageSetup {
 export function storePageSettings(settings: Json, v: Omit<PageSettings, 'footerIsStyle' | 'paper' | 'margins' | 'watermark' | 'hyphenation'> & Partial<Pick<PageSettings, 'paper' | 'margins'>>): void {
   const was = pageSettings(settings);
   const paper = v.paper ?? was.paper, margins = v.margins ?? was.margins;
-  const page: Json = {
+  // (keys this doesn't set, written by SI Assistant or a later Chemweave, are kept)
+  const page: Json = isObj(settings.page) ? { ...settings.page } : {};
+  Object.assign(page, {
     header: Object.fromEntries(POSITIONS.map((p, i) => [p, v.header[i]])),
     number_prefix: v.number_prefix, number_style: v.number_style, number_size: v.number_size, number_bold: v.number_bold, number_on_cover: v.number_on_cover,
-  };
+  });
   // (the defaults aren't stored: a project made before keeps reading as it did)
-  if (paper !== 'letter') page.paper = paper;
-  if (MARGIN_SIDES.some((k) => margins[k] !== 1)) page.margins = { ...margins };
+  if (paper !== 'letter') page.paper = paper; else delete page.paper;
+  if (MARGIN_SIDES.some((k) => margins[k] !== 1)) page.margins = { ...margins }; else delete page.margins;
   // (set from the Layout tab: kept as they are)
-  if (was.watermark) page.watermark = { ...was.watermark };
-  if (was.hyphenation) page.hyphenation = true;
+  if (was.watermark) page.watermark = { ...was.watermark }; else delete page.watermark;
+  if (was.hyphenation) page.hyphenation = true; else delete page.hyphenation;
   if (v.footer.join('\u0000') !== styleFooter(String(settings.journal_style ?? 'ACS')).join('\u0000')) page.footer = Object.fromEntries(POSITIONS.map((p, i) => [p, v.footer[i]]));
+  else delete page.footer;
   settings.page = page;
 }
 

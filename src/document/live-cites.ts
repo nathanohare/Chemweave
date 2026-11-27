@@ -371,14 +371,15 @@ export function writeCite(app: CiteManager, refs: Reference[], live: CiteLive | 
     });
     return { instr: ' ADDIN EN.CITE ', data: toBase64(`<EndNote>${cites.join('')}</EndNote>`) };
   }
+  // Zotero's own code, while the citation cites what it did when Zotero set it
+  // (and shows what it says it shows: Zotero takes a citation whose text is not its plainCitation
+  // for one changed by hand); found before any reference is written out, which it doesn't need
+  if (app === 'zotero' && live?.app === 'zotero' && live.code && /^ITEM\b/.test(live.code) && live.for === refs.map((r) => r.id).join(' ') && zoteroPlain(live.code) === shown) return { instr: ` ADDIN ZOTERO_${live.code} ` };
   const citationItems = refs.map((r) => {
     const l = own(r);
     return { ...extra(r), id: l?.id ?? r.id, ...(l?.uris?.length ? { uris: l.uris } : {}), itemData: { ...cslFromRef(r), id: l?.id ?? r.id } };
   });
   if (app === 'zotero') {
-    // Zotero's own code, while the citation cites what it did when Zotero set it
-    // (and shows what it says it shows: Zotero takes a citation whose text is not its plainCitation for one changed by hand)
-    if (live?.app === 'zotero' && live.code && /^ITEM\b/.test(live.code) && live.for === refs.map((r) => r.id).join(' ') && zoteroPlain(live.code) === shown) return { instr: ` ADDIN ZOTERO_${live.code} ` };
     const json = { citationID, properties: { formattedCitation: shown, plainCitation: shown, noteIndex: 0 }, citationItems, schema: SCHEMA };
     return { instr: ` ADDIN ZOTERO_ITEM CSL_CITATION ${JSON.stringify(json)} ` };
   }

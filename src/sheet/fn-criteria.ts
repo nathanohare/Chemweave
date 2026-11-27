@@ -4,6 +4,7 @@
 
 import { Arg, Block, FnDef, asBlock, at, isBlock, scalar } from './args';
 import { CellError, ERR, Value, compareValues, isError, readTyped, sigFigs15 } from './values';
+import { MAX_COLS, MAX_ROWS } from './refs';
 
 /** A pattern with Excel's wildcards: * any run of characters, ? any one, ~ before either (or ~) takes it as itself. */
 export function wildcardRegex(pattern: string, anchored = true): RegExp {
@@ -133,11 +134,18 @@ function total(kind: Total, target: Block, cells: [number, number][]): Value {
 /** SUMIF(range, condition, [sum range]) and AVERAGEIF: the target is lined up with the range from its top-left cell. */
 const oneCondition = (kind: Total): FnDef => ({
   min: 2, max: 3,
-  fn: (args) => {
+  fn: (args, host) => {
     if (!isBlock(args[0])) return ERR.value('The first argument must be a range of cells');
     const range = args[0];
     const c = scalar(args[1]);
-    const target = args.length > 2 && args[2] !== '' ? asBlock(args[2]) : range;
+    let target = args.length > 2 && args[2] !== '' ? asBlock(args[2]) : range;
+    // Excel reads the sum range from its top-left cell, as large as the range tested
+    // (SUMIF(A1:A10,">0",B1) adds B1:B10), however either was given (a reference, a LET name)
+    if (target.at && (target.h !== range.h || target.w !== range.w)) {
+      const r1 = target.at.r, c1 = target.at.c;
+      const R = { r1, c1, r2: Math.min(MAX_ROWS - 1, r1 + range.h - 1), c2: Math.min(MAX_COLS - 1, c1 + range.w - 1) };
+      target = { block: host.block(target.sheet, R), h: R.r2 - r1 + 1, w: R.c2 - c1 + 1, at: { r: r1, c: c1 }, ...(target.sheet !== undefined ? { sheet: target.sheet } : {}) };
+    }
     const { cells } = matching([range], [criterion(c)]);
     return total(kind, target, cells);
   },

@@ -32,7 +32,7 @@ export { docRulerPrefs } from './mode-prefs';
 
 const KINDS: TabStop['kind'][] = ['left', 'center', 'right', 'decimal'];
 const KIND_MARK: Record<TabStop['kind'], string> = { left: 'L', center: '⊥', right: '⅃', decimal: '⊥.' };
-const KIND_NAME: Record<TabStop['kind'], string> = { left: 'Left tab', center: 'Center tab', right: 'Right tab', decimal: 'Decimal tab' };
+const KIND_NAME: Record<TabStop['kind'], string> = { left: 'Left Tab', center: 'Center Tab', right: 'Right Tab', decimal: 'Decimal Tab' };
 /** Indents and tab stops land on sixteenths of an inch (hold Alt to place them freely). */
 const SNAP = 72 / 16;
 const H = 24;
@@ -77,7 +77,7 @@ export class Ruler {
 
   private showKind(): void {
     this.kindBtn.textContent = KIND_MARK[this.tabKind];
-    this.kindBtn.title = `${KIND_NAME[this.tabKind]}: click the ruler to put one there (click this for the next tab type)`;
+    this.kindBtn.title = `Tab Type: ${KIND_NAME[this.tabKind]} (click for the next type)`;
   }
 
   /** The caret moved, or the view scrolled or zoomed. */
@@ -137,7 +137,7 @@ export class Ruler {
 
   private tipAt(x: number, y: number): string {
     const g = this.gripAt(x, y);
-    if (!g) return 'Click to put a tab stop here (the button at the left chooses which kind)';
+    if (!g) return 'Tab Stop (the button at the left chooses its type)';
     switch (g.kind) {
       case 'first': return 'First Line Indent';
       case 'hang': return 'Hanging Indent';

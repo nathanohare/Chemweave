@@ -96,7 +96,8 @@ export class ChemClient {
     try {
       w = this.makeWorker();
     } catch (e) {
-      this.error = 'Background worker could not start: ' + String(e);
+      // (requests waiting from before a restart are answered with the error, not left waiting)
+      this.failLoad('Background worker could not start: ' + String(e));
       return;
     }
     this.worker = w;
@@ -185,6 +186,8 @@ export class ChemClient {
    * it was slow on, the second time). The other requests waiting are sent again to the new worker.
    */
   private restart(why: 'broke' | 'slow'): void {
+    // (the new worker holds no sets)
+    this.sets.clear();
     if (this.watchdog) clearTimeout(this.watchdog);
     this.watchdog = null;
     try { this.worker?.terminate(); } catch { /* (already gone) */ }
@@ -318,12 +321,16 @@ export class ChemClient {
    * keeps the set ready between searches; it is sent again only when it changes.
    */
   async substructureIn(name: string, mols: string[], query: string): Promise<{ results: number[]; error?: string }> {
-    const ask = (send: boolean) => this.request<Extract<ChemResponse, { type: 'substructureIn' }>>((id) => ({ type: 'substructureIn', id, name, query, ...(send ? { mols } : {}) }));
     let h = 0x811c9dc5;
     for (const s of mols) for (let i = 0; i <= s.length; i++) h = Math.imul(h ^ (i < s.length ? s.charCodeAt(i) : 10), 0x01000193);
     const version = `${mols.length}:${h >>> 0}`;
+    // the version is noted as the request is made: the worker takes requests in that order, so a
+    // search made while another set is on its way sends its own set again
+    const ask = (send: boolean) => {
+      if (send) this.sets.set(name, version);
+      return this.request<Extract<ChemResponse, { type: 'substructureIn' }>>((id) => ({ type: 'substructureIn', id, name, query, ...(send ? { mols } : {}) }));
+    };
     let r = await ask(this.sets.get(name) !== version);
-    this.sets.set(name, version);
     if (r.missing) r = await ask(true);
     return { results: r.results, error: r.error };
   }

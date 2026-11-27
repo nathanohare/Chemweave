@@ -338,6 +338,10 @@ function isAtomText(text: string): boolean {
 }
 
 const emptySel = (): Selection => ({ atoms: new Set(), bonds: new Set(), captions: new Set(), arrows: new Set(), shapes: new Set() });
+/** Captions that can be picked (hidden ones are kept and saved, but not drawn or picked). */
+const visibleCaptions = (doc: Doc): number[] => [...doc.captions.values()].filter((c) => !c.hidden).map((c) => c.id);
+/** Shapes that can be picked or moved (not hidden or locked). */
+const pickableShapes = (doc: Doc): number[] => [...doc.shapes.values()].filter((s) => !s.hidden && !s.locked).map((s) => s.id);
 /** How quickly a second click must follow for a double-click (the usual system default). */
 const DOUBLE_CLICK_MS = 500;
 
@@ -761,9 +765,18 @@ export class Editor {
       // a right-button drag pans; the menu only shows for a right click that stayed put.
       // (Windows sends this after the button comes up, macOS while it is still down.)
       if (this.drag?.button === 2) this.pendingContext = e;
-      else if (!this.rightDragged) this.onContextMenu(e);
+      else {
+        // (the flag says only whether the right-button press just ended was a drag: used once)
+        const panned = this.rightDragged;
+        this.rightDragged = false;
+        if (!panned) this.onContextMenu(e);
+      }
     });
-    window.addEventListener('keydown', (e) => { if (!this.freeAngleKey(e)) this.onKey(e); });
+    window.addEventListener('keydown', (e) => {
+      // (a menu asked for from the keyboard, Shift+F10 or the Menu key, opens whatever pan came before)
+      this.rightDragged = false;
+      if (!this.freeAngleKey(e)) this.onKey(e);
+    });
     window.addEventListener('keyup', (e) => this.freeAngleKey(e));
     window.addEventListener('blur', () => { this.spaceHeld = false; });
     // holding Ctrl over the selection shows that a drag will copy it
@@ -1294,6 +1307,10 @@ export class Editor {
   }
 
   private onDown(e: PointerEvent): void {
+    // a mouse's Back and Forward buttons are no clicks on the drawing
+    if (e.pointerType === 'mouse' && (e.button === 3 || e.button === 4)) return;
+    // (a right-button drag before this press says nothing about the menu this press may open)
+    this.rightDragged = false;
     this.commitLabel();
     // picking a focal point: this click names the atom, bond or ring
     if (this.focalPicking && e.button === 0) { this.pickFocalAt(this.docPoint(e)); return; }
@@ -1564,8 +1581,8 @@ export class Editor {
         this.doc.begin(d.spot!.mo !== undefined ? 'Move Level' : 'Move Spot');
         this.selectOnly({ kind: 'shape', id: d.spot!.frame });
       }
-      if (d.mode === 'reshape') this.doc.begin('Bend arrow');
-      if (d.mode === 'handle') this.doc.begin(d.handle!.which === 'mid' || d.handle!.which[0] === 'b' ? 'Bend arrow' : d.handle!.which === 'ea' || d.handle!.which === 'eb' ? 'Reshape arc' : this.cropping === d.handle!.id ? 'Crop picture' : 'Resize');
+      if (d.mode === 'reshape') this.doc.begin('Bend Arrow');
+      if (d.mode === 'handle') this.doc.begin(d.handle!.which === 'mid' || d.handle!.which[0] === 'b' ? 'Bend Arrow' : d.handle!.which === 'ea' || d.handle!.which === 'eb' ? 'Reshape Arc' : this.cropping === d.handle!.id ? 'Crop Picture' : 'Resize');
       if (d.mode === 'rotate') this.doc.begin('Rotate');
       if (d.mode === 'move') {
         this.r.overlay.style.cursor = d.ctrl ? 'copy' : 'grabbing';
@@ -1831,7 +1848,7 @@ export class Editor {
     if (!d) return;
     this.drag = null;
     this.guideLines = [];
-    if (d.moved && (d.mode === 'move' || d.mode === 'spot' || d.mode === 'rotate' || d.mode === 'handle' || (d.mode === 'turn3d' && d.persp?.begun))) {
+    if (d.moved && (d.mode === 'move' || d.mode === 'spot' || d.mode === 'rotate' || d.mode === 'handle' || d.mode === 'reshape' || (d.mode === 'turn3d' && d.persp?.begun))) {
       this.doc.abandon();
       this.afterUndo();
     }
@@ -1868,8 +1885,9 @@ export class Editor {
       return;
     }
     if (d.button === 2) {
-      this.rightDragged = d.moved;
       const ctx = this.pendingContext;
+      // a pan whose menu event came while the button was down (macOS) has had it: nothing left to hold back
+      this.rightDragged = d.moved && !ctx;
       this.pendingContext = null;
       if (ctx && !d.moved) this.onContextMenu(ctx);
     }
@@ -2208,7 +2226,7 @@ export class Editor {
 
 
   /** The last bond-tool click that grew a bond from an atom (a quick second click there is a double-click). */
-  private lastSprout: { atom: number; at: number; p: Vec } | null = null;
+  private lastSprout: { atom: number; at: number; p: Vec; step?: object } | null = null;
 
   private click(d: Drag, p: Vec): void {
     const doc = this.doc;
@@ -2340,7 +2358,8 @@ export class Editor {
         // the second click of a double-click on an atom takes back the first click's bond and edits the label
         const last = this.lastSprout;
         this.lastSprout = null;
-        if (h?.kind === 'atom' && last?.atom === h.id && performance.now() - last.at < DOUBLE_CLICK_MS && dist(last.p, p) <= this.tol(4)) {
+        // (only while the bond is still the newest step: after an Undo, or another edit, Undo would take back something else)
+        if (h?.kind === 'atom' && last?.atom === h.id && performance.now() - last.at < DOUBLE_CLICK_MS && dist(last.p, p) <= this.tol(4) && last.step !== undefined && last.step === doc.topStep) {
           this.undo();
           this.editLabel(h.id);
           return;
@@ -2362,6 +2381,9 @@ export class Editor {
             this.lastEdited = b.id;
           }
         });
+        // (the step that made it, to tell whether it is still the newest)
+        const made = this.lastSprout as typeof last;
+        if (made) made.step = doc.topStep;
         // as in ChemDraw, the far end of the new bond takes the next hotkey
         if (!h || h.kind === 'atom') this.setKeyHot({ kind: 'atom', id: this.lastEdited! });
         this.changed();
@@ -2435,7 +2457,9 @@ export class Editor {
         doc.updateBond(id, { order: 1, display: t.display, ...(flip ? { a1: b.a2, a2: b.a1 } : {}) });
       }
     } else {
-      doc.updateBond(id, { order: 1, display: b.display === t.display ? 'solid' : t.display });
+      // (the tool's own order too: the Partial Bond tool makes a half bond, as dragging a new one does)
+      const same = b.display === t.display && b.order === t.order;
+      doc.updateBond(id, same ? { order: 1, display: 'solid' } : { order: t.order, display: t.display });
     }
     // a bond made triple (or a second double bond on an allene carbon) straightens its ends
     straightenAt(doc, id);
@@ -2595,7 +2619,7 @@ export class Editor {
     const b = this.doc.bonds.get(bondId);
     const f = t && b && fusions3d(this.doc, t, bondId)?.[index];
     if (!t || !b || !f) return false;
-    this.doc.edit('Fuse ring', () => {
+    this.doc.edit('Fuse Ring', () => {
       const ids = placeTemplate(this.doc, t, { origin: { x: 0, y: 0 }, scale: f.len, angle: 0, mirror: false, pts: f.pts }, { existing: f.existing, move: f.move, depth: f.depth, atomDepth: f.atomDepth, scale: b.s, noMerge: true });
       this.lastEdited = ids[t.attach];
     });
@@ -2867,7 +2891,7 @@ export class Editor {
       if (!pt?.variable) continue;
       const has = pt.multi!.includes(h.id);
       if (has && pt.multi!.length <= 2) return;
-      doc.edit(has ? 'Remove attachment atom' : 'Add attachment atom', () => doc.updateAtom(c, { multi: has ? pt.multi!.filter((m) => m !== h.id) : [...pt.multi!, h.id] }));
+      doc.edit(has ? 'Remove Attachment Atom' : 'Add Attachment Atom', () => doc.updateAtom(c, { multi: has ? pt.multi!.filter((m) => m !== h.id) : [...pt.multi!, h.id] }));
       this.changed();
       return;
     }
@@ -2884,7 +2908,7 @@ export class Editor {
     if (h?.kind === 'bond') {
       const b = doc.bonds.get(h.id)!;
       if (centreEnd(doc, b)) {
-        doc.edit(b.spokes ? 'Hapto bond to the middle' : 'Hapto bond to each atom', () => doc.updateBond(b.id, { spokes: b.spokes ? undefined : true }));
+        doc.edit(b.spokes ? 'Hapto Bond to the Middle' : 'Hapto Bond to Each Atom', () => doc.updateBond(b.id, { spokes: b.spokes ? undefined : true }));
         this.changed();
         return;
       }
@@ -2892,7 +2916,7 @@ export class Editor {
     if (h?.kind === 'atom') {
       const picked = [...this.sel.atoms].filter((id) => id !== h.id && !doc.atoms.get(id)?.multi);
       if (picked.length >= 2) {
-        doc.edit('Hapto bond', () => { bondHapto(doc, h.id, picked); });
+        doc.edit('Add Hapto Bond', () => { bondHapto(doc, h.id, picked); });
         this.sel = emptySel();
         this.changed();
       }
@@ -2915,7 +2939,7 @@ export class Editor {
     }
     if (Math.hypot(dir.x, dir.y) < L * 0.2 || target.atoms.length > 2 && dist({ x: cx / n, y: cy / n }, target.at) < L * 0.2) dir = { x: 0, y: 1 };
     const at = add(target.at, mul(norm(dir), L));
-    doc.edit('Hapto bond', () => {
+    doc.edit('Add Hapto Bond', () => {
       const m = this.newMetal(at);
       bondHapto(doc, m.id, target.atoms);
       this.lastEdited = m.id;
@@ -2998,9 +3022,9 @@ export class Editor {
       return;
     }
     if (t.kind === 'bond' && t.hapto) {
-      doc.edit('Hapto bond', () => this.dragHapto(d, p));
+      doc.edit('Add Hapto Bond', () => this.dragHapto(d, p));
     } else if (t.kind === 'bond' && t.variable) {
-      doc.edit('Variable attachment', () => this.dragVariable(d, p));
+      doc.edit('Add Variable Attachment', () => this.dragVariable(d, p));
     } else if (t.kind === 'bond') {
       doc.edit('Bond', () => {
         const a = startAtom ?? doc.addAtom(start.x, start.y);
@@ -3208,7 +3232,7 @@ export class Editor {
     const sameBez = (a?: Vec[], b?: Vec[]) => (a?.length ?? 0) === (b?.length ?? 0) && (a ?? []).every((p, i) => dist(p, b![i]) < 1e-4);
     const changed = plans.filter(({ r, push }) => dist(r.tail, push.tail) > 0.01 || dist(r.head, push.head) > 0.01 || Math.abs(r.sweep - push.sweep) > 1e-4 || !sameBez(r.bez, push.bez));
     if (!changed.length) return 0;
-    doc.edit('Clean up arrow', () => {
+    doc.edit('Clean Up Arrow', () => {
       for (const { r, push } of changed) doc.updateArrow(r.id, { ...this.pushPatch(r, push), pin: pushPins(doc, push), bent: undefined });
     });
     this.changed();
@@ -3224,7 +3248,7 @@ export class Editor {
     const m = this.measure();
     const arrows = [...this.sel.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r && isCurved(r) && !r.equilibrium && !r.elbow && (s ? !isSBez(r.bez) : !!r.bez?.length));
     if (!arrows.length) return 0;
-    doc.edit(s ? 'S-shaped arrow' : 'Single-curve arrow', () => {
+    doc.edit(s ? 'S-Shaped Arrow' : 'Single-Curve Arrow', () => {
       for (const r of arrows) {
         const from = tailEnd(doc, pushEndAt(doc, m, r.tail), r.tail);
         const to = headEnd(doc, pushEndAt(doc, m, r.head), r.head);
@@ -3429,7 +3453,7 @@ export class Editor {
     if (shape === 's' || shape === 'single') return this.setArrowS(shape === 's');
     const arrows = this.pickedPaths().filter((r) => shapeOf(r) !== shape);
     if (!arrows.length) return 0;
-    this.doc.edit(shape === 'u' ? 'U-turn arrow' : 'Loop arrow', () => {
+    this.doc.edit(shape === 'u' ? 'U-Turn Arrow' : 'Loop Arrow', () => {
       for (const r of arrows) {
         const patch: Partial<Arrow> = { sweep: 0, bez: shapeBez(shape, firstBend(r)) };
         if (headBend(r) !== headBend({ ...r, ...patch })) Object.assign(patch, { headStyle: swapHalf(r.headStyle), tailStyle: swapHalf(r.tailStyle) });
@@ -3584,7 +3608,7 @@ export class Editor {
     const doc = this.doc;
     const arrows = [...this.sel.arrows].map((id) => doc.arrows.get(id)).filter((r): r is Arrow => !!r && isCurved(r) && !r.elbow);
     if (!arrows.length) return 0;
-    doc.edit('Flip arrow bend', () => { for (const r of arrows) doc.updateArrow(r.id, mirrorBend(r)); });
+    doc.edit('Flip Arrow Bend', () => { for (const r of arrows) doc.updateArrow(r.id, mirrorBend(r)); });
     this.changed();
     return arrows.length;
   }
@@ -3608,7 +3632,7 @@ export class Editor {
     const doc = this.doc;
     const m = this.measure();
     let n = 0;
-    doc.edit('Attach to structure', () => {
+    doc.edit('Attach to Structure', () => {
       for (const id of this.sel.arrows) {
         const r = doc.arrows.get(id);
         if (!r || !isCurved(r) || r.elbow) continue;
@@ -3635,7 +3659,7 @@ export class Editor {
     const bonds = [...this.sel.bonds].filter((id) => doc.bonds.has(id));
     if (!bonds.length) return 0;
     const made: number[] = [];
-    doc.edit('Homolysis arrows', () => {
+    doc.edit('Homolysis Arrows', () => {
       for (const id of bonds) {
         const b = doc.bonds.get(id)!;
         const p1 = doc.atoms.get(b.a1)!, p2 = doc.atoms.get(b.a2)!;
@@ -3773,7 +3797,7 @@ export class Editor {
       out.addArrow({ tail, head, headStyle: 'full', tailStyle: 'none', headType: 'solid', line: 'solid', noGo: false, equilibrium: false, sweep: 0, headLength: lw * 10, headWidth: lw * 2.5 });
     });
     const b = out.bounds()!;
-    const sel = insertDrawing(doc, out, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, 'Draw next intermediate');
+    const sel = insertDrawing(doc, out, { x: (b.x1 + b.x2) / 2, y: (b.y1 + b.y2) / 2 }, 'Draw Next Intermediate');
     this.selectThese({ ...sel, arrows: new Set() });
     this.changed();
     return { drawn: true, issues: reading.issues };
@@ -4152,10 +4176,39 @@ export class Editor {
   /** The Smart Scheme the selection is in (its frame), if any. */
   selectedSmart(): number | null {
     for (const id of this.sel.shapes) if (this.doc.shapes.get(id)?.smart) return id;
+    // which Smart Scheme each thing is in, worked out once per change of the drawing (as
+    // smartFrameOf has it: the first scheme that holds it), not by every scheme for every thing picked
+    const own = this.smartOwners();
+    if (!own) return null;
     for (const [k, set] of [['caption', this.sel.captions], ['arrow', this.sel.arrows], ['shape', this.sel.shapes], ['atom', this.sel.atoms]] as const) {
-      for (const id of set) { const g = smartFrameOf(this.doc, k, id); if (g !== null) return g; }
+      const m = own[k];
+      for (const id of set) { const g = m.get(id); if (g !== undefined) return g; }
     }
     return null;
+  }
+
+  private smartOwnersCache: { version: number; doc: Doc; own: Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null } | null = null;
+  private smartOwners(): Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null {
+    const doc = this.doc;
+    if (this.smartOwnersCache?.doc === doc && this.smartOwnersCache.version === doc.version) return this.smartOwnersCache.own;
+    let own: Record<'caption' | 'arrow' | 'shape' | 'atom', Map<number, number>> | null = null;
+    const put = (m: Map<number, number>, id: number, frame: number) => { if (!m.has(id)) m.set(id, frame); };
+    for (const s of doc.shapes.values()) {
+      if (!s.smart) continue;
+      own ??= { caption: new Map(), arrow: new Map(), shape: new Map(), atom: new Map() };
+      own.shape.set(s.id, s.id);
+      const f = s.frame;
+      if (!f) continue;
+      for (const id of f.captions) put(own.caption, id, s.id);
+      for (const id of f.arrows) put(own.arrow, id, s.id);
+      for (const id of f.shapes) put(own.shape, id, s.id);
+      for (const a of f.atoms) {
+        put(own.atom, a, s.id);
+        if (doc.atoms.has(a)) for (const x of doc.fragmentOf(a)) put(own.atom, x, s.id);
+      }
+    }
+    this.smartOwnersCache = { version: doc.version, doc, own };
+    return own;
   }
 
   /** Called each time the overlay is drawn (the Smart Scheme pane keeps beside its scheme). */
@@ -4234,7 +4287,7 @@ export class Editor {
   /** Where branches can start beside the species picked in Smart Scheme `id` (none unless one species is picked). */
   private smartSpotsCache: { key: string; spots: ReturnType<typeof branchSpots>; slot: number } | null = null;
   private smartSpots(id: number): ReturnType<typeof branchSpots> {
-    const key = `${id} ${this.doc.version} ${[...this.sel.captions].join()}|${[...this.sel.atoms].slice(0, 4).join()}|${[...this.sel.shapes].join()}|${this.sel.arrows.size}`;
+    const key = `${id} ${this.doc.version} ${[...this.sel.captions].join()}|${[...this.sel.atoms].join()}|${[...this.sel.shapes].join()}|${this.sel.arrows.size}`;
     if (this.smartSpotsCache?.key !== key) {
       const slot = this.sel.shapes.has(id) ? undefined : this.smartPicked()?.slot;
       this.smartSpotsCache = { key, slot: slot ?? -1, spots: slot === undefined ? [] : branchSpots(this.doc, this.measure(), id, slot) };
@@ -4759,11 +4812,12 @@ export class Editor {
     const doc = this.doc;
     n = Math.max(1, Math.min(200, Math.round(n)));
     this.chainLength = n;
-    const bonds = from === null ? Math.max(1, n - 1) : n;
+    // (in empty space the chain is n atoms, so n − 1 bonds: one atom on its own for 1)
+    const bonds = from === null ? n - 1 : n;
     if (from !== null && !doc.atoms.has(from)) return;
     if (!this.sel.atoms.size) this.sel = emptySel();
     doc.edit('Chain', () => {
-      const pts = chainFrom(doc, from, p, bonds, doc.style.chainAngle);
+      const pts = bonds ? chainFrom(doc, from, p, bonds, doc.style.chainAngle) : [];
       let cur = from !== null ? doc.atoms.get(from)! : doc.addAtom(p.x, p.y);
       for (let i = 1; i < pts.length; i++) cur = bondTo(doc, cur, pts[i]);
       this.lastEdited = cur.id;
@@ -4835,7 +4889,11 @@ export class Editor {
 
   selectAll(): void {
     const d = this.doc;
-    this.sel = { atoms: new Set(d.atoms.keys()), bonds: new Set(d.bonds.keys()), captions: new Set(d.captions.keys()), arrows: new Set(d.arrows.keys()), shapes: new Set([...d.shapes.values()].filter((s) => !s.hidden && !s.locked).map((s) => s.id)) };
+    // what can be picked, as a drag round everything picks it: no hidden text, and no structures while they are locked
+    const atoms = this.structuresLocked ? [] : d.atoms.keys(), bonds = this.structuresLocked ? [] : d.bonds.keys();
+    this.sel = { atoms: new Set(atoms), bonds: new Set(bonds), captions: new Set(visibleCaptions(d)), arrows: new Set(d.arrows.keys()), shapes: new Set(pickableShapes(d)) };
+    // (a curved arrow's join pressed before is no longer what Delete takes out)
+    this.activeHandle = null;
     this.requestOverlay();
     this.onChange();
   }
@@ -5011,11 +5069,11 @@ export class Editor {
    * nothing is selected.
    */
   async turnSelectionBy(x: number, y: number, z: number, real: boolean): Promise<boolean> {
-    const structures = structuresOf(this.doc, this.sel.atoms);
-    if (!structures.length) return false;
+    if (!structuresOf(this.doc, this.sel.atoms).length) return false;
     const doc = this.doc;
-    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+    const prep = await this.prepareSelectionTurn(doc, real);
     if (this.doc !== doc) return true;
+    if (!prep) return false;
     if (prep.notes.length) this.onNotice(`${prep.notes[0]} Rotating it as a flat drawing instead.`, 7000);
     const R: M3 = anglesTurn(x, y, z);
     let left = 0;
@@ -5035,11 +5093,10 @@ export class Editor {
    * the wedges and keeps the turn; `cancel` puts everything back. Null when nothing is selected.
    */
   async previewTurn(real: boolean): Promise<TurnPreview | null> {
-    const structures = structuresOf(this.doc, this.sel.atoms);
-    if (!structures.length) return null;
+    if (!structuresOf(this.doc, this.sel.atoms).length) return null;
     const doc = this.doc;
-    const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
-    if (this.doc !== doc) return null;
+    const prep = await this.prepareSelectionTurn(doc, real);
+    if (this.doc !== doc || !prep) return null;
     const label = real ? '3-D Rotation' : 'Rotate in Perspective';
     let begun = false, done = false, R: M3 = IDENT_TURN, unshown = 0;
     const live = () => !done && this.doc === doc;
@@ -5081,15 +5138,31 @@ export class Editor {
    * copy can be given to try it first. Returns why not when it can't.
    */
   async realShape(atom: number, doc: Doc = this.doc): Promise<string | null> {
-    const structures = structuresOf(doc, [atom]);
-    if (!structures.length) return 'There is no structure there.';
-    const prep = await prepareTurn(doc, structures, true, this.perspectiveHost);
+    if (!structuresOf(doc, [atom]).length) return 'There is no structure there.';
+    const prep = await this.prepareSelectionTurn(doc, true, [atom]);
+    if (!prep) return doc.atoms.has(atom) ? 'The structure changed while its 3-D shape was being built. Try again.' : 'There is no structure there.';
     if (prep.notes.length) return prep.notes[0];
-    doc.edit('Real 3-D shape', () => {
+    doc.edit('Real 3-D Shape', () => {
       prep.turn.apply(doc, IDENT_TURN, true);
       prep.turn.remember(doc);
     });
     if (doc === this.doc) this.changed();
+    return null;
+  }
+
+  /**
+   * The structures of the selection (or of `atoms`) got ready to turn, as they are once that is
+   * done: a change made to the drawing meanwhile has them got ready again, from the drawing as it
+   * is then. Null when they are gone, or the drawing keeps changing.
+   */
+  private async prepareSelectionTurn(doc: Doc, real: boolean, atoms?: number[]): Promise<Prepared | null> {
+    for (let tries = 0; tries < 3; tries++) {
+      const structures = structuresOf(doc, atoms ?? (doc === this.doc ? this.sel.atoms : []));
+      if (!structures.length) return null;
+      const version = doc.version;
+      const prep = await prepareTurn(doc, structures, real, this.perspectiveHost);
+      if (doc.version === version) return prep;
+    }
     return null;
   }
 
@@ -5187,7 +5260,7 @@ export class Editor {
     const doc = this.doc;
     const f = frameAround(doc, this.sel, this.measure());
     if (!f) return false;
-    doc.edit('Add frame', () => this.selectOnly({ kind: 'shape', id: doc.addShape({ ...f, lineWidth: doc.style.lineWidth }).id }));
+    doc.edit('Add Frame', () => this.selectOnly({ kind: 'shape', id: doc.addShape({ ...f, lineWidth: doc.style.lineWidth }).id }));
     this.changed();
     return true;
   }
@@ -5198,7 +5271,7 @@ export class Editor {
     const s = doc.shapes.get(id);
     if (!s) return;
     const m = this.measure();
-    doc.edit('Fit frame', () => {
+    doc.edit('Fit Frame', () => {
       const pad = defaultPad(doc);
       const frame = s.frame ? { ...s.frame, fit: true } : { ...thingsInside(doc, shapeBox(s), m, id), padX: pad, padY: pad, fit: true };
       doc.updateShape(id, { frame });
@@ -5221,7 +5294,7 @@ export class Editor {
     }
     if (!bonds.size) return WHY.fillRings;
     let ids: number[] = [];
-    doc.edit('Fill rings', () => { ids = fillRings(doc, bonds); });
+    doc.edit('Fill Rings', () => { ids = fillRings(doc, bonds); });
     if (!ids.length) return 'No rings in the selection.';
     this.sel = emptySel();
     for (const id of ids) this.sel.shapes.add(id);
@@ -5237,7 +5310,7 @@ export class Editor {
     const doc = this.doc, s = this.sel;
     if (!this.hasSelection()) return false;
     const black = colour?.toLowerCase() === '#000000' ? undefined : colour;
-    doc.edit(what === 'highlight' ? 'Highlight' : what === 'fill' ? 'Fill color' : 'Color', () => {
+    doc.edit(what === 'highlight' ? 'Highlight' : what === 'fill' ? 'Fill Color' : 'Color', () => {
       if (what === 'highlight') {
         for (const id of s.atoms) doc.updateAtom(id, { highlight: colour });
         for (const id of s.bonds) doc.updateBond(id, { highlight: colour });
@@ -5264,7 +5337,7 @@ export class Editor {
   highlight(colour: string | undefined, hl?: HighlightStyle): boolean {
     const doc = this.doc;
     if (!this.sel.atoms.size && !this.sel.bonds.size) return false;
-    doc.edit(colour ? 'Highlight' : 'Remove highlight', () => {
+    doc.edit(colour ? 'Highlight' : 'Remove Highlight', () => {
       for (const id of this.sel.atoms) doc.updateAtom(id, { highlight: colour, hl: colour ? hl : undefined });
       for (const id of this.sel.bonds) doc.updateBond(id, { highlight: colour, hl: colour ? hl : undefined });
     });
@@ -5280,7 +5353,7 @@ export class Editor {
     const rings = [...ids].map((id) => doc.shapes.get(id)!).filter(Boolean);
     if (!rings.length) return null;
     const on = !rings.every((s) => s.shadow);
-    doc.edit(on ? 'Ring fill shadow' : 'No ring fill shadow', () => { for (const s of rings) doc.updateShape(s.id, { shadow: on || undefined }); });
+    doc.edit(on ? 'Ring Fill Shadow' : 'No Ring Fill Shadow', () => { for (const s of rings) doc.updateShape(s.id, { shadow: on || undefined }); });
     this.changed();
     return on ? 'on' : 'off';
   }
@@ -5300,9 +5373,9 @@ export class Editor {
     const on = ![...atoms, ...bonds].every((x) => has(x.hl));
     const patch: HighlightStyle = key === 'outline' ? (on ? { fill: 'none', line: 'solid' } : { fill: 'solid', line: 'none' }) : { [key]: on };
     const labels: Record<HighlightToggle, [string, string]> = {
-      smooth: ['Smooth highlight', 'Highlight with discs'], centre: ['Center highlight on double bonds', 'Highlight on the bonds'],
-      soft: ['Soft highlight', 'Sharp highlight'], shadow: ['Highlight shadow', 'No highlight shadow'], glow: ['Highlight glow', 'No highlight glow'],
-      outline: ['Outline-only highlight', 'Filled highlight'],
+      smooth: ['Smooth Highlight', 'Highlight with Discs'], centre: ['Center Highlight on Double Bonds', 'Highlight on the Bonds'],
+      soft: ['Soft Highlight', 'Sharp Highlight'], shadow: ['Highlight Shadow', 'No Highlight Shadow'], glow: ['Highlight Glow', 'No Highlight Glow'],
+      outline: ['Outline-Only Highlight', 'Filled Highlight'],
     };
     doc.edit(labels[key][on ? 0 : 1], () => {
       for (const a of atoms) doc.updateAtom(a.id, { hl: tidyStyle({ ...a.hl, ...patch }) });
@@ -5369,7 +5442,8 @@ export class Editor {
   deleteSelection(): void {
     // a curved arrow's join that was pressed: Delete takes out just that join
     const a = this.activePoint();
-    if (a && a.i % 3 === 0 && this.removeBend(a.r.id, a.i)) return;
+    const s0 = this.sel, alone = s0.arrows.size === 1 && !s0.atoms.size && !s0.bonds.size && !s0.captions.size && !s0.shapes.size;
+    if (a && alone && a.i % 3 === 0 && this.removeBend(a.r.id, a.i)) return;
     // whole species of a Smart Scheme picked on the page: they go as × in its list takes them
     if (this.deleteSmartSpecies()) return;
     const doc = this.doc;
@@ -5457,8 +5531,9 @@ export class Editor {
   /** Box round the selection (remembered until the drawing or the selection changes). */
   selBox(): Rect | null {
     const s = this.sel;
-    const sum = (x: Set<number>) => { let t = 0; for (const id of x) t += id; return `${x.size}:${t}`; };
-    const key = `${this.doc.version}|${sum(s.atoms)}|${sum(s.captions)}|${sum(s.arrows)}|${sum(s.shapes)}`;
+    // (the ids themselves: two selections of the same size can add up to the same)
+    const ids = (x: Set<number>) => [...x].join(',');
+    const key = `${this.doc.version}|${ids(s.atoms)}|${ids(s.captions)}|${ids(s.arrows)}|${ids(s.shapes)}`;
     if (key !== this.selBoxCache.key) this.selBoxCache = { key, box: selectionBox(this.doc, s, this.measure()) };
     return this.selBoxCache.box;
   }
@@ -5780,12 +5855,13 @@ export class Editor {
   private gridUnits(): ReturnType<typeof units> {
     const doc = this.doc, m = this.measure();
     const none = !this.hasSelection();
+    // (nothing picked: everything that can be picked, so hidden and locked things stay where they are)
     const sel = none
-      ? { atoms: new Set(doc.atoms.keys()), bonds: new Set(doc.bonds.keys()), captions: new Set(doc.captions.keys()), arrows: new Set(doc.arrows.keys()), shapes: new Set(doc.shapes.keys()) }
+      ? { atoms: new Set(this.structuresLocked ? [] : doc.atoms.keys()), bonds: new Set(this.structuresLocked ? [] : doc.bonds.keys()), captions: new Set(visibleCaptions(doc)), arrows: new Set(doc.arrows.keys()), shapes: new Set(pickableShapes(doc)) }
       : this.sel;
     const chosen = joinGroups(doc, units(doc, sel, m));
     // numbers under the chosen structures come along, picked or not
-    const others = none ? [] : units(doc, { atoms: new Set(), bonds: new Set(), captions: new Set([...doc.captions.keys()].filter((id) => !sel.captions.has(id))), arrows: new Set(), shapes: new Set() }, m);
+    const others = none ? [] : units(doc, { atoms: new Set(), bonds: new Set(), captions: new Set(visibleCaptions(doc).filter((id) => !sel.captions.has(id))), arrows: new Set(), shapes: new Set() }, m);
     const folded = withLabels(doc, [...chosen, ...others], doc.style.bondLength);
     const loose = new Set(others.flatMap((u) => u.captions));
     return folded.filter((u) => u.atoms.length || !u.captions.every((id) => loose.has(id)) || u.arrows.length || u.shapes.length);
@@ -5854,10 +5930,10 @@ export class Editor {
     const snap = snapshot(doc, this.sel, this.measure());
     const c = this.turnCentre(b);
     const f = axis === 'h' ? mirrorX(c.x) : mirrorY(c.y);
-    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
+    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hollowWedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     // the bonds flipped: those selected, and those between selected atoms
     const wedged = [...doc.bonds.values()].filter((x) => swap[x.display] && (this.sel.bonds.has(x.id) || (this.sel.atoms.has(x.a1) && this.sel.atoms.has(x.a2))));
-    const name = `Flip ${axis === 'h' ? 'horizontal' : 'vertical'}${keep ? ', keeping configuration' : ''}`;
+    const name = `Flip ${axis === 'h' ? 'Horizontal' : 'Vertical'}${keep ? ', Keeping Configuration' : ''}`;
     doc.edit(name, () => {
       transform(doc, snap, f, true);
       if (keep) for (const x of wedged) doc.updateBond(x.id, { display: swap[x.display]! });
@@ -5872,7 +5948,7 @@ export class Editor {
    */
   reorient(moves: { atoms: Iterable<number>; f: (p: Vec) => Vec; mirror: boolean }[], name = 'Orient Like'): void {
     const doc = this.doc;
-    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
+    const swap: Partial<Record<BondDisplay, BondDisplay>> = { wedge: 'hashWedge', hollowWedge: 'hashWedge', hashWedge: 'wedge', bold: 'hash', hash: 'bold' };
     doc.edit(name, () => {
       for (const m of moves) {
         const atoms = new Set(m.atoms);
@@ -5883,6 +5959,21 @@ export class Editor {
       }
     });
     this.changed();
+  }
+
+  /**
+   * Clean Up and Orient Reaction: the structures turned as Orient Like First worked out (`moves`)
+   * and the scheme tidied as Clean Up Reaction does, in one undo step. What Clean Up Reaction
+   * returned (false: nothing to tidy).
+   */
+  cleanUpAndOrient(moves: { atoms: Iterable<number>; f: (p: Vec) => Vec; mirror: boolean }[]): false | 'matched' | 'fitted' {
+    let tidied = false as false | 'matched' | 'fitted';
+    this.doc.edit('Clean Up and Orient Reaction', () => {
+      if (moves.length) this.reorient(moves);
+      tidied = this.cleanUpReaction();
+    });
+    this.changed();
+    return tidied;
   }
 
   /** Turn the selection about its centre; positive is clockwise. */
@@ -6656,7 +6747,7 @@ export class Editor {
     next.plusses = next.plusses!.filter(others);
     const into: Role | null = role === 'none' ? null : role === 'results' ? 'below' : role;
     if (into) for (const it of picked) (it.plus && (into === 'reactants' || into === 'products') ? next.plusses! : next[into]).push(it.ref);
-    this.doc.edit('Reaction roles', () => {
+    this.doc.edit('Reaction Roles', () => {
       this.doc.updateArrow(arrowId, { step: next });
       // text set as the Results line is marked so; set as anything else, it is plain text again
       for (const it of picked) {
@@ -6875,7 +6966,7 @@ export class Editor {
   /** Forget roles chosen by hand (or read from a file): they are worked out from where things sit again. */
   resetReactionRoles(arrowId: number): void {
     if (!this.doc.arrows.get(arrowId)?.step) return;
-    this.doc.edit('Reaction roles', () => this.doc.updateArrow(arrowId, { step: undefined }));
+    this.doc.edit('Reaction Roles', () => this.doc.updateArrow(arrowId, { step: undefined }));
     this.changed();
   }
 
@@ -6968,13 +7059,17 @@ export class Editor {
       }
       for (const id of s.arrows) {
         const r = doc.arrows.get(id);
-        if (r) doc.updateArrow(id, { tail: at(r.tail), head: at(r.head), headLength: r.headLength * f, headWidth: r.headWidth * f });
+        if (!r) continue;
+        // its own line widths and spacings grow with it too
+        const own: Partial<Arrow> = {};
+        for (const k of ['lineWidth', 'boldWidth', 'hashSpacing', 'shaftSpacing'] as const) if (r[k] !== undefined) own[k] = r[k]! * f;
+        doc.updateArrow(id, { tail: at(r.tail), head: at(r.head), headLength: r.headLength * f, headWidth: r.headWidth * f, ...own });
       }
       for (const id of s.shapes) {
         const sh = doc.shapes.get(id);
         if (!sh) continue;
         const p1 = at({ x: sh.x1, y: sh.y1 }), p2 = at({ x: sh.x2, y: sh.y2 });
-        doc.updateShape(id, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y });
+        doc.updateShape(id, { x1: p1.x, y1: p1.y, x2: p2.x, y2: p2.y, ...(sh.lineWidth !== undefined ? { lineWidth: sh.lineWidth * f } : {}) });
       }
     });
     this.changed();
@@ -7010,7 +7105,7 @@ export class Editor {
     const shift = sub(add(head, mul(v, GAP + reach)), c);
     const part = extractDrawing(this.doc, this.sel);
     const pb = part.bounds();
-    this.doc.edit('Reaction step', () => {
+    this.doc.edit('Reaction Step', () => {
       this.addArrow(tail, head);
       if (pb) this.sel = insertDrawing(this.doc, part, add({ x: (pb.x1 + pb.x2) / 2, y: (pb.y1 + pb.y2) / 2 }, shift));
     });
@@ -7124,6 +7219,15 @@ export class Editor {
     if (!this.pointerInside && target && target !== document.body && target !== this.r.overlay && /^(Shift\+)?(Enter|Space|Tab)$/.test(chord)) return;
     if (chord === 'Escape') {
       this.keyHot = null;
+      // in the middle of a drag: it is called off, and what it moved goes back (as in Office and ChemDraw)
+      if (this.drag?.moved) {
+        // (a right-button pan called off: the menu event its release brings still doesn't open the menu)
+        if (this.drag.button === 2) { this.rightDragged = true; this.pendingContext = null; }
+        this.abandonPress();
+        this.showPointer(e.ctrlKey || e.metaKey);
+        this.requestOverlay();
+        return;
+      }
       if (this.cropping !== null) { this.cropping = null; this.requestOverlay(); this.onChange(); return; }
       this.clearSelection();
       return;
@@ -7352,7 +7456,7 @@ export class Editor {
       // atom the mouse is on (after a first 1 there), as ChemDraw counts it
       const fromMouse = this.keyHot === null || sameHit(this.keyHot, this.hover);
       let next: number | null = null;
-      doc.edit('Hotkey', () => { next = sproutGroup(doc, id, kind); });
+      doc.edit(kind === 'bond' || kind === 'ring-bond' || kind === 'wedge' || kind === 'hash-wedge' ? 'Add Bond' : 'Add Group', () => { next = sproutGroup(doc, id, kind); });
       this.lastEdited = next ?? id;
       // 1 and 0 on the atom under the mouse leave the highlight there (pressing 1 again adds
       // another branch); other keys, or keys after a keyboard move, follow the new atom
@@ -7369,12 +7473,12 @@ export class Editor {
         doc.edit('Charge', () => this.setCharge(id, a.charge + (act === 'plus' ? 1 : -1)));
         break;
       case 'number':
-        doc.edit('Atom number', () => doc.updateAtom(id, a.showNumber
+        doc.edit('Atom Number', () => doc.updateAtom(id, a.showNumber
           ? { showNumber: false }
           : { showNumber: true, atomNumber: a.atomNumber || String(nextNumber(doc, id, (x) => x.atomNumber)) }));
         break;
       case 'attach':
-        doc.edit('Attachment point', () => doc.updateAtom(id, a.attach
+        doc.edit('Attachment Point', () => doc.updateAtom(id, a.attach
           ? { attach: undefined, attachNum: undefined, z: 6 }
           : { attach: 'Unspecified', attachNum: nextNumber(doc, id, (x) => (x.attach ? x.attachNum : undefined)), z: 0, label: null, charge: 0, fileLabel: false }));
         break;
@@ -7416,7 +7520,7 @@ export class Editor {
     };
     if (act === 'select') { this.selectOnly({ kind: 'bond', id }); return true; }
     if (act === 'properties') { this.selectOnly({ kind: 'bond', id }); this.onProperties(); return true; }
-    doc.edit('Bond Hotkey', () => {
+    doc.edit('Change Bond', () => {
       if (act === 'delete') { this.removeBondAndOrphans(id); return; }
       if (act === 'wedge' || act === 'hash-wedge') {
         const disp: BondDisplay = act === 'wedge' ? 'wedge' : 'hashWedge';
@@ -7444,7 +7548,7 @@ export class Editor {
     const n = act === 'benzene' ? 6 : act === 'cyclopentadiene' ? 5 : Number(act);
     if (act !== 'chair' && act !== 'chair-2' && !(n >= 3 && n <= 8)) return false;
     let far: number | undefined;
-    doc.edit('Fuse ring', () => {
+    doc.edit('Fuse Ring', () => {
       if (act === 'chair' || act === 'chair-2') { fuseChair(doc, id, act === 'chair-2'); return; }
       const side = fuseSide(doc, b, n, this.pointer);
       const pts = fusedRing(doc.atoms.get(b.a1)!, doc.atoms.get(b.a2)!, n, side);
@@ -7834,14 +7938,17 @@ export class Editor {
     // Align Left, Center or Right with atom labels picked lines the labels up (Style panel ▸ Label alignment)
     if (f.kind === 'align' && f.j !== 'justify') {
       const labelled = [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi);
-      if (labelled.length) {
-        doc.edit('Label alignment', () => { for (const a of labelled) doc.updateAtom(a.id, labelAlignPatch(doc, a, f.j as LabelAlign)); });
-        if (!caps.length && !shapes.length) { this.requestScene(); this.changed(); return true; }
+      if (labelled.length && !caps.length && !shapes.length) {
+        doc.edit('Label Alignment', () => { for (const a of labelled) doc.updateAtom(a.id, labelAlignPatch(doc, a, f.j as LabelAlign)); });
+        this.requestScene(); this.changed(); return true;
       }
     }
     // atoms picked on their own: Home ▸ Font sets their labels' font, size and bold
     if (!caps.length && !shapes.length) return this.formatLabels(f);
-    doc.edit('Format text', () => {
+    // (with text picked too, the labels line up in the same step, so one Undo takes back the click)
+    const labels = f.kind === 'align' && f.j !== 'justify' ? [...this.sel.atoms].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && (!!a.label || a.z !== 6 || !!a.showCarbon) && !a.multi) : [];
+    doc.edit('Format Text', () => {
+      for (const a of labels) doc.updateAtom(a.id, labelAlignPatch(doc, a, (f as { j: LabelAlign }).j));
       for (const c of caps) {
         const base = c.ph ? doc.textStyles?.[c.ph] : undefined;
         const defaults = base ? { ...base } : { ...styleFromFace(st.captionFace), size: st.captionSize };
@@ -7871,10 +7978,10 @@ export class Editor {
     if (!atoms.length) return false;
     let label: string | null = null;
     let change: (() => void) | null = null;
-    if (f.kind === 'style' && 'font' in f.patch) { label = 'Label font'; change = () => setLabelFont(doc, atoms, f.patch.font); }
-    else if (f.kind === 'style' && f.patch.size !== undefined) { const pt = f.patch.size; label = 'Label size'; change = () => setLabelSize(doc, atoms, pt); }
-    else if (f.kind === 'grow') { const now = labelLookOf(doc, atoms).size ?? doc.style.labelSize; label = 'Label size'; change = () => setLabelSize(doc, atoms, Math.max(1, now + f.by)); }
-    else if (f.kind === 'toggle' && f.key === 'bold') { label = 'Bold labels'; change = () => toggleLabelBold(doc, atoms); }
+    if (f.kind === 'style' && 'font' in f.patch) { label = 'Label Font'; change = () => setLabelFont(doc, atoms, f.patch.font); }
+    else if (f.kind === 'style' && f.patch.size !== undefined) { const pt = f.patch.size; label = 'Label Size'; change = () => setLabelSize(doc, atoms, pt); }
+    else if (f.kind === 'grow') { const now = labelLookOf(doc, atoms).size ?? doc.style.labelSize; label = 'Label Size'; change = () => setLabelSize(doc, atoms, Math.max(1, now + f.by)); }
+    else if (f.kind === 'toggle' && f.key === 'bold') { label = 'Bold Labels'; change = () => toggleLabelBold(doc, atoms); }
     if (!change || !label) return false;
     doc.edit(label, change);
     this.requestScene();
@@ -7893,7 +8000,7 @@ export class Editor {
     const ids = typing !== null ? [typing] : [...this.sel.captions];
     const caps = ids.map((id) => doc.captions.get(id)).filter((c): c is Caption => !!c);
     if (!caps.length) return false;
-    doc.edit(change.kind === 'dir' ? 'Text direction' : change.kind === 'cols' ? 'Columns' : 'AutoFit', () => {
+    doc.edit(change.kind === 'dir' ? 'Text Direction' : change.kind === 'cols' ? 'Columns' : 'AutoFit', () => {
       for (const c of caps) {
         const frame = this.r.captionFrame(c);
         doc.dirtyRects.push(this.r.captionBox(c));
@@ -7989,7 +8096,7 @@ export class Editor {
     if (this.emptySides?.version !== v) this.emptySides = { version: v, map: new Map() };
     let got = this.emptySides.map.get(r.id);
     if (!got) {
-      const t = arrowTexts(this.doc, this.measure(), r);
+      const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
       got = { above: !t.above.length, below: !t.below.length, results: !!t.below.length && !t.results.length };
       this.emptySides.map.set(r.id, got);
     }
@@ -8006,7 +8113,7 @@ export class Editor {
       const shown = (s: ArrowSide) => fresh || this.helperHover?.id === r.id && this.helperHover.side === s;
       for (const side of ARROW_SIDES) {
         if (!this.sidesFree(r)[side]) continue;
-        const b = helperBox(this.doc, r, side, this.measure());
+        const b = helperBox(this.doc, r, side, this.measure(), this.schemeItems());
         // hovering finds a box within reach; a click needs the box to be showing and under it
         const pad = hovering ? L * 0.5 : 0;
         if (p.x < b.x1 - pad || p.x > b.x2 + pad || p.y < b.y1 - pad || p.y > b.y2 + pad) continue;
@@ -8022,10 +8129,10 @@ export class Editor {
     const boxes: Rect[] = [];
     const f = this.freshArrow;
     const fr = f && performance.now() < f.until ? this.doc.arrows.get(f.id) : undefined;
-    if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure()));
+    if (fr && takesHelpers(fr)) for (const side of ARROW_SIDES) if (this.sidesFree(fr)[side]) boxes.push(helperBox(this.doc, fr, side, this.measure(), this.schemeItems()));
     const h = this.helperHover;
     const hr = h ? this.doc.arrows.get(h.id) : undefined;
-    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure()));
+    if (h && hr && hr !== fr && takesHelpers(hr) && this.sidesFree(hr)[h.side]) boxes.push(helperBox(this.doc, hr, h.side, this.measure(), this.schemeItems()));
     if (!boxes.length) return;
     ctx.save();
     ctx.strokeStyle = colour;
@@ -8077,7 +8184,7 @@ export class Editor {
   arrowSideText(id: number): (Record<ArrowSide, string> & { align: Record<ArrowSide, 'left' | 'center' | 'right'> }) | null {
     const r = this.doc.arrows.get(id);
     if (!r || !isReactionArrow(r)) return null;
-    const t = arrowTexts(this.doc, this.measure(), r);
+    const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
     const one = (cs: Caption[]) => (cs[0] ? plainText(cs[0].runs) : '');
     const align = { above: sideAlign(this.doc, r, 'above', t.above), below: sideAlign(this.doc, r, 'below', t.below), results: sideAlign(this.doc, r, 'results', t.results) };
     return { above: one(t.above), below: one(t.below), results: one(t.results), align };
@@ -8105,7 +8212,7 @@ export class Editor {
       const now = this.doc.arrows.get(id)!;
       // with no choice of its own a side goes back to the drawing's alignment
       if (!how) {
-        const t = arrowTexts(this.doc, this.measure(), now);
+        const t = arrowTexts(this.doc, this.measure(), now, this.schemeItems());
         const j = sideAlign(this.doc, now, side, t[side]);
         for (const c of t[side]) if (c.justify !== j) this.doc.updateCaption(c.id, { justify: j });
       }
@@ -8115,13 +8222,14 @@ export class Editor {
   }
 
   /** Show or hide the dashed text guides on the selected arrows (null: as usual, only on plain reaction arrows). */
-  setArrowGuides(ids: number[], on: boolean | null): void {
-    this.doc.edit(on === false ? 'Hide Text Guides' : 'Show Text Guides', () => {
+  setArrowGuides(ids: number[], on: boolean | null, byDefault?: (r: Arrow) => boolean): void {
+    this.doc.edit(on === false ? 'Hide Text Guides' : on === true ? 'Show Text Guides' : 'Reset Text Guides', () => {
       for (const id of ids) {
         const r = this.doc.arrows.get(id);
         if (!r) continue;
         const look = { ...r.textLook };
-        if (on === null) delete look.guides; else look.guides = on;
+        // (an arrow that shows them or not by default anyway is put back to its default, each arrow on its own)
+        if (on === null || (byDefault && byDefault(r) === on)) delete look.guides; else look.guides = on;
         this.doc.updateArrow(id, { textLook: Object.keys(look).length ? look : undefined });
       }
     });
@@ -8155,7 +8263,7 @@ export class Editor {
       const r = this.doc.arrows.get(id);
       if (!r) continue;
       arrows.push(r);
-      const t = arrowTexts(this.doc, this.measure(), r);
+      const t = arrowTexts(this.doc, this.measure(), r, this.schemeItems());
       for (const c of [...t.above, ...t.below, ...t.results]) ids.add(c.id);
     }
     const changes: [number, TextRun[]][] = [];
@@ -8322,7 +8430,7 @@ export class Editor {
       ? { runs: applyBase(c.runs, base), paras: c.paras, justify: c.justify, wrap: c.wrap, width: c.width, lineHeight: c.lineHeight, lineSpacing: c.lineSpacing, cols: c.cols, colGap: c.colGap, boxH: c.boxH, fit: c.fit, ...lines }
       : { runs: [], justify: opts?.justify ?? 'left' as const, wrap, ...lines };
     const ed = new CaptionEditor(host, at, initial, defaults, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       if (id !== null) hide(null);
       const empty = !plainText(res.runs).trim();
       const cur = id !== null ? doc.captions.get(id) : null;
@@ -8334,7 +8442,7 @@ export class Editor {
       if (cur?.ph && empty) {
         // an emptied placeholder stays, showing its prompt again
         const paras = cur.ph === 'body' ? [{ list: 'bullet' as const }] : undefined;
-        if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit caption', () => doc.updateCaption(cur.id, { runs: [], paras }));
+        if (cur.runs.length || JSON.stringify(cur.paras) !== JSON.stringify(paras)) doc.edit('Edit Text', () => doc.updateCaption(cur.id, { runs: [], paras }));
       } else if (cur) {
         const fresh = this.freshCaption?.id === cur.id ? this.freshCaption : null;
         if (fresh) this.freshCaption = null;
@@ -8342,11 +8450,11 @@ export class Editor {
           // a text box Add Caption just made, left empty: it goes with the step that made it (or,
           // stopped for Undo, is left for the Undo to take back with that step, so Redo has it)
           const unused = !!fresh && !plainText(cur.runs).trim() && doc.topStep === fresh.step;
-          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete caption', () => doc.removeCaption(cur.id));
+          if (!(unused && (this.forUndo || doc.dropStep(fresh!.step)))) doc.edit('Delete Text', () => doc.removeCaption(cur.id));
         }
         // (nothing typed: no step, though the editor hands the runs back with their fields in another order)
         else if ((Object.keys(fields) as (keyof Caption)[]).some((k) => !sameData(cur[k], fields[k]))) {
-          doc.edit('Edit caption', () => doc.updateCaption(cur.id, fields));
+          doc.edit('Edit Text', () => doc.updateCaption(cur.id, fields));
         }
       } else if (!empty) {
         doc.edit('Caption', () => { const nc = doc.addCaption({ ...fields, x: res.x, y: res.y, runs: fields.runs!, justify: res.justify }); made = nc.id; opts?.done?.(nc.id); });
@@ -8629,7 +8737,7 @@ export class Editor {
     // a turned shape's text is typed turned with it
     const rot = shapeTurn(s), mid = shapeMid(s);
     const ed = new CaptionEditor(host, turnAbout({ x: g.x, y: g.y }, mid, rot), { runs: s.text?.runs ?? [], paras: s.text?.paras, justify: s.textAlign ?? 'center', wrap, ...this.r.slideLines() }, {}, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       this.r.geoEdit = null;
       const cur = doc.shapes.get(id);
       if (cur) {
@@ -8637,12 +8745,14 @@ export class Editor {
         const empty = !plainText(res.runs).trim();
         const text = empty ? undefined : { runs: res.runs, ...(res.paras?.length ? { paras: res.paras } : {}) };
         const align = res.justify === 'center' ? undefined : res.justify;
-        if (JSON.stringify(text) !== JSON.stringify(cur.text) || align !== cur.textAlign) doc.edit('Type in shape', () => doc.updateShape(id, { text, textAlign: align }));
+        if (JSON.stringify(text) !== JSON.stringify(cur.text) || align !== cur.textAlign) doc.edit('Type in Shape', () => doc.updateShape(id, { text, textAlign: align }));
       }
       this.requestScene();
       this.changed();
     }, rot);
     this.captionEd = ed;
+    // (not a caption: no caption is the one being typed in)
+    this.captionEdId = null;
     if (click) { const q = turnAbout(click, mid, -rot); ed.ed.setCaret(ed.ed.offsetAt(q.x - g.x, q.y - g.y)); }
   }
 
@@ -8742,7 +8852,7 @@ export class Editor {
         if (!next && !e.shiftKey) {
           // Tab in the last cell adds a row, as in Word
           const cur = doc.shapes.get(id)!;
-          doc.edit('Add table row', () => this.updateTable(cur.id, insertRow(cur.table!, cur.table!.rows.length)));
+          doc.edit('Add Table Row', () => this.updateTable(cur.id, insertRow(cur.table!, cur.table!.rows.length)));
           this.changed();
           next = { r: part.r + 1, c: 0 };
         }
@@ -8751,7 +8861,7 @@ export class Editor {
       },
     };
     const ed = new CaptionEditor(host, at, { runs: shown.runs, paras: shown.paras, justify, wrap }, {}, (res) => {
-      if (this.captionEd === ed) this.captionEd = null;
+      if (this.captionEd === ed) { this.captionEd = null; this.captionEdId = null; }
       const cur = doc.shapes.get(id);
       if (this.r.tableEdit?.id === id) {
         const before = this.r.tableEdit.table;
@@ -8765,11 +8875,13 @@ export class Editor {
         const last = part.c + spanOf(t, part.r, part.c) - 1;
         t = setColumnWidth(t, last, t.cols[last] + res.wrap - wrap);
       }
-      if (JSON.stringify(t) !== JSON.stringify(cur.table)) doc.edit('Edit table', () => this.updateTable(id, t));
+      if (JSON.stringify(t) !== JSON.stringify(cur.table)) doc.edit('Edit Table', () => this.updateTable(id, t));
       repaint(t);
       this.changed();
     });
     this.captionEd = ed;
+    // (not a caption: no caption is the one being typed in)
+    this.captionEdId = null;
     if (click) ed.ed.setCaret(ed.ed.offsetAt(click.x - at.x, click.y - at.y));
     else ed.ed.selectAll();
     this.onChange();

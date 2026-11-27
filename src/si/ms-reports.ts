@@ -109,7 +109,7 @@ export function vendorRawKind(name: string): string | null {
 }
 
 export const rawDataMessage = (name: string, kind: string): string =>
-  `${name} is ${kind}: the instrument's own format, which this program can't read. It is kept with the compound. To fill in the found m/z automatically, also add a report exported from the instrument software (PDF or CSV), or convert the data to mzML with ProteoWizard MSConvert (free) and add that.`;
+  `${name} is ${kind}: the instrument's own format, which Chemweave can't read. It is kept with the compound. To fill in the found m/z automatically, also add a report exported from the instrument software (PDF or CSV), or convert the data to mzML with ProteoWizard MSConvert (free) and add that.`;
 
 export const pictureMessage = (name: string): string => `${name} is a picture: it is kept (and can be printed), but numbers can't be read from pictures. Type the found m/z yourself.`;
 
@@ -163,7 +163,7 @@ export async function readReport(bytes: Uint8Array | null, name: string, pdfText
 /** What a failure to read a report says (as SI Assistant says it). */
 function failed(name: string, e: unknown): ReportData {
   if (e instanceof ReportReadError) return data(kindName(name), { name, readable: false, message: e.message });
-  return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant this program doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
+  return data(kindName(name), { name, readable: false, message: `${name} could not be read (it may be damaged, or a variant Chemweave doesn't know): ${e instanceof Error ? e.name : 'Error'}.` });
 }
 
 /**
@@ -480,7 +480,7 @@ export function readMzml(text: string): ReportData {
     const arrays: { mz?: number[]; i?: number[] } = {};
     for (const bda of elements(sp.inner, 'binaryDataArray')) {
       const accs = accessions(bda.inner);
-      if (NUMPRESS.some((a) => accs.has(a))) throw new ReportReadError("This mzML file is compressed with MS-Numpress, which this program can't read. Convert it again with MSConvert with Numpress switched off.");
+      if (NUMPRESS.some((a) => accs.has(a))) throw new ReportReadError("This mzML file is compressed with MS-Numpress, which Chemweave can't read. Convert it again with MSConvert with Numpress switched off.");
       const bin = /<(?:[\w.-]+:)?binary(?:\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?binary>/.exec(bda.inner);
       let raw = base64Bytes(bin ? bin[1] : '');
       if (accs.has(MZML.zlib) && raw.length) raw = inflate(raw);
@@ -502,11 +502,13 @@ export function readMzml(text: string): ReportData {
 export function readMzxml(text: string): ReportData {
   const scans: [number[], number[]][] = [], flags: boolean[] = [];
   let levels = 0;
-  // each <scan …> start and the <peaks> that follows it (a nested MS/MS scan has its own)
-  const re = /<(?:[\w.-]+:)?scan(\s[^>]*)?>|<(?:[\w.-]+:)?peaks(\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?peaks>/g;
+  // each <scan …> start and the <peaks> that follows it (a nested MS/MS scan has its own); an empty
+  // scan's <peaks … /> closes itself
+  const re = /<(?:[\w.-]+:)?scan(\s[^>]*)?>|<(?:[\w.-]+:)?peaks(?:\s[^>]*?)?\/>|<(?:[\w.-]+:)?peaks(\s[^>]*)?>([\s\S]*?)<\/(?:[\w.-]+:)?peaks>/g;
   let scan = '';
   let m: RegExpExecArray | null;
   while ((m = re.exec(text))) {
+    if (m[3] === undefined && /^<(?:[\w.-]+:)?peaks/.test(m[0])) { levels++; continue; }   // (a scan with no peaks)
     if (m[3] === undefined) { scan = m[1] ?? ''; continue; }
     const pAttrs = m[2] ?? '';
     const level = Math.trunc(Number(attr(scan, 'msLevel') || 1)) || 1;
@@ -983,7 +985,7 @@ function excelNumber(text: string): string {
 }
 
 /** Every sheet of an .xlsx workbook as rows of cell texts (shared and inline strings resolved). */
-export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
+export function xlsxRows(content: Uint8Array, maxRows = 100000, rowCounts?: number[]): string[][][] {
   const files = unzipSync(content, {
     filter: (f) => {
       const wanted = f.name === 'xl/sharedStrings.xml' || /^xl\/worksheets\/sheet\d+\.xml$/.test(f.name);
@@ -1002,9 +1004,14 @@ export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
   let budget = XLSX_MAX_CELLS;
   for (const name of sheets) {
     const sparse: Map<number, string>[] = [];
-    let read = 0;
+    let read = 0, rowsThere = 0;
     for (const row of elements(dec.decode(files[name]), 'row')) {
-      if (sparse.length >= maxRows || read >= budget) break;
+      if (sparse.length >= maxRows || read >= budget) {
+        // (past the rows read: only counted, for how many are left out)
+        if (!rowCounts) break;
+        if (/<(?:\w+:)?c[\s/>]/.test(row.inner)) rowsThere++;
+        continue;
+      }
       const cells = new Map<number, string>();
       for (const c of elements(row.inner, 'c')) {
         const ref = attr(c.attrs, 'r') ?? '';
@@ -1020,8 +1027,10 @@ export function xlsxRows(content: Uint8Array, maxRows = 100000): string[][][] {
       }
       if (!cells.size) continue;
       sparse.push(cells);
+      rowsThere++;
       read += cells.size;
     }
+    rowCounts?.push(rowsThere);
     const used = [...new Set(sparse.flatMap((c) => [...c.keys()]))].sort((a, b) => a - b).slice(0, XLSX_MAX_COLUMNS);
     const keep = used.length ? sparse.slice(0, Math.max(1, Math.floor(budget / used.length))) : sparse;
     const rows = keep.map((c) => used.map((col) => c.get(col) ?? ''));
@@ -1159,11 +1168,13 @@ export function reportListing(bytes: Uint8Array, name: string, most = LISTING_LI
   try {
     let lines: string[], total: number;
     if (ext === '.xlsx' || ext === '.xlsm') {
-      const sheets = xlsxRows(bytes, most + 1000);
+      const counts: number[] = [];
+      const sheets = xlsxRows(bytes, most + 1000, counts);
       lines = trimmed(aligned(sheets.flatMap((s) => [...s, []])));
-      total = lines.length;
+      // (the rows of each sheet past those read count too)
+      total = lines.length + sheets.reduce((n, s, i) => n + Math.max(0, (counts[i] ?? s.length) - s.length), 0);
     } else {
-      if (bytes.length > MAX_FILE_BYTES) throw new ReportReadError('too large');
+      if (bytes.length > MAX_FILE_BYTES) throw new ReportReadError(`this file is too large to read here (${Math.round(bytes.length / 1e6)} MB): export a peak list or a PDF report and add that`);
       const text = decode(bytes);
       if (['.csv', '.tsv', '.tab'].includes(ext)) {
         lines = trimmed(aligned(splitRows(text)[0]));
@@ -1180,7 +1191,9 @@ export function reportListing(bytes: Uint8Array, name: string, most = LISTING_LI
       }
     }
     return [lines.slice(0, most).map((l) => (l.length <= width ? l : l.slice(0, width - 1) + '…')), Math.max(0, total - most)];
-  } catch {
+  } catch (e) {
+    // (a file that is simply too large says so; anything else is taken to be damaged)
+    if (e instanceof ReportReadError) return [[`(could not be read: ${e.message.replace(/^This/, 'this').replace(/\.$/, '')})`], 0];
     return [[`(could not be read: this ${ext === '.xlsx' || ext === '.xlsm' ? 'Excel file' : 'file'} may be damaged)`], 0];
   }
 }

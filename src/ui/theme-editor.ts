@@ -8,6 +8,7 @@ import type { Master, SlideSize } from '../deck/deck';
 import { DECORS, type Decor } from '../deck/deck';
 import { SLIDE_TEMPLATES, applyTemplate, type SlideTemplate } from '../deck/templates';
 import { paintTemplate } from './slide-templates';
+import { foldIntoInfo } from './info-tip';
 
 /** Change a theme; resolves with it as changed, or null when cancelled. `title` heads the window. */
 export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, title = 'Edit Theme', mine: SlideTemplate[] = []): Promise<SlideTemplate | null> {
@@ -22,6 +23,7 @@ export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, tit
     note.className = 'muted';
     note.textContent = 'A theme sets the fonts, colors, background and shapes of every slide. Content slides read best light, so structures (drawn in black) stand out.';
     form.append(h, note);
+    foldIntoInfo(note, h);
     const body = document.createElement('div');
     body.className = 'te-body';
     const grid = document.createElement('div');
