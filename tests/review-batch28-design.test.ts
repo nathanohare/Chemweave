@@ -18,7 +18,8 @@ import { plainText } from '../src/richtext';
 import {
   diagramParts, newDiagram, putDiagram, refitDiagramStructures, refitDiagrams, textFromShapes, parseOutline, movedLines,
 } from '../src/design/diagrams';
-import { fromRows, rowsOf } from '../src/design/diagram-rows';
+import { fromRows, rowsOf, withoutIcons } from '../src/design/diagram-rows';
+import { labelLook, labelPieces } from '../src/chem/labels';
 import { ENERGY_DEFAULTS, putEnergy, type EnergyData, type EnergyPoint } from '../src/design/energy';
 import { NEWMAN_LOOK, drawNewman, type NewmanData } from '../src/design/newman';
 import type { NewmanGroup } from '../src/chem/newman';
@@ -58,6 +59,16 @@ describe('F059: a line starting with [word] keeps its words outside the icon lis
   });
 });
 
+describe('F059 round 2: an icon list changed to another layout in the Diagram window', () => {
+  it('takes the icon tags out of the rows, keeping the words and their looks', () => {
+    const rows = rowsOf({ layout: 'icon-list', text: '[flask] Synthesis\n\t- [x] note\n[microscope] Analysis', rich: { 1: [{ text: 'Synthesis', bold: true }] } });
+    const out = withoutIcons(rows);
+    expect(out.map((r) => r.label)).toEqual(['Synthesis', '- note', 'Analysis']);
+    expect(out[0].rich).toEqual([{ text: 'Synthesis', bold: true }]);
+    expect(fromRows(out, 'blocks')).toEqual({ text: 'Synthesis\n\t- note\nAnalysis', rich: { 1: [{ text: 'Synthesis', bold: true }] } });
+  });
+});
+
 describe('F060: a held structure stays with its item when a line is added or removed above it', () => {
   it('follows item C to line 4 when a line is put in above it', () => {
     const doc = new Doc();
@@ -87,6 +98,10 @@ describe('F060: a held structure stays with its item when a line is added or rem
     expect([...movedLines('A\nB\nC', 'A\nX\nB\nC')]).toEqual([[1, 1], [2, 3], [3, 4]]);
     expect([...movedLines('A\nB\nC', 'B\nC')]).toEqual([[2, 1], [3, 2]]);
     expect([...movedLines('A\nB\nC', 'A\nBee\nC')]).toEqual([[1, 1], [2, 2], [3, 3]]);
+    // a line renamed while another is added after it, or another taken out before it, still finds itself
+    expect(movedLines('Alpha\nBeta\nGamma', 'Alpha\nBeta\nGamma ray\nDelta').get(3)).toBe(3);
+    expect(movedLines('Alpha\nBeta\nGamma', 'Beta two\nGamma').get(2)).toBe(1);
+    expect(movedLines('Alpha\nBeta\nGamma', 'Beta two\nGamma').has(1)).toBe(false);
   });
 });
 
@@ -100,6 +115,12 @@ describe('F428: an icon list drawn again before the icons load keeps its icons',
     const f = doc.shapes.get(frame)!;
     doc.edit('Word', () => putDiagram(doc, POINTS, { ...f.diagram!, text: 'Synthesis\nAnalyses' }, { x: f.x1, y: f.y1 }, frame));
     expect(icons().map((s) => s.geo)).toEqual(['icon:flask', 'icon:microscope']);
+    // a line put in above: each item keeps its own icon, the new one has none of theirs
+    const g = doc.shapes.get(frame)!;
+    doc.edit('Word', () => putDiagram(doc, POINTS, { ...g.diagram!, text: 'Planning\nSynthesis\nAnalyses' }, { x: g.x1, y: g.y1 }, frame));
+    const now = icons().map((s) => s.geo);
+    expect(now.slice(1)).toEqual(['icon:flask', 'icon:microscope']);
+    expect(now[0]).not.toBe('icon:flask');
   });
 });
 
@@ -127,6 +148,12 @@ describe('F062: a species\' structure of two molecules is not added again on eac
     expect(doc.atoms.size).toBe(3);
     for (let i = 0; i < 3; i++) doc.edit('re', () => putEnergy(doc, m, doc.shapes.get(frame)!.energy!, { x: 100, y: 100 }, frame));
     expect(doc.atoms.size).toBe(3);
+    // a hydroxide put on the diagram by hand stays through a redraw
+    const hand = doc.edit('a', () => doc.addAtom(400, 400, 8, { charge: -1 }).id);
+    doc.edit('in', () => { const f = doc.shapes.get(frame)!.frame!; doc.updateShape(frame, { frame: { ...f, atoms: [...f.atoms, hand] } }); });
+    doc.edit('re', () => putEnergy(doc, m, doc.shapes.get(frame)!.energy!, { x: 100, y: 100 }, frame));
+    expect(doc.atoms.has(hand)).toBe(true);
+    expect(doc.atoms.size).toBe(4);
   });
 });
 
@@ -141,6 +168,21 @@ describe('F061: two pathways\' species in one column each get their structure', 
     ]);
     doc.edit('e', () => putEnergy(doc, m, d, { x: 100, y: 100 }));
     expect(doc.atoms.size).toBe(2);
+  });
+
+  it('draws both structures of two differently named species at one energy, and one of a species both share', () => {
+    const one = (z: number): Contents => { const t = new Doc(); t.edit('d', () => { t.addAtom(0, 0, z); }); return t.contents(); };
+    const put = (second: string) => {
+      const doc = new Doc();
+      const m = plainMeasure(doc);
+      doc.edit('e', () => putEnergy(doc, m, energy([
+        { name: 'a', color: '#000000', points: [{ label: 'SM', g: 0, drawn: one(8) }, { label: 'TS', g: 20 }] },
+        { name: 'b', color: '#c00000', points: [{ label: second, g: 0, drawn: one(8) }, { label: 'TS2', g: 12 }] },
+      ]), { x: 100, y: 100 }));
+      return doc.atoms.size;
+    };
+    expect(put('SM + cat')).toBe(2);
+    expect(put('SM')).toBe(1);
   });
 });
 
@@ -191,6 +233,8 @@ describe('F431 and F432: names in a column pathways share', () => {
     expect(column.length).toBe(2);
     // under the lower level (the larger y on the page), not between the two
     expect(box.y1).toBeGreaterThan(column[1].y1);
+    // and in black, as a name both pathways give
+    expect(ts[0].c.runs.every((r) => !r.color || r.color === '#000000')).toBe(true);
   });
 });
 
@@ -236,8 +280,14 @@ describe('F063 and F437: sawhorse group labels', () => {
     const look = structuredClone(NEWMAN_LOOK);
     look.text = { ...(look.text ?? {}), italic: true } as typeof look.text;
     const doc = sawhorse(['OMe', 'H', 'Br'], ['CN', 'H', 'Cl'], look);
-    const ome = [...doc.atoms.values()].find((a) => a.label === 'OMe')!;
-    expect((ome.face ?? 0) & 2).toBe(2);
+    // as the label is laid out on the page: every piece in italics
+    for (const label of ['OMe', 'Br']) {
+      const a = [...doc.atoms.values()].find((x) => x.label === label)!;
+      expect(a, label).toBeDefined();
+      const pieces = labelPieces(a.label!, undefined, labelLook(a).marks);
+      expect(pieces.length).toBeGreaterThan(0);
+      expect(pieces.every((p) => p.italic), label).toBe(true);
+    }
   });
 });
 

@@ -28,7 +28,7 @@ const pairs = (b: { order: number; aromatic?: boolean } | undefined) => (b && !b
 
 export function bondChanges(s: Step): BondChanges {
   const breaking: BondChange[] = [], forming: BondChange[] = [];
-  if (s.kind === 'turn') return { breaking, forming };
+  if (s.kind === 'turn' || s.kind === 'next') return { breaking, forming };
   const carried = new Map<string, string>(s.map.bmap);
   for (const [k, sh] of s.map.shifts) carried.set(k, sh.tgt);
   const back = new Map([...carried].map(([a, b]) => [b, a]));

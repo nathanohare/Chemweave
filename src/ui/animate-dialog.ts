@@ -394,7 +394,14 @@ export class AnimateDialog {
       const sm = stepSummary(s);
       const row = el('div', 'animate-step');
       const head = el('div', 'animate-step-head');
-      const title = el('strong', undefined, (this.steps.length > 1 ? `Step ${i + 1}` : 'The step') + (s.kind === 'turn' ? ' (turn)' : ''));
+      const title = el('strong', undefined, (this.steps.length > 1 ? `Step ${i + 1}` : 'The step') + (s.kind === 'turn' ? ' (turn)' : s.kind === 'next' ? ' (next reaction)' : ''));
+      if (s.kind === 'next') {
+        // the move to a reaction drawn on its own: nothing to pair
+        head.append(title);
+        row.append(head, el('div', 'animate-step-facts', 'A separate reaction: the last structure fades out and this reaction\'s starting material fades in.'));
+        this.stepsList.append(row);
+        return;
+      }
       const how = el('span', 'muted', this.morphs[i]?.pairs?.length ? (this.morphs[i]!.exact ? ' · your pairs only' : ' · your pairs + automatic') : ' · automatic');
       const edit = button('Edit Pairing…', 'Choose which atom becomes which; see the bonds that break and form');
       edit.addEventListener('click', () => this.editPairing(i));

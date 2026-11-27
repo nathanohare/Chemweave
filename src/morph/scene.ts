@@ -129,7 +129,8 @@ export class MScene {
   /**
    * Each bond by its two atoms ("u|v", the smaller key first), worked out once for the bonds as
    * they are (a lookup, not a pass over every bond: the atom maps ask for it in their innermost
-   * loops; review F139). Made again if the bonds were changed or replaced since.
+   * loops; review F139). Made again if the bonds were replaced or their number changed since (a
+   * bond changed in place, keeping the count, isn't seen: nothing does that to a scene).
    */
   private pairs(): Map<string, string> {
     const memo = this.pairMemo;

@@ -9,7 +9,7 @@ import {
 import { iconsLoaded, loadIcons } from '../design/icons';
 import { colourButton } from './colour-picker';
 import type { Doc } from '../model';
-import { fromRows, rowsOf, sliceParts, type DiagramRow } from '../design/diagram-rows';
+import { fromRows, rowsOf, sliceParts, withoutIcons, type DiagramRow } from '../design/diagram-rows';
 import { labelFromParts, type LabelPart } from '../design/energy';
 import type { RichField } from './rich-field';
 import { nameFields } from './rich-names';
@@ -205,6 +205,8 @@ export function askDiagram(editing: DiagramData | null, o: DiagramDialogOptions)
       const was = DIAGRAM_BY_ID.get(layout);
       layout = id;
       if (sample) { rows = rowsOf({ text: l.sample }); showRows(); }
+      // (leaving the icon list: the icons named in brackets go, as the other layouts draw none)
+      else if (was?.id === 'icon-list' && id !== 'icon-list') { rows = withoutIcons(rows); showRows(); }
       // a new diagram takes the layout's own shape (a cycle is square, a process wide) unless the size was typed
       if (!editing && was && Math.round(was.size[0] * o.scale) === Number(wIn.value) && Math.round(was.size[1] * o.scale) === Number(hIn.value)) {
         wIn.value = String(Math.round(l.size[0] * o.scale));

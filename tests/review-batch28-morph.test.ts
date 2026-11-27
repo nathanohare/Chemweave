@@ -30,7 +30,7 @@ import { MScene, type MBond, type MNode, type MStyle } from '../src/morph/scene'
 import { matchBonds, matchConnectivity, matchEquivalent, matchNodes, SEEDS } from '../src/morph/match';
 import { resolve } from '../src/morph/mapping';
 import { turnPlan } from '../src/morph/turn';
-import { planOf, type Step } from '../src/morph/clip';
+import { buildSteps, planOf, type Step } from '../src/morph/clip';
 import { bondChanges } from '../src/morph/scheme-clip';
 import { mapAtoms } from '../src/morph/atom-map';
 import { readMapping, MappingFileError } from '../src/morph/numbers';
@@ -132,6 +132,22 @@ describe('F141: pairing by connectivity on a big step tries a bounded number of 
   });
 });
 
+describe('F141: the seeds still find the shared skeleton when the rarest atoms are not in it', () => {
+  it('pairs a long chain whose one oxygen sits at a different carbon in each drawing', () => {
+    const n = 110;
+    const withO = (at: number, x0: number, prefix: string) => {
+      const pts = chain(n, x0);
+      const sc = scene([...pts, [pts[at][0], pts[at][1] - L]], [...chainBonds(n), [at, n]], [...Array.from({ length: n + 1 }, (_, i) => `${prefix}${i}`)]);
+      sc.nodes.get(`${prefix}${n}`)!.label = { canon: 'O', attach: 'O' } as never;
+      return sc;
+    };
+    const A = withO(5, 0, 'a'), B = withO(80, 3000, 'b');
+    const m = matchConnectivity(A, B);
+    // every chain bond carried through (the oxygen's bond can't be)
+    expect(matchBonds(A, B, m).size).toBe(n - 1);
+  });
+});
+
 describe('F644: the position pairing stops once its pairing settles', () => {
   it('needs fewer than its twelve assignments when the drawing is the same both times', () => {
     const A = scene(chain(12), chainBonds(12));
@@ -181,6 +197,15 @@ describe('F646: a second reaction of its own is animated too', () => {
     const plan = planOf(doc);
     expect(plan.groups.length).toBe(4);
     expect(plan.groups.map((g) => g.length).sort()).toEqual([3, 3, 4, 5]);
+    // the two reactions by their arrows; between them no made-up reaction, only a move to the next
+    expect(plan.kinds).toEqual(['morph', 'next', 'morph']);
+    expect(plan.arrows[0]).not.toBeNull();
+    expect(plan.arrows[1]).toBeNull();
+    expect(plan.arrows[2]).not.toBeNull();
+    const steps = withMeasure((t, s2) => arialWidth(t, s2), () => buildSteps(doc, plan, new Renderer(noCanvas, noCanvas)));
+    expect(steps[1].kind).toBe('next');
+    expect(steps[1].map.nmap.size).toBe(0);
+    expect(bondChanges(steps[1])).toEqual({ breaking: [], forming: [] });
   });
 });
 
@@ -212,6 +237,18 @@ describe('F653: aromatic bonds in the Whole Scheme animation', () => {
     const step = { A, B, kind: 'morph', map: { nmap: new Map(), bmap, shifts: new Map(), slides: [] }, opt: {}, swaps: new Map(), arrow: null } as unknown as Step;
     expect(bondChanges(step)).toEqual({ breaking: [], forming: [] });
   });
+
+  it('marks no π bond made when a ring becomes aromatic, as for a ring drawn with a circle', () => {
+    const A = scene(ring(6), cycleBonds(6));
+    const B = scene(ring(6, 100), cycleBonds(6), ['11', '12', '13', '14', '15', '16']);
+    for (const bd of B.bonds.values()) { bd.order = 2; bd.aromatic = true; }
+    const bmap = new Map([...A.bonds.keys()].map((k) => [k, k]));
+    const step = { A, B, kind: 'morph', map: { nmap: new Map(), bmap, shifts: new Map(), slides: [] }, opt: {}, swaps: new Map(), arrow: null } as unknown as Step;
+    expect(bondChanges(step)).toEqual({ breaking: [], forming: [] });
+    // a plain double bond made is still marked
+    for (const bd of B.bonds.values()) { bd.aromatic = false; }
+    expect(bondChanges(step).forming.length).toBe(6);
+  });
 });
 
 describe('F650: a mapping file that doesn\'t fit says so', () => {
@@ -223,6 +260,10 @@ describe('F650: a mapping file that doesn\'t fit says so', () => {
     expect(() => readMapping(doc, JSON.stringify({ stages: [{ shifts: ['1-2'] }, {}] }), 2)).toThrow(MappingFileError);
     expect(() => readMapping(doc, JSON.stringify({ stages: [{ slides: [['1-2']] }, {}] }), 2)).toThrow(MappingFileError);
     expect(readMapping(doc, JSON.stringify({}), 2)).toEqual([{}, {}]);
+    // entries that are neither atom numbers nor text
+    expect(() => readMapping(doc, JSON.stringify({ pairs: { 1: { a: 2 } } }), 1)).toThrow(MappingFileError);
+    expect(() => readMapping(doc, JSON.stringify({ shifts: [[['1-2'], 3]] }), 1)).toThrow(MappingFileError);
+    expect(() => readMapping(doc, JSON.stringify({ slides: [[null, '2-3']] }), 1)).toThrow(MappingFileError);
   });
 });
 

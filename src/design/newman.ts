@@ -13,6 +13,7 @@ import { frameBox, frameMembers } from '../editor/frames';
 import { tokenize } from '../chem/labels';
 import { idealGroups, sizeRanks, type NewmanGroup } from '../chem/newman';
 import { elementNumber, GROUP_LIKE } from '../chem/elements';
+import { writeMark } from '../chem/label-marks';
 import { OLD_RING_ARC, type EyeStyle, type NewmanLook } from './newman-prefs';
 import { frameRedrawn } from './frame-redrawn';
 import { keepLabels, readLabels } from './frame-labels';
@@ -323,12 +324,15 @@ function drawSawhorse(doc: Doc, d: NewmanData, c: Vec): NewmanParts {
       // a label such as Ac (acetyl) or Pr (propyl) is a group on a carbon, not actinium or praseodymium (review F063)
       const group = GROUP_LIKE.has(el);
       const plain = ring || (g.label === el && elementNumber(el) !== undefined && !group);
-      // the label's bold and italic, as a Newman projection writes them (review F437), with the drawing's own face bits
-      const bold = rl.bold || tx?.bold, italic = rl.italic || tx?.italic;
-      const face = bold || italic ? (doc.style.labelFace ?? 0) | (bold ? 1 : 0) | (italic ? 2 : 0) : undefined;
+      // the label's bold (its face) and italic (each of its characters marked italic, as a label is
+      // drawn in italics; review F437), as a Newman projection writes them
+      const bold = rl.bold || tx?.bold, italic = !ring && (rl.italic || tx?.italic);
+      // (an element written alone gets its symbol as a label, so its letters can be italic)
+      const labelled = !plain || italic;
       const a = doc.addAtom(p.x, p.y, ring || group ? 6 : elementNumber(el) ?? 6, {
-        ...(plain ? {} : { label: g.label }), ...(rl.color !== '#000000' && !ring ? { color: rl.color } : {}),
-        ...(scale && Math.abs(scale - 1) > 0.01 ? { s: scale } : {}), ...(tx?.font ? { font: tx.font } : {}), ...(face !== undefined ? { face } : {}),
+        ...(labelled ? { label: g.label } : {}), ...(rl.color !== '#000000' && !ring ? { color: rl.color } : {}),
+        ...(scale && Math.abs(scale - 1) > 0.01 ? { s: scale } : {}), ...(tx?.font ? { font: tx.font } : {}), ...(bold ? { face: 1 } : {}),
+        ...(italic ? { labelMarks: writeMark({ italic: true }).repeat(g.label.length) } : {}),
       });
       out.atoms!.push(a.id);
       const display = marks?.wedge === i ? 'wedge' : marks?.hash === i ? 'hashWedge' : 'solid';

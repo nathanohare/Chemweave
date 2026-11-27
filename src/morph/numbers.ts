@@ -87,11 +87,13 @@ export function readMapping(doc: Doc, text: string, steps: number): MorphStep[] 
     return [at(u), at(v)];
   };
   // each step's block as the file format has it, else a message rather than a script error
-  const twos = (v: unknown): v is unknown[][] => Array.isArray(v) && v.every((x) => Array.isArray(x) && x.length === 2);
+  // (atom numbers and bonds written as text, or as plain numbers)
+  const word = (x: unknown) => typeof x === 'string' || (typeof x === 'number' && Number.isFinite(x));
+  const twos = (v: unknown): v is unknown[][] => Array.isArray(v) && v.every((x) => Array.isArray(x) && x.length === 2 && x.every(word));
   for (const [i, b] of blocks.entries()) {
     const where = blocks.length > 1 ? `Step ${i + 1} of the file` : 'The file';
     if (!b || typeof b !== 'object' || Array.isArray(b)) throw new MappingFileError(`${where} holds no settings for its step.`);
-    if (b.pairs !== undefined && (!b.pairs || typeof b.pairs !== 'object' || Array.isArray(b.pairs))) throw new MappingFileError(`${where} lists its pairs in the wrong form.`);
+    if (b.pairs !== undefined && (!b.pairs || typeof b.pairs !== 'object' || Array.isArray(b.pairs) || !Object.values(b.pairs).every(word))) throw new MappingFileError(`${where} lists its pairs in the wrong form.`);
     if (b.shifts !== undefined && !twos(b.shifts)) throw new MappingFileError(`${where} lists its shifts in the wrong form.`);
     if (b.slides !== undefined && !twos(b.slides)) throw new MappingFileError(`${where} lists its slides in the wrong form.`);
   }

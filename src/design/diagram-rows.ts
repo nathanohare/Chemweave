@@ -81,3 +81,19 @@ export function fromRows(rows: DiagramRow[], layout?: string): { text: string; r
   }
   return { text: lines.join('\n'), ...(Object.keys(rich).length ? { rich } : {}) };
 }
+
+/**
+ * The rows with the icon named in square brackets in front of each taken out (and the looks of
+ * the words kept): for a diagram changed from the icon list to a layout that draws no icons,
+ * where "[flask] Synthesis" would otherwise show its tag as words (review F059).
+ */
+export function withoutIcons(rows: DiagramRow[]): DiagramRow[] {
+  return rows.map((row) => {
+    const m = /^((?:[•\-*–·▪◦]\s+)?)\[[a-z0-9-]+\]\s*/i.exec(row.label);
+    if (!m) return row;
+    const from = m[1].length, to = m[0].length;
+    const label = row.label.slice(0, from) + row.label.slice(to);
+    const rich = row.rich ? [...sliceParts(row.rich, 0, from), ...sliceParts(row.rich, to, plain(row.rich).length)] : undefined;
+    return { level: row.level, label, ...(rich?.length ? { rich } : {}) };
+  });
+}

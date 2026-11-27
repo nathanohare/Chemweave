@@ -1133,7 +1133,7 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
   frameRedrawn(doc, old);
   const was = readLabels(doc, old);
   // the icons the icon list had, in order: kept for items whose icon comes from their words while the icon data isn't loaded yet
-  const hadIcons = old?.frame && !iconsLoaded() ? old.frame.shapes.map((x) => doc.shapes.get(x)?.geo).filter(isIconId) : [];
+  const hadIcons = old?.frame && old.diagram?.layout === 'icon-list' && !iconsLoaded() ? old.frame.shapes.map((x) => doc.shapes.get(x)?.geo).filter(isIconId) : [];
   const kept: Pick<Frame, 'atoms' | 'shapes'> = { atoms: [], shapes: [] };
   if (old?.frame) {
     const f = old.frame;
@@ -1143,7 +1143,7 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
     kept.atoms = f.atoms.filter((a) => doc.atoms.has(a));
   }
   const parts = diagramParts(d);
-  if (hadIcons.length && readsIcons(d.layout)) keepIcons(parts.shapes, parseOutline(d.text), hadIcons);
+  if (hadIcons.length && d.layout === 'icon-list') keepIcons(parts.shapes, parseOutline(d.text), parseOutline(old!.diagram!.text), hadIcons, movedLines(old!.diagram!.text, d.text));
   const move = (p: Vec) => ({ x: p.x + at.x, y: p.y + at.y });
   const made = parts.shapes.map((s) => doc.addShape({ ...s, x1: s.x1 + at.x, y1: s.y1 + at.y, x2: s.x2 + at.x, y2: s.y2 + at.y }).id);
   const arrows = parts.lines.map(({ fromIndex, toIndex, ...l }) => {
@@ -1167,12 +1167,17 @@ export function putDiagram(doc: Doc, m: Measure, d: DiagramData, at: Vec, id?: n
  * Before the icon data has loaded, an item's icon can't be matched to its words and would fall
  * back to a plain circle (saved as such): the item keeps the icon it had instead (review F428).
  */
-function keepIcons(shapes: Omit<Shape, 'id'>[], items: DiagramItem[], had: string[]): void {
+function keepIcons(shapes: Omit<Shape, 'id'>[], items: DiagramItem[], before: DiagramItem[], had: string[], moved: Map<number, number>): void {
+  // each item's line before (lines added or taken out above it move it), and the icon it had there
+  const iconOn = new Map(before.map((it, j) => [it.n, had[j]] as const));
+  const lineWas = new Map([...moved].map(([was, now]) => [now, was]));
   let i = 0;
   for (const s of shapes) {
     if (!isIconId(s.geo)) continue;
-    if (!items[i]?.icon && had[i]) s.geo = had[i];
-    i++;
+    const it = items[i++];
+    const was = it && lineWas.get(it.n);
+    const icon = was === undefined ? undefined : iconOn.get(was);
+    if (it && !it.icon && icon) s.geo = icon;
   }
 }
 
@@ -1320,8 +1325,8 @@ export function diagramContents(doc: Doc, frame: Shape): number[] {
 /**
  * Where each line of an old diagram text went in the new one (lines with something on them, from
  * 1): lines kept as they were are matched in order (a longest common subsequence), and between two
- * matches the same number of old and new lines are taken as the same lines with new words. A line
- * taken out maps nowhere.
+ * matches the same number of old and new lines are taken as the same lines with new words (where
+ * the numbers differ, those most alike in words, in order). A line taken out maps nowhere.
  */
 export function movedLines(was: string, now: string): Map<number, number> {
   const a = linesOf(was).map((l) => l.trim()), b = linesOf(now).map((l) => l.trim());
@@ -1332,7 +1337,23 @@ export function movedLines(was: string, now: string): Map<number, number> {
   const out = new Map<number, number>();
   let i = 0, j = 0, gi = 0, gj = 0;
   const gap = (): void => {
-    if (i - gi === j - gj) for (let k = 0; k < i - gi; k++) out.set(gi + k + 1, gj + k + 1);
+    if (i - gi === j - gj) { for (let k = 0; k < i - gi; k++) out.set(gi + k + 1, gj + k + 1); return; }
+    // as many lines in as out: taken in order, the pairs most alike in words (a line renamed while
+    // another is added or taken out still finds itself; review F060 round 2)
+    const p = i - gi, q = j - gj;
+    if (!p || !q) return;
+    const sim = (x: string, y: string) => likeness(x, y);
+    const best = Array.from({ length: p + 1 }, () => new Array<number>(q + 1).fill(0));
+    for (let x = p - 1; x >= 0; x--) for (let y = q - 1; y >= 0; y--) {
+      const s0 = sim(a[gi + x], b[gj + y]);
+      best[x][y] = Math.max(best[x + 1][y], best[x][y + 1], s0 > 0.3 ? best[x + 1][y + 1] + s0 : 0);
+    }
+    for (let x = 0, y = 0; x < p && y < q;) {
+      const s0 = sim(a[gi + x], b[gj + y]);
+      if (s0 > 0.3 && best[x][y] === best[x + 1][y + 1] + s0) { out.set(gi + x + 1, gj + y + 1); x++; y++; }
+      else if (best[x + 1][y] >= best[x][y + 1]) x++;
+      else y++;
+    }
   };
   while (i < n && j < m) {
     if (a[i] === b[j]) { gap(); out.set(i + 1, j + 1); i++; j++; gi = i; gj = j; }
@@ -1342,6 +1363,16 @@ export function movedLines(was: string, now: string): Map<number, number> {
   i = n; j = m;
   gap();
   return out;
+}
+
+/** How alike two lines' words are, from 0 to 1 (the share of pairs of letters they have in common). */
+function likeness(x: string, y: string): number {
+  const pairs = (t: string) => { const u = ` ${t.toLowerCase()} `; const out: string[] = []; for (let k = 0; k + 1 < u.length; k++) out.push(u.slice(k, k + 2)); return out; };
+  const px = pairs(x), py = pairs(y);
+  const left = [...py];
+  let common = 0;
+  for (const g of px) { const k = left.indexOf(g); if (k >= 0) { common++; left.splice(k, 1); } }
+  return (2 * common) / (px.length + py.length);
 }
 
 /** Are two sets of structure spaces the same, to half a point? */
