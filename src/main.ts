@@ -186,7 +186,7 @@ import type { Item } from './render/vector';
 import { PAPERS, defaultPaper, orient, placeIn, inside, placeSvg, pageSvg } from './print-layout';
 import { printPages } from './ui/print';
 import { SHEETS } from './io/cdxml-print';
-import { dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
+import { bitmapToPng, dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { BOX_DEFAULTS } from './ui/toolbox-defaults';
@@ -4780,6 +4780,8 @@ const docFiles: DocxDeps = {
     return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
   },
   svgToPng,
+  // (WebP for Word; GIF, BMP and WebP for RTF)
+  pictureToPng: bitmapToPng,
   bakePicture: (p) => fxPng(p, 'baked'),
   fonts: bundledFaces,
   smiles: (contents, style) => drawingSmiles(structureDoc(contents, style)),
@@ -4867,7 +4869,7 @@ const ws: Workspace = new Workspace(doc, {
   },
   documents: {
     read: async (bytes, name) => (await import('./io/doc-files')).readDocumentFile(bytes, name, docRead),
-    write: async (d, name) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles),
+    write: async (d, name, notes) => (await import('./io/doc-files')).writeDocumentFile(d, name, docFiles, notes),
   },
   newStyle: (mode) => { const n = mode === 'si' ? null : modeStyleFor(mode); return n ? styleNamed(n, ownStyles) ?? null : null; },
   newPage: () => (defaultPage ? { ...defaultPage } : null),
