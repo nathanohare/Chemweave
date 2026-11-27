@@ -30,25 +30,41 @@ function turn(): Promise<void> {
   return go;
 }
 
+/**
+ * `p`, or a rejection once `signal` aborts: for reading a response's body, which a server can
+ * stall after sending its headers (the timeout has to cover the body too).
+ */
+export function untilAborted<T>(p: Promise<T>, signal: AbortSignal): Promise<T> {
+  if (signal.aborted) return Promise.reject(new DOMException('Aborted', 'AbortError'));
+  return new Promise<T>((resolve, reject) => {
+    const stop = () => reject(new DOMException('Aborted', 'AbortError'));
+    signal.addEventListener('abort', stop, { once: true });
+    p.then((v) => { signal.removeEventListener('abort', stop); resolve(v); }, (e) => { signal.removeEventListener('abort', stop); reject(e); });
+  });
+}
+
 async function get(url: string, fetchFn: Fetch, init?: RequestInit, timeoutMs = 15000): Promise<unknown | null> {
   await turn();
   const ctl = new AbortController();
+  // the timer runs until the body has been read, not only until the headers come
   const timer = setTimeout(() => ctl.abort(), timeoutMs);
-  let res: Response;
   try {
-    res = await fetchFn(url, { ...init, signal: ctl.signal });
-  } catch (e) {
-    throw new PubChemError(ctl.signal.aborted ? 'PubChem did not answer in time. Try again in a moment.' : 'Could not reach PubChem: is this computer online?');
+    let res: Response;
+    try {
+      res = await fetchFn(url, { ...init, signal: ctl.signal });
+    } catch (e) {
+      throw new PubChemError(ctl.signal.aborted ? 'PubChem did not answer in time. Try again in a moment.' : 'Could not reach PubChem: is this computer online?');
+    }
+    if (res.status === 404) return null; // PubChem's "not found"
+    if (res.status === 503) throw new PubChemError('PubChem is busy just now. Try again in a few seconds.');
+    if (!res.ok) throw new PubChemError(`PubChem answered with an error (${res.status}).`);
+    try {
+      return await untilAborted(res.json(), ctl.signal);
+    } catch {
+      throw new PubChemError(ctl.signal.aborted ? 'PubChem did not answer in time. Try again in a moment.' : 'PubChem\'s answer could not be read. Try again in a moment.');
+    }
   } finally {
     clearTimeout(timer);
-  }
-  if (res.status === 404) return null; // PubChem's "not found"
-  if (res.status === 503) throw new PubChemError('PubChem is busy just now. Try again in a few seconds.');
-  if (!res.ok) throw new PubChemError(`PubChem answered with an error (${res.status}).`);
-  try {
-    return await res.json();
-  } catch {
-    throw new PubChemError('PubChem\'s answer could not be read. Try again in a moment.');
   }
 }
 

@@ -173,7 +173,7 @@ function gaussianJobs(text: string): string[] {
     if (/\bGenChk\b/i.test(route)) continue;
     starts.push(at);
   }
-  if (starts.length < 2 || COMPOSITE.exec(routeMethod(gaussianRoute(text).replace(/^#\w?\s*/, '')))) return [text];
+  if (starts.length < 2 || COMPOSITE.exec(routeMethod(gaussianRoute(text).replace(ROUTE_HASH, '')))) return [text];
   return starts.map((at, i) => text.slice(i ? at : 0, starts[i + 1] ?? text.length));
 }
 
@@ -243,7 +243,7 @@ function readGaussianJob(text: string, name: string): QmResult {
   const routeLine = gaussianRoute(text);
   let energyFrom: string | undefined, missing: string | undefined, note: string | undefined;
   // only the route's method is looked at, so a word elsewhere in the route (a G1, a W1, a BD) sets nothing off
-  const route = routeLine.replace(/^#\w?\s*/, '');
+  const route = routeLine.replace(ROUTE_HASH, '');
   const method = routeMethod(route);
   const comp = COMPOSITE.exec(method);
   if (comp) {
@@ -336,15 +336,24 @@ const solventName = (s: string): string => {
   return known[l] ?? l;
 };
 
+/**
+ * The '#' that starts a Gaussian route, with its print level (#P, #N, #T) when one follows: only
+ * a P, N or T on its own, so the first letter of '#B3LYP/6-31G(d)' or '#CBS-QB3' stays.
+ */
+const ROUTE_HASH = /^#(?:[pnt](?=\s|$))?\s*/i;
+
 /** "#p opt freq b3lyp/6-31g(d) empiricaldispersion=gd3bj scrf=(smd,solvent=thf)" → "B3LYP-D3(BJ)/6-31G(d), SMD(THF)". */
 export function gaussianTheory(route: string): string {
-  const r = route.replace(/^#\w?\s*/, '');
+  const r = route.replace(ROUTE_HASH, '');
   const mb = /(?:^|\s)([^\s=/]+)\/([^\s=]+)/.exec(r);
   let method = mb ? methodName(mb[1]) : '';
   const basis = mb ? basisName(mb[2]) : '';
-  const disp = /empiricaldispersion\s*=\s*\(?\s*(gd3bj|gd3|gd2|pfd)/i.exec(r)?.[1].toLowerCase();
+  // (Gaussian takes the keyword shortened, em=gd3bj, and its option with or without '=')
+  const disp = /\b(?:empiricaldispersion|em)\s*(?:=\s*)?\(?\s*(gd3bj|gd3|gd2|pfd)/i.exec(r)?.[1].toLowerCase();
   if (disp && method) method += disp === 'gd3bj' ? '-D3(BJ)' : disp === 'gd3' ? '-D3' : disp === 'gd2' ? '-D2' : '';
-  const scrf = /scrf\s*=\s*\(?([^)\s]*)\)?/i.exec(r)?.[1] ?? (/\bscrf\b/i.test(r) ? '' : null);
+  // the solvent options: scrf=(smd,solvent=thf), scrf(smd, solvent=thf) or scrf=smd
+  const scrfOpts = /\bscrf\s*(?:=\s*)?(\([^)]*\)|[^\s(]+)/i.exec(r)?.[1];
+  const scrf = scrfOpts !== undefined ? scrfOpts.replace(/^\(|\)$/g, '') : /\bscrf\b/i.test(r) ? '' : null;
   let solv = '';
   if (scrf !== null) {
     const model = /\bsmd\b/i.test(scrf) ? 'SMD' : /\bcpcm\b/i.test(scrf) ? 'CPCM' : 'PCM';
@@ -430,7 +439,9 @@ export function pickEnergy(results: QmResult[]): { kind: 'free' | 'scf'; quantit
 
 /** A species' name from its file: a transition state (one imaginary frequency) gets its ‡. */
 export function speciesName(r: QmResult): string {
-  let n = r.name.replace(/^\d+[-_ .]+(?=\D)/, '').replace(/[_-]?(opt|freq|optfreq|sp|ts-?opt|final)$/i, '').replace(/^ts(\d*)$/i, (_, d: string) => `TS${d}`);
+  // an ordering number with _, space or . after it goes (01_, 3 ), not a locant (2-naphthol); job
+  // words go only after a separator, as many as there are (INT2_opt_freq, not Ser-Asp or adopt)
+  let n = r.name.replace(/^\d+[_ .]+(?=\D)/, '').replace(/(?:[_-](?:opt|freq|optfreq|sp|ts-?opt|final))+$/i, '').replace(/^ts(\d*)$/i, (_, d: string) => `TS${d}`);
   if (!n) n = r.name;
   return r.imaginary === 1 && !n.endsWith('‡') ? n + '‡' : n;
 }

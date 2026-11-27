@@ -150,7 +150,7 @@ export function predictCouplings(g: JGraph): Coupling[] {
   at.forEach((f, fi) => {
     if (f.el !== 'F') return;
     for (const p of nbs[fi]) {
-      if (at[p.n].h) add(p.n, fi, at[p.n].h === 1 && hyb(p.n) === 2 ? 80 : at[p.n].h === 3 ? 0 : 47.5, 'HF-gem');
+      if (at[p.n].h) add(p.n, fi, at[p.n].h === 1 && hyb(p.n) === 2 ? 80 : 47.5, 'HF-gem'); // (CH3F too: 2J(HF) about 46 Hz)
       for (const q of nbs[p.n]) {
         if (q.n === fi || !at[q.n].h) continue;
         if (at[q.n].arom && at[p.n].arom) add(q.n, fi, 8.8, 'HF-ortho');

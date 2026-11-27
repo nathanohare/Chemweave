@@ -323,25 +323,46 @@ export function styleLabel(label: string, marks?: LabelMarks, look: AlkylLook = 
   const want = alkylWants(look);
   const keep = { label, ...(marks ? { marks } : {}) };
   if (!want) return keep;
-  const at = new Map<number, boolean>();
+  // each prefix: whether it has a dash now, and whether the dash may change
+  const at = new Map<number, { dash: boolean; free: boolean }>();
   for (const t of tokenize(label)) {
     if (t.kind !== 'nick' || t.at === undefined) continue;
-    for (const f of alkylPrefixes(t.text)) at.set(t.at + f.at, f.dash);
+    const fs = alkylPrefixes(t.text);
+    // the abbreviation with its dashes as the look wants them: when that isn't an abbreviation too
+    // (tBuDavePhos has no t-BuDavePhos, t-Bu-Xantphos no tBu-Xantphos), its dashes stay as typed
+    let restyled = '';
+    for (let i = 0; i < t.text.length; i++) {
+      const f = fs.find((x) => x.at === i);
+      restyled += t.text[i];
+      if (!f) continue;
+      const dash = dashFree(label, t.at + i) ? want.dash : f.dash;
+      if (dash && !f.dash) restyled += '-';
+      else if (!dash && f.dash) i++;
+    }
+    const free = restyled === t.text || !!NICKNAMES[restyled];
+    for (const f of fs) at.set(t.at + f.at, { dash: f.dash, free });
   }
   if (!at.size) return keep;
   const was = (marks ?? '').padEnd(label.length, '.');
-  let text = '', m = '';
-  for (let i = 0; i < label.length; i++) {
-    const had = at.get(i);
-    if (had === undefined) { text += label[i]; m += was[i]; continue; }
-    text += label[i];
-    // (raised for ᵗBu; a prefix raised by an earlier look comes back down)
-    m += withMark(was[i], { italic: want.italic, ...(want.sup ? { pos: 'up' as const } : readMark(was[i]).pos === 'up' ? { pos: 'auto' as const } : {}) });
-    const dash = dashFree(label, i) ? want.dash : had;
-    if (dash && !had) { text += '-'; m += '.'; }
-    else if (!dash && had) i++;
-  }
-  return { label: text, ...(anyMarks(m) ? { marks: m } : {}) };
+  const restyle = (locked: boolean) => {
+    let text = '', m = '';
+    for (let i = 0; i < label.length; i++) {
+      const p = at.get(i);
+      if (p === undefined) { text += label[i]; m += was[i]; continue; }
+      const had = p.dash;
+      text += label[i];
+      // (raised for ᵗBu; a prefix raised by an earlier look comes back down)
+      m += withMark(was[i], { italic: want.italic, ...(want.sup ? { pos: 'up' as const } : readMark(was[i]).pos === 'up' ? { pos: 'auto' as const } : {}) });
+      const dash = !locked && p.free && dashFree(label, i) ? want.dash : had;
+      if (dash && !had) { text += '-'; m += '.'; }
+      else if (!dash && had) i++;
+    }
+    return { label: text, ...(anyMarks(m) ? { marks: m } : {}) };
+  };
+  const out = restyle(false);
+  // a whole label that is an abbreviation (tBuDavePhos, read only as a whole) keeps its spelling
+  // unless the restyled one is an abbreviation too
+  return NICKNAMES[label] && out.label !== label && !NICKNAMES[out.label] ? restyle(true) : out;
 }
 
 /** Pieces with the hand-set marks applied, split where a mark changes how a character sits. */
@@ -791,13 +812,17 @@ export function parseSmiles(smi: string): MiniGraph {
       continue;
     }
     if (c === '[') {
+      // (a nickname's SMILES can come from settings or an opened file: a bracket that isn't
+      // closed, or an atom this doesn't read, is a dummy atom, and reading always moves on)
       const j = smi.indexOf(']', i);
-      const inner = smi.slice(i + 1, j);
-      const m = /^(\d*)([A-Za-z][a-z]?)(H\d?)?([+-]\d?)?$/.exec(inner)!;
+      const inner = smi.slice(i + 1, j < 0 ? smi.length : j);
+      // isotope, element, chirality (not used here), hydrogens, charge (+, ++, +2), atom map
+      const m = j < 0 ? null : /^(\d*)([A-Za-z][a-z]?)(?:@@?)?(H\d*)?([+-]{1,2}|[+-]\d+)?(?::\d+)?$/.exec(inner);
+      if (!m) { add(0, false, 0, true); i = j < 0 ? smi.length : j + 1; continue; }
       const aromatic = /^[a-z]/.test(m[2]);
       const sym = aromatic ? m[2][0].toUpperCase() + m[2].slice(1) : m[2];
       let charge = 0;
-      if (m[4]) charge = (m[4][0] === '+' ? 1 : -1) * (m[4].length > 1 ? Number(m[4].slice(1)) : 1);
+      if (m[4]) charge = (m[4][0] === '+' ? 1 : -1) * (/\d/.test(m[4]) ? Number(m[4].slice(1)) : m[4].length);
       const h = m[3] ? (m[3].length > 1 ? Number(m[3].slice(1)) : 1) : 0;
       add(elementNumber(sym) ?? 0, aromatic, charge, false, h, m[1] ? Number(m[1]) : undefined);
       i = j + 1;

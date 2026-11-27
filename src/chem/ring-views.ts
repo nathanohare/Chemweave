@@ -342,6 +342,9 @@ export function layoutRing(doc: Doc, vr: ViewRing, view: RingView, pos: number[]
         subTo.set(x.first, { dir: rot(radial, here.length === 2 ? (k === 0 ? -spread : spread) : 0), len: Math.max(0.9, Math.hypot(first.x - ring.x, first.y - ring.y) / L) });
         const f = faces.get(x.first) ?? 0;
         const b = doc.bonds.get(x.bond)!;
+        // a wedge that starts at the substituent shows the substituent's own stereocentre: kept
+        // as it is (turning it round onto the ring atom would lose that centre)
+        if (wedgeFrom(b, x.first)) return;
         const display: BondDisplay = f === 0 ? (wedgeFrom(b, id) ? 'solid' : b.display) : f * nz > 0 ? 'wedge' : 'hashWedge';
         if (display !== b.display || (f !== 0 && b.a1 !== id)) bonds.set(x.bond, { display, a1: f !== 0 ? id : b.a1, a2: f !== 0 ? x.first : b.a2 });
       });
@@ -387,7 +390,9 @@ export function layoutRing(doc: Doc, vr: ViewRing, view: RingView, pos: number[]
     for (const id of x.branch) {
       const a = doc.atoms.get(id)!;
       const r = rot({ x: a.x - first.x, y: a.y - first.y }, turn);
-      moves.set(id, { x: to.x + r.x, y: to.y + r.y, depth: id === x.first ? t.depth : a.depth });
+      // the whole branch moves in depth with its first atom (none in the flat view)
+      const depth = t.depth === undefined ? undefined : id === x.first ? t.depth : (a.depth ?? 0) + t.depth - (first.depth ?? 0);
+      moves.set(id, { x: to.x + r.x, y: to.y + r.y, depth });
     }
   }
   return { moves, bonds };

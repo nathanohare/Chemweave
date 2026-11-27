@@ -250,7 +250,7 @@ export function atomStereoText(a: Atom, info: StereoInfo | null): string | null 
   if (l?.fromFile && info?.asFirst?.('a', a.id)) return l.text || null;
   if (!a.showStereo && !l) return null;
   const d = info?.atom(a.id);
-  if (d === undefined) return l?.text ?? null;
+  if (d === undefined) return l?.text || null;
   return d ? `(${shownDescriptor(d)})` : null;
 }
 
@@ -260,7 +260,7 @@ export function bondStereoText(b: Bond, info: StereoInfo | null): string | null 
   if (l?.fromFile && info?.asFirst?.('b', b.id)) return l.text || null;
   if (!b.showStereo && !l) return null;
   const d = info?.bond(b.id);
-  if (d === undefined) return l?.text ?? null;
+  if (d === undefined) return l?.text || null;
   return d ? `(${shownDescriptor(d)})` : null;
 }
 
@@ -747,7 +747,8 @@ export function setStereoText(doc: Doc, kind: 'a' | 'b', id: number, text: strin
     const a = doc.atoms.get(id);
     if (!a) return;
     if (!t) {
-      if (a.stereoLabel?.manual) doc.updateAtom(id, { stereoLabel: { ...a.stereoLabel, manual: undefined } });
+      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet)
+      if (a.stereoLabel?.manual) doc.updateAtom(id, { stereoLabel: { ...a.stereoLabel, text: '', manual: undefined } });
       return;
     }
     const p = atomStereoPlace(doc, a, t, measure);
@@ -756,7 +757,8 @@ export function setStereoText(doc: Doc, kind: 'a' | 'b', id: number, text: strin
     const b = doc.bonds.get(id);
     if (!b) return;
     if (!t) {
-      if (b.stereoLabel?.manual) doc.updateBond(id, { stereoLabel: { ...b.stereoLabel, manual: undefined } });
+      // the typed text goes too, so it isn't shown where the rules can't decide (or haven't yet)
+      if (b.stereoLabel?.manual) doc.updateBond(id, { stereoLabel: { ...b.stereoLabel, text: '', manual: undefined } });
       return;
     }
     const p = bondStereoPlace(doc, b, t, measure);

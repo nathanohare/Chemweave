@@ -260,9 +260,28 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>, strict = false): Set<
   };
   const paired = new Map<number, number>();
   const chosen = new Set<number>();
+  // Each ring system on its own: a system with no pattern fails at once, without trying every
+  // pattern of the systems before it again. A system whose atoms all need a double bond and are
+  // odd in number has none (each double bond pairs two of them).
+  const comp = new Map<number, number>();
+  const comps: number[][] = [];
+  for (const start of atoms) {
+    if (comp.has(start)) continue;
+    const list = [start];
+    comp.set(start, comps.length);
+    for (let k = 0; k < list.length; k++) for (const bid of doc.adj.get(list[k]) ?? []) {
+      if (!todo.has(bid)) continue;
+      const b = doc.bonds.get(bid)!;
+      const o = b.a1 === list[k] ? b.a2 : b.a1;
+      if (!comp.has(o)) { comp.set(o, comps.length); list.push(o); }
+    }
+    comps.push(list);
+  }
+  if (comps.some((c) => c.length % 2 === 1 && !c.some(optional))) return null;
+  let part: number[] = [];
   const solve = (i: number): boolean => {
-    if (i === atoms.length) return true;
-    const a = atoms[i];
+    if (i === part.length) return true;
+    const a = part[i];
     if (paired.has(a)) return solve(i + 1);
     for (const bid of doc.adj.get(a) ?? []) {
       if (!todo.has(bid)) continue;
@@ -275,7 +294,12 @@ export function kekuleDoubles(doc: Doc, todo: Set<number>, strict = false): Set<
     }
     return optional(a) && solve(i + 1);
   };
-  return solve(0) ? chosen : null;
+  for (let k = 0; k < comps.length; k++) {
+    // (in the order the atoms come, as before: the same pattern is found)
+    part = atoms.filter((a) => comp.get(a) === k);
+    if (!solve(0)) return null;
+  }
+  return chosen;
 }
 
 /** Is this 1½ bond in a ring of 1½ bonds (can a1 be reached from a2 along other 1½ bonds)? */

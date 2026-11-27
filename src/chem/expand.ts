@@ -198,7 +198,7 @@ export function expandLigand(doc: Doc, labelId: number, full = false): number[] 
   return put(base);
 }
 
-interface RawMol { atoms: { x: number; y: number; sym: string; chg: number }[]; bonds: [number, number, number][] }
+interface RawMol { atoms: { x: number; y: number; sym: string; chg: number; iso?: number }[]; bonds: [number, number, number][] }
 
 function readMolblock(mb: string): RawMol {
   const lines = mb.split(/\r?\n/);
@@ -206,19 +206,25 @@ function readMolblock(mb: string): RawMol {
   const atoms: RawMol['atoms'] = [];
   for (let i = 0; i < na; i++) {
     const l = lines[4 + i];
-    atoms.push({ x: parseFloat(l.slice(0, 10)), y: -parseFloat(l.slice(10, 20)), sym: l.slice(31, 34).trim(), chg: 0 });
+    const sym = l.slice(31, 34).trim();
+    // (D and T, which some molfiles write for deuterium and tritium, are hydrogen with a mass)
+    atoms.push({ x: parseFloat(l.slice(0, 10)), y: -parseFloat(l.slice(10, 20)), sym: sym === 'D' || sym === 'T' ? 'H' : sym, chg: 0, ...(sym === 'D' ? { iso: 2 } : sym === 'T' ? { iso: 3 } : {}) });
   }
   const bonds: RawMol['bonds'] = [];
   for (let i = 0; i < nb; i++) {
     const l = lines[4 + na + i];
     bonds.push([parseInt(l.slice(0, 3), 10) - 1, parseInt(l.slice(3, 6), 10) - 1, parseInt(l.slice(6, 9), 10)]);
   }
+  // charges and isotopes (CTfile format: M  CHG and M  ISO, each a count then atom–value pairs)
   for (const l of lines) {
-    if (!l.startsWith('M  CHG')) continue;
+    const chg = l.startsWith('M  CHG'), iso = l.startsWith('M  ISO');
+    if (!chg && !iso) continue;
     const n = parseInt(l.slice(6, 9), 10);
     for (let k = 0; k < n; k++) {
       const at = atoms[parseInt(l.slice(10 + k * 8, 13 + k * 8), 10) - 1];
-      if (at) at.chg = parseInt(l.slice(14 + k * 8, 17 + k * 8), 10);
+      const v = parseInt(l.slice(14 + k * 8, 17 + k * 8), 10);
+      if (!at || !Number.isFinite(v)) continue;
+      if (chg) at.chg = v; else at.iso = v;
     }
   }
   return { atoms, bonds };
@@ -273,7 +279,9 @@ export function expandWithMolblock(doc: Doc, labelId: number, molblock: string):
   raw.atoms.forEach((p, i) => {
     if (i === dummy) { ids.push(-1); return; }
     const z = elementNumber(p.sym);
-    ids.push(doc.addAtom(pts[i].x, pts[i].y, z ?? 6, { ...extra, charge: p.chg, label: z === undefined ? p.sym : null, ...(a.color ? { color: a.color } : {}) }).id);
+    // the label's own charge (kept apart from its text: PPh3 with a +) goes on its first atom
+    const charge = p.chg + (i === f ? a.charge ?? 0 : 0);
+    ids.push(doc.addAtom(pts[i].x, pts[i].y, z ?? 6, { ...extra, charge, label: z === undefined ? p.sym : null, ...(p.iso ? { isotope: p.iso } : {}), ...(a.color ? { color: a.color } : {}) }).id);
   });
   for (const [i, j, o] of raw.bonds) {
     if (i === dummy || j === dummy) continue;
@@ -402,12 +410,13 @@ export function expandInPlace(doc: Doc, labelId: number, molblock: string): numb
   const extra = a.s && a.s !== 1 ? { s: a.s } : {};
   const colour = a.color ? { color: a.color } : {};
   const head = elementNumber(o.sym) ?? 6;
-  doc.updateAtom(a.id, { z: head, label: null, charge: o.chg });
+  // (the label's own charge, kept apart from its text, stays on the head atom)
+  doc.updateAtom(a.id, { z: head, label: null, charge: o.chg + (a.charge ?? 0), ...(o.iso ? { isotope: o.iso } : {}) });
   const ids: number[] = [a.id];
   raw.atoms.forEach((p, i) => {
     if (i === 0) return;
     const z = elementNumber(p.sym);
-    ids.push(doc.addAtom(best[i].x, best[i].y, z ?? 6, { ...extra, charge: p.chg, label: z === undefined ? p.sym : null, ...colour }).id);
+    ids.push(doc.addAtom(best[i].x, best[i].y, z ?? 6, { ...extra, charge: p.chg, label: z === undefined ? p.sym : null, ...(p.iso ? { isotope: p.iso } : {}), ...colour }).id);
   });
   for (const [i, j, ord] of raw.bonds) doc.addBond(ids[i], ids[j], ord === 4 ? 1.5 : ord, 'solid', extra);
   return ids;

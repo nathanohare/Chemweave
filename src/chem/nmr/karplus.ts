@@ -35,7 +35,7 @@ export function torsion(x: number[], a: number, b: number, c: number, d: number)
   const dot = (p: number[], q: number[]) => p[0] * q[0] + p[1] * q[1] + p[2] * q[2];
   const b1 = v(a, b), b2 = v(b, c), b3 = v(c, d);
   const n1 = cross(b1, b2), n2 = cross(b2, b3);
-  const m = cross(n1, b2.map((t) => t / Math.sqrt(dot(b2, b2))));
+  const m = cross(b2.map((t) => t / Math.sqrt(dot(b2, b2))), n1);
   return Math.atan2(dot(m, n2), dot(n1, n2)) / RAD;
 }
 

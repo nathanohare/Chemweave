@@ -267,7 +267,33 @@ export function grow(s: Structure): Grown {
     where.set(k, placed.length - 1);
     return placed.length - 1;
   };
-  for (let i = 0; i < s.atoms.length; i++) { const k = add(i, identity, [0, 0, 0]); if (k !== null) placed[k].own = true; }
+  // The asymmetric unit put together through its bonds first: a molecule written with some atoms
+  // wrapped round to the other side of the cell (A at x = 0.99, B at x = 0.01) has the wrapped
+  // ones moved back by a whole cell, next to the atoms they are bonded to, so the molecule is
+  // placed once (and not again, one cell along, from the bonds across the cell face).
+  const shiftOf: (V3 | null)[] = s.atoms.map(() => null);
+  for (let root = 0; root < s.atoms.length; root++) {
+    if (shiftOf[root]) continue;
+    shiftOf[root] = [0, 0, 0];
+    const todo = [root];
+    while (todo.length) {
+      const i = todo.pop()!;
+      const fi = s.atoms[i].frac, si = shiftOf[i]!;
+      for (let j = 0; j < s.atoms.length; j++) {
+        if (shiftOf[j]) continue;
+        const fj = s.atoms[j].frac;
+        // the copy of j nearest to i (i where it now is)
+        // j moved as i was (as written, for most files), or else the copy of j nearest to i
+        const near: V3 = [0, 1, 2].map((k) => si[k] - Math.round(fj[k] - fi[k])) as V3;
+        const apart = (t: V3) => norm3(mvec(s.orth, [fj[0] + t[0] - fi[0] - si[0], fj[1] + t[1] - fi[1] - si[1], fj[2] + t[2] - fi[2] - si[2]]));
+        const t = [si, near].find((c) => bonded(s.atoms[i], s.atoms[j], apart(c)));
+        if (!t) continue;
+        shiftOf[j] = [t[0], t[1], t[2]];
+        todo.push(j);
+      }
+    }
+  }
+  for (let i = 0; i < s.atoms.length; i++) { const k = add(i, identity, shiftOf[i]!); if (k !== null) placed[k].own = true; }
   // every copy of every atom that a placed atom is bonded to (each operation, at the lattice
   // shift nearest to it and the shifts next to that) is placed too, and so on
   const images = ops.map(([r, t]) => s.atoms.map((a) => { const f = mvec(r, a.frac); return [f[0] + t[0], f[1] + t[1], f[2] + t[2]] as V3; }));
@@ -317,9 +343,11 @@ export function grow(s: Structure): Grown {
       }
     }
   }
-  // bonds between the atoms placed: only atoms in the same or a touching 4 Å box can be bonded
+  // bonds between the atoms placed: only atoms in the same or a touching box can be bonded (boxes
+  // as wide as the longest bond the growth above accepts, 4 Å at least, so no bond it grew along is missed)
   const bonds: [number, number][] = [];
-  const cell = (v: number) => Math.floor(v / 4);
+  const box = Math.max(4, reach);
+  const cell = (v: number) => Math.floor(v / box);
   const boxes = new Map<string, number[]>();
   placed.forEach((p, i) => {
     const k = `${cell(p.xyz[0])},${cell(p.xyz[1])},${cell(p.xyz[2])}`;
@@ -334,7 +362,7 @@ export function grow(s: Structure): Grown {
     near.sort((p, q) => p - q);
     for (const j of near) {
       const d = norm3(sub3(placed[j].xyz, placed[i].xyz));
-      if (d < 4 && bonded(s.atoms[placed[i].site], s.atoms[placed[j].site], d)) bonds.push([i, j]);
+      if (d <= reach && bonded(s.atoms[placed[i].site], s.atoms[placed[j].site], d)) bonds.push([i, j]);
     }
   }
   // molecules: connected pieces

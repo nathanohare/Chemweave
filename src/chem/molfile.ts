@@ -547,7 +547,7 @@ export function toMolfile(doc: Doc, atomIds: Iterable<number>, name = '', opts: 
       const r = k === 0 ? 0 : 0.35 + 0.05 * k;
       const sym = ga.dummy ? generic : SYMBOLS[ga.z] || generic;
       if (sym === generic) genericAt.push([atoms.length, `${a.label}/${k}`]);
-      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}), ...(k === 0 && val !== undefined ? { val } : {}) });
+      atoms.push({ sym, x: laid ? laid[k].x : x + r * Math.cos(ang), y: laid ? laid[k].y : y + r * Math.sin(ang), charge: ga.charge + (k === qAt ? q : 0), iso: ga.iso ?? 0, ...(k === 0 && opts.maps && a.mapNo ? { map: a.mapNo } : {}), ...(k === 0 && val !== undefined ? { val } : {}), ...(k === 0 && files && a.enhStereo ? { enh: a.enhStereo } : {}) });
       map.push(k === 0 ? id : -1);
       if (g!.atoms.length > 1) inLabel.push(base + k);
     });
