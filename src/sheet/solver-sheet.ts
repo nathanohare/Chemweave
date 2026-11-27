@@ -165,6 +165,8 @@ export interface SolverRun {
   message: string;
   /** Whether the answer is worth keeping (Excel offers Keep Solver Solution either way). */
   ok: boolean;
+  /** How long the solve took, in milliseconds (the Answer Report's Solution Time). */
+  ms?: number;
 }
 
 /** Solve a model on a sheet. Nothing on the sheet changes: the caller writes the answer in (see keepAnswer). */
@@ -172,9 +174,11 @@ export function runSolver(wb: Workbook, s: Sheet, m: SolverModel): SolverRun | s
   const built = buildProblem(wb, s, m);
   if (typeof built === 'string') return built;
   const before = { x: built.vars.map((k) => { const v = s.values.get(k); return typeof v === 'number' ? v : 0; }), objective: s.values.get(built.objective) ?? null };
+  const started = Date.now();
   const result = solve(built.problem, m.engine);
+  const ms = Date.now() - started;
   const ok = result.status === 'optimal' || result.status === 'converged' || result.status === 'limit';
-  return { built, result, before, ok, message: result.message ?? STATUS_TEXT[result.status] };
+  return { built, result, before, ok, message: result.message ?? STATUS_TEXT[result.status], ms };
 }
 
 /** Write the answer into the variable cells (inside an edit). */
@@ -207,7 +211,7 @@ export function answerReport(s: Sheet, m: SolverModel, run: SolverRun, when: Dat
   out.push([`Report Created: ${when.toLocaleString()}`]);
   out.push([`Result: ${run.message}`]);
   out.push([`Solver Engine: ${m.engine === 'simplex' ? 'Simplex LP' : m.engine === 'evolutionary' ? 'Evolutionary' : 'GRG Nonlinear'}`]);
-  out.push([`Solution Time: ${((Date.now() - (when.getTime())) / 1000).toFixed(3)} Seconds. Evaluations: ${run.result.evaluations}`]);
+  out.push([`Solution Time: ${((run.ms ?? 0) / 1000).toFixed(3)} Seconds. Evaluations: ${run.result.evaluations}`]);
   out.push([]);
   out.push([`Objective Cell (${m.goal === 'max' ? 'Max' : m.goal === 'min' ? 'Min' : `Value Of ${m.value ?? 0}`})`]);
   out.push([null, 'Cell', 'Name', 'Original Value', 'Final Value']);
@@ -221,7 +225,14 @@ export function answerReport(s: Sheet, m: SolverModel, run: SolverRun, when: Dat
   out.push([null, 'Cell', 'Name', 'Cell Value', 'Formula', 'Status', 'Slack']);
   for (const r of [...run.built.rows, ...run.built.bounds]) {
     const left = s.values.get(r.lhs);
-    const right = r.rhs.k === 'num' ? r.rhs.v : r.rhs.k === 'cell' ? s.values.get(r.rhs.key) : null;
+    // a formula on the right is worked out for the report, as the solve worked it out
+    let right: Value | undefined;
+    if (r.rhs.k === 'num') right = r.rhs.v;
+    else if (r.rhs.k === 'cell') right = s.values.get(r.rhs.key);
+    else {
+      const a = s.wb.formulaArg(s, r.rhs.f, rowOf(r.lhs), colOf(r.lhs));
+      right = isBlock(a) ? a.block[0]?.[0] ?? null : a;
+    }
     const slack = typeof left === 'number' && typeof right === 'number' ? Math.abs(left - right) : null;
     const binding = slack !== null && slack <= Math.max(1e-6, (run.built.problem.precision) * Math.max(1, Math.abs(typeof right === 'number' ? right : 0)));
     const formula = `${addr(r.lhs)}${r.rel}${r.rhs.k === 'num' ? r.rhs.v : r.rhs.k === 'cell' ? addr(r.rhs.key) : r.rhs.f.replace(/^=/, '')}`;

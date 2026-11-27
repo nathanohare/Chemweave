@@ -5,7 +5,7 @@
 // extension of a worksheet), so they come back in either program.
 
 import type { Range } from './refs';
-import { parseRange, quoteSheet, rangeName } from './refs';
+import { parseRange, rangeName, quoteSheet, keyOf } from './refs';
 import { maxOf, minOf } from './values';
 
 export type SparkKind = 'line' | 'column' | 'winloss';
@@ -79,6 +79,7 @@ export function makeSparklines(kind: SparkKind, data: Range, place: Range, sheet
   const cells: { row: number; col: number }[] = [];
   for (let r = place.r1; r <= place.r2; r++) for (let c = place.c1; c <= place.c2; c++) cells.push({ row: r, col: c });
   const rows = data.r2 - data.r1 + 1, cols = data.c2 - data.c1 + 1;
+  // (a sheet named like a cell, Q1 or R1C1, is quoted too, or Q1!B2:F2 wouldn't read)
   const prefix = sheet ? `${quoteSheet(sheet)}!` : '';
   const ref = (R: Range) => prefix + rangeName(R);
   let pieces: Range[];
@@ -101,10 +102,22 @@ export function sparkSource(data: string): { sheet?: string; range: Range } | nu
   return range ? { sheet, range } : null;
 }
 
+type SparkHit = { group: SparklineGroup; item: Sparkline };
+/** Each list of groups' sparklines by cell, made once per list (a sheet's list is replaced, never changed, when they change). */
+const byCell = new WeakMap<SparklineGroup[], Map<number, SparkHit>>();
+
 /** The group and sparkline drawn in a cell, if any. */
-export function sparklineAt(groups: SparklineGroup[], row: number, col: number): { group: SparklineGroup; item: Sparkline } | null {
-  for (const g of groups) for (const it of g.items) if (it.row === row && it.col === col) return { group: g, item: it };
-  return null;
+export function sparklineAt(groups: SparklineGroup[], row: number, col: number): SparkHit | null {
+  let map = byCell.get(groups);
+  if (!map) {
+    map = new Map();
+    for (const g of groups) for (const it of g.items) {
+      const k = keyOf(it.row, it.col);
+      if (!map.has(k)) map.set(k, { group: g, item: it });
+    }
+    byCell.set(groups, map);
+  }
+  return map.get(keyOf(row, col)) ?? null;
 }
 
 /** Sparklines after rows or columns go in or out: each moves with its cell (and its data's block with its cells); one whose cell goes is gone. */
@@ -124,6 +137,26 @@ export function moveSparklines(groups: SparklineGroup[], axis: 'row' | 'col', at
 }
 
 // ---------------------------------------------------------------- what is drawn
+
+/**
+ * The axis limits a group's settings give: a number typed for Minimum or Maximum as it is; Same
+ * for All Sparklines the lowest and highest of every value in the group (`all`). Columns stand
+ * on zero, so the automatic limits take in zero (all below zero, the bars hang from it).
+ */
+export function groupLimits(g: SparklineGroup, all: number[]): { min?: number; max?: number } {
+  const col = g.kind === 'column';
+  return {
+    min: typeof g.minAxis === 'number' ? g.minAxis : g.minAxis === 'group' && all.length ? minOf(all, col ? 0 : Infinity) : undefined,
+    max: typeof g.maxAxis === 'number' ? g.maxAxis : g.maxAxis === 'group' && all.length ? maxOf(all, col ? 0 : -Infinity) : undefined,
+  };
+}
+
+/** The limits one sparkline is drawn with: the group's, with its own values for a limit left to each sparkline (undefined when both are). */
+export function sparkLimits(g: SparklineGroup, nums: number[], set: { min?: number; max?: number }): { min: number; max: number } | undefined {
+  if (set.min === undefined && set.max === undefined) return undefined;
+  const col = g.kind === 'column';
+  return { min: set.min ?? minOf(nums, col ? 0 : Infinity), max: set.max ?? maxOf(nums, col ? 0 : -Infinity) };
+}
 
 export interface SparkShape {
   /** A line through the points (gaps break it: null). */
@@ -149,11 +182,13 @@ export function sparkShape(g: SparklineGroup, values: (number | null)[], w: numb
   const innerW = Math.max(1, w - 2 * pad), innerH = Math.max(1, h - 2 * pad);
   const n = vals.length;
   const hi = maxOf(nums), lo = minOf(nums);
-  // a mark on each special point (the first of equal highs and lows)
-  const firstAt = vals.findIndex((v) => v !== null);
-  let lastAt = -1;
-  for (let i = n - 1; i >= 0; i--) if (vals[i] !== null) { lastAt = i; break; }
-  const hiAt = vals.indexOf(hi), loAt = vals.indexOf(lo);
+  // a mark on each special point (the first of equal highs and lows), first and last in the
+  // data's own order: right to left, the first point is drawn at the right
+  const leftAt = vals.findIndex((v) => v !== null);
+  let rightAt = -1;
+  for (let i = n - 1; i >= 0; i--) if (vals[i] !== null) { rightAt = i; break; }
+  const firstAt = g.rtl ? rightAt : leftAt, lastAt = g.rtl ? leftAt : rightAt;
+  const hiAt = g.rtl ? vals.lastIndexOf(hi) : vals.indexOf(hi), loAt = g.rtl ? vals.lastIndexOf(lo) : vals.indexOf(lo);
   const markOf = (i: number, v: number): string | null => {
     if (g.kind === 'winloss' || g.kind === 'column') {
       if (g.high && i === hiAt) return g.highColor;
@@ -176,9 +211,9 @@ export function sparkShape(g: SparklineGroup, values: (number | null)[], w: numb
     const bars = vals.flatMap((v, i) => (v === null || v === 0 ? [] : [{ x: pad + i * slot + (slot - bw) / 2, y: v > 0 ? pad : mid, w: bw, h: innerH / 2, color: markOf(i, v) ?? g.color }]));
     return { bars, ...(g.axis ? { axis: mid } : {}) };
   }
-  // columns stand on zero unless the axis is set otherwise
+  // columns stand on zero unless the axis is set otherwise (all below zero, they hang from it)
   let min = lim?.min ?? (g.kind === 'column' ? Math.min(0, lo) : lo);
-  let max = lim?.max ?? hi;
+  let max = lim?.max ?? (g.kind === 'column' ? Math.max(0, hi) : hi);
   if (max === min) { max += 1; min -= g.kind === 'column' ? 0 : 1; }
   const yOf = (v: number) => pad + innerH - ((Math.min(max, Math.max(min, v)) - min) / (max - min)) * innerH;
   const zero = min <= 0 && max >= 0 ? yOf(0) : undefined;

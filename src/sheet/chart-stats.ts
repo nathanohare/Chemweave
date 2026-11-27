@@ -12,6 +12,8 @@ export interface Histogram {
   counts: number[];
   /** The bin width used (worked out when none was given). */
   width: number;
+  /** Set when the width asked for (or worked out) needed more than 1000 bins, so a wider one was used. */
+  widened?: boolean;
 }
 
 const short = (v: number) => String(Number(v.toPrecision(6)));
@@ -32,7 +34,13 @@ export function histogram(values: number[], bins: Bins = {}): Histogram {
     width = (3.5 * sd) / Math.cbrt(xs.length);
   }
   if (!(width > 0)) width = hi > lo ? hi - lo : 1;
-  const n = Math.min(1000, Math.max(1, Math.ceil((hi - lo) / width - 1e-9)));
+  // at most 1000 bins: a width that would need more (a far outlier stretching the range) is
+  // widened so 1000 cover it all, rather than piling everything past the 1000th into the last;
+  // the width used is returned, so the chart's Format pane shows it
+  const MAX_BINS = 1000;
+  const widened = (hi - lo) / width - 1e-9 > MAX_BINS;
+  if (widened) width = (hi - lo) / MAX_BINS;
+  const n = Math.min(MAX_BINS, Math.max(1, Math.ceil((hi - lo) / width - 1e-9)));
   const counts = new Array<number>(n).fill(0);
   let below = 0, above = 0;
   for (const v of xs) {
@@ -44,7 +52,7 @@ export function histogram(values: number[], bins: Bins = {}): Histogram {
   const labels = counts.map((_, k) => `${k === 0 && under === undefined ? '[' : '('}${short(lo + k * width)}, ${short(lo + (k + 1) * width)}]`);
   if (under !== undefined) { labels.unshift(`≤ ${short(under)}`); counts.unshift(below); }
   if (over !== undefined) { labels.push(`> ${short(over)}`); counts.push(above); }
-  return { labels, counts, width };
+  return { labels, counts, width, ...(widened ? { widened } : {}) };
 }
 
 export interface BoxStats {
@@ -75,8 +83,9 @@ export function boxStats(values: number[], opts: BoxOptions = {}): BoxStats | nu
   const m = opts.quartiles ?? 'exclusive';
   const q1 = quartile(xs, 0.25, m), median = quartile(xs, 0.5, m), q3 = quartile(xs, 0.75, m);
   const reach = 1.5 * (q3 - q1);
-  const inside = xs.filter((v) => v >= q1 - reach - 1e-12 && v <= q3 + reach + 1e-12);
-  const outliers = xs.filter((v) => !inside.includes(v));
+  // one pass splits the points (no search of the whisker list for each point)
+  const inside: number[] = [], outliers: number[] = [];
+  for (const v of xs) (v >= q1 - reach - 1e-12 && v <= q3 + reach + 1e-12 ? inside : outliers).push(v);
   return {
     q1, median, q3,
     lo: inside.length ? inside[0] : q1,
@@ -93,8 +102,20 @@ export function boxStats(values: number[], opts: BoxOptions = {}): BoxStats | nu
  */
 export function boxGroups(series: { cats: string[]; ys: number[] }[], hasLabels: boolean, opts: BoxOptions = {}): { cats: string[]; stats: (BoxStats | null)[][] } {
   const cats: string[] = [];
-  if (hasLabels) for (const s of series) for (const c of s.cats) if (!cats.includes(c)) cats.push(c);
+  const known = new Set<string>();
+  if (hasLabels) for (const s of series) for (const c of s.cats) if (!known.has(c)) { known.add(c); cats.push(c); }
   if (!cats.length) cats.push('');
-  const stats = series.map((s) => cats.map((c) => boxStats(s.ys.filter((_, j) => !hasLabels || s.cats[j] === c), opts)));
+  // each series' rows put in their categories once (not a pass over every row for each category)
+  const stats = series.map((s) => {
+    if (!hasLabels) return cats.map(() => boxStats(s.ys, opts));
+    const byCat = new Map<string, number[]>();
+    s.ys.forEach((y, j) => {
+      const c = s.cats[j];
+      if (c === undefined) return;
+      const list = byCat.get(c);
+      if (list) list.push(y); else byCat.set(c, [y]);
+    });
+    return cats.map((c) => boxStats(byCat.get(c) ?? [], opts));
+  });
   return { cats, stats };
 }

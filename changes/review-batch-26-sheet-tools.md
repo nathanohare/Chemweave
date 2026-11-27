@@ -1,0 +1,17 @@
+Fixed: Spreadsheet: Find and Replace no longer fails on ~~ (a literal tilde), and Replace with a * wildcard replaces the whole run it matches, as Excel does ("Pd*" replaced by X turns Pd(OAc)2 into X).
+Fixed: Spreadsheet: Go To Special ▸ Notes finds only the notes inside the selection, Row and Column Differences tell apart formulas that point at different cells, and Precedents selects the whole block a formula reads instead of stopping after 5,001 rows.
+Fixed: Spreadsheet: Paste Special ▸ Validation puts each copied rule over its own cells instead of the first rule over the whole pasted block.
+Fixed: Spreadsheet: Text to Columns takes a quote inside a field (5" pipe) as an ordinary character, and Advanced Filter shows every record when the criteria range has a blank row.
+Fixed: Spreadsheet: PivotCharts of PivotTables in Tabular or Outline form leave out the subtotal rows, and Add Series and dashboard filters read all of their categories.
+Fixed: Spreadsheet: refreshing a query table that has a Total Row keeps the totals under the new records instead of turning the last record into the totals row, with the Total label in the first column and each total under its own column.
+Fixed: Spreadsheet: column sparklines whose values are all negative hang from zero the right way up, right-to-left sparklines mark the first and last points correctly, and sparklines reading a sheet named like a cell (Q1) keep their data when saved to Excel.
+Fixed: Spreadsheet: LINEST keeps an x column whose scale is much smaller than another's (time in seconds beside its cube) instead of setting it to 0.
+Fixed: Spreadsheet: Data Validation lists whose source is a defined name or formula now work, Text Length and List rules test the value rather than its number format, impossible dates such as 2/31/2026 are not accepted as limits, and a limit reading an empty cell counts it as 0.
+Fixed: Spreadsheet: histogram charts that would need more than 1,000 bins use wider bins instead of piling the rest into the last bin, and the Histogram analysis tool no longer puts the largest value under More.
+Fixed: Spreadsheet: an icon set with Show Icon Only hides the value even when a data bar rule comes first, and Blanks, Text That Does Not Contain and formula rules on smaller ranges shade empty cells past the last row or column in use.
+Fixed: Spreadsheet: dashboard tiles reading a table without a header row keep its first record.
+Fixed: Spreadsheet: trendlines no longer draw a meaningless line when every x is the same, and R² for a line with a fixed intercept other than 0 (or a first-order decay with y₀ fixed at 1) is taken about the mean.
+Fixed: Spreadsheet: Solver's Answer Report shows the real solution time and the status and slack of constraints whose limit is a formula; a whole-number GRG answer reports its own objective value; Solver no longer saves a blank objective or variable cells as an empty name; the Evolutionary engine keeps to its time limit while it starts.
+Fixed: Spreadsheet: Remove All and Replace in Data ▸ Subtotal leave rows hidden by hand hidden, and Go To Special ▸ Precedents counts overlapping blocks once.
+Changed: Spreadsheet: Flash Fill, large PivotTables, box and whisker charts, Circle Invalid Data, Go To Special ▸ Dependents and sheets with many sparklines are faster.
+Under the hood: Spreadsheet: regression tests for the data tool fixes from the November 2026 code review.
