@@ -126,7 +126,7 @@ import { LayersPanel } from './ui/layers-panel';
 import { Scrollbars, type ScrollContent } from './ui/scrollbars';
 import { installScrollbarFade } from './ui/scrollbar-fade';
 import type { Presenter, ShowOptions } from './ui/present';
-import { editHeaderFooter } from './ui/header-footer-dialog';
+import { applyHeaderFooter, editHeaderFooter } from './ui/header-footer-dialog';
 import { ReferencesDialog, editReference, type RefHolder } from './ui/references-dialog';
 import { docHolder, deckHolder } from './ui/ref-holders';
 import { editSlideRefs } from './ui/slide-refs-dialog';
@@ -146,7 +146,7 @@ import { DARK_PALETTES, darkPaletteNamed, readingPaletteToKeep, showDarkPage, ty
 import { STYLE_PRESETS, applyStyle, presetNamed, restyleContents, sameLook, styleNamed, type StyleMode } from './drawing-styles';
 import { askCleanUpOption } from './ui/cleanup-picker';
 import { looksTangled, turnOption } from './chem/cleanup';
-import { recordPicture, pictureSvg, pictureEmf, pictureCanvas, canvasPng, bitmapScale, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS } from './render/picture';
+import { recordPicture, pictureSvg, pictureEmf, pictureEmfWithPictures, pictureCanvas, canvasPng, bitmapScale, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS } from './render/picture';
 import { pngWithDpi } from './render/emf-read';
 import { whiteToClear } from './render/background';
 
@@ -182,12 +182,12 @@ import { AUDIO_TYPES, VIDEO_TYPES, mediaMime, probeAudio, probeVideo, speakerPng
 import { newChartBox, sizedBox } from './sheet/chart-box';
 import { chartBoxPng } from './render/chart-box-paint';
 import { itemsToSvg } from './render/svg';
-import { itemsToEmf, type EmfBox } from './render/emf';
+import { itemsToEmfWithPictures, type EmfBox } from './render/emf';
 import type { Item } from './render/vector';
 import { PAPERS, defaultPaper, orient, placeIn, inside, placeSvg, pageSvg } from './print-layout';
 import { printPages } from './ui/print';
 import { SHEETS } from './io/cdxml-print';
-import { bitmapToPng, dataUrl, fromDataUrl, imageSize, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
+import { bitmapToPng, dataUrl, fromDataUrl, imageSize, imagePixels, loadImage, onImageReady, pictureMime, showableSrc, webpToPng } from './render/images';
 import { freeRing, matchStructure, straightenLinear, fusedRing, placeRing, sprout, ringOnAtom, ringDir, straightenAt } from './chem/chemgeom';
 import { Toolbar, ToolbarItem, PaletteDef, type ToolDef } from './ui/toolbar';
 import { BOX_DEFAULTS } from './ui/toolbox-defaults';
@@ -4780,7 +4780,7 @@ const docFiles: DocxDeps = {
     const pic = fb ? { items: drawn?.items ?? [], box: drawn ? { x1: Math.min(fb.x1, drawn.box.x1), y1: Math.min(fb.y1, drawn.box.y1), x2: Math.max(fb.x2, drawn.box.x2), y2: Math.max(fb.y2, drawn.box.y2) } : fb } : drawn;
     if (!pic) return null;
     const png = new Uint8Array(await (await canvasPng(pictureCanvas(d, pic).canvas)).arrayBuffer());
-    return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
+    return { png, svg: pictureSvg(pic), w: pic.box.x2 - pic.box.x1, h: pic.box.y2 - pic.box.y1, x: pic.box.x1, y: pic.box.y1, ...(officeStructures.docx === 'chemdraw' ? { emf: await pictureEmfWithPictures(pic) } : {}) };
   },
   svgToPng,
   // (WebP for Word; GIF, BMP and WebP for RTF)
@@ -4949,7 +4949,7 @@ function pptxOptions(): PptxOptions {
       if (!pic) return null;
       const png = new Uint8Array(await (await canvasPng(pictureCanvas(d, pic, PPTX_FALLBACK_DPI).canvas)).arrayBuffer());
       // (a ChemDraw object keeps an EMF of it, as ChemDraw does, to show until it is opened)
-      return { svg: pictureSvg(pic), png, box: pic.box, ...(officeStructures.pptx === 'chemdraw' ? { emf: pictureEmf(pic) } : {}) };
+      return { svg: pictureSvg(pic), png, box: pic.box, ...(officeStructures.pptx === 'chemdraw' ? { emf: await pictureEmfWithPictures(pic) } : {}) };
     },
     svgToPng,
     bakePicture: (p) => fxPng(p, 'baked'),
@@ -7667,7 +7667,7 @@ async function referencesSlideOptions(): Promise<void> {
 async function insertReference(): Promise<void> {
   if (docActive() || sheetActive()) { void openReferences(); return; }
   finishTyping();
-  const groups = (): RefGroup[] => refHolders().map((h) => ({ name: h.name, refs: h.refs(), style: h.citeStyle() }));
+  const groups = (): RefGroup[] => refHolders().map((h) => ({ key: h.key, name: h.name, refs: h.refs(), style: h.citeStyle() }));
   const here = sameDrawing('The reference');
   const got = await chooseRefsToInsert(groups(), async () => {
     const asked = await ask('Reference by DOI', [{ name: 'doi', label: 'DOI', value: '' }], { ok: 'Look Up', note: 'Paste a DOI (10.1021/om100106e) or a doi.org link. The details are filled in from Crossref, which needs the internet.' });
@@ -7989,6 +7989,8 @@ async function drawingStyleDialog(): Promise<void> {
     current, own: ownStyles, kindPlural: STYLE_KINDS[mode].plural, where: STYLE_KINDS[mode].where,
     isDefault: modeStyleFor(mode) === current.name, hasStructures,
     preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+    // a style saved in the window is kept even when the window is cancelled
+    saveOwn: (own) => { ownStyles = own; storeSettings(); },
   });
   if (!got || ws.active !== tab) return;
   ownStyles = got.own;
@@ -8565,7 +8567,7 @@ async function headerFooter(tab: 'slide' | 'notes' = 'slide'): Promise<void> {
   const ix = pickedSlides();
   const got = await editHeaderFooter(d.master, d.current, ix.length, tab);
   if (!got || deckNow() !== d) return;
-  d.setHeaderFooter(got.master, got.show, got.scope === 'picked' ? ix : undefined);
+  applyHeaderFooter(d, got, ix);
 }
 
 /** Slide Show > Set Up Show. */
@@ -8954,7 +8956,14 @@ async function exportPicture(preset: { format?: string; dpi?: number; note?: str
   let note = '';
   try {
     if (type === SVG) await writeFile(target.ref, target.name, svg(), SVG);
-    else if (type === EMF) { const p = items(); await writeFile(target.ref, target.name, itemsToEmf(p.items, p.box), EMF); }
+    else if (type === EMF) {
+      const p = items();
+      // (a picture the browser can't read, a WMF or a TIFF one, can't go in: said so)
+      let missed = 0;
+      const emf = await itemsToEmfWithPictures(p.items, p.box, async (src) => { const px = await imagePixels(src).catch(() => null); if (!px) missed++; return px; });
+      await writeFile(target.ref, target.name, emf, EMF);
+      if (missed) note = ` without ${missed === 1 ? 'one picture' : `${missed} pictures`} that could not be read`;
+    }
     else if (type === EPS) { const p = items(); await writeFile(target.ref, target.name, await itemsToEps(p.items, p.box, pdfImage, tab.name.replace(/\.[^.]+$/, '')), EPS); }
     else {
       const k = bitmapScale(w, h, dpi, EXPORT_MAX_SIDE, EXPORT_MAX_PIXELS);
@@ -8984,31 +8993,15 @@ async function pdfImage(src: string): Promise<PdfImage | null> {
     const info = jpegInfo(bytes);
     if (info) return { kind: 'jpeg', bytes, ...info };
   }
-  if (mime === 'image/x-wmf' || mime === 'image/tiff') return null;
-  let img: HTMLImageElement;
-  try {
-    img = await loadImage(src);
-  } catch {
-    return null;
-  }
-  let w = img.naturalWidth || 300, h = img.naturalHeight || 150;
-  // a drawing in SVG (or a Windows metafile, shown as SVG) has no pixels of its own: make plenty so it prints sharply
-  if (mime === 'image/svg+xml' || mime === 'image/x-emf') { const k = 3000 / Math.max(w, h); w *= k; h *= k; }
-  const k = Math.min(1, Math.sqrt(16e6 / (w * h)));
-  w = Math.max(1, Math.round(w * k));
-  h = Math.max(1, Math.round(h * k));
-  const c = document.createElement('canvas');
-  c.width = w;
-  c.height = h;
-  const g = c.getContext('2d')!;
-  g.drawImage(img, 0, 0, w, h);
-  const px = g.getImageData(0, 0, w, h).data;
+  const px = await imagePixels(src);
+  if (!px) return null;
+  const { w, h, rgba } = px;
   const rgb = new Uint8Array(w * h * 3), alpha = new Uint8Array(w * h);
   let clear = false;
   for (let i = 0, j = 0; i < w * h; i++, j += 4) {
-    rgb[i * 3] = px[j]; rgb[i * 3 + 1] = px[j + 1]; rgb[i * 3 + 2] = px[j + 2];
-    alpha[i] = px[j + 3];
-    if (px[j + 3] < 255) clear = true;
+    rgb[i * 3] = rgba[j]; rgb[i * 3 + 1] = rgba[j + 1]; rgb[i * 3 + 2] = rgba[j + 2];
+    alpha[i] = rgba[j + 3];
+    if (rgba[j + 3] < 255) clear = true;
   }
   return { kind: 'raw', w, h, rgb, alpha: clear ? alpha : null };
 }
@@ -9673,6 +9666,7 @@ function loadSiMode(): Promise<SiMode> {
         const got = await editDrawingStyle({
           current, own: ownStyles, kindPlural: 'SI projects', where: 'this SI project', isDefault: false, hasStructures: false, noForNew: true, note,
           preview: (st, focus) => stylePreview(st, undefined, undefined, focus),
+          saveOwn: (own) => { ownStyles = own; storeSettings(); },
         });
         if (!got) return null;
         if (got.own !== ownStyles) { ownStyles = got.own; storeSettings(); }

@@ -39,6 +39,8 @@ interface Drag {
 
 /** New structure pictures made in one frame at most. */
 const PICTURES_PER_FRAME = 12;
+/** Text sorted the way people read it (item 2 before item 10), one comparer for the whole sort. */
+const NUMERIC_TEXT = new Intl.Collator(undefined, { numeric: true });
 
 export class DashboardView {
   readonly el: HTMLDivElement;
@@ -270,11 +272,14 @@ export class DashboardView {
     let rows = shownRows(res, mask);
     const sc = columnOf(res, t.sortBy);
     if (sc !== null) {
-      rows = [...rows].sort((a, b) => {
-        const va = res.sheet.value(a, sc), vb = res.sheet.value(b, sc);
-        const k = typeof va === 'number' && typeof vb === 'number' ? va - vb : slicerText(va).localeCompare(slicerText(vb), undefined, { numeric: true });
+      // each row's value (and its text, when needed) is read once, not again at every comparison of the sort
+      const keyed = rows.map((r) => ({ r, v: res.sheet.value(r, sc), s: undefined as string | undefined }));
+      const text = (x: (typeof keyed)[number]) => (x.s ??= slicerText(x.v));
+      keyed.sort((a, b) => {
+        const k = typeof a.v === 'number' && typeof b.v === 'number' ? a.v - b.v : NUMERIC_TEXT.compare(text(a), text(b));
         return t.descending ? -k : k;
       });
+      rows = keyed.map((x) => x.r);
     }
     const max = t.maxRows ?? 200;
     const table = document.createElement('table');

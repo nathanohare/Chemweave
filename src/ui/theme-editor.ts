@@ -97,10 +97,19 @@ export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, tit
     const ownTitle = check(!!t.titleSlide);
     row('Custom (dark) colors', ownTitle);
     const tsBg = colour(t.titleSlide?.background ?? '#1d3557'), tsTitle = colour(t.titleSlide?.titleColor ?? '#ffffff'), tsText = colour(t.titleSlide?.textColor ?? '#d9e2ec');
+    // what the title slide has that this window doesn't edit (its footer color, a picture or gradient behind it) is kept
+    // as it was, the picture or gradient only while its background color is left as it was
+    let tsHad = t.titleSlide, tsHadBg = tsBg.value;
     const tsRows = [row('Background', tsBg), row('Title color', tsTitle), row('Text color', tsText)];
 
     const canvas = document.createElement('canvas');
     previews.append(canvas);
+
+    const titleSlide = (): NonNullable<SlideTemplate['titleSlide']> => {
+      const o = { ...tsHad, background: tsBg.value, titleColor: tsTitle.value, textColor: tsText.value };
+      if (tsBg.value !== tsHadBg) delete o.fill;
+      return o;
+    };
 
     /** The theme as the window has it now. */
     const now = (): SlideTemplate => ({
@@ -108,7 +117,7 @@ export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, tit
       background: bg.value, titleFont: titleFont.value.trim() || 'Arial', bodyFont: bodyFont.value.trim() || 'Arial',
       titleColor: titleColor.value, textColor: textColor.value, footerColor: footerColor.value,
       accent: accent.value, accent2: accent2.value, decor: decor.value as Decor, titleBold: titleBold.checked,
-      ...(ownTitle.checked ? { titleSlide: { background: tsBg.value, titleColor: tsTitle.value, textColor: tsText.value } } : {}),
+      ...(ownTitle.checked ? { titleSlide: titleSlide() } : {}),
     });
     const repaint = () => {
       for (const r of tsRows) r.hidden = !ownTitle.checked;
@@ -124,6 +133,7 @@ export function editTheme(t: SlideTemplate, master: Master, size: SlideSize, tit
       decor.value = x.decor; accent.value = x.accent; accent2.value = x.accent2;
       ownTitle.checked = !!x.titleSlide;
       if (x.titleSlide) { tsBg.value = x.titleSlide.background; tsTitle.value = x.titleSlide.titleColor; tsText.value = x.titleSlide.textColor; }
+      tsHad = x.titleSlide; tsHadBg = tsBg.value;
       base.value = '';
       repaint();
     });

@@ -419,7 +419,9 @@ export class CaptionEditor {
   /** Right-click on the text: suggestions for a misspelled word, or the fix for a formatting slip. */
   contextMenu(p: Vec, clientX: number, clientY: number): void {
     this.closeMenu();
-    const o = this.ed.offsetAt(p.x - this.at.x, p.y - this.at.y);
+    // (the point turned back, for text typed turned: linkAt below does the same itself)
+    const q = this.local(p);
+    const o = this.ed.offsetAt(q.x - this.at.x, q.y - this.at.y);
     const c = this.checks();
     const near = (a: number, b: number) => o >= a && o <= b;
     const word = c.spell.find(([a, b]) => near(a, b));

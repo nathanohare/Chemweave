@@ -90,11 +90,12 @@ export function atomWarnings(doc: Doc, a: Atom): string[] {
     orders.push(b.order === 1.5 && !aromaticBondInRing(doc, bid) ? 1 : b.order);
     if (isMetalAtom(doc.atoms.get(b.a1 === a.id ? b.a2 : b.a1))) toMetal++;
   }
+  const isotope = a.isotope && !isotopeOk(a.z, a.isotope) ? `There is no isotope ${a.isotope}${SYMBOLS[a.z] ?? ''}.` : null;
   // an atom in a transition state is part way between its valences
-  if (a.attach || a.multi || partial) return out;
+  if (a.attach || a.multi || partial) { if (isotope) out.push(isotope); return out; }
   // metals: no valence check (how many ligands a metal holds varies too much)
   const metal = isMetalAtom(a);
-  if (metal && !a.label) return a.isotope && !isotopeOk(a.z, a.isotope) ? [`There is no isotope ${a.isotope}${SYMBOLS[a.z] ?? ''}.`] : out;
+  if (metal && !a.label) { if (isotope) out.push(isotope); return out; }
   const z = a.label ? 6 : a.z;
   const bonds = valenceOfBonds(orders, z);
   // a label giving a metal a lone pair or π-bond (PPh3, NH3, COD) takes no valence from it
@@ -125,7 +126,7 @@ export function atomWarnings(doc: Doc, a: Atom): string[] {
       out.push(tooManyText(species(a.z, a.charge), a.z, a.charge, bonds, max, rad));
     }
   }
-  if (a.isotope && !isotopeOk(a.z, a.isotope)) out.push(`There is no isotope ${a.isotope}${SYMBOLS[a.z] ?? ''}.`);
+  if (isotope) out.push(isotope);
   return out;
 }
 
@@ -284,7 +285,9 @@ export class StructureChecks {
     if (onAtom) list.push(ON_ATOM);
     // a bond running through this atom
     const r = TOO_CLOSE_BOND * L;
-    const reach = Math.min(doc.maxBondLength / 2, 2 * L) + r, reach2 = reach * reach;
+    // (the nearer end of a bond running through it is up to half the bond's length away: as far
+    // as Doc.bondsNear looks, not only for bonds of up to 4 bond lengths)
+    const reach = Math.min(doc.maxBondLength, 200) / 2 + r, reach2 = reach * reach;
     let onBond = false;
     for (const n of doc.atomsNear(a, reach)) {
       for (const bid of doc.adj.get(n.id) ?? []) {

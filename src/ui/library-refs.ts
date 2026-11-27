@@ -4,9 +4,9 @@
 // bring your Zotero library in, and choose where the library is kept.
 
 import { preferredStyle, setPreferredStyle } from '../document/cite-styles';
-import { findDuplicate, type Reference } from '../document/references';
+import { duplicateFinder, type Reference } from '../document/references';
 import {
-  applyRefList, collectionAndInside, collectionsOf, newId, parseTags, tagsOf, type LibReference,
+  applyRefList, collectionAndInside, collectionsOf, newId, parseTags, tagsOf, type LibraryData, type LibReference,
 } from '../library/library';
 import type { Library } from '../library/library-store';
 import { applyZotero, fetchZotero, zoteroLibrary, type WebGet, type ZoteroLink, type ZoteroSync } from '../library/online';
@@ -49,18 +49,31 @@ type Show = { collection: string; tag: string };
 
 export const LIBRARY_KEY = 'library';
 
+/** The Collections window's Parent choice that leaves a collection where it is. */
+const KEEP = '=keep';
+
 /** The library as a group of the References window. */
 export function libraryHolder(lib: Library, host: LibraryRefsHost): RefHolder {
   const show: Show = { collection: '', tag: '' };
   const now = () => lib.now;
-  const refById = (id: string) => now().references.find((r) => r.id === id);
+  // looked up by id and by collection once for each version of the library (it is replaced, never
+  // changed in place), so a window of thousands of references does not search the whole list for each row
+  let cachedFor: LibraryData | null = null;
+  let byId = new Map<string, LibReference>();
+  let insideFor = '';
+  let inside = new Set<string>();
+  const refById = (id: string) => {
+    const data = now();
+    if (cachedFor !== data) { cachedFor = data; byId = new Map(data.references.map((r) => [r.id, r])); insideFor = ''; }
+    return byId.get(id);
+  };
   const shows = (r: Reference): boolean => {
     const x = refById(r.id);
     if (!x) return true;
     if (show.tag && !x.tags?.includes(show.tag)) return false;
     if (show.collection === '-') return !x.collections?.length;
     if (show.collection) {
-      const inside = collectionAndInside(now(), show.collection);
+      if (insideFor !== show.collection) { insideFor = show.collection; inside = collectionAndInside(now(), show.collection); }
       return !!x.collections?.some((c) => inside.has(c));
     }
     return true;
@@ -75,9 +88,10 @@ export function libraryHolder(lib: Library, host: LibraryRefsHost): RefHolder {
     setStyle: (style, options) => { setPreferredStyle(style, options); host.styleChanged(); },
     uses: () => {
       const out = new Map<string, number>();
-      const files = host.files();
+      // each open file's references are indexed once, so a library of thousands is not compared with them one by one
+      const has = host.files().map((f) => duplicateFinder(f.refs()));
       for (const r of now().references) {
-        const n = files.filter((f) => findDuplicate(f.refs(), r)).length;
+        const n = has.filter((f) => f(r)).length;
         if (n) out.set(r.id, n);
       }
       return out;
@@ -130,9 +144,11 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
     const data = lib.now;
     const cols = collectionsOf(data, 'references');
     const common = (f: (r: LibReference) => string[] | undefined) => p.map((r) => f(r) ?? []).reduce((a, b) => a.filter((x) => b.includes(x)));
+    // a collection only some of them are in shows unchecked; it is changed only if its box is changed
+    const startedIn = new Map(cols.map((c) => [c.id, p.every((r) => r.collections?.includes(c.id))]));
     const fields = [
       { name: 'tags', label: 'Tags', value: common((r) => r.tags).join(', '), placeholder: 'e.g. C–H activation, review', help: 'Separated by commas. Tags only some of them have are kept on those.' },
-      ...cols.map((c) => ({ name: `col:${c.id}`, label: c.path, type: 'checkbox' as const, value: String(p.every((r) => r.collections?.includes(c.id))) })),
+      ...cols.map((c) => ({ name: `col:${c.id}`, label: c.path, type: 'checkbox' as const, value: String(startedIn.get(c.id)) })),
       { name: 'newcol', label: 'New collection', value: '', placeholder: 'a name, to make one and put them in it' },
     ];
     const got = await ask(p.length === 1 ? 'Tags and Collections' : `Tags and Collections (${p.length} references)`, fields, { ok: 'Apply', note: cols.length ? 'Check the collections they belong in.' : 'Collections group references (Zotero\'s collections come in as collections too).' });
@@ -152,7 +168,11 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
         if (!ids.has(r.id)) return r;
         const tags = [...(r.tags ?? []).filter((x) => !before.includes(x)), ...typed];
         const inCols = new Set(r.collections ?? []);
-        for (const c of cols) { if (got[`col:${c.id}`] === 'true') inCols.add(c.id); else inCols.delete(c.id); }
+        for (const c of cols) {
+          const ticked = got[`col:${c.id}`] === 'true';
+          if (ticked === startedIn.get(c.id)) continue; // not touched: each keeps the collections it had
+          if (ticked) inCols.add(c.id); else inCols.delete(c.id);
+        }
         if (made) inCols.add(made);
         const next: LibReference = { ...r, modified: t };
         if (tags.length) next.tags = [...new Set(tags)]; else delete next.tags;
@@ -167,9 +187,9 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
   const manageCollections = async () => {
     const cols = collectionsOf(lib.now, 'references');
     const got = await ask('Collections', [
-      { name: 'pick', label: 'Collection', value: show.collection && show.collection !== '-' ? show.collection : cols[0]?.id ?? '', options: [{ value: '', label: '(a new one)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
+      { name: 'pick', label: 'Collection', value: show.collection && show.collection !== '-' ? show.collection : '', options: [{ value: '', label: '(a new one)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
       { name: 'name', label: 'Name', value: '', placeholder: 'the new name (blank: unchanged)' },
-      { name: 'parent', label: 'Parent collection', value: '', options: [{ value: '', label: '(no collection: at the top)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
+      { name: 'parent', label: 'Parent collection', value: KEEP, options: [{ value: KEEP, label: '(keep where it is)' }, { value: '', label: '(no collection: at the top)' }, ...cols.map((c) => ({ value: c.id, label: c.path }))] },
       { name: 'delete', label: 'Delete this collection (its references stay in the library)', type: 'checkbox', value: 'false' },
     ], { ok: 'Apply', note: 'Make a collection, rename one, move it inside another, or delete it.' });
     if (!got) return;
@@ -178,7 +198,7 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
       const id = got.pick;
       if (!id) {
         if (!got.name.trim()) return l;
-        return { ...l, collections: [...l.collections, { id: newId('k', l.collections.map((c) => c.id)), name: got.name.trim(), kind: 'references', modified: t, ...(got.parent ? { parent: got.parent } : {}) }] };
+        return { ...l, collections: [...l.collections, { id: newId('k', l.collections.map((c) => c.id)), name: got.name.trim(), kind: 'references', modified: t, ...(got.parent && got.parent !== KEEP ? { parent: got.parent } : {}) }] };
       }
       if (got.delete === 'true') {
         const gone = collectionAndInside(l, id);
@@ -190,12 +210,13 @@ function libraryPanel(lib: Library, host: LibraryRefsHost, show: Show, ctx: Hold
         };
       }
       // (never inside itself or one of its own)
-      const parent = got.parent && !collectionAndInside(l, id).has(got.parent) ? got.parent : undefined;
+      const parent = got.parent && got.parent !== KEEP && !collectionAndInside(l, id).has(got.parent) ? got.parent : undefined;
       return {
         ...l, collections: l.collections.map((c) => {
           if (c.id !== id) return c;
           const next = { ...c, name: got.name.trim() || c.name, modified: t };
-          if (parent) next.parent = parent; else delete next.parent;
+          // a rename leaves the collection where it is; only a parent picked moves it (or the top)
+          if (got.parent !== KEEP) { if (parent) next.parent = parent; else delete next.parent; }
           return next;
         }),
       };

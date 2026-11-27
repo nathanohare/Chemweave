@@ -167,10 +167,12 @@ export function checkDrawing(doc: Doc, opts: DrawingCheck = {}): Issue[] {
   // structures with only their SMILES
   let k = 0;
   for (const frag of doc.fragments()) {
-    const atoms = [...frag].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a && !a.attach && !a.multi);
+    const all = [...frag].map((id) => doc.atoms.get(id)).filter((a): a is Atom => !!a);
+    const atoms = all.filter((a) => !a.attach && !a.multi);
     if (atoms.length < 2 && !atoms.some((a) => a.label || a.z !== 6)) continue;
     k++;
-    if (!structureAlt(atoms)) out.push(issue('alt-smiles', `Structure ${k}${on}`, at({ atoms: atoms.map((a) => a.id) })));
+    // (the alt text is kept on the structure's first atom, which may be a point of attachment: look at all of them)
+    if (!structureAlt(all)) out.push(issue('alt-smiles', `Structure ${k}${on}`, at({ atoms: atoms.map((a) => a.id) })));
   }
   // text that doesn't stand out from what is behind it
   const filled = [...doc.shapes.values()].filter((s) => (s.kind === 'rect' || s.kind === 'oval' || s.kind === 'geo') && s.filled && !s.hidden && (s.transparency ?? 0) < 0.5)
@@ -318,7 +320,10 @@ export function checkWorkbook(book: Workbook): Issue[] {
 export function groupIssues(list: Issue[]): { rule: Rule; level: IssueLevel; items: Issue[] }[] {
   const order: IssueLevel[] = ['error', 'warning', 'tip'];
   const groups = new Map<Rule, Issue[]>();
-  for (const i of list) groups.set(i.rule, [...(groups.get(i.rule) ?? []), i]);
+  for (const i of list) {
+    const g = groups.get(i.rule);
+    if (g) g.push(i); else groups.set(i.rule, [i]);
+  }
   return [...groups].map(([rule, items]) => ({ rule, level: RULES[rule].level, items }))
     .sort((a, b) => order.indexOf(a.level) - order.indexOf(b.level));
 }

@@ -80,6 +80,16 @@ export function presetNamed(name: string): StylePreset | undefined {
   return STYLE_PRESETS.find((p) => p.style.name === name);
 }
 
+/**
+ * The built-in style a style is (it draws the same). When several draw the same (Wiley and Elsevier
+ * are both ACS 1996 scaled to 7 pt text), the one with its name wins, so a drawing in Elsevier's
+ * style isn't shown as Wiley's.
+ */
+export function presetLike(st: DocStyle): StylePreset | undefined {
+  const same = STYLE_PRESETS.filter((p) => sameLook(p.style, st));
+  return same.find((p) => p.style.name === st.name) ?? same[0];
+}
+
 const NUMBERS = ['bondLength', 'lineWidth', 'boldWidth', 'marginWidth', 'hashSpacing', 'bondSpacing', 'chainAngle', 'labelSize', 'captionSize'] as const;
 
 /** Do two styles draw the same? (Names aside.) */
@@ -262,6 +272,7 @@ export function scaleStyle(st: DocStyle, k: number): DocStyle {
     ...st, bondLength: r(st.bondLength), lineWidth: r(st.lineWidth), boldWidth: r(st.boldWidth), marginWidth: r(st.marginWidth),
     hashSpacing: r(st.hashSpacing), labelSize: r(st.labelSize), captionSize: r(st.captionSize),
     ...(st.arrowTextSize !== undefined ? { arrowTextSize: r(st.arrowTextSize) } : {}),
+    ...(st.resultsTextSize !== undefined ? { resultsTextSize: r(st.resultsTextSize) } : {}),
     ...Object.fromEntries(ARROW_SIZES.filter((x) => st[x] !== undefined).map((x) => [x, r(st[x]!)])),
     ...(st.idLook ? { idLook: scaleLook(st.idLook, r) } : {}),
     ...(st.tiedLook ? { tiedLook: scaleLook(st.tiedLook, r) } : {}),

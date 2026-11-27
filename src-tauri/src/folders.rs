@@ -8,6 +8,9 @@ use std::time::UNIX_EPOCH;
 
 /// The most files one listing gives (a whole drive picked by mistake stops here).
 const MAX_FILES: usize = 20_000;
+/// The most entries (files and folders, wanted or not) one listing looks at, so a huge tree with
+/// few drawings in it (a backup drive, a node_modules) stops too, and says the list is partial.
+const MAX_SEEN: usize = 500_000;
 /// How deep into folders inside folders a listing goes.
 const MAX_DEPTH: usize = 12;
 
@@ -23,56 +26,88 @@ fn wanted(path: &Path, extensions: &[String]) -> bool {
         .unwrap_or(false)
 }
 
-fn walk(dir: &Path, depth: usize, extensions: &[String], sub: bool, out: &mut Vec<serde_json::Value>) -> bool {
-    let Ok(entries) = std::fs::read_dir(dir) else { return true };
-    let mut dirs: Vec<PathBuf> = Vec::new();
-    let mut files: Vec<(PathBuf, std::fs::Metadata)> = Vec::new();
-    for e in entries.flatten() {
-        let name = e.file_name().to_string_lossy().into_owned();
-        if skipped(&name) {
-            continue;
-        }
-        // (a link to a folder is not followed, so a folder that holds itself can't loop)
-        let Ok(kind) = e.file_type() else { continue };
-        if kind.is_dir() {
-            dirs.push(e.path());
-        } else if kind.is_file() && wanted(&e.path(), extensions) {
-            if let Ok(meta) = e.metadata() {
-                files.push((e.path(), meta));
-            }
-        }
+/// One listing in progress: what it looks for, what it has found, and whether it is whole.
+struct Walk<'a> {
+    extensions: &'a [String],
+    sub: bool,
+    max_files: usize,
+    max_seen: usize,
+    max_depth: usize,
+    seen: usize,
+    out: Vec<serde_json::Value>,
+    /// False once something was left out (too many files or entries, or folders below the depth limit).
+    complete: bool,
+}
+
+impl<'a> Walk<'a> {
+    fn new(extensions: &'a [String], sub: bool) -> Self {
+        Walk { extensions, sub, max_files: MAX_FILES, max_seen: MAX_SEEN, max_depth: MAX_DEPTH, seen: 0, out: Vec::new(), complete: true }
     }
-    files.sort_by(|a, b| a.0.cmp(&b.0));
-    for (p, meta) in files {
-        if out.len() >= MAX_FILES {
-            return false;
-        }
-        let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as f64).unwrap_or(0.0);
-        out.push(serde_json::json!({ "path": p.to_string_lossy(), "size": meta.len(), "modified": modified }));
-    }
-    if sub && depth < MAX_DEPTH {
-        dirs.sort();
-        for d in dirs {
-            if !walk(&d, depth + 1, extensions, sub, out) {
+
+    /// List one folder, then (with `sub`) those inside it. False means stop everything (a limit was reached).
+    fn run(&mut self, dir: &Path, depth: usize) -> bool {
+        let Ok(entries) = std::fs::read_dir(dir) else { return true };
+        let mut dirs: Vec<PathBuf> = Vec::new();
+        let mut files: Vec<(PathBuf, std::fs::Metadata)> = Vec::new();
+        for e in entries.flatten() {
+            self.seen += 1;
+            if self.seen > self.max_seen {
+                self.complete = false;
                 return false;
             }
+            let name = e.file_name().to_string_lossy().into_owned();
+            if skipped(&name) {
+                continue;
+            }
+            // (a link to a folder is not followed, so a folder that holds itself can't loop)
+            let Ok(kind) = e.file_type() else { continue };
+            if kind.is_dir() {
+                dirs.push(e.path());
+            } else if kind.is_file() && wanted(&e.path(), self.extensions) {
+                if let Ok(meta) = e.metadata() {
+                    files.push((e.path(), meta));
+                }
+            }
         }
+        files.sort_by(|a, b| a.0.cmp(&b.0));
+        for (p, meta) in files {
+            if self.out.len() >= self.max_files {
+                self.complete = false;
+                return false;
+            }
+            let modified = meta.modified().ok().and_then(|t| t.duration_since(UNIX_EPOCH).ok()).map(|d| d.as_millis() as f64).unwrap_or(0.0);
+            self.out.push(serde_json::json!({ "path": p.to_string_lossy(), "size": meta.len(), "modified": modified }));
+        }
+        if self.sub && !dirs.is_empty() {
+            if depth >= self.max_depth {
+                // folders below the limit are not looked into: the list is not the whole story
+                self.complete = false;
+                return true;
+            }
+            dirs.sort();
+            for d in dirs {
+                if !self.run(&d, depth + 1) {
+                    return false;
+                }
+            }
+        }
+        true
     }
-    true
 }
 
 /// The files in a folder (and, with `sub`, the folders inside it) whose extension is one of
 /// `extensions`, with their sizes and when they were last changed; `complete` is false when
-/// there were more than the most one listing gives.
+/// the listing was cut short (more files than the most one listing gives, more entries than it
+/// looks at, or folders deeper than it goes).
 #[tauri::command(async)]
 pub fn list_folder(path: String, extensions: Vec<String>, sub: bool) -> Result<serde_json::Value, String> {
     let dir = PathBuf::from(&path);
     if !dir.is_dir() {
         return Err(format!("{path} is not a folder (or can't be reached)."));
     }
-    let mut files = Vec::new();
-    let complete = walk(&dir, 0, &extensions, sub, &mut files);
-    Ok(serde_json::json!({ "files": files, "complete": complete }))
+    let mut walk = Walk::new(&extensions, sub);
+    walk.run(&dir, 0);
+    Ok(serde_json::json!({ "files": walk.out, "complete": walk.complete }))
 }
 
 /// Make a folder (and those it sits in) if it isn't there.
@@ -234,6 +269,53 @@ mod tests {
         assert_eq!(got["complete"], true);
         let top = list_folder(root.to_string_lossy().into_owned(), exts, false).unwrap();
         assert_eq!(top["files"].as_array().unwrap().len(), 1);
+        std::fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn says_so_when_the_listing_was_cut_short() {
+        let root = std::env::temp_dir().join(format!("ci-list-cut-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&root);
+        // a/b/c/deep.cdxml sits three folders down; top.cdxml at the top
+        let deep = root.join("a").join("b").join("c");
+        std::fs::create_dir_all(&deep).unwrap();
+        std::fs::write(root.join("top.cdxml"), "x").unwrap();
+        std::fs::write(deep.join("deep.cdxml"), "x").unwrap();
+        let exts = vec!["cdxml".to_string()];
+        // deep enough: whole
+        let mut w = Walk::new(&exts, true);
+        w.max_depth = 3;
+        w.run(&root, 0);
+        assert_eq!(w.out.len(), 2);
+        assert!(w.complete);
+        // one level too shallow: the folder below the limit is skipped, and the list says so
+        let mut w = Walk::new(&exts, true);
+        w.max_depth = 2;
+        w.run(&root, 0);
+        assert_eq!(w.out.len(), 1);
+        assert!(!w.complete);
+        // a folder with no folders below the limit is still whole
+        let mut w = Walk::new(&exts, true);
+        w.max_depth = 0;
+        w.run(&deep, 0);
+        assert_eq!(w.out.len(), 1);
+        assert!(w.complete);
+        // too many entries looked at (none of them wanted): stops, and says so
+        let busy = root.join("busy");
+        std::fs::create_dir_all(&busy).unwrap();
+        for i in 0..20 {
+            std::fs::write(busy.join(format!("n{i}.txt")), "x").unwrap();
+        }
+        let mut w = Walk::new(&exts, true);
+        w.max_seen = 10;
+        w.run(&busy, 0);
+        assert!(!w.complete);
+        // too many wanted files: stops, and says so
+        let mut w = Walk::new(&exts, true);
+        w.max_files = 1;
+        w.run(&root, 0);
+        assert_eq!(w.out.len(), 1);
+        assert!(!w.complete);
         std::fs::remove_dir_all(&root).unwrap();
     }
 

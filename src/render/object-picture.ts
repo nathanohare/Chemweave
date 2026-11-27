@@ -2,6 +2,7 @@
 // page of a PDF, a picture file itself, or an icon with the file's name for anything else
 // (and whenever the person asks for the icon).
 
+import { cssFamily } from './css-string';
 import { dataUrl, imageSize, pictureMime } from './images';
 import type { Workbook } from '../sheet/workbook';
 
@@ -130,7 +131,7 @@ export function cellsPicture(book: Workbook): ObjectPicture | null {
       }
       const cut = { x1: xs[from], x2: xs[to + 1] };
       clips.push(`<clipPath id="k${r}_${c}"><rect x="${cut.x1}" y="${top}" width="${cut.x2 - cut.x1}" height="${ch}"/></clipPath>`);
-      texts.push(`<text x="${x}" y="${y}" font-family="${esc(st?.font || 'Calibri')}, Carlito, Arial, sans-serif" font-size="${size.toFixed(2)}" fill="${esc(st?.color ?? '#000')}" text-anchor="${align === 'right' ? 'end' : align === 'center' ? 'middle' : 'start'}"${look} clip-path="url(#k${r}_${c})">${esc(text)}</text>`);
+      texts.push(`<text x="${x}" y="${y}" font-family="${esc(cssFamily(st?.font || 'Calibri'))}, Carlito, Arial, sans-serif" font-size="${size.toFixed(2)}" fill="${esc(st?.color ?? '#000')}" text-anchor="${align === 'right' ? 'end' : align === 'center' ? 'middle' : 'start'}"${look} clip-path="url(#k${r}_${c})">${esc(text)}</text>`);
     }
   }
   out.push(clips.length ? `<defs>${clips.join('')}</defs>` : '', ...fills, `<path d="${lines.join('')}" stroke="#d4d4d4" stroke-width="1" fill="none"/>`, ...borders, ...texts, '</svg>');

@@ -9,7 +9,7 @@ import type { Rect, Vec } from '../geom';
 import { add, mul, sub, fromAngle, dist } from '../geom';
 import type { Measure } from '../editor/arrange';
 import { arrowFrame, inFrame, interpretArrow, isReactionArrow, isStep, itemFinder, schemeItems, type Item } from './reaction';
-import { labelsOf, spacing, fittedLength } from './scheme-layout';
+import { labelsOf, spacing, fittedLength, prefsOf, withSchemePrefs, type SchemePrefs } from './scheme-layout';
 import { focalPoint } from './focal';
 import { arrowMid, sweepThrough } from '../objects';
 import { crowdedLinks, layoutNet, readNet, type Net, type NetLink } from './cycle-net';
@@ -178,7 +178,8 @@ export function readingOrder(its: Item[], bond: number): Item[] {
 
 /**
  * The nodes in order when every node has at most one step in and one out (a closed loop when the
- * last leads back to the first). Nodes in no step are added at the end, joined by new steps.
+ * last leads back to the first). Nodes in no step are added at the end, joined by new steps
+ * (not to a closed loop, which has no end: they are left out of it).
  */
 function chainOf(n: number, links: Link[], extra: number[], nodes: Node[]): { path: number[] | null; closed: boolean } {
   const out = new Map<number, Link>(), into = new Map<number, Link>();
@@ -199,7 +200,8 @@ function chainOf(n: number, links: Link[], extra: number[], nodes: Node[]): { pa
   const seen = new Set<number>();
   for (let i = start; i !== undefined && !seen.has(i); i = out.get(i)?.to) { seen.add(i); path.push(i); }
   if (inSteps.some((i) => !seen.has(i))) return { path: null, closed: false };
-  for (const i of extra) {
+  // (a closed loop has no end to join them to: they stay where they are)
+  for (const i of closed ? [] : extra) {
     if (seen.has(i)) continue;
     if (path.length) links.push({ from: path[path.length - 1], to: i, above: [], below: [], plusses: [], inside: [] });
     path.push(i);
@@ -209,8 +211,16 @@ function chainOf(n: number, links: Link[], extra: number[], nodes: Node[]): { pa
   return { path, closed };
 }
 
-/** Lay the scheme out. Null when it can't be laid out this way (steps that branch, for all but a tree). */
-export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOptions): ArrangePlan | null {
+/**
+ * Lay the scheme out. Null when it can't be laid out this way (steps that branch, for all but a
+ * tree). With the drawing style's own scheme distances where it has them, as Clean Up Reaction
+ * uses (`prefs`: other settings in their place, such as a Smart Scheme's own format).
+ */
+export function planArrange(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOptions, prefs: SchemePrefs | null = doc.style.scheme ? prefsOf(doc) : null): ArrangePlan | null {
+  return prefs ? withSchemePrefs(prefs, () => arrangeIn(doc, m, scope, opts)) : arrangeIn(doc, m, scope, opts);
+}
+
+function arrangeIn(doc: Doc, m: Measure, scope: Scope, opts: ArrangeOptions): ArrangePlan | null {
   const sh = readScheme(doc, m, scope);
   if (sh.nodes.length < 2 && !(opts.kind === 'cycle' && sh.nodes.length >= 1)) return null;
   // a cycle of several loops (or with branches off it) is laid out as its loops
@@ -288,7 +298,8 @@ class Layout {
   constructor(private sh: SchemeShape, private bond: number) {
     this.g = spacing(bond).gap;
     let b: Rect | null = null;
-    for (const n of sh.nodes) b = union(b, n.box);
+    // (from what is laid out: a structure left out of a closed loop doesn't move where it starts, or it would be laid over)
+    for (const i of sh.path?.length ? sh.path : sh.nodes.map((_, k) => k)) b = union(b, sh.nodes[i].box);
     for (const l of sh.links) if (l.arrow) b = union(b, { x1: Math.min(l.arrow.tail.x, l.arrow.head.x), y1: Math.min(l.arrow.tail.y, l.arrow.head.y), x2: Math.max(l.arrow.tail.x, l.arrow.head.x), y2: Math.max(l.arrow.tail.y, l.arrow.head.y) });
     this.origin = { x: b!.x1, y: b!.y1 };
   }
@@ -454,6 +465,7 @@ class Layout {
     if (!this.sh.closed || path.length < 2) return;
     const a = this.at.get(path[path.length - 1])!, b = this.at.get(path[0])!;
     const l = this.linkBetween(path[path.length - 1], path[0]);
+    if (!l) return;
     let all: Rect | null = null;
     for (const r of this.at.values()) all = union(all, r);
     const off = 1.2 * this.bond;
@@ -533,6 +545,7 @@ class Layout {
         const { s, e } = ends(k);
         // each arc needs room for its arrowhead, and for its conditions alongside it
         const l = link(k);
+        if (!l) continue;
         const need = Math.max(2.8 * bond, ...[...l.above, ...l.below, ...l.inside].map((it) => 0.9 * Math.max(width(it.box), height(it.box))));
         if (sign * (e - s) * R < need) { ok = false; break; }
         // and the step names inside need room clear of the middle (and of the catalyst's name there)
@@ -546,7 +559,7 @@ class Layout {
     }
     path.forEach((i, k) => this.placeNode(i, add(cen, fromAngle(angle(k), R))));
     if (N < 2) return;
-    for (let k = 0; k < N; k++) { const { s, e } = ends(k); this.arcStep(link(k), cen, R, s, e, reagentArrows); }
+    for (let k = 0; k < N; k++) { const l = link(k); if (!l) continue; const { s, e } = ends(k); this.arcStep(l, cen, R, s, e, reagentArrows); }
     // a caption on its own (the catalyst's name) goes in the middle
     if (this.sh.loose.length === 1) { const it = this.sh.loose[0]; this.shift(it, sub(cen, centre(it.box))); }
   }

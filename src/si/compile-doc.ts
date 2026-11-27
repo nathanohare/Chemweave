@@ -70,7 +70,7 @@ export interface CompileHost {
 }
 
 /** A page of a PDF drawn as a picture: its data URL, its size in points and in pixels, and how many pages the PDF has. */
-export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number }; of?: number }
+export interface PagePicture { src: string; w: number; h: number; px?: { w: number; h: number }; of?: number; /** The page could not be drawn: `src` only says so. */ failed?: boolean }
 
 export interface CompiledSi {
   doc: DocText;
@@ -662,6 +662,12 @@ class Compiler {
     return figure ? { frame } : true;
   }
 
+  /** A note for the pages of a PDF that could not be drawn (each printed as a box saying so, keeping its place). */
+  private failedPages(pages: PagePicture[], name: string, where: string): void {
+    const bad = pages.flatMap((pg, i) => (pg.failed ? [i + 1] : []));
+    if (bad.length) this.notes.push(`${where}: ${bad.length === 1 ? `page ${bad[0]}` : `pages ${bad.join(', ')}`} of ${name} could not be drawn; a box marks ${bad.length === 1 ? 'its' : 'their'} place.`);
+  }
+
   /**
    * A PDF's pages as pictures fitted to `room` (none when it can't be read, said in the notes);
    * with `most`, only that many (a table cell shows the first). The live preview shows the first
@@ -676,6 +682,7 @@ class Compiler {
     const of = pages[0].of ?? pages.length;
     this.pdfPageCount = of;
     if (this.preview && of > pages.length) this.notes.push(`${where}: the live preview shows the first page of ${name} (it has ${of}); Compile prints them all.`);
+    this.failedPages(pages, name, where);
     return pages.map((pg) => {
       let w = pg.w, h = pg.h;
       if (widthPt) { h *= widthPt / w; w = widthPt; }
@@ -1210,11 +1217,13 @@ class Compiler {
           if (!this.host.pdfPages) { this.notes.push(`${where}: ${file} is a PDF; PDFs are placed only in the desktop app and the web app (left out).`); continue; }
           pages = (await this.host.pdfPages(bytes).catch(() => null)) ?? [];
           if (!pages.length) { this.notes.push(`${where}: ${unreadablePdf(file)}`); continue; }
+          this.failedPages(pages, file, where);
         } else {
           const pic = pictureObject(file, bytes, { w: 1e6, h: 1e6 });
           if (!pic) { this.notes.push(`${where}: ${file} could not be read as a picture${/\.tiff?$/i.test(file) ? ' (TIFF pictures are not placed in the document yet)' : ''}; left out.`); continue; }
           pages = [{ src: pic.src, w: pic.w, h: pic.h, ...(pic.px ? { px: pic.px } : {}) }];
         }
+        // (a page that could not be drawn is a box saying so, the pages after it keeping their numbers and settings)
         pages.forEach((page, i) => entries.push({ c, item, page, pageNo: i + 1, eff: effective(defaults, item, String(i + 1)) }));
       }
     }

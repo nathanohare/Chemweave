@@ -41,8 +41,10 @@ fn selftest_report(app: tauri::AppHandle, report: String, ok: bool) {
     app.exit(if ok { 0 } else { 1 });
 }
 
-/// Read a file the user chose in an Open dialog.
-#[tauri::command]
+/// Read a file the user chose in an Open dialog. (The four file commands here run off the main
+/// thread, `async`: a big file, a slow or network disk or a sync program holding the file up
+/// would otherwise freeze the whole window until it is done.)
+#[tauri::command(async)]
 fn read_text_file(app: tauri::AppHandle, path: String) -> Result<String, String> {
     ai::guard_key_file(&app, &path)?;
     std::fs::read_to_string(&path).map_err(|e| format!("Could not read {path}: {e}"))
@@ -50,7 +52,7 @@ fn read_text_file(app: tauri::AppHandle, path: String) -> Result<String, String>
 
 /// Save a file the user chose. The text goes to a temporary file next to it first, so a
 /// failed save (full disk, lost network drive) never leaves a half-written drawing.
-#[tauri::command]
+#[tauri::command(async)]
 fn write_text_file(app: tauri::AppHandle, path: String, contents: String) -> Result<(), String> {
     ai::guard_key_file(&app, &path)?;
     write_bytes(&path, contents.as_bytes())
@@ -90,7 +92,7 @@ fn file_held(path: String) -> bool {
 }
 
 /// Read a file the user chose, as bytes (PowerPoint files, CDX drawings, pictures).
-#[tauri::command]
+#[tauri::command(async)]
 fn read_binary_file(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::Response, String> {
     ai::guard_key_file(&app, &path)?;
     std::fs::read(&path)
@@ -100,7 +102,7 @@ fn read_binary_file(app: tauri::AppHandle, path: String) -> Result<tauri::ipc::R
 
 /// Save bytes to a file the user chose. The page sends the bytes as they are, with the path
 /// in a "path" header (percent-encoded, since headers only carry plain ASCII).
-#[tauri::command]
+#[tauri::command(async)]
 fn write_binary_file(app: tauri::AppHandle, request: tauri::ipc::Request<'_>) -> Result<(), String> {
     let tauri::ipc::InvokeBody::Raw(bytes) = request.body() else {
         return Err("expected the file's bytes".into());
@@ -133,11 +135,13 @@ fn percent_decode(s: &str) -> Result<String, String> {
 }
 
 /// Write through a temporary file next to the target, so a failed save never leaves half a file.
+/// The temporary file's name is its own for each save (saves run on several threads now, and two to
+/// one path must not write the same file).
 fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
+    use std::sync::atomic::{AtomicU32, Ordering};
+    static NEXT: AtomicU32 = AtomicU32::new(1);
     let target = PathBuf::from(path);
-    let mut tmp = target.clone().into_os_string();
-    tmp.push(".saving");
-    let tmp = PathBuf::from(tmp);
+    let tmp = temp_beside(&target, NEXT.fetch_add(1, Ordering::Relaxed));
     // (a rename a sync program or antivirus holds up for a moment is tried again)
     std::fs::write(&tmp, bytes)
         .and_then(|_| folders::rename_retrying(&tmp, &target))
@@ -145,6 +149,13 @@ fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
             let _ = std::fs::remove_file(&tmp);
             format!("Could not save {path}: {e}")
         })
+}
+
+/// The temporary file a save writes first: next to the target, named for this run of the app and save.
+fn temp_beside(target: &std::path::Path, n: u32) -> PathBuf {
+    let mut tmp = target.as_os_str().to_owned();
+    tmp.push(format!(".{}-{n}.saving", std::process::id()));
+    PathBuf::from(tmp)
 }
 
 /// The person's settings file (key map and preferences): settings.json in the app's
@@ -258,6 +269,18 @@ async fn portable_install_update(app: tauri::AppHandle, channel: Option<String>,
         .map_err(|e| e.to_string())?;
     let exe = std::env::current_exe().map_err(|e| format!("Could not find the running app: {e}"))?;
     portable::swap_in(&exe, &bytes)?;
+    // let go of the single-instance lock first: the new copy would otherwise find this one still
+    // holding it, hand its start over to it and quit, and this one then exits too. (On the main
+    // thread, which made it: the lock's window and mutex belong to that thread.)
+    let (done, released) = std::sync::mpsc::channel();
+    let handle = app.clone();
+    app.run_on_main_thread(move || {
+        tauri_plugin_single_instance::destroy(&handle);
+        let _ = done.send(());
+    })
+    .map_err(|e| format!("The new version is in place but could not be started ({e}); open it again."))?;
+    let _ = released.recv_timeout(Duration::from_secs(5));
+    // (if it can't start, this copy goes on without the lock: a second copy opened by hand would not find it)
     std::process::Command::new(&exe)
         .spawn()
         .map_err(|e| format!("The new version is in place but didn't start ({e}); open it again."))?;
@@ -371,13 +394,20 @@ fn keep_on_screen(w: &tauri::WebviewWindow) {
     let _ = w.set_position(tauri::PhysicalPosition::new(x, y));
 }
 
+/// Whether a window's size changes are watched for being restored from maximised: only the main
+/// window, not the slide show's full screen audience window (which covers its whole screen).
+#[cfg(any(desktop, test))]
+fn watches_maximised(label: &str) -> bool {
+    label == "main"
+}
+
 /// Whether the main window was maximised when last resized (a restore is a resize from maximised).
 #[cfg(desktop)]
 static WAS_MAXIMISED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 #[cfg(test)]
 mod tests {
-    use super::{kept_inside, percent_decode};
+    use super::{kept_inside, percent_decode, temp_beside, watches_maximised};
 
     #[test]
     fn keeps_a_window_on_its_screen() {
@@ -390,6 +420,40 @@ mod tests {
         assert_eq!(kept_inside((-300, 200, 1000, 700), area, 16), Some((0, 120, 1000, 700)));
         // a screen that starts to the right of another
         assert_eq!(kept_inside((100, 100, 800, 600), (1920, 0, 1389, 820), 16), Some((1920, 100, 800, 600)));
+    }
+
+    #[test]
+    fn only_the_main_window_is_kept_on_screen_when_restored() {
+        assert!(watches_maximised("main"));
+        // the slide show's audience window is full screen, outside the work area by the taskbar's height
+        assert!(!watches_maximised("audience"));
+        assert!(!watches_maximised(""));
+    }
+
+    #[test]
+    fn saves_to_one_file_use_their_own_temporary_files() {
+        let target = std::path::Path::new("/data/Scheme 1.cdxml");
+        let (a, b) = (temp_beside(target, 1), temp_beside(target, 2));
+        assert_ne!(a, b);
+        assert_eq!(a.parent(), target.parent());
+        assert!(a.to_string_lossy().ends_with(".saving"));
+        // two saves at once to one file both land, whole, and leave nothing behind
+        let dir = std::env::temp_dir().join(format!("ci-save-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("a.txt").to_string_lossy().into_owned();
+        let threads: Vec<_> = (0..8).map(|i| {
+            let path = path.clone();
+            std::thread::spawn(move || super::write_bytes(&path, format!("{i}").repeat(100_000).as_bytes()))
+        }).collect();
+        for t in threads {
+            t.join().unwrap().unwrap();
+        }
+        let text = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(text.len(), 100_000);
+        assert!(text.chars().all(|c| c == text.chars().next().unwrap()));
+        assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
+        std::fs::remove_dir_all(&dir).unwrap();
     }
 
     #[test]
@@ -519,6 +583,9 @@ pub fn run() {
             #[cfg(desktop)]
             if let tauri::WindowEvent::Resized(_) = _event {
                 use std::sync::atomic::Ordering;
+                if !watches_maximised(_window.label()) {
+                    return;
+                }
                 let Some(w) = tauri::Manager::get_webview_window(_window, _window.label()) else { return };
                 let max = w.is_maximized().unwrap_or(false);
                 let was = WAS_MAXIMISED.swap(max, Ordering::Relaxed);
