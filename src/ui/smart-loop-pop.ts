@@ -124,7 +124,8 @@ export function askLoop(anchor: HTMLElement, o: LoopAsk): Promise<{ join: LoopJo
       for (const lp of o.loops) {
         const i = lp.indexOf(a);
         if (i < 0) continue;
-        for (let k = 1; k < lp.length; k++) {
+        // (not all the way round: some of the loop is left for the loop already there)
+        for (let k = 1; k < lp.length - 1; k++) {
           const b = lp[(i + k) % lp.length];
           if (seen.has(b)) continue;
           seen.add(b);

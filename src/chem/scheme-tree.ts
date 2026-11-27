@@ -257,7 +257,16 @@ export function layoutTree(tree: Tree, links: TreeLink[], z: TreeSizes, opts: Tr
   };
 
   /** Run `ri` laid out with the species that joins it at (0, 0). `toward`: the side of that species its parent run is on (kept clear for the arrow that joins them). */
+  // (each run laid out once for each side its parent is on: a branch's layout is asked for again
+  // for each side and slant it might take, and so would grow with each level of branches on branches)
+  const subs = new Map<string, Sub>();
   const sub = (ri: number, toward?: 1 | -1): Sub => {
+    const key = `${ri} ${toward ?? 0}`;
+    let got = subs.get(key);
+    if (!got) { got = layRun(ri, toward); subs.set(key, got); }
+    return got;
+  };
+  const layRun = (ri: number, toward?: 1 | -1): Sub => {
     const run = tree.runs[ri], back = run.dir === 'in';
     // from the species nearest where it joins, outwards
     const seq = back ? [...run.nodes].reverse() : run.nodes, sl = back ? [...run.links].reverse() : run.links;
@@ -284,14 +293,8 @@ export function layoutTree(tree: Tree, links: TreeLink[], z: TreeSizes, opts: Tr
       for (const ki of (kids.get(ri) ?? []).filter((k) => tree.runs[k].at === x)) {
         const kid = tree.runs[ki], via = kid.via!, f = kid.dir === 'in' ? -1 : 1;
         const a = kid.dir === 'in' ? kid.nodes[kid.nodes.length - 1] : kid.nodes[0];
-        const laid = new Map<string, Sub>();
-        /** The branch laid out to go on side `s`: squarely beside the species, or (`slant`) a step on from it. */
-        const K = (s: 1 | -1, slant: boolean): Sub => {
-          const key = `${s}${slant}`;
-          let k = laid.get(key);
-          if (!k) { k = sub(ki, slant ? undefined : s > 0 ? -1 : 1); laid.set(key, k); }
-          return k;
-        };
+        /** The branch laid out to go on side `s`: squarely beside the species, or (`slant`) a step on from it (the same either side). */
+        const K = (s: 1 | -1, slant: boolean): Sub => sub(ki, slant ? undefined : s > 0 ? -1 : 1);
         const amOf = (slant: boolean) => (slant ? here.m + f * (hm(x) + g + lenM(via) + g + hm(a)) : here.m);
         const joinOf = (s: 1 | -1, slant: boolean, d: number, edge = false): { tail: P; head: P; rect: R; texts: R[] } => {
           const am = amOf(slant), ac = here.c + s * d;

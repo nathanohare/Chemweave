@@ -59,14 +59,16 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       // mass weighed out: the compound's own mass over its purity. 98, 98% and 0.98 all mean 98%
       // (a number of 1 or less is a fraction); empty, 0 or text: pure
       sh.setInput(y, 6, `=IF(OR(H${n}="",NOT(ISNUMBER(H${n}))),F${n}*D${n},IF(H${n}<=0,F${n}*D${n},IF(H${n}<=1,F${n}*D${n}/H${n},F${n}*D${n}*100/H${n})))`);
-      // volume: of the solution when a concentration is given (mmol ÷ mol/L = mL), else of the liquid from its density
-      sh.setInput(y, 10, `=IF(J${n}<>"",1000*F${n}/J${n},IF(I${n}="","",G${n}/I${n}))`);
+      // volume: of the solution when a concentration is given (mmol ÷ mol/L = mL), else of the liquid
+      // from its density (a concentration of 0 or text, as "neat", counts as none given)
+      sh.setInput(y, 10, `=IF(IF(ISNUMBER(J${n}),J${n}>0,FALSE),1000*F${n}/J${n},IF(I${n}="","",G${n}/I${n}))`);
     });
     // green metrics, from the first product
     const p = rows.findIndex((r) => r.role === 'Product' && r.mw);
     if (p >= 0 && rows.length) {
       const g = greenRows(rows.length), last = rows.length + 1, pr = p + 2;
-      const col = (c: string) => `${c}$2:${c}$${last}`;
+      // (through the empty row under the table, so a row typed there, or inserted in the table, counts too)
+      const col = (c: string) => `${c}$2:${c}$${last + 1}`;
       const iso = `D${g.isolated + 1}`;
       sh.setInput(g.title, 0, 'Green metrics');
       sh.patchStyle({ r1: g.title, c1: 0, r2: g.title, c2: 0 }, { bold: true });
@@ -76,7 +78,7 @@ export function stoichiometryBook(rows: readonly StoichRow[], mmol = 1): Workboo
       put(g.yield, 'Yield (%)', `=IF(${iso}="","",100*${iso}/(F${pr}*D${pr}))`);
       put(g.eFactor, 'E-factor', `=IF(${iso}="","",(SUMIF(${col('A')},"<>Product",${col('G')})-${iso})/${iso})`);
       put(g.pmi, 'PMI', `=IF(${iso}="","",SUMIF(${col('A')},"<>Product",${col('G')})/${iso})`);
-      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G (for a solution, only the compound in it): add solvents and work-up as rows (with a density and volume) to count them too.');
+      sh.setInput(g.note, 0, 'E-factor and PMI count the masses in column G (for a solution, only the compound in it): to count solvents and work-up too, add them as rows in the table or just under it, with their mass in Mass (mg).');
       sh.patchStyle({ r1: g.yield, c1: 3, r2: g.pmi, c2: 3 }, { numFmt: '0.0' });
       sh.patchStyle({ r1: g.note, c1: 0, r2: g.note, c2: 0 }, { italic: true });
     }

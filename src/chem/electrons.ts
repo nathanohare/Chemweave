@@ -169,14 +169,14 @@ export function roman(n: number): string {
  * metal and its ligands, or null when the label isn't one metal followed by ligands.
  */
 function metalLabelParts(label: string): { z: number; ligands: string[] } | null {
-  const m = /^([A-Z][a-z]?)(.*)$/.exec(label.trim());
+  // L and Ln written before the metal ("LnPd", "L2Pd", "(L)nPd") aren't counted
+  const m = /^([A-Z][a-z]?)(.*)$/.exec(label.trim().replace(/^(?:\(L\)|L)[nₙ\d₀-₉_]*\s*(?=[A-Z])/, ''));
   if (!m) return null;
   const z = elementNumber(m[1]);
   if (z === undefined) return null;
   const ligands: string[] = [];
   const re = /\(([^()]+)\)(\d*)|([A-Z][a-z]?)(\d*)/y;
   let rest = m[2];
-  // L and Ln written before the metal ("LnPd") aren't counted
   while (rest.length) {
     re.lastIndex = 0;
     const t = re.exec(rest);
@@ -249,9 +249,10 @@ export function countElectrons(doc: Doc, atomId: number): MetalCount[] {
     let z = a.z;
     if (a.label) {
       const parts = metalLabelParts(a.label);
-      if (!parts) { notes.get(m)!.push(`The label ${a.label} isn't read for its ligands.`); continue; }
-      z = parts.z;
-      for (const lig of parts.ligands) {
+      // (a label that can't be read is still counted from its drawn bonds, with a note saying so)
+      if (!parts) notes.get(m)!.push(`The label ${a.label} isn't read for its ligands.`);
+      else z = parts.z;
+      for (const lig of parts?.ligands ?? []) {
         const c = labelClass(lig, 1, 0);
         add(m, { name: lig, l: c.l, x: c.x, z: 0, hapto: c.hapto });
         xSoFar.set(m, xSoFar.get(m)! + c.x);
