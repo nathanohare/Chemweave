@@ -43,7 +43,7 @@ import { MORE_TAG, atomMore, bondMore, captionMore, arrowMore, shapeMore, labelS
 import { TABLE_TAG, TABLE_PART_TAG, savedBorders, type TableTag } from './cdxml-table';
 import { bondLayer, crossingBondsCached, listedNearMisses } from '../chem/crossing';
 import { repeatGroups, repeatCount, repeatLabelPlace } from '../chem/polymer';
-import { ellipseAxes, isCircleRing, ringBonds, ringCircle, ringsThroughBond } from '../chem/aromatic';
+import { circleIn, ellipseAxes, isCircleRing, ringBonds, ringCircle, ringsThroughBond } from '../chem/aromatic';
 import { newmanForFile } from '../design/newman';
 import { bondWidths, docMapLook, labelBold } from '../style';
 import { isMapNumber } from '../render/atom-marks';
@@ -180,11 +180,12 @@ class CdxmlWriter {
   write(): string {
     const doc = this.doc;
     const src = doc.source;
-    if (src) this.openSource();
-    else this.newDocument();
+    // (worked out first: opening the file may take an id, for a page the file hasn't got; review F540)
     let maxId = src?.maxId ?? 0;
     for (const m of [doc.atoms, doc.bonds, doc.captions, doc.arrows, doc.shapes] as Map<number, Entity>[]) for (const id of m.keys()) if (id > maxId) maxId = id;
     this.nextId = maxId + 1;
+    if (src) this.openSource();
+    else this.newDocument();
 
     if (src) {
       for (const b of src.orig.values()) {
@@ -473,6 +474,23 @@ class CdxmlWriter {
   }
 
   /**
+   * The element a shape was read from when it was another kind than `name` (a design shape's
+   * <group> now written as a curve or ring fill), taken out of the file, so that `to` is found as
+   * the shape from now on (review F104). `to` takes its place unless `inPlace` is false.
+   */
+  private dropOtherSource(kind: Kind, id: number, name: string, to: Element, inPlace = true): void {
+    const prev = this.source(kind, id, SHAPE_ELEMENTS);
+    if (!prev || prev.nodeName === name) return;
+    if (inPlace && prev.parentNode) this.replaceSource(kind, id, prev, to);
+    else {
+      prev.parentNode?.removeChild(prev);
+      const o = this.doc.source?.ord.get(kind + id);
+      if (o !== undefined && this.all[o] === prev) this.all[o] = to;
+    }
+    this.changed = true;
+  }
+
+  /**
    * Nothing drawn has changed since the file was read: every entity is still the one read, and
    * none has gone. What ChemDraw said then (its layers, its crossing lists, its page) still holds,
    * even where this program would work out something else.
@@ -535,9 +553,13 @@ class CdxmlWriter {
   /** Lines are stored head then tail; arcs head then centre. */
   private updateLegacyArrow(arrow: Element, r: Arrow): void {
     for (const g of this.legacyOf(arrow)) {
-      if (g.getAttribute('GraphicType') === 'Arc') {
-        if (r.sweep) g.setAttribute('BoundingBox', `${pt(r.head)} ${pt(arcCenter(r.tail, r.head, r.sweep).center)}`);
-      } else g.setAttribute('BoundingBox', `${pt(r.head)} ${pt(r.tail)}`);
+      if (g.getAttribute('GraphicType') === 'Arc' && r.sweep) g.setAttribute('BoundingBox', `${pt(r.head)} ${pt(arcCenter(r.tail, r.head, r.sweep).center)}`);
+      else {
+        // an arc made straight: its older copy becomes a line too (CDX spec, Graphic: a Line's
+        // box is its two ends; AngularSize is only an Arc's; review F541)
+        if (g.getAttribute('GraphicType') === 'Arc') { g.setAttribute('GraphicType', 'Line'); g.removeAttribute('AngularSize'); }
+        g.setAttribute('BoundingBox', `${pt(r.head)} ${pt(r.tail)}`);
+      }
     }
   }
 
@@ -1332,8 +1354,26 @@ class CdxmlWriter {
         if (old) {
           have.delete(old);
           const [x, y] = pts(old.getAttribute('Center3D'));
-          if (Math.abs(x - c.x) < 0.01 && Math.abs(y - c.y) < 0.01) continue;
           const [mx, my] = pts(old.getAttribute('MajorAxisEnd3D')), [nx, ny] = pts(old.getAttribute('MinorAxisEnd3D'));
+          const near = (p: Vec, q: Vec) => Math.abs(p.x - q.x) < 0.01 && Math.abs(p.y - q.y) < 0.01;
+          // the ring's size or shape changed (scaled, or flattened into perspective): the circle is
+          // drawn again at the size it has now (moved only, it keeps the size ChemDraw gave it). Told
+          // from the ring as read where it was read, else from the circle's own axes (review F103)
+          const wasAtoms = ring.map((id) => this.orig<Atom>('a', id));
+          const was = wasAtoms.every(Boolean) ? circleIn(wasAtoms as Atom[]) : null;
+          const wasAx = was && (was.ellipse ? ellipseAxes(was.ellipse) : { major: { x: was.radius, y: 0 }, minor: { x: 0, y: was.radius } });
+          const len = (v: Vec) => Math.hypot(v.x, v.y);
+          const resized = wasAx ? !near(wasAx.major, ax.major) || !near(wasAx.minor, ax.minor)
+            : !Number.isFinite(mx) || !Number.isFinite(nx) || Math.abs(Math.hypot(mx - x, my - y) - len(ax.major)) > 0.01 || Math.abs(Math.hypot(nx - x, ny - y) - len(ax.minor)) > 0.01;
+          if (resized) {
+            old.setAttribute('Center3D', `${f2(c.x)} ${f2(c.y)} 0`);
+            old.setAttribute('MajorAxisEnd3D', `${f2(c.x + ax.major.x)} ${f2(c.y + ax.major.y)} 0`);
+            old.setAttribute('MinorAxisEnd3D', `${f2(c.x + ax.minor.x)} ${f2(c.y + ax.minor.y)} 0`);
+            old.setAttribute('BoundingBox', `${f2(c.x + ax.major.x)} ${f2(c.y + ax.major.y)} ${f2(c.x)} ${f2(c.y)}`);
+            this.changed = true;
+            continue;
+          }
+          if (Math.abs(x - c.x) < 0.01 && Math.abs(y - c.y) < 0.01) continue;
           const dx = c.x - x, dy = c.y - y;
           old.setAttribute('Center3D', `${f2(c.x)} ${f2(c.y)} 0`);
           if (Number.isFinite(mx)) old.setAttribute('MajorAxisEnd3D', `${f2(mx + dx)} ${f2(my + dy)} 0`);
@@ -1355,6 +1395,8 @@ class CdxmlWriter {
 
   /** ChemDraw paints a fragment's graphics in file order, so a charge sign set inside a ring goes after the ring's circle. */
   private raiseSymbols(): void {
+    // (a file not changed here keeps ChemDraw's own order, and is saved as it was; review F542)
+    if (this.unchangedSinceRead()) return;
     for (const f of new Set(this.fragOfAtom.values())) {
       const gs = kids(f).filter((g) => g.nodeName === 'graphic');
       const last = gs.map((g) => ['Oval', 'Orbital'].includes(g.getAttribute('GraphicType') ?? '')).lastIndexOf(true);
@@ -1936,6 +1978,7 @@ class CdxmlWriter {
     }
     if (e && o && sameExcept(s, o, ['poly', 'x1', 'y1', 'x2', 'y2']) && e.parentElement === frag) return true;
     const g = e ?? this.el('ColoredMolecularArea', { id: s.id });
+    if (!e) this.dropOtherSource('s', s.id, 'ColoredMolecularArea', g, false);
     this.set(g, 'bgcolor', this.colorIndex(fillInk(s), true));
     this.set(g, 'BasisObjects', ids.join(' '));
     if (g.parentElement !== frag) frag!.appendChild(g);
@@ -1983,6 +2026,7 @@ class CdxmlWriter {
     const lw = this.doc.style.lineWidth;
     const kinds = (open ? 0 : 1) | (s.dashed ? 2 : 0) | (s.bold ? 4 : 0);
     const c = e ?? this.el('curve', { id: s.id });
+    if (!e) this.dropOtherSource('s', s.id, 'curve', c);
     this.set(c, 'BoundingBox', box({ x1, y1, x2: x1 + w, y2: y1 + h }));
     this.set(c, 'color', this.colorAttr(s.color));
     this.set(c, 'CurvePoints', knots.map((p) => `${f2(p.x)} ${f2(p.y)}`).join(' '));
@@ -2940,7 +2984,8 @@ class CdxmlWriter {
     };
     for (const a of doc.atoms.values()) put('a', a.id, ['n'], a.piece);
     for (const c of doc.captions.values()) put('c', c.id, ['t'], c.piece);
-    for (const r of doc.arrows.values()) put('r', r.id, ['arrow', 'graphic'], r.piece);
+    // (curved and elbow arrows are written as curves; review F105)
+    for (const r of doc.arrows.values()) put('r', r.id, ['arrow', 'graphic', 'curve'], r.piece);
     for (const s of doc.shapes.values()) put('s', s.id, SHAPE_ELEMENTS, s.piece);
     // the two halves of a bracket pair drawn with the bracket tool (a click on one selects both)
     for (const s of doc.shapes.values()) if (s.kind === 'bracket') put('s', s.id, ['graphic'], s.bracketPair, BRACKET_PAIR_TAG, 'bracketPair');

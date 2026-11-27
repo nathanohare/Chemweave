@@ -454,6 +454,35 @@ function charsToUtf8(text: string, offsets: number[]): number[] {
 
 // ---------------------------------------------------------------- numbers
 
+// Hex text for pictures and other data kept as bytes, a table look-up a byte at a time and joined
+// in pieces (a picture inside a ChemDraw file can be megabytes; review F537).
+const HEX_PAIRS = Array.from({ length: 256 }, (_, x) => x.toString(16).padStart(2, '0').toUpperCase());
+const HEX_DIGIT = (() => {
+  const t = new Int8Array(128).fill(-1);
+  for (let i = 0; i < 10; i++) t[48 + i] = i;
+  for (let i = 0; i < 6; i++) { t[65 + i] = 10 + i; t[97 + i] = 10 + i; }
+  return t;
+})();
+function hexText(d: Uint8Array): string {
+  const parts: string[] = [];
+  for (let i = 0; i < d.length; i += 8192) {
+    let s = '';
+    for (let j = i, end = Math.min(d.length, i + 8192); j < end; j++) s += HEX_PAIRS[d[j]];
+    parts.push(s);
+  }
+  return parts.join('');
+}
+/** Bytes from hex text, two digits each, as parseInt reads a pair (a bad first digit gives 0, a bad second the first alone). */
+function hexBytes(v: string): Uint8Array {
+  const out = new Uint8Array(v.length >> 1);
+  const digit = (c: number) => (c < 128 ? HEX_DIGIT[c] : -1);
+  for (let i = 0; i < out.length; i++) {
+    const hi = digit(v.charCodeAt(2 * i)), lo = digit(v.charCodeAt(2 * i + 1));
+    out[i] = hi < 0 ? 0 : lo < 0 ? hi : hi * 16 + lo;
+  }
+  return out;
+}
+
 const nums = (v: string) => v.trim().split(/[\s,]+/).filter(Boolean).map(Number);
 const fix = (x: number) => Math.round(x * 65536);
 /** A number as CDXML writes it: up to two decimals, no trailing zeros. */
@@ -463,9 +492,14 @@ const fmt = (x: number) => {
 };
 
 class Bytes {
-  private buf = new Uint8Array(1 << 16);
-  private view = new DataView(this.buf.buffer);
+  private buf: Uint8Array;
+  private view: DataView;
   len = 0;
+  /** `size` the room to start with: small for one value, which is most often a few bytes (review F536). */
+  constructor(size = 64) {
+    this.buf = new Uint8Array(size);
+    this.view = new DataView(this.buf.buffer);
+  }
   private room(n: number): void {
     if (this.len + n <= this.buf.length) return;
     let size = this.buf.length * 2;
@@ -489,7 +523,8 @@ class Bytes {
 /** The data of one property, from its CDXML attribute value; null when it cannot be written. */
 function encodeValue(p: Prop, v: string): Uint8Array | null {
   const b = new Bytes();
-  const n = nums(v);
+  // (numbers only for the kinds made of them: a picture's hex text can be millions long)
+  const n = p.kind === 'hex' || p.kind === 'str' ? [] : nums(v);
   const int = (x: number) => Math.round(x);
   const named = p.values?.[v];
   switch (p.kind) {
@@ -522,7 +557,7 @@ function encodeValue(p: Prop, v: string): Uint8Array | null {
     case 'curvepts': b.u16(n.length >> 1); for (let i = 0; i + 1 < n.length; i += 2) { b.i32(fix(n[i + 1])); b.i32(fix(n[i])); } break;
     case 'bool': if (v !== 'yes' && v !== 'no') return null; b.u8(v === 'yes' ? 1 : 0); break;
     case 'implied': if (v !== 'yes') return null; break;
-    case 'hex': for (let i = 0; i + 1 < v.length; i += 2) b.u8(parseInt(v.slice(i, i + 2), 16)); break;
+    case 'hex': b.bytes(hexBytes(v)); break;
     // a count (negative for a NOT list), then the atomic numbers, or the names each as a text
     case 'elemlist': case 'genlist': {
       const words = v.trim().split(/\s+/).filter(Boolean);
@@ -679,7 +714,7 @@ function writeObject(out: Bytes, e: Element): void {
 export function cdxmlToCdx(xml: string): Uint8Array {
   const root = new DOMParser().parseFromString(withoutDoctype(xml), 'application/xml').documentElement;
   if (!root || root.nodeName !== 'CDXML') throw new Error('not a CDXML document');
-  const out = new Bytes();
+  const out = new Bytes(1 << 16);
   out.bytes(HEADER);
   // the document's own properties follow the header directly
   const styles = ['LabelFont', 'LabelSize', 'LabelFace', 'CaptionFont', 'CaptionSize', 'CaptionFace'];
@@ -788,7 +823,7 @@ function decodeValue(p: Prop, d: Uint8Array): string | null {
     case 'bool': return len ? (d[0] ? 'yes' : 'no') : null;
     // present means yes, unless ChemDraw wrote a yes/no byte
     case 'implied': return len && !d[0] ? 'no' : 'yes';
-    case 'hex': return Array.from(d, (x) => x.toString(16).padStart(2, '0').toUpperCase()).join('');
+    case 'hex': return hexText(d);
     case 'elemlist': case 'genlist': {
       if (len < 2) return null;
       const count = v.getInt16(0, true), items: string[] = [];

@@ -82,6 +82,9 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
   const xml = new DOMParser().parseFromString(withoutDoctype(text), 'application/xml');
   const t1 = performance.now();
   const root = xml.documentElement;
+  // (a file that isn't well-formed XML, one cut off by a failed copy: Chromium keeps the part read
+  // before the error with a <parsererror> in it, which would open as part of the drawing; review F106)
+  if (xml.getElementsByTagName('parsererror').length) throw new Error(text.includes('<CDXML') ? "This CDXML file is damaged and can't be read." : 'This does not look like a CDXML file.');
   if (!root || root.nodeName !== 'CDXML') throw new Error('This does not look like a CDXML file.');
   decodeTags(root);
   hoistOwnTags(root);
@@ -450,7 +453,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
         if (fontName && !isSymbolFont(fontName) && fontName.toLowerCase() !== (st.labelFont || 'Arial').toLowerCase()) atom.font = fontName;
         let txt = runs.map((r) => r.text).join('');
         // a charge the label doesn't show (no sign, and no circled charge beside it) isn't shown
-        if (atom.charge && !/[+−]|-d*$/.test(txt)) atom.hideCharge = true;
+        if (atom.charge && !/[+−]|-\d*$/.test(txt)) atom.hideCharge = true;
         // the charge is part of the label text ("N+", "O2−"); it is drawn from the charge instead
         txt = withoutCharge(txt, atom.charge);
         // the label's inner fragment as ChemDraw has it (written back while the label is unchanged)
@@ -664,7 +667,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     // ChemDraw stores where each line starts (as UTF-8 byte offsets). Without a wrap width those
     // are all line breaks; in a text box the lines wrap by themselves.
     const ls = t.getAttribute('LineStarts');
-    if (ls && wrap === undefined) applyLineEnds(runs, ls.trim().split(/\s+/).map(Number).slice(0, -1));
+    // (the whole list, its last entry the text's length, which tells bytes from characters; review F544)
+    if (ls && wrap === undefined) applyLineEnds(runs, ls.trim().split(/\s+/).map(Number));
     // (the line ends count the text as stored, so Symbol-font text is turned into Greek letters afterwards)
     for (const r of runs) {
       if (isSymbolFont(r.font)) { r.text = fromSymbolFont(r.text); delete r.font; if (symbolOnlyByChoice(r.text)) r.symbolFont = true; }
@@ -781,7 +785,8 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
     if (common !== st.captionSize) table.size = common;
     const tagEl = kids(tbl).find((k) => k.nodeName === 'objecttag' && k.getAttribute('Name') === TABLE_TAG);
     const tag = parseTableTag(tagEl?.getAttribute('Value') ?? null);
-    table = applyTableTag(table, tag, linesFromBorders(grid.rows.map((row) => row.map((c) => c.borders))));
+    const cellBorders = grid.rows.map((row) => row.map((c) => c.borders));
+    table = applyTableTag(table, tag, linesFromBorders(cellBorders), cellBorders);
     // with the tag, cells line up as their columns do unless they were set on their own
     if (tag) table.rows = table.rows.map((row, r) => row.map((cell, c) => {
       const own = tag.cellAlign?.some(([rr, cc]) => rr === r && cc === c);
@@ -1193,9 +1198,15 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
 
   /** ChemDraw objects not shown here, kept with the things their ids name (see Doc.kept). */
   const keepLater: Element[] = [];
+  // each element by its id (the last of an id), made once when first needed, not once per object
+  // kept (review F545)
+  let byXmlIdMap: Map<string, Element> | null = null;
+  const xmlById = (): Map<string, Element> => {
+    if (!byXmlIdMap) { byXmlIdMap = new Map(); for (const e of all) { const id = e.getAttribute('id'); if (id) byXmlIdMap.set(id, e); } }
+    return byXmlIdMap;
+  };
   const keepXml = (el: Element) => {
-    const byId = new Map<string, Element>();
-    for (const e of all) { const id = e.getAttribute('id'); if (id) byId.set(id, e); }
+    const byId = xmlById();
     const refs: Record<string, string> = {};
     const scan = (e: Element) => {
       for (const at of Array.from(e.attributes)) {
@@ -1240,8 +1251,7 @@ export function readCdxml(text: string): { doc: Doc; stats: ReadStats; fileIds: 
   };
   const readRepeats = () => {
     if (pendingRepeats.length) {
-      const byXmlId = new Map<string, Element>();
-      for (const e of all) { const id = e.getAttribute('id'); if (id) byXmlId.set(id, e); }
+      const byXmlId = xmlById();
       for (const g of pendingRepeats) {
         const usage = g.getAttribute('BracketUsage');
         if (usage !== 'SRU' && usage !== 'MultipleGroup') { keepXml(g); continue; }
@@ -1781,7 +1791,11 @@ function readSteps(all: Element[], refs: () => Map<Element, string>, doc: Doc): 
   for (const [id, n] of num) { const a = doc.atoms.get(id); if (a) a.mapNo = n; }
 }
 
-/** Insert line breaks into styled runs at the given UTF-8 byte offsets. */
+/**
+ * Insert line breaks into styled runs at the given UTF-8 byte offsets: ChemDraw's LineStarts, whose
+ * last entry is the length of the whole text (CDXML spec, LineStarts), which is what tells offsets
+ * counted in characters (older ChemDraw) from bytes.
+ */
 export function applyLineEnds(runs: TextRun[], ends: number[]): void {
   const want = new Set(ends);
   const chars: { ch: string; run: number }[] = [];
@@ -1791,7 +1805,8 @@ export function applyLineEnds(runs: TextRun[], ends: number[]): void {
   // ChemDraw counts LineStarts in bytes of UTF-8; some older files (ChemDraw 21) count characters
   const byteLen = chars.reduce((n, c) => n + size(c.ch), 0), last = maxOf(ends);
   const inChars = last === chars.length && last !== byteLen;
-  if (!inChars && last > byteLen) return;
+  // (a line that would start past the text's end: offsets that don't fit this text)
+  if (!inChars && maxOf(ends.filter((e) => e < last)) > byteLen) return;
   const hasNewlines = chars.some((c) => c.ch === '\n');
   const word = /[\p{L}\p{N}]/u;
   let at = 0;
@@ -1902,7 +1917,8 @@ export function takeFrameTexts(doc: Doc, s: Shape, was: string[]): boolean {
   for (const t of was) { const i = left.indexOf(t); if (i >= 0) left.splice(i, 1); else removed.push(t); }
   // the same texts in other places (Left and Right swapped round): not something the settings can
   // follow, so the frame is marked rather than drawn the old way round (review F1c-R09)
-  if (!removed.length) return was.length !== now.length || was.every((t, i) => t === now[i]);
+  // (a text added in ChemDraw, with every old one still there, doesn't match either; review F546)
+  if (!removed.length) return was.length === now.length && was.every((t, i) => t === now[i]);
   const sorted = (v: string[]) => JSON.stringify([...v].sort());
   let pairs: [string, string][];
   if (removed.length === 1 && left.length === 1) pairs = [[removed[0], left[0]]];

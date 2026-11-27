@@ -139,21 +139,36 @@ export function linesFromBorders(b: Borders[][]): { lines: TableData['lines']; h
   }
   if (!any) return { lines: 'none', head: n > 1 ? 1 : 0 };
   if (inner >= Math.max(1, (n * (m - 1)) / 2)) return { lines: 'grid', head: n > 1 ? 1 : 0 };
-  // the first row most of whose cells have a rule under them (or over the next row)
-  for (let r = 0; r < n - 1; r++) {
-    let k = 0;
-    for (let c = 0; c < m; c++) if (b[r][c].bottom || b[r + 1][c].top) k++;
-    if (k > m / 2) return { lines: 'acs', head: r + 1 };
-  }
+  // one column has no lines inside it across, so it is boxed when each cell has its sides and a
+  // rule runs between every two rows (review F539)
+  if (m === 1 && b.every((row) => row[0].left && row[0].right) && b.every((row, r) => r === n - 1 || row[0].bottom || b[r + 1][0].top)) return { lines: 'grid', head: n > 1 ? 1 : 0 };
+  // the first row with a rule under every cell (or over the next row's); else the first with a rule
+  // under most: a heading joined over most of the columns has a rule of its own under it, above
+  // the headings' end (review F102)
+  const ruled = (r: number) => { let k = 0; for (let c = 0; c < m; c++) if (b[r][c].bottom || b[r + 1][c].top) k++; return k; };
+  for (let r = 0; r < n - 1; r++) if (ruled(r) === m) return { lines: 'acs', head: r + 1 };
+  for (let r = 0; r < n - 1; r++) if (ruled(r) > m / 2) return { lines: 'acs', head: r + 1 };
   return { lines: 'acs', head: 0 };
 }
 
-/** Put what a tag kept back into a table read from a file (where it still fits the table). */
-export function applyTableTag(t: TableData, tag: TableTag | null, fromBorders: { lines: TableData['lines']; head: number }): TableData {
+/** Is there a rule under every cell of row r (or over every cell of the row below)? */
+function ruledUnder(b: Borders[][], r: number): boolean {
+  const row = b[r], next = b[r + 1];
+  return !!row && !!next && row.every((x, c) => x.bottom || next[c]?.top);
+}
+
+/**
+ * Put what a tag kept back into a table read from a file (where it still fits the table). `borders`,
+ * the cells' borders as read, lets the tag's heading rows count wherever a rule runs under them.
+ */
+export function applyTableTag(t: TableData, tag: TableTag | null, fromBorders: { lines: TableData['lines']; head: number }, borders?: Borders[][]): TableData {
   const out: TableData = { ...t, lines: fromBorders.lines, head: fromBorders.head };
   if (!tag || tag.v !== 1) return out;
-  // the tag's heading rows count when the borders still show them (ChemDraw may have changed the lines)
-  if (tag.lines === fromBorders.lines && (tag.lines !== 'acs' || tag.head === fromBorders.head || (fromBorders.head === 0 && tag.head >= t.rows.length))) out.head = Math.min(tag.head, t.rows.length);
+  // the tag's heading rows count when the borders still show them (ChemDraw may have changed the
+  // lines): a rule across the table under the last of them (a heading joined across the whole
+  // table has one of its own above it; review F102)
+  const shown = tag.head === fromBorders.head || (fromBorders.head === 0 && tag.head >= t.rows.length) || (!!borders && tag.head > 0 && ruledUnder(borders, tag.head - 1));
+  if (tag.lines === fromBorders.lines && (tag.lines !== 'acs' || shown)) out.head = Math.min(tag.head, t.rows.length);
   if (Array.isArray(tag.align) && tag.align.length === t.cols.length) out.align = tag.align;
   if (typeof tag.lineW === 'number' && tag.lineW > 0 && tag.lineW < 20) out.lineW = tag.lineW;
   if (typeof tag.size === 'number' && tag.size > 0) out.size = tag.size;

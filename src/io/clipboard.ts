@@ -14,13 +14,13 @@
 // page's clipboard gets a PNG (and the drawing in a web format where the browser takes one),
 // and the drawing itself is kept in memory: pasting that same picture back here gives the drawing.
 
-import { remapFrames, remapStep, type IdMaps } from './remap-refs';
+import { remapField, remapFrames, remapStep, type IdMaps } from './remap-refs';
 import { soundContents, soundStyle } from './clip-check';
 import { freshGroups } from '../editor/groups';
 import { frameMembers } from '../editor/frames';
 import { pastedTable, tableHtml, tableTsv, type PastedRows } from './table-clip';
 import { invoke, isTauri } from '@tauri-apps/api/core';
-import { Doc, applyBase, type TableData } from '../model';
+import { Doc, applyBase, type MorphStep, type TableData } from '../model';
 import type { Vec } from '../geom';
 import type { Selection } from '../editor/editor';
 import { readCdxml } from './cdxml';
@@ -96,6 +96,8 @@ export function extractDrawing(doc: Doc, sel: Selection | null): Doc {
       if (!a) continue;
       const copy = structuredClone(a);
       if (copy.multi) copy.multi = copy.multi.filter((m) => atoms.has(m));
+      // (a variable attachment's ring, copied only with its ring; review F108)
+      if (copy.ringOf) { copy.ringOf = copy.ringOf.filter((m) => atoms.has(m)); if (copy.ringOf.length < 3) delete copy.ringOf; }
       out.addAtom(a.x, a.y, a.z, copy);
       seen(id);
     }
@@ -191,6 +193,11 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
         rest.multi = rest.multi.map((m) => ids.get(m)).filter((m): m is number => m !== undefined);
         if (rest.multi.length < 2) continue;
       }
+      // a variable attachment's ring is the copy of its ring (review F108)
+      if (rest.ringOf) {
+        rest.ringOf = rest.ringOf.map((m) => ids.get(m)).filter((m): m is number => m !== undefined);
+        if (rest.ringOf.length < 3) delete rest.ringOf;
+      }
       const n = doc.addAtom(a.x + dx, a.y + dy, a.z, { ...rest, x: a.x + dx, y: a.y + dy });
       ids.set(id, n.id);
       sel.atoms.add(n.id);
@@ -248,13 +255,28 @@ export function insertDrawing(doc: Doc, src: Doc, center: Vec, label = 'Paste'):
         }
         if (!rest.pin.tail && !rest.pin.head) rest.pin = undefined;
       }
+      // (its 1,2-shifts and sliding lines too; kept while any of them is left: review F552)
       if (rest.morph) {
-        const pairs = rest.morph.pairs?.map(([a, b]) => [ids.get(a), ids.get(b)]).filter(([a, b]) => a !== undefined && b !== undefined) as [number, number][] | undefined;
-        rest.morph = pairs?.length ? { pairs, exact: rest.morph.exact } : undefined;
+        const m = remapField('r', 'morph', rest.morph, (k, id) => (k === 'a' ? ids.get(id) : undefined), false) as MorphStep;
+        for (const k of ['pairs', 'shifts', 'slides'] as const) if (!m[k]?.length) delete m[k];
+        rest.morph = m.pairs || m.shifts || m.slides ? m : undefined;
       }
+      // a connector's glued ends stick to the copies of their shapes, or are let go (review F109)
+      for (const end of ['from', 'to'] as const) {
+        const g = rest[end];
+        if (!g) continue;
+        const shape = maps.shapes.get(g.shape);
+        if (shape === undefined) delete rest[end]; else rest[end] = { ...g, shape };
+      }
+      // (a reagent arrow's main arrow, once every arrow is in, below)
+      delete rest.reagentFor;
       const na = doc.addArrow({ ...rest, tail: { x: r.tail.x + dx, y: r.tail.y + dy }, head: { x: r.head.x + dx, y: r.head.y + dy } });
       maps.arrows.set(rid, na.id);
       sel.arrows.add(na.id);
+    }
+    for (const r of src.arrows.values()) {
+      const to = r.reagentFor === undefined ? undefined : maps.arrows.get(r.reagentFor);
+      if (to !== undefined) doc.updateArrow(maps.arrows.get(r.id)!, { reagentFor: to });
     }
     remapFrames(doc, maps);
     // a pasted group is a new group, not part of the one it was copied from
@@ -809,7 +831,8 @@ export type Pasted =
 /** Text that could be a structure (a molfile, one word that could be SMILES, or a CXSMILES with its |…| extras). */
 export function looksLikeChemistry(text: string): boolean {
   const t = text.trim();
-  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
+  // (a web address is never a structure: SMILES has no "://", so a picture copied with its address beside it stays a picture; review F553)
+  return t.includes('M  END') || isReactionSmiles(t) || !!cxSmiles(t) || (!!t && !/\s/.test(t) && !t.includes('://') && /^[A-Za-z0-9@+\-[\]()=#$%/\\.:*~]+$/.test(t));
 }
 
 /** A Windows bitmap from the clipboard (no file header) as a .bmp file a web page can show. */
@@ -909,8 +932,9 @@ export function pasteHoldsDrawing(e: ClipboardEvent): boolean {
 export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
   const text = e.clipboardData?.getData('text/plain') ?? '';
   if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
-  if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
+  // (a table copied here first: one cell's word would otherwise pass for a structure; review F553)
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
+  if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
   const table = pastedTable(e.clipboardData?.getData('text/html'), text);
   if (table) return { kind: 'table', rows: table };
   const file = [...(e.clipboardData?.files ?? [])].find((f) => f.type.startsWith('image/'));
@@ -923,8 +947,9 @@ export async function readPasteEvent(e: ClipboardEvent): Promise<Pasted> {
 export async function readWebClipboard(): Promise<Pasted> {
   const text = await navigator.clipboard.readText().catch(() => '');
   if (ownSmiles(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
-  if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
+  // (a table copied here first: one cell's word would otherwise pass for a structure; review F553)
   if (ownTable(text)) return { kind: 'drawing', doc: ownDrawing(lastCopy!) };
+  if (looksLikeCdxml(text) || looksLikeChemistry(text)) return fromText(text);
   // a picture (when the browser lets the page see it)
   const items = await navigator.clipboard.read?.().catch(() => []) ?? [];
   // our drawing, where the browser kept a format of our own: whole first, then as CDXML
