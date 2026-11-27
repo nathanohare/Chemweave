@@ -61,14 +61,16 @@ export function charFromCode(text: string): string | null {
  * finds →); names that start with the first word come first.
  */
 export function searchSymbols(query: string): SymbolInfo[] {
-  const q = query.trim().toLowerCase();
+  const raw = query.trim();
+  const q = raw.toLowerCase();
   if (!q) return [];
-  const exact = [...q].length === 1 ? q : null;
+  // (a single character as typed, in its own case: Å is not å, nor Ж ж)
+  const exact = [...raw].length === 1 ? raw : null;
   const code = charFromCode(q);
   const words = q.split(/\s+/);
   const found: { s: SymbolInfo; rank: number }[] = [];
   for (const s of ALL_SYMBOLS) {
-    if (s.ch === exact || s.ch.toLowerCase() === exact || s.ch === code) { found.push({ s, rank: 0 }); continue; }
+    if (s.ch === exact || (exact !== null && s.ch.toLowerCase() === exact.toLowerCase()) || s.ch === code) { found.push({ s, rank: 0 }); continue; }
     const names = s.name.split(' ');
     if (!words.every((w) => names.some((n) => n.startsWith(w)))) continue;
     found.push({ s, rank: names[0].startsWith(words[0]) ? 1 : names.includes(words[0]) ? 2 : 3 });

@@ -177,6 +177,9 @@ export interface WordLists { english: string; chemistry: string; lab: string }
 
 const lines = (text: string) => text.split(/\r?\n/).map((l) => l.trim()).filter((l) => l && !l.startsWith('#'));
 
+/** The form a word is looked up in (and stored in the person's lists): without apostrophes at its ends, a curly apostrophe made straight, in lower case. */
+const lookupKey = (word: string): string => word.replace(/^['’]+|['’]+$/g, '').replace(/’/g, "'").toLowerCase();
+
 export class Speller {
   /** English words, by how common they are (0 is the most common). */
   private english = new Map<string, number>();
@@ -195,12 +198,12 @@ export class Speller {
   }
 
   setPersonal(words: Iterable<string>): void {
-    this.personal = new Set([...words].map((w) => w.toLowerCase()));
+    this.personal = new Set([...words].map(lookupKey));
     this.cache.clear();
   }
 
   ignore(word: string): void {
-    this.ignored.add(word.toLowerCase());
+    this.ignored.add(lookupKey(word));
     this.cache.clear();
   }
 
@@ -214,7 +217,7 @@ export class Speller {
 
   /** Is the word known (capitals don't matter)? */
   known(word: string): boolean {
-    const w = word.replace(/^['’]+|['’]+$/g, '').replace(/’/g, "'").toLowerCase();
+    const w = lookupKey(word);
     let hit = this.cache.get(w);
     if (hit === undefined) {
       hit = this.listed(w) || ['s', 'es'].some((s) => w.endsWith(s) && this.listed(w.slice(0, -s.length))) || isSystematic(w);
@@ -272,6 +275,9 @@ export class Speller {
 
 let loading: Promise<Speller | null> | null = null;
 
+/** How long after the word lists could not be read the next check asks for them again. */
+export const SPELLER_RETRY_MS = 30000;
+
 /** The speller, with its word lists read the first time it is needed (null if they can't be read). */
 export function loadSpeller(base = './dict/'): Promise<Speller | null> {
   loading ??= (async () => {
@@ -288,5 +294,8 @@ export function loadSpeller(base = './dict/'): Promise<Speller | null> {
       return null;
     }
   })();
-  return loading;
+  // a failure is not kept: the next call tries again (a network that was down a moment ago may be back)
+  const attempt = loading;
+  void attempt.then((got) => { if (!got && loading === attempt) loading = null; });
+  return attempt;
 }

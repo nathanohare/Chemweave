@@ -326,7 +326,9 @@ export function nameFormats(text: string, end: number, opts: { stereo: boolean; 
     }
   }
   if (opts.numbers) {
-    const m = key === ')' ? NUMBER_IN_BRACKETS.exec(upto) : NUMBER_AFTER_WORD.exec(upto);
+    // ("compound 4-nitrophenol", "compound 2.5": a hyphen, dash or slash goes on into a name, and a dot before a digit into a number: the 4 is a locant there)
+    const goesOn = key === '-' || key === '–' || key === '/' || (key === '.' && /\d/.test(text[end + 1] ?? ''));
+    const m = key === ')' ? NUMBER_IN_BRACKETS.exec(upto) : goesOn ? null : NUMBER_AFTER_WORD.exec(upto);
     if (m) out.push({ start: end - m[1].length, end, bold: true });
   }
   return out;

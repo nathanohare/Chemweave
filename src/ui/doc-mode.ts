@@ -26,9 +26,9 @@ import { offsetAt, caretPos, selectionRects, wordAt } from '../text/layout';
 import type { Rect } from '../geom';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
 import { pastedTable, tableHtml, tableTsv } from '../io/table-clip';
-import { afterTyping, typingPrefs, setTypingPrefs } from '../text/typing';
+import { afterTyping, leftAsWritten, typingPrefs, setTypingPrefs } from '../text/typing';
 import { findIssues, type CharLook, type Issue } from '../text/chemtext';
-import { loadSpeller, type Speller } from '../text/spelling';
+import { loadSpeller, SPELLER_RETRY_MS, type Speller } from '../text/spelling';
 import { BULLET_LIBRARY, LIST_SCHEMES, fitParas, paraAt, paraCount, paraRange, splitParagraphs } from '../text/paragraphs';
 import { DocView, ACTUAL, HIDE_SPACE_CURSOR, SHOW_SPACE_CURSOR, type Overlay } from './doc-view';
 import {
@@ -552,7 +552,7 @@ export class DocumentMode {
       speller: () => this.speller,
       checks: () => this.checksAll(),
       addWord: (w) => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, w] }),
-      ignoreWord: (w) => { ignored.add(w.toLowerCase()); this.speller?.ignore(w); this.checkCache.clear(); this.checked = null; this.redraw(); },
+      ignoreWord: (w) => { ignored.add(w.toLowerCase()); leftAsWritten.add(w.toLowerCase()); this.speller?.ignore(w); this.checkCache.clear(); this.checked = null; this.redraw(); },
       show: (a, b) => {
         const f = this.file;
         if (!f) return;
@@ -1683,7 +1683,12 @@ export class DocumentMode {
     // the word lists are read the first time there is text to check, not when the app starts
     if (!sp && typingPrefs.spelling && !this.spellerAsked) {
       this.spellerAsked = true;
-      void loadSpeller().then((got) => { this.speller = got; this.checked = null; this.redraw(); });
+      void loadSpeller().then((got) => {
+        this.speller = got;
+        // (word lists that could not be read: asked for again a little later)
+        if (!got) setTimeout(() => { this.spellerAsked = false; }, SPELLER_RETRY_MS);
+        this.checked = null; this.redraw();
+      });
     }
     if (sp && this.dictSeen !== typingPrefs.dictionary) {
       sp.setPersonal(typingPrefs.dictionary);
@@ -1755,7 +1760,7 @@ export class DocumentMode {
     const cmd = (label: string, name: string, title?: string) => { items.push(command(label, name, title)); };
     if (issue) {
       item(`${issue.message}: Change to ${issue.fixed}`, () => ed.fix(issue.edits, 'fix'));
-      item('Leave as Written', () => { ignored.add(ed.text.slice(issue.start, issue.end).toLowerCase()); this.checkCache.clear(); this.checked = null; this.redraw(); });
+      item('Leave as Written', () => { ignored.add(ed.text.slice(issue.start, issue.end).toLowerCase()); leftAsWritten.add(ed.text.slice(issue.start, issue.end).toLowerCase()); this.checkCache.clear(); this.checked = null; this.redraw(); });
     }
     if (word) {
       if (issue) line();
@@ -1766,7 +1771,7 @@ export class DocumentMode {
       if (!sugg.length) item('No Suggestions', null);
       line();
       item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until Chemweave is closed');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); leftAsWritten.add(text.toLowerCase()); this.speller?.ignore(text); this.checkCache.clear(); this.checked = null; this.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     // a link here
     const linkHere = rt.sliceRuns(ed.t.runs, offset, offset + 1)[0]?.link ?? (offset > 0 ? rt.sliceRuns(ed.t.runs, offset - 1, offset)[0]?.link : undefined);

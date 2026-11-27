@@ -5,7 +5,7 @@
 
 import type { Justify, ParaStyle, TextRun } from '../model';
 import * as rt from '../richtext';
-import { fitParas, listMarkers, paraCount, splitParagraphs } from './paragraphs';
+import { fitParas, formatNumber, listInfo, listMarkers, paraCount, splitParagraphs, type NumFormat } from './paragraphs';
 
 /** The attribute that carries our own copy of the text. */
 const OWN_ATTR = 'data-chem-illustrator-text';
@@ -49,7 +49,8 @@ function underlineStyle(kind: string | undefined): 'solid' | 'double' | 'wavy' |
 
 function runSpan(r: TextRun, t: string, pos: rt.Part['pos'], opts: RunHtmlOpts): string {
   const css: string[] = [];
-  const font = r.font ? `'${r.font}'` : opts.font === null ? null : opts.font ?? 'Arial';
+  // (a name with a quote or backslash in it stays inside its quotes: CSS's own backslash escapes)
+  const font = r.font ? `'${r.font.replace(/[\\']/g, '\\$&')}'` : opts.font === null ? null : opts.font ?? 'Arial';
   if (font) css.push(`font-family:${font}`);
   const size = r.size ?? (opts.defaultSize === null ? null : opts.defaultSize ?? 10);
   if (size) css.push(`font-size:${fmt(size)}pt`);
@@ -73,9 +74,10 @@ function runSpan(r: TextRun, t: string, pos: rt.Part['pos'], opts: RunHtmlOpts):
   if (r.allCaps) css.push('text-transform:uppercase');
   if (r.spacing) css.push(`letter-spacing:${fmt(r.spacing)}pt`);
   if (r.raise) css.push(`position:relative;top:${fmt(-r.raise)}pt;mso-text-raise:${fmt(r.raise)}pt`);
-  let body = esc(t).replace(/ {2}/g, ' &nbsp;').replace(/\n/g, '<br>');
+  // (a tab as Word's own HTML writes one, mso-tab-count, and kept as a tab where white space shows as written: a bare tab shows as one space)
+  let body = esc(t).replace(/ {2}/g, ' &nbsp;').replace(/\n/g, '<br>').replace(/\t/g, '<span style="mso-tab-count:1;white-space:pre">&#9;</span>');
   if (apart) body = `<span style="text-decoration:line-through${sStyle !== 'solid' ? `;text-decoration-style:${sStyle}` : ''}">${body}</span>`;
-  const inner = css.length ? `<span style="${css.join(';')}">${body}</span>` : body;
+  const inner = css.length ? `<span style="${esc(css.join(';'))}">${body}</span>` : body;
   const shown = pos === 'sub' ? `<sub>${inner}</sub>` : pos === 'sup' ? `<sup>${inner}</sup>` : inner;
   // a link other programs can follow (places in this file mean nothing there)
   return r.link && !r.link.startsWith('#') ? `<a href="${esc(r.link)}">${shown}</a>` : shown;
@@ -95,12 +97,25 @@ export function runsHtml(runs: readonly TextRun[], opts: RunHtmlOpts = {}): stri
   return out;
 }
 
+/**
+ * The type attribute of an ordered list, from the first item's own label: A. or A) gives "A", I.
+ * "I", i. "i", a. or (a) "a". The item's number settles whether a lone i, c or d is a letter or a
+ * roman number (a list's ninth item i. is a letter, its first is a roman number).
+ */
+function olType(marker: string | null, n: number | undefined): string {
+  const core = (marker ?? '').replace(/^\(|[.)]$|\)$/g, '');
+  if (!core || n === undefined) return '';
+  const types: [NumFormat, string][] = [['lowerLetter', 'a'], ['upperLetter', 'A'], ['lowerRoman', 'i'], ['upperRoman', 'I']];
+  const hit = types.find(([f]) => formatNumber(n, f) === core);
+  return hit ? ` type="${hit[1]}"` : '';
+}
+
 /** HTML for a styled text, for Word and other programs (and for pasting back here exactly). */
 export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSize?: number; font?: string; objectHtml?: (r: TextRun) => string | null } = {}): string {
   const defaultSize = opts.defaultSize ?? 10;
   const n = paraCount(rt.plainText(text.runs));
   const paras = fitParas(text.paras, n);
-  const markers = listMarkers(paras);
+  const infos = listInfo(paras);
   const look: RunHtmlOpts = { defaultSize, font: opts.font ?? 'Arial' };
   const paraHtml = (runs: TextRun[]): string => runsHtml(runs, look) || '&nbsp;';
   // an object in the text that goes as a block of its own (a document's table): the paragraph is
@@ -145,8 +160,7 @@ export function richToHtml(text: ClipText, opts: { justify?: Justify; defaultSiz
     while (open.length && (open[open.length - 1][1] > level || (open[open.length - 1][1] === level && open[open.length - 1][0] !== kind))) html += `</li></${open.pop()![0]}>`;
     if (open.length && open[open.length - 1][1] === level) html += '</li>';
     else {
-      const mark = markers[i];
-      const type = kind === 'ol' && mark ? (/^[a-z]+\.$/.test(mark) && !/^[ivxlcdm]+\.$/.test(mark) ? ' type="a"' : /^[ivxlcdm]+\.$/.test(mark) && level % 3 === 2 ? ' type="i"' : '') : '';
+      const type = kind === 'ol' ? olType(infos[i].marker, infos[i].n) : '';
       html += `<${kind}${type} style="margin-top:0;margin-bottom:0">`;
       open.push([kind, level]);
     }
@@ -178,7 +192,7 @@ export function richToPlain(text: ClipText): string {
 
 // ------------------------------------------------------------------ pasting HTML
 
-interface Ctx extends rt.RunStyle { pos?: 'sub' | 'sup' }
+interface Ctx extends rt.RunStyle { pos?: 'sub' | 'sup'; /** Inside <pre> (or text styled white-space:pre): spaces and line breaks stay. */ pre?: boolean }
 
 const BLOCKS = new Set(['P', 'DIV', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'LI', 'TR', 'BLOCKQUOTE', 'PRE', 'TABLE', 'UL', 'OL', 'DL', 'DT', 'DD', 'SECTION', 'ARTICLE', 'HEADER', 'FOOTER']);
 const SKIP = new Set(['STYLE', 'SCRIPT', 'HEAD', 'TITLE', 'META', 'LINK', 'XML', 'O:P', 'TEMPLATE', 'NOSCRIPT']);
@@ -239,6 +253,9 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
   // a table's next cell in its row: its text starts after a tab (not a new paragraph)
   let cellTab = false;
   const listStack: ('bullet' | 'number')[] = [];
+  // a line break has just been made, and no text has come since: the source's own line break
+  // and indent after a <br> are not text (the next text starts at its first letter)
+  let justBroke = false;
 
   const ensurePara = () => {
     if (!started) { paras[0] = nextStyle; started = true; }
@@ -249,6 +266,7 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
   const addText = (t: string, c: Ctx) => {
     if (!t) return;
     ensurePara();
+    justBroke = false;
     if (cellTab) { runs.push({ text: '\t' }); cellTab = false; }
     const r: TextRun = { text: t };
     if (c.bold) r.bold = true;
@@ -265,9 +283,21 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
     runs.push(r);
   };
 
+  /** A new paragraph that carries on the one above (a <br>, a line of preformatted text). */
+  const lineBreak = () => {
+    const prev = started ? paras[paras.length - 1] : {};
+    ensurePara();
+    runs.push({ text: '\n' });
+    paras.push(cleanList({ ...prev, cont: prev.list ? true : undefined }));
+    justBroke = true;
+  };
+
   const styleOf = (el: Element, c: Ctx): Ctx => {
     const n: Ctx = { ...c };
     const tag = el.tagName.toUpperCase();
+    if (tag === 'PRE') n.pre = true;
+    const ws = styleDecl(el, 'white-space');
+    if (ws) n.pre = /^pre(-wrap)?$/i.test(ws);
     if (tag === 'B' || tag === 'STRONG') n.bold = true;
     if (tag === 'I' || tag === 'EM') n.italic = true;
     if (tag === 'U' || tag === 'INS') n.underline = true;
@@ -334,10 +364,19 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
       }
       if (ch.nodeType === 3) {
         if (skipping) continue;
+        if (c.pre) {
+          // preformatted text: its spaces and tabs stay as written, each line is a paragraph
+          // (the line break just before the end of the block shows nothing)
+          let raw = (ch as Text).data.replace(/\r\n?/g, '\n').replace(/\u00a0/g, ' ');
+          if (!ch.nextSibling) raw = raw.replace(/\n$/, '');
+          if (c.font && rt.isSymbolFont(c.font)) raw = rt.fromSymbolFont(raw);
+          raw.split('\n').forEach((line, i) => { if (i > 0) lineBreak(); addText(line, c); });
+          continue;
+        }
         let t = (ch as Text).data.replace(/[\r\n\t ]+/g, ' ').replace(/\u00a0/g, ' ');
         // (spaces between a table's tags aren't text, nor are those that start a cell)
         if (/^(TABLE|TBODY|THEAD|TFOOT|TR)$/.test(node.nodeName.toUpperCase()) && !t.trim()) continue;
-        if (!started || breakWanted || cellTab) t = t.replace(/^ +/, '');
+        if (!started || breakWanted || cellTab || justBroke) t = t.replace(/^ +/, '');
         if (c.font && rt.isSymbolFont(c.font)) t = rt.fromSymbolFont(t);
         addText(t, c);
         continue;
@@ -349,12 +388,11 @@ export function htmlToRich(html: string, opts: { keepFonts?: boolean } = {}): Cl
       if (/mso-list\s*:\s*ignore/i.test(el.getAttribute('style') ?? '')) continue;
       if (tag === 'BR') {
         if (!textAfter(el)) continue;
-        const prev = started ? paras[paras.length - 1] : {};
-        ensurePara();
-        runs.push({ text: '\n' });
-        paras.push(cleanList({ ...prev, cont: prev.list ? true : undefined }));
+        lineBreak();
         continue;
       }
+      // a tab as Word writes it (the spaces inside it are only for programs that don't know it)
+      if (/mso-tab-count/i.test(el.getAttribute('style') ?? '')) { addText('\t', c); continue; }
       const cc = styleOf(el, c);
       if ((tag === 'TD' || tag === 'TH') && el.previousElementSibling) {
         // an empty cell before this one still takes its tab

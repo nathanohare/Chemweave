@@ -73,28 +73,35 @@ export function afterTyping(ed: TextEditing, typed: string, prefs: TypingPrefs =
       end = r[0] + r[1].length;
     }
   }
-  if (prefs.chemistry) formatWord(ed, end);
-  if (prefs.stereoItalic || prefs.boldNumbers) {
-    // its own undo step, so Ctrl+Z straight after takes back just this
-    const from = Math.max(0, ed.text.lastIndexOf('\n', end - 1) + 1, end - 40);
-    const edits = nameFormats(ed.text.slice(from, end + 1), end - from, { stereo: prefs.stereoItalic, numbers: prefs.boldNumbers });
-    if (edits.length) ed.fix(edits.map((e) => ({ ...e, start: e.start + from, end: e.end + from })), 'format');
-  }
-  alkylWord(ed, end);
+  if (prefs.chemistry) formatWord(ed, end, prefs);
+  nameFormatWord(ed, prefs, end);
+  // (the dash alkylWord puts in or takes out moves the word's end)
+  end += alkylWord(ed, end);
   rNumberWord(ed, end);
+}
+
+/** Stereodescriptors in italics and compound numbers in bold, as the key at `end` ends a word (its own undo step, so Ctrl+Z straight after takes back just this). */
+function nameFormatWord(ed: TextEditing, prefs: TypingPrefs, end: number): void {
+  if (!prefs.stereoItalic && !prefs.boldNumbers) return;
+  const from = Math.max(0, ed.text.lastIndexOf('\n', end - 1) + 1, end - 40);
+  const edits = nameFormats(ed.text.slice(from, end + 1), end - from, { stereo: prefs.stereoItalic, numbers: prefs.boldNumbers });
+  if (edits.length) ed.fix(edits.map((e) => ({ ...e, start: e.start + from, end: e.end + from })), 'format');
 }
 
 /**
  * The word ending at `end` with the alkyl prefix style of Settings ▸ Preferences: the n, i, s
  * or t of nBuLi, KOtBu or iPr2NEt in italics (or raised in italics), and a dash put in or taken
- * out (its own undo step).
+ * out (its own undo step). Gives how far that moved the word's end.
  */
-function alkylWord(ed: TextEditing, end: number): void {
-  if (!alkylWants()) return;
+function alkylWord(ed: TextEditing, end: number): number {
+  if (!alkylWants()) return 0;
   const { from, word } = tokenBefore(ed.text, end);
   const looks = ed.looksBetween(from, end);
   const edits = alkylEdits(word, (i) => !!looks[i]?.italic, undefined, (i) => looks[i]?.pos === 'sup').map((e) => ({ ...e, start: e.start + from, end: e.end + from }));
+  const before = ed.text.length;
   if (edits.length) ed.fix(edits, 'format');
+  // how far the word's end moved (a dash put in or taken out)
+  return ed.text.length - before;
 }
 
 /**
@@ -129,6 +136,9 @@ export function alkylEdits(text: string, italicAt: (i: number) => boolean, look?
   return out;
 }
 
+/** Words left as written (Leave as Written, Ignore) while the program is open, in lower case: typing doesn't format them (the checks leave them alone too). */
+export const leftAsWritten = new Set<string>();
+
 /** How far back the chemistry rules look for the word just finished: they need it and the word before. */
 const LOOK_BACK = 300;
 
@@ -136,16 +146,19 @@ const LOOK_BACK = 300;
  * Format the word ending at `end`, looking only at its paragraph (at most LOOK_BACK characters
  * of it), so a long document isn't searched on every space.
  */
-function formatWord(ed: TextEditing, end: number): void {
+function formatWord(ed: TextEditing, end: number, prefs: TypingPrefs): void {
   const text = ed.text;
   let from = text.lastIndexOf('\n', end - 1) + 1;
   if (end - from > LOOK_BACK) {
     // start after a space, never in the middle of a word
     const cut = text.slice(end - LOOK_BACK, end).search(/\s/);
-    if (cut >= 0) from = end - LOOK_BACK + cut + 1;
+    // (no space in all that stretch, a long token: only its last LOOK_BACK characters)
+    from = cut >= 0 ? end - LOOK_BACK + cut + 1 : end - LOOK_BACK;
   }
   const looks = ed.looksBetween(from, end + 1);
-  const edits = typingFormats(text.slice(from, end + 1), end - from, (i) => looks[i] ?? { pos: 'base', italic: false });
+  // (words the person chose to leave as written, in the dictionary or Leave as Written, stay as they are)
+  const leave = new Set([...leftAsWritten, ...prefs.dictionary.map((w) => w.toLowerCase())]);
+  const edits = typingFormats(text.slice(from, end + 1), end - from, (i) => looks[i] ?? { pos: 'base', italic: false }, leave);
   if (edits.length) ed.fix(edits.map((e) => ({ ...e, start: e.start + from, end: e.end + from })), 'format');
 }
 
@@ -171,8 +184,11 @@ export function finishWord(ed: TextEditing, prefs: TypingPrefs = typingPrefs): v
       end = r[0] + r[1].length;
     }
   }
-  if (prefs.chemistry) formatWord(ed, end);
-  alkylWord(ed, end);
+  if (prefs.chemistry) formatWord(ed, end, prefs);
+  // (a closing bracket ends the word as the key that ended it would: "(4)")
+  const text2 = ed.text;
+  nameFormatWord(ed, prefs, text2[end - 1] === ')' ? end - 1 : end);
+  end += alkylWord(ed, end);
   rNumberWord(ed, end);
 }
 

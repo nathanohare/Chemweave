@@ -12,9 +12,9 @@ import { TextEditing, type Move, type RichText } from '../text/editing';
 import { drawLayout } from '../text/draw';
 import { layoutText, selectionRects, type Measure } from '../text/layout';
 import { htmlToRich, richToHtml, richToPlain } from '../text/html';
-import { afterTyping, finishWord, setTypingPrefs, typingPrefs } from '../text/typing';
+import { afterTyping, finishWord, leftAsWritten, setTypingPrefs, typingPrefs } from '../text/typing';
 import { findIssues, type Issue } from '../text/chemtext';
-import { loadSpeller, type Speller } from '../text/spelling';
+import { loadSpeller, SPELLER_RETRY_MS, type Speller } from '../text/spelling';
 import { linkAtPoint } from '../links';
 import { askLink, followLink, linkMenuLines, linkTip, type LinkPlace } from './links-ui';
 import { touchOn } from './touch-ui';
@@ -387,7 +387,12 @@ export class CaptionEditor {
     // the word lists are read the first time there is text to check, not when the app starts
     if (!sp && typingPrefs.spelling && !this.spellerAsked) {
       this.spellerAsked = true;
-      void loadSpeller().then((got) => { this.speller = got; this.checked = null; this.h.redraw(); });
+      void loadSpeller().then((got) => {
+        this.speller = got;
+        // (word lists that could not be read: asked for again a little later)
+        if (!got) setTimeout(() => { this.spellerAsked = false; }, SPELLER_RETRY_MS);
+        this.checked = null; this.h.redraw();
+      });
     }
     if (sp && this.dictSeen !== typingPrefs.dictionary) {
       sp.setPersonal(typingPrefs.dictionary);
@@ -438,7 +443,7 @@ export class CaptionEditor {
     };
     if (issue) {
       item(`${issue.message}: change to ${issue.fixed}`, () => this.ed.fix(issue.edits, 'fix'));
-      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
+      item('Leave as Written', () => { ignored.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); leftAsWritten.add(this.ed.text.slice(issue.start, issue.end).toLowerCase()); this.checked = null; this.h.redraw(); });
     }
     if (word) {
       if (issue) menu.appendChild(d.createElement('hr'));
@@ -449,7 +454,7 @@ export class CaptionEditor {
       if (!sugg.length) item('No suggestions', null);
       menu.appendChild(d.createElement('hr'));
       item('Add to Dictionary', () => setTypingPrefs({ dictionary: [...typingPrefs.dictionary, text] }), 'Accept this word from now on (Edit ▸ Typing and Spelling lists your words)');
-      item('Ignore', () => { ignored.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until Chemweave is closed');
+      item('Ignore', () => { ignored.add(text.toLowerCase()); leftAsWritten.add(text.toLowerCase()); this.speller?.ignore(text); this.checked = null; this.h.redraw(); }, 'Accept this word until Chemweave is closed');
     }
     if (link) {
       if (word || issue) menu.appendChild(d.createElement('hr'));

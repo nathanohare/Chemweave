@@ -43,7 +43,8 @@ export function applyFormat(ed: TextEditing, f: TextFormat): void {
   switch (f.kind) {
     case 'toggle': ed.toggle(f.key); break;
     case 'style': ed.setStyle(f.patch); break;
-    case 'grow': ed.setStyle({ size: stepSize(ed.currentStyle().size ?? ed.defaultSize, f.by) }); break;
+    // (each run steps from its own size: a selection of 10 and 36 point text keeps them apart, as formatWhole does)
+    case 'grow': ed.setStyleEach((s) => ({ size: stepSize(s.size ?? ed.defaultSize, f.by) })); break;
     case 'align': ed.align(f.j); break;
     case 'list': ed.list(f.list); break;
     case 'indent': ed.indent(f.by); break;

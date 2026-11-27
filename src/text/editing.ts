@@ -49,6 +49,8 @@ export class TextEditing {
   pending: Partial<rt.RunStyle> | null = null;
   /** Text being put together by an input method (Chinese, Japanese, accents): shown, not yet typed. */
   composing: string | null = null;
+  /** The selection the input method's text will replace (it stays in place, not deleted, until the text is confirmed). */
+  private composeSel: { anchor: number; focus: number } | null = null;
   /** Called after every change. */
   onChange: (kind: ChangeKind) => void = () => {};
   /** Called after text is typed (chemistry formatting hooks in here). */
@@ -116,8 +118,10 @@ export class TextEditing {
   frame(): TextFrame {
     if (this.composing === null || !this.composing) return this.t;
     const style = { ...this.typingStyle(), underline: true };
-    const runs = rt.replaceRange(this.t.runs, this.focus, this.focus, [{ ...style, text: this.composing }]);
-    return { ...this.t, runs, paras: editParas(this.t.paras, this.text, this.focus, this.focus, this.composing) };
+    // (shown in place of the selected text, which the confirmed text will replace in one step of Undo)
+    const a = this.start, b = this.end;
+    const runs = rt.replaceRange(this.t.runs, a, b, [{ ...style, text: this.composing }]);
+    return { ...this.t, runs, paras: editParas(this.t.paras, this.text, a, b, this.composing) };
   }
 
   layout(): TextLayout {
@@ -133,7 +137,7 @@ export class TextEditing {
   /** The caret: x, top and bottom of its line, relative to the text's origin. */
   caret(): { x: number; y1: number; y2: number; line: number } {
     const lay = this.layout();
-    const at = this.focus + (this.composing?.length ?? 0);
+    const at = (this.composing ? this.start : this.focus) + (this.composing?.length ?? 0);
     const c = caretPos(lay, at);
     const l = lay.lines[c.line];
     return { x: c.x, y1: l.y - l.ascent, y2: l.y + l.descent, line: c.line };
@@ -545,6 +549,22 @@ export class TextEditing {
     this.commit('style', { ...this.t, runs: this.restyled(rt.applyStyle(this.t.runs, this.start, this.end, patch)) }, this.anchor, this.focus);
   }
 
+  /**
+   * A change that depends on each run's own look (a size stepped up from the size it has): on
+   * every run in the selection, as one step of Undo; with nothing selected, on what is typed next.
+   */
+  setStyleEach(patchOf: (style: rt.RunStyle) => Partial<rt.RunStyle>): void {
+    if (this.collapsed) { this.setStyle(patchOf(this.typingStyle())); return; }
+    const edits: { start: number; end: number; patch: Partial<rt.RunStyle> }[] = [];
+    let at = 0;
+    for (const r of this.t.runs) {
+      const a = Math.max(this.start, at), b = Math.min(this.end, at + r.text.length);
+      if (b > a) edits.push({ start: a, end: b, patch: patchOf(rt.cleanStyle(r)) });
+      at += r.text.length;
+    }
+    this.commit('style', { ...this.t, runs: this.restyled(rt.applyStyles(this.t.runs, edits)) }, this.anchor, this.focus);
+  }
+
   /** The selection restyled: while changes are tracked, its look before is kept as a formatting change. */
   private restyled(runs: TextRun[]): TextRun[] {
     const who = this.track?.();
@@ -752,7 +772,8 @@ export class TextEditing {
   // ------------------------------------------------------------------ input methods
 
   compositionStart(): void {
-    if (!this.collapsed) this.replace(this.start, this.end, [], undefined, 'delete');
+    // a selection is not deleted here: the confirmed text replaces it in one step (Undo puts both back at once)
+    this.composeSel = this.collapsed ? null : { anchor: this.anchor, focus: this.focus };
     this.composing = '';
   }
 
@@ -765,6 +786,9 @@ export class TextEditing {
   compositionEnd(text: string): void {
     this.composing = null;
     this.lay = null;
+    const sel = this.composeSel;
+    this.composeSel = null;
+    if (sel) { this.anchor = sel.anchor; this.focus = sel.focus; }
     if (text) this.type(text);
     else this.onChange('selection');
   }
