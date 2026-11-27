@@ -123,6 +123,25 @@ describe('F746: the strip does not redraw the drawing while the same row stays u
   });
 });
 
+describe('F746 (render): drawing the list again lets the same peak be hovered again', () => {
+  it('redraws for the same row once the section was made again', async () => {
+    const { host, details, root } = panelSetup();
+    await settle();
+    const redraws = () => (host.redraw as ReturnType<typeof vi.fn>).mock.calls.length;
+    details.querySelector<HTMLElement>('.nmr-strip')!.dispatchEvent(ptr('pointermove', 10));
+    const a = redraws();
+    // the solvent changes: the section is made again (its marks are gone)
+    const sel = root.querySelector<HTMLSelectElement>('.nmr-solvent')!;
+    sel.value = 'DMSO-d6';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    const b = redraws();
+    details.querySelector<HTMLElement>('.nmr-strip')!.dispatchEvent(ptr('pointermove', 11));
+    expect(redraws()).toBeGreaterThan(b);
+    expect(b).toBeGreaterThanOrEqual(a);
+  });
+});
+
 describe('F747: the first-order spectrum shown while the exact one runs is made once', () => {
   it('does not simulate again on each hover', async () => {
     const { details } = panelSetup();
@@ -154,6 +173,42 @@ describe('F166: Check Data is run again when the solvent changes', () => {
     expect(details.querySelector('.nmr-body')!.textContent).not.toContain('Select DMSO-d₆ above');
     // the findings are still there (the list was checked again, not dropped)
     expect(details.querySelector('.ck-tools')).not.toBeNull();
+  });
+});
+
+describe('F166 (view): the check run again for a new solvent does not change what the list shows', () => {
+  const run = async (details: HTMLElement, text: string) => {
+    details.querySelector<HTMLButtonElement>('.nmr-check')!.click();
+    const ta = details.querySelector<HTMLTextAreaElement>('.ck-box textarea')!;
+    ta.value = text;
+    ta.dispatchEvent(new Event('input', { bubbles: true }));
+    details.querySelector<HTMLButtonElement>('.ck-run')!.click();
+    await settle();
+  };
+
+  it('stays on 13C when the 1H list is checked again', async () => {
+    const { details, root } = panelSetup();
+    await settle();
+    await run(details, '1H NMR (400 MHz, DMSO-d6) δ 7.30 (d, 2H)');
+    details.querySelector<HTMLButtonElement>('.nmr-nuc button[data-nuc="13C"]')!.click();
+    expect(localStorage.getItem('ci-nmr-nuc')).toBe('13C');
+    const sel = root.querySelector<HTMLSelectElement>('.nmr-solvent')!;
+    sel.value = 'DMSO-d6';
+    sel.dispatchEvent(new Event('change', { bubbles: true }));
+    await settle();
+    expect(localStorage.getItem('ci-nmr-nuc')).toBe('13C');
+  });
+
+  it('is not run again when the panel is made again for the same solvent', async () => {
+    const { nmr, details, root } = panelSetup();
+    await settle();
+    await run(details, '1H NMR (400 MHz, CDCl3) δ 7.30 (d, 2H)');
+    const state = () => (nmr as unknown as { checkState(i: number, m: boolean): { results: Map<string, unknown> } }).checkState(0, false).results;
+    const before = state().get('1H');
+    expect(before).toBeDefined();
+    nmr.attach(root, [{ molblock, map: [0, 1, 2] }]);
+    await settle();
+    expect(state().get('1H')).toBe(before);
   });
 });
 

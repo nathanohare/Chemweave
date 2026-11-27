@@ -511,14 +511,15 @@ export class KnowledgeBaseWindow {
   private canonPass: Promise<void> | null = null;
 
   private canonicalRows(): Promise<void> {
+    // (cleared after it is stored: a pass with nothing to do ends at once, and must not stay stored for the tables imported later)
     this.canonPass ??= (async () => {
-      try {
-        const todo = this.tables.flatMap((t) => t.rows.map((r) => r.smiles)).filter((s): s is string => typeof s === 'string' && !this.canon.has(s));
-        for (const s of new Set(todo)) if (!this.canon.has(s)) this.canon.set(s, await this.host.canonical(s));
-      } finally {
-        this.canonPass = null;
+      // (again until nothing is left: a table imported while the pass runs is taken in too)
+      for (;;) {
+        const todo = [...new Set(this.tables.flatMap((t) => t.rows.map((r) => r.smiles)).filter((s): s is string => typeof s === 'string' && !this.canon.has(s)))];
+        if (!todo.length) break;
+        for (const s of todo) if (!this.canon.has(s)) this.canon.set(s, await this.host.canonical(s));
       }
-    })();
+    })().finally(() => { this.canonPass = null; });
     return this.canonPass;
   }
 

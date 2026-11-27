@@ -62,8 +62,9 @@ export async function refineWithXtb(m: Model3d, opts: XtbOptions, run: XtbRunner
     try {
       r = await run({ exe: opts.exe, xyz: xyzFile(m, k, `conformer ${k + 1}`), charge, uhf: multiplicity - 1, solvent: opts.solvent || null, opt: opts.opt });
     } catch (e) {
-      // Stop ends the xtb running ("stopped"): the conformers refined so far are kept
-      if (stopped?.() || (e instanceof Error ? e.message : String(e)) === 'stopped') break;
+      // Stop ends the xtb running ("stopped"): when the caller asked for the stop, the conformers refined so far are kept
+      // (another caller's run that is ended by something else still fails, so its half-done model isn't taken for a result)
+      if (stopped?.()) break;
       throw e;
     }
     const xyz = opts.opt ? readXyz(r.xyz, m) : m.conformers[k].xyz;

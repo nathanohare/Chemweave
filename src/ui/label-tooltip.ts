@@ -96,6 +96,9 @@ export class LabelTooltip {
   }
 }
 
+/** Elements whose symbol and a digit is a molecule, not an ion. */
+const DIATOMIC = new Set(['H', 'N', 'O', 'F', 'Cl', 'Br', 'I', 'P', 'S', 'C', 'Se', 'B']);
+
 /** A formula with its counts as subscripts and the charge as a superscript (a charge of more than one is the number after a space, C4H12N2 2+, or after a closing bracket, [Cu(NH3)4]2+). */
 export function formulaHtml(formula: string): string {
   let body = formula, charge = '';
@@ -104,9 +107,14 @@ export function formulaHtml(formula: string): string {
     charge = sign[1];
     body = formula.slice(0, -1);
     const n = /(?:\s+(\d+)|\](\d+))$/.exec(body);
+    // a metal ion on its own (Ca2+, Fe3+): its digit is the charge (not for the elements that make molecules, O2 or N2)
+    const ion = /^([A-Z][a-z]?)(\d)$/.exec(body);
     if (n) {
       charge = (n[1] ?? n[2]) + charge;
       body = body.slice(0, n.index) + (n[2] ? ']' : '');
+    } else if (ion && !DIATOMIC.has(ion[1])) {
+      charge = ion[2] + charge;
+      body = ion[1];
     }
   }
   body = body.replace(/[&<>]/g, '').replace(/(\d+)/g, '<sub>$1</sub>');

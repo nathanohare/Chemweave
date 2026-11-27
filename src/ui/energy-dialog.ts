@@ -270,7 +270,7 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
           ['Paste Structure', async () => { const got = await structure!.paste(); if ('error' in got) note(got.error); else set(got); }],
           ['From Name or SMILES…', async () => {
             // (a window of the program's own: the system's prompt() isn't there in the desktop app)
-            const typed = await ask('From Name or SMILES', [{ name: 'text', label: 'Name, SMILES or CAS number', value: '' }], { ok: 'Draw', note: `A name, SMILES or CAS number for ${who}.` });
+            const typed = await ask('From Name or SMILES', [{ name: 'text', label: `Name, SMILES or CAS number for ${who}`, value: '' }], { ok: 'Draw', note: `A name, SMILES or CAS number for ${who}.` });
             const text = typed?.text.trim();
             if (!text) return;
             const got = await structure!.fromText(text);
@@ -613,9 +613,12 @@ export function askEnergy(editing: EnergyData | null, size: { w: number; h: numb
     const relative = () => {
       const unit = $<HTMLSelectElement>('select[name=unit]').value;
       const k = HARTREE[unit] ?? HARTREE['kcal/mol'];
-      const kind = energyKind($<HTMLSelectElement>('select[name=quantity]').value);
+      const axis = energyKind($<HTMLSelectElement>('select[name=quantity]').value);
       paths.forEach((_, j) => {
-        // the pathway's first file is the zero, even when its energy was typed over (its file's energy is still kept)
+        // the kind of energy the pathway's numbers are (the axis's, unless a file lacked it and they stayed as they were)
+        const kinds = [axis, ...(['G', 'H', 'E'] as const).filter((x) => x !== axis)];
+        const kind = kinds.find((x) => rows.some((r) => r[j]?.eh !== undefined && r[j]?.ehs?.[x] === r[j]?.eh)) ?? axis;
+        // the pathway's first file is the zero, even when its energy was typed over (its file's energy of that kind is still kept)
         const ref = rows.map((r) => r[j]?.eh ?? r[j]?.ehs?.[kind]).find((v) => v !== undefined);
         if (ref === undefined) return;
         for (const r of rows) if (r[j]?.eh !== undefined) r[j].g = String(Math.round((r[j].eh! - ref) * k * 100) / 100);

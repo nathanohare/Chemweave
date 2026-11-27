@@ -79,6 +79,26 @@ describe('F155: an energy typed over a file\'s stays when the axis or unit chang
     fire(u, 'change');
     expect(gs(d)).toEqual(['1.0', '26.25', '52.51']);
   });
+
+  it('after an axis change refused for a missing enthalpy, the zero is still of the kind the others are', () => {
+    const data = fromFiles();
+    // (the third file has no frequency job: no enthalpy)
+    data.paths[0].points[2] = { label: 'C', g: 12.55, eh: -99.98, ehs: { G: -99.98 } } as EnergyPoint;
+    void askEnergy(data, { w: 300, h: 180 });
+    const d = document.querySelector('dialog.energy-dialog')!;
+    const boxes = [...d.querySelectorAll<HTMLInputElement>('input[data-g]')];
+    boxes[0].value = '1.0';
+    fire(boxes[0]);
+    const q = d.querySelector<HTMLSelectElement>('select[name=quantity]')!;
+    q.value = 'ΔH';
+    fire(q, 'change');
+    expect(d.querySelector('.energy-import-note')!.textContent).toContain('the energies are unchanged');
+    const u = d.querySelector<HTMLSelectElement>('select[name=unit]')!;
+    u.value = 'kJ/mol';
+    fire(u, 'change');
+    // (the free energies, 0.01 and 0.02 Eh above A's: its enthalpy is not the zero of free energies)
+    expect(gs(d)).toEqual(['1.0', '26.25', '52.51']);
+  });
 });
 
 describe('F696: From Name or SMILES… asks in a window of the program\'s own', () => {
@@ -100,6 +120,8 @@ describe('F696: From Name or SMILES… asks in a window of the program\'s own', 
     expect(prompt).not.toHaveBeenCalled();
     const ask = document.querySelector('dialog.ask:not(.energy-dialog)')!;
     expect(ask).toBeTruthy();
+    // it says which species it is for
+    expect(ask.textContent).toContain('Name, SMILES or CAS number for ');
     ask.querySelector<HTMLInputElement>('input')!.value = 'CCO';
     ask.querySelector('form')!.dispatchEvent(new Event('submit', { cancelable: true }));
     await tick(5);

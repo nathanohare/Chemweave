@@ -129,7 +129,9 @@ export function solubility(logS: number, mw: number): string {
   const mgPerMl = 10 ** logS * mw;
   // two figures, written out in full (toPrecision gives "1.0e+2" for 99.7 and "1.5e+2" for 150)
   const two = (x: number) => { const t = x.toPrecision(2); return t.includes('e') ? String(Number(t)) : t; };
-  return mgPerMl >= 1 ? `${mgPerMl >= 100 ? Math.round(mgPerMl) : two(mgPerMl)} mg/mL` : `${two(mgPerMl * 1000)} µg/mL`;
+  // (the unit is chosen after rounding: 0.9996 mg/mL is "1.0 mg/mL", not "1000 µg/mL")
+  const rounded = Number(mgPerMl.toPrecision(2));
+  return rounded >= 1 ? `${rounded >= 100 ? Math.round(mgPerMl) : two(mgPerMl)} mg/mL` : `${two(mgPerMl * 1000)} µg/mL`;
 }
 
 /** The most acidic proton and the most basic atom. */

@@ -98,6 +98,10 @@ describe('F659: solubility is never written with an exponent', () => {
     expect(solubility(Math.log10(0.05), 100)).toBe('5.0 mg/mL');
     expect(solubility(Math.log10(1.5), 100)).toBe('150 mg/mL');
   });
+  it('chooses the unit after rounding: 0.9996 mg/mL is 1.0 mg/mL, not 1000 µg/mL', () => {
+    expect(solubility(Math.log10(0.009996), 100)).toBe('1.0 mg/mL');
+    expect(solubility(Math.log10(0.0099), 100)).toBe('990 µg/mL');
+  });
 });
 
 describe('F725: the limiting reagent\'s amount gives the equivalents', () => {

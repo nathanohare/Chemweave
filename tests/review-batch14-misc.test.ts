@@ -127,6 +127,14 @@ describe('F727: a charge of more than one is a superscript, not a subscript', ()
   it('writes a charge after a space raised', () => {
     expect(formulaHtml('C4H12N2 2+')).toBe('C<sub>4</sub>H<sub>12</sub>N<sub>2</sub><sup>2+</sup>');
   });
+  it('writes the charge of a bare metal ion raised: Ca2+, Fe3+', () => {
+    expect(formulaHtml('Ca2+')).toBe('Ca<sup>2+</sup>');
+    expect(formulaHtml('Fe3+')).toBe('Fe<sup>3+</sup>');
+  });
+  it('keeps a count that is a count: O2 with a charge, N2', () => {
+    expect(formulaHtml('O2−')).toBe('O<sub>2</sub><sup>−</sup>');
+    expect(formulaHtml('N2')).toBe('N<sub>2</sub>');
+  });
   it('keeps a single charge and plain counts as before', () => {
     expect(formulaHtml('NH4+')).toBe('NH<sub>4</sub><sup>+</sup>');
     expect(formulaHtml('C2H6O')).toBe('C<sub>2</sub>H<sub>6</sub>O');

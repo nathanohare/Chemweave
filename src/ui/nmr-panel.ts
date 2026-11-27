@@ -259,6 +259,8 @@ interface CheckState {
   text: string;
   editing: boolean;
   results: Map<CheckNucleus, CheckEntry>;
+  /** The solvent the prediction was for when the results were made. */
+  solvent?: string;
 }
 
 interface Shown {
@@ -581,7 +583,8 @@ export class NmrPanel {
       this.shown.set(i, { rows, ids, ring, graph, h1, codes, rowOf, specs: new Map(), pending: new Set(), molblock: item.molblock, heavy, baseRows: rows, baseRowOf: rowOf, netGap });
       this.render(i, d);
       // a measured list checked before was compared with the last prediction (another solvent, say): check it again against this one
-      if (this.checkState(i, false)?.results.size && !this.checkState(i, false)!.editing) void this.runCheck(i, d);
+      const ck = this.checkState(i, false);
+      if (ck?.results.size && !ck.editing && ck.solvent !== this.solvent) void this.runCheck(i, d, true);
       if (this.win?.visible && this.winItem === i) this.win.refresh();
       if (this.marks) this.host.redraw();
     } catch (e) {
@@ -594,6 +597,8 @@ export class NmrPanel {
     const s = this.shown.get(i);
     if (!s) return;
     this.useRows(i, s);
+    // (the list is made again, without its marks: the next hover of the same peak marks it again)
+    if (this.hovered.i === i) this.hovered = { i: -1, row: null, from: 'list' };
     const body = d.querySelector<HTMLElement>('.nmr-body')!;
     if (!s.rows.length) { body.innerHTML = '<p class="muted small">No carbons or hydrogens to predict.</p>'; return; }
     body.innerHTML = `<div class="nmr-strip" data-item="${i}"><button type="button" class="nmr-popout" title="Open the spectrum in a window (zoom, labels, field, Copy as Picture)" aria-label="Open the spectrum in a window">⤢</button></div>`
@@ -681,16 +686,17 @@ export class NmrPanel {
   }
 
   /** Reads the pasted lists and compares each with the prediction. */
-  private async runCheck(i: number, d: HTMLElement): Promise<void> {
+  /** @param again the list was checked before and the prediction changed (the solvent): the same view stays, no word about an empty list */
+  private async runCheck(i: number, d: HTMLElement, again = false): Promise<void> {
     const st = this.checkState(i, true)!, s = this.shown.get(i);
     const ta = d.querySelector<HTMLTextAreaElement>('.ck-box textarea');
     if (ta) st.text = ta.value;
     if (!s) return;
     const lists = parsePeakLists(st.text);
-    if (!lists.length) { this.host.flash('No peaks found: paste a list such as 1H NMR (400 MHz, CDCl3) δ 7.26 (s, 1H).'); return; }
-    st.results.clear();
+    if (!lists.length) { if (!again) this.host.flash('No peaks found: paste a list such as 1H NMR (400 MHz, CDCl3) δ 7.26 (s, 1H).'); return; }
+    const made = new Map<CheckNucleus, CheckEntry>();
     for (const list of lists) {
-      if (st.results.has(list.nuc)) continue;
+      if (made.has(list.nuc)) continue;
       const rowIdx: number[] = [], rows: PredictedRow[] = [];
       s.rows.forEach((r, k) => {
         const a = s.graph.atoms[r.atoms[0]];
@@ -702,10 +708,14 @@ export class NmrPanel {
       const known = await knownPeaks(solvent, list.nuc, await this.host.importedTables?.().catch(() => null) ?? null);
       const res = checkData(list, rows, known);
       const note = list.solvent && list.solvent.toLowerCase() !== this.solvent.toLowerCase() ? `The list is in ${solventLabel(list.solvent)}; the prediction is for ${solventLabel(this.solvent)}. Select ${solventLabel(list.solvent)} above so they match.` : undefined;
-      st.results.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
+      made.set(list.nuc, { list, res, pred: rows, rowIdx, basis: s.rows, note });
     }
+    // (a newer prediction of this structure came meanwhile: its own check follows)
+    if (again && this.shown.get(i) !== s) return;
+    st.results = made;
+    st.solvent = this.solvent;
     st.editing = false;
-    if (!this.report && !st.results.has(this.nuc as CheckNucleus)) { this.nuc = st.results.keys().next().value!; this.restyle(d.closest<HTMLElement>('.frag')?.parentElement ?? document.body); }
+    if (!again && !this.report && !st.results.has(this.nuc as CheckNucleus)) { this.nuc = st.results.keys().next().value!; this.restyle(d.closest<HTMLElement>('.frag')?.parentElement ?? document.body); }
     else this.render(i, d);
     if (this.win?.visible && this.winItem === i) this.win.refresh();
   }

@@ -61,9 +61,18 @@ describe('F180: Stop during xTB Refine keeps the conformers refined so far', () 
       if (++n === 3) throw new Error('stopped');
       return { xyz: job.xyz, energy: -5.07 - 0.001 * n };
     };
-    const r = await refineWithXtb(water(5), { exe: 'xtb', solvent: '', opt: true, count: 5 }, run);
+    const r = await refineWithXtb(water(5), { exe: 'xtb', solvent: '', opt: true, count: 5 }, run, undefined, () => n >= 3);
     expect(r.conformers).toHaveLength(2);
     expect(r.method).toBe('GFN2-xTB');
+  });
+
+  it('a run ended by something else (the caller did not ask to stop) still fails, so no half-done model is kept as the result', async () => {
+    let n = 0;
+    const run: XtbRunner = async (job) => {
+      if (++n === 3) throw new Error('stopped');
+      return { xyz: job.xyz, energy: -5.07 - 0.001 * n };
+    };
+    await expect(refineWithXtb(water(5), { exe: 'xtb', solvent: '', opt: true, count: 5 }, run)).rejects.toThrow('stopped');
   });
 
   it('the window says it was stopped, and keeps what was refined', async () => {
@@ -101,7 +110,7 @@ describe('F181: a method spelled for the other program is swapped', () => {
 
   it('the input written for Gaussian from the dialog\'s untouched ORCA method has a Gaussian route', async () => {
     const saveFiles = vi.fn(async () => {});
-    const { v, prefs } = viewer({ saveFiles });
+    const { v, prefs, flash } = viewer({ saveFiles });
     (v as unknown as { exportQm(): Promise<void> }).exportQm();
     await tick(5);
     const d = q('dialog.ask');
@@ -115,6 +124,8 @@ describe('F181: a method spelled for the other program is swapped', () => {
     expect(route).toContain('B3LYP/');
     expect(route).not.toContain('def2-SVP');
     expect(prefs.qm.method).toBe(QM_METHODS.gaussian[0]);
+    // the swap is said, not silent
+    expect(flash.mock.calls.some((c) => /not spelled for Gaussian/.test(String(c[0])))).toBe(true);
   });
 });
 
@@ -132,8 +143,8 @@ describe('F825 and F826: the number of conformers to refine', () => {
     return { xtb, prefs, n };
   };
 
-  it('F826: a molecule with two conformers does not lower the saved number', async () => {
-    // (viewer() has a model of three conformers: refine with two of them offered fewer than the 10 saved)
+  it('F826: a molecule with three conformers does not lower the saved number', async () => {
+    // (viewer() has a model of three conformers, fewer than the 10 saved: the three are refined and 10 stays saved)
     const { prefs, xtb } = await runXtb(null);
     expect(xtb).toHaveBeenCalledTimes(3);
     expect(prefs.xtb.count).toBe(10);

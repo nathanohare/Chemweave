@@ -13,7 +13,8 @@ import { LigandLibraryWindow } from '../src/ui/ligand-library';
 import { openReview, type ReviewOptions } from '../src/ui/import-review';
 import { looksLikeSmiles } from '../src/kb/tables';
 import { KnowledgeBaseWindow, type KnowledgeBaseHost } from '../src/ui/knowledge-base';
-import { askNewman, type NewmanChoice, type NewmanConformer, type NewmanHost } from '../src/ui/newman-dialog';
+import { askNewman, type NewmanChoice, type NewmanHost } from '../src/ui/newman-dialog';
+import type { NewmanConformer } from '../src/chem/newman';
 
 // the drawings themselves are not what is checked here
 vi.mock('../src/render/picture', () => ({ recordPicture: () => ({}), pictureSvg: () => '<svg xmlns="http://www.w3.org/2000/svg"/>' }));
@@ -102,6 +103,17 @@ describe('F152: keys on a focused button of the Compound Library press the butto
     key(d, 'ArrowDown');
     expect((d.querySelector('tr.picked') as HTMLElement).dataset.id).toBe(ids[1]);
   });
+
+  it('Ctrl+A still selects every compound shown while a button has the focus', async () => {
+    const { lib, ids } = libraryWith(3);
+    const w = new CompoundLibraryWindow(lib, compoundHost());
+    await w.open([ids[0]]);
+    const d = document.querySelector('dialog.compound-library')!;
+    const loc = [...d.querySelectorAll('button')].find((b) => b.textContent === 'Location…')!;
+    const e = key(loc, 'a', { ctrlKey: true });
+    expect(e.defaultPrevented).toBe(true);
+    expect(d.querySelectorAll('tr.picked')).toHaveLength(3);
+  });
 });
 
 describe('F153: the Compound Library does not draw every picture or rebuild every row', () => {
@@ -136,6 +148,25 @@ describe('F153: the Compound Library does not draw every picture or rebuild ever
     expect(rows[3].classList.contains('picked')).toBe(true);
     expect(ids).toHaveLength(40);
   });
+
+  it('typing in the search box shows the rows already made, and draws no picture again', async () => {
+    const { lib } = libraryWith(40);
+    const host = compoundHost();
+    const w = new CompoundLibraryWindow(lib, host);
+    await w.open();
+    const d = document.querySelector('dialog.compound-library')!;
+    const before = [...d.querySelectorAll<HTMLElement>('tbody tr')];
+    const search = d.querySelector<HTMLInputElement>('input[type=search]')!;
+    search.value = '3';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    const some = [...d.querySelectorAll<HTMLElement>('tbody tr')];
+    expect(some.length).toBeGreaterThan(0);
+    expect(some.length).toBeLessThan(40);
+    for (const tr of some) expect(before).toContain(tr);
+    search.value = '';
+    search.dispatchEvent(new Event('input', { bubbles: true }));
+    expect([...d.querySelectorAll('tbody tr')]).toEqual(before);
+  });
 });
 
 // ---- Ligand Library ---------------------------------------------------------------------------
@@ -155,6 +186,18 @@ describe('F731: Enter on the PubChem link of the Ligand Library is the link\'s',
     // Enter in the search box still uses the ligand
     key(d.querySelector('input[type=search]')!, 'Enter');
     expect(used).toHaveLength(1);
+    w.close();
+  });
+
+  it('an arrow key on a family tab does not step the ligand cards', () => {
+    const w = new LigandLibraryWindow({ useTemplate: () => {}, openUrl: () => {}, copyText: () => {} });
+    w.open('PPh3');
+    const d = document.querySelector('dialog.ligand-library')!;
+    const tab = d.querySelector<HTMLElement>('.kb-list button')!;
+    const before = d.querySelector('.lig-card.on, .picked, [aria-selected=true].lig-card')?.textContent;
+    const e = key(tab, 'ArrowDown');
+    expect(e.defaultPrevented).toBe(false);
+    expect(d.querySelector('.lig-card.on, .picked, [aria-selected=true].lig-card')?.textContent).toBe(before);
     w.close();
   });
 });
@@ -272,6 +315,21 @@ describe('F160: typing a SMILES works out each row\'s structure once', () => {
     for (const s of calls) if (!typed.includes(s)) forRows.set(s, (forRows.get(s) ?? 0) + 1);
     expect(forRows.size).toBeGreaterThan(0);
     expect(Math.max(...forRows.values())).toBe(1);
+    closeWindow(w);
+  }, 60000);
+
+  it('works out the rows of a table imported after earlier searches had nothing left to do', async () => {
+    const { host, calls } = kbHost({ contains: async () => [] });
+    const w = new KnowledgeBaseWindow(host);
+    await w.open();
+    const d = document.querySelector('dialog.kb-window')!;
+    const box = d.querySelector<HTMLInputElement>('input[type=search]')!;
+    const search = async (q: string) => { box.value = q; box.dispatchEvent(new Event('input')); await tick(1200); };
+    await search('C1CC1C(=O)OCC1CC1');
+    await search('C1CC1C(=O)OCC1CCC1'); // (every row was done by the first: nothing left to work out)
+    (w as unknown as { tables: unknown[] }).tables.push({ id: 'user-late', title: 'Late', about: '', columns: [{ key: 'smiles', label: 'SMILES' }], rows: [{ smiles: 'OCCCCCCl' }], personal: true, sources: [] });
+    await search('C1CC1C(=O)OCC1CCCC1');
+    expect(calls).toContain('OCCCCCCl');
     closeWindow(w);
   }, 60000);
 });

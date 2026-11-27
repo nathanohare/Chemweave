@@ -833,6 +833,8 @@ export class Viewer3d {
     const prog = got.program === 'gaussian' ? 'gaussian' : 'orca';
     // a method spelled for the other program is swapped for this one's usual one
     const method = methodFor(prog, got.method);
+    // (said, as the Method box can't change under the person: it shows the swapped one next time, and any method can be typed)
+    if (got.method.trim() && method !== got.method.trim()) this.flash(`“${got.method.trim()}” is not spelled for ${prog === 'gaussian' ? 'Gaussian' : 'ORCA'}: wrote ${method} instead. Type another method in Method to change it.`);
     const o: QmOptions = {
       program: prog, method, job: (['opt freq', 'opt', 'sp', 'freq'] as const).find((j) => j === got.job) ?? 'opt freq',
       solvent: got.solvent.trim().replace(/[^\w,-]/g, ''), charge: Math.round(parseFloat(got.charge) || 0), multiplicity: Math.max(1, Math.round(parseFloat(got.mult) || 1)),
