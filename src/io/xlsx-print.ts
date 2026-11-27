@@ -281,7 +281,7 @@ export interface ReadAnchor {
  * not our structures' pictures). `image` gives a picture's data: URL from its relationship;
  * `place` turns an anchor element into a corner and size. Counts what can't be shown.
  */
-export function readObjects(dr: Document, image: (rid: string) => string | null, place: (anchor: Element) => ReadAnchor | null, theme: string[], skip: (name: string) => boolean): { objects: SheetObject[]; skipped: number } {
+export function readObjects(dr: Document, image: (rid: string) => string | null, place: (anchor: Element) => ReadAnchor | null, theme: string[], skip: (name: string, el: Element) => boolean): { objects: SheetObject[]; skipped: number } {
   const objects: SheetObject[] = [];
   let skipped = 0;
   for (const anchor of kids(dr.documentElement)) {
@@ -297,7 +297,7 @@ export function readObjects(dr: Document, image: (rid: string) => string | null,
     let nv: Element | null = null;
     for (const x of Array.from(cNvPr)) if (x.localName === 'cNvPr') { nv = x; break; }
     const name = nv?.getAttribute('name') ?? '';
-    if (skip(name)) continue;
+    if (skip(name, el)) continue;
     if (el.localName === 'grpSp') { skipped++; continue; }
     const at = place(anchor);
     if (!at) { skipped++; continue; }
@@ -363,14 +363,13 @@ export function readObjects(dr: Document, image: (rid: string) => string | null,
           if (sz && Number(sz) / 100 !== 11) o.size = Number(sz) / 100;
           if (isOn(rPr.getAttribute('b'))) o.bold = true;
           if (isOn(rPr.getAttribute('i'))) o.italic = true;
-          const col = fillOf(rPr, theme);
-          if (col && col !== 'none' && col !== dflt.color) o.color = col;
           const font = kid(rPr, 'latin')?.getAttribute('typeface');
           if (font && !font.startsWith('+')) o.font = font;
-        } else if (styleEl) {
-          const col = drawingColour(kid(styleEl, 'fontRef')?.firstElementChild ?? null, theme);
-          if (col && col !== dflt.color) o.color = col;
         }
+        // the run's own colour, else the shape style's text colour (style/fontRef: Excel writes a run's
+        // size and language with no fill, and its shape styles' text colour there)
+        const col = fillOf(rPr ?? null, theme) ?? (styleEl ? drawingColour(kid(styleEl, 'fontRef')?.firstElementChild ?? null, theme) : undefined);
+        if (col && col !== 'none' && col !== dflt.color) o.color = col;
         const algn = kid(paras[0], 'pPr')?.getAttribute('algn');
         const a = algn === 'ctr' ? 'center' : algn === 'r' ? 'right' : algn === 'l' ? 'left' : undefined;
         if (a && a !== (o.kind === 'text' ? 'left' : 'center')) o.align = a;
