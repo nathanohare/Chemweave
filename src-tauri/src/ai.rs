@@ -52,6 +52,70 @@ fn read_keys(app: &tauri::AppHandle) -> HashMap<String, Saved> {
         .unwrap_or_default()
 }
 
+/// The keys in a file, for saving a change to them: none when there is no file yet. A file that is
+/// there but can't be read at all (another program holds it, no permission) is an error, and one
+/// that can't be read as keys is moved aside (ai-keys.json.damaged-<seconds>, which the page can't
+/// open either) and is an error too, saying so: neither is written over, so the keys in it are never lost.
+fn keys_to_change(path: &std::path::Path) -> Result<HashMap<String, Saved>, String> {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(HashMap::new()),
+        Err(e) => return Err(format!("Could not read the saved keys, so nothing was changed ({e}). Try again in a moment.")),
+    };
+    match std::str::from_utf8(&bytes).ok().and_then(|t| serde_json::from_str(t).ok()) {
+        Some(keys) => Ok(keys),
+        None => {
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let mut aside = path.as_os_str().to_owned();
+            aside.push(format!(".damaged-{secs}"));
+            let aside = PathBuf::from(aside);
+            match std::fs::rename(path, &aside) {
+                Ok(()) => Err(format!("The saved keys file could not be read, so it was kept as {} and the keys are gone from the app. Enter them again.", aside.display())),
+                Err(e) => Err(format!("The saved keys file could not be read and could not be moved aside ({e}), so nothing was changed.")),
+            }
+        }
+    }
+}
+
+/// Write the keys file through a temporary file next to it that only this user can read from the
+/// start (so the keys are never readable by others, even for a moment, and a full disk or a crash
+/// never leaves a half-written file where the keys were).
+fn write_private(path: &std::path::Path, text: &str) -> std::io::Result<()> {
+    use std::io::Write;
+    let mut tmp = path.as_os_str().to_owned();
+    tmp.push(".saving");
+    let tmp = PathBuf::from(tmp);
+    let _ = std::fs::remove_file(&tmp);
+    let mut open = std::fs::OpenOptions::new();
+    open.write(true).create_new(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        open.mode(0o600);
+    }
+    let done = open
+        .open(&tmp)
+        .and_then(|mut f| f.write_all(text.as_bytes()).and_then(|_| f.sync_all()))
+        .and_then(|_| crate::folders::rename_retrying(&tmp, path));
+    if done.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    done
+}
+
+/// Whether a saved key would be sent for this address: a service with a fixed address always uses
+/// its key, "Other" only for the address it was saved for (ai_request). An older page that gives
+/// no address is answered as before.
+fn key_usable(provider: &str, saved: &Saved, base: Option<&str>) -> bool {
+    if saved.key.is_empty() {
+        return false;
+    }
+    match (provider, base) {
+        ("compatible", Some(b)) => saved.base == b.trim_end_matches('/'),
+        _ => true,
+    }
+}
+
 /// The fixed address of each named service; None for one the person typed in.
 fn fixed_base(provider: &str) -> Option<&'static str> {
     match provider {
@@ -110,29 +174,25 @@ pub fn ai_key_set(app: tauri::AppHandle, provider: String, key: String, base: St
     if !web_address(&base) {
         return Err("The address must start with http:// or https://.".into());
     }
-    let mut keys = read_keys(&app);
+    let path = keys_file(&app)?;
+    let mut keys = keys_to_change(&path)?;
     if key.trim().is_empty() {
         keys.remove(&provider);
     } else {
         keys.insert(provider, Saved { key: key.trim().to_string(), base: base.trim_end_matches('/').to_string() });
     }
-    let path = keys_file(&app)?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("Could not make {}: {e}", dir.display()))?;
     }
     let text = serde_json::to_string_pretty(&keys).map_err(|e| e.to_string())?;
-    std::fs::write(&path, text).map_err(|e| format!("Could not save the key: {e}"))?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
-    Ok(())
+    write_private(&path, &text).map_err(|e| format!("Could not save the key: {e}"))
 }
 
+/// Whether a key is saved that would be sent: `base` is the address now chosen (for "Other", a key
+/// saved for another address is not sent, so it isn't reported as saved).
 #[tauri::command]
-pub fn ai_key_has(app: tauri::AppHandle, provider: String) -> bool {
-    read_keys(&app).get(&provider).is_some_and(|s| !s.key.is_empty())
+pub fn ai_key_has(app: tauri::AppHandle, provider: String, base: Option<String>) -> bool {
+    read_keys(&app).get(&provider).is_some_and(|s| key_usable(&provider, s, base.as_deref()))
 }
 
 #[derive(serde::Serialize)]
@@ -198,16 +258,87 @@ pub async fn ai_request(
     }
     let res = req.send().await.map_err(|e| format!("Could not reach the AI service: {e}"))?;
     let status = res.status().as_u16();
-    let bytes = res.bytes().await.map_err(|e| format!("Could not read the AI service's answer: {e}"))?;
-    if bytes.len() > MAX_BYTES {
-        return Err("The AI service's answer is too large.".into());
-    }
+    let bytes = crate::web::read_capped(res, MAX_BYTES)
+        .await
+        .map_err(|e| format!("Could not read the AI service's answer: {e}"))?
+        .ok_or("The AI service's answer is too large.")?;
     Ok(AiReply { status, body: String::from_utf8_lossy(&bytes).into_owned() })
 }
 
 #[cfg(test)]
 mod local_tests {
     use super::*;
+
+    fn temp(name: &str) -> PathBuf {
+        let dir = std::env::temp_dir().join(format!("ci-ai-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        dir
+    }
+
+    #[test]
+    fn the_keys_file_is_private_from_the_start_and_replaced_whole() {
+        let dir = temp("write");
+        let path = dir.join("ai-keys.json");
+        write_private(&path, "{\"a\":1}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"a\":1}");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            assert_eq!(std::fs::metadata(&path).unwrap().permissions().mode() & 0o777, 0o600);
+        }
+        // a second save replaces it, with nothing left beside it
+        write_private(&path, "{\"b\":2}").unwrap();
+        assert_eq!(std::fs::read_to_string(&path).unwrap(), "{\"b\":2}");
+        let names: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(names, vec!["ai-keys.json"]);
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_damaged_keys_file_is_kept_not_written_over() {
+        let dir = temp("damaged");
+        let path = dir.join("ai-keys.json");
+        assert_eq!(keys_to_change(&path).map(|k| k.len()), Ok(0)); // no file yet
+        std::fs::write(&path, r#"{"openai":{"key":"sk-1","base":"https://api.openai.com/v1"}}"#).unwrap();
+        assert_eq!(keys_to_change(&path).map(|k| k.len()), Ok(1));
+        assert!(path.exists());
+        std::fs::write(&path, "{\"openai\": {\"key\": \"sk-1\", ").unwrap(); // cut short
+        let said = keys_to_change(&path).err().unwrap();
+        assert!(said.contains("ai-keys.json.damaged-"), "{said}");
+        assert!(!path.exists());
+        let kept: Vec<_> = std::fs::read_dir(&dir).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+        assert_eq!(kept.len(), 1);
+        assert!(kept[0].starts_with("ai-keys.json.damaged-"), "{kept:?}");
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_keys_file_that_cannot_be_read_is_not_taken_for_none() {
+        // (a folder where the file should be: reading it fails, but it is not "not found")
+        let dir = temp("unreadable");
+        let path = dir.join("ai-keys.json");
+        std::fs::create_dir(&path).unwrap();
+        assert!(keys_to_change(&path).is_err());
+        assert!(path.is_dir());
+        // not UTF-8: unreadable as keys, kept aside
+        std::fs::remove_dir(&path).unwrap();
+        std::fs::write(&path, [0xff, 0xfe, 0x00]).unwrap();
+        assert!(keys_to_change(&path).is_err());
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
+    #[test]
+    fn a_key_saved_for_another_address_is_not_reported_as_saved() {
+        let other = Saved { key: "sk-x".into(), base: "http://localhost:1234/v1".into() };
+        assert!(key_usable("compatible", &other, Some("http://localhost:1234/v1/")));
+        assert!(!key_usable("compatible", &other, Some("http://localhost:9999/v1")));
+        assert!(key_usable("compatible", &other, None)); // an older page that names no address
+        // a named service has one address
+        let named = Saved { key: "sk-y".into(), base: "https://api.openai.com/v1".into() };
+        assert!(key_usable("openai", &named, Some("https://elsewhere.example")));
+        assert!(!key_usable("openai", &Saved::default(), None));
+    }
 
     #[test]
     fn local_addresses() {

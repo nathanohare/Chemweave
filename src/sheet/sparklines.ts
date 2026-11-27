@@ -5,7 +5,7 @@
 // extension of a worksheet), so they come back in either program.
 
 import type { Range } from './refs';
-import { parseRange, rangeName } from './refs';
+import { parseRange, quoteSheet, rangeName } from './refs';
 import { maxOf, minOf } from './values';
 
 export type SparkKind = 'line' | 'column' | 'winloss';
@@ -79,7 +79,7 @@ export function makeSparklines(kind: SparkKind, data: Range, place: Range, sheet
   const cells: { row: number; col: number }[] = [];
   for (let r = place.r1; r <= place.r2; r++) for (let c = place.c1; c <= place.c2; c++) cells.push({ row: r, col: c });
   const rows = data.r2 - data.r1 + 1, cols = data.c2 - data.c1 + 1;
-  const prefix = sheet ? `${/^[A-Za-z_][A-Za-z0-9_.]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`}!` : '';
+  const prefix = sheet ? `${quoteSheet(sheet)}!` : '';
   const ref = (R: Range) => prefix + rangeName(R);
   let pieces: Range[];
   if (cells.length === 1) pieces = [data];

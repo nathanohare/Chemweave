@@ -27,12 +27,28 @@ export function handleEntry(entry: string): { id: string; name: string } | null 
 export const canKeepHandles = (): boolean => typeof indexedDB !== 'undefined' && 'showOpenFilePicker' in globalThis;
 
 let db: Promise<IDBDatabase> | null = null;
-const open = () => db ??= new Promise((resolve, reject) => {
-  const r = indexedDB.open('chem-illustrator-recent', 1);
-  r.onupgradeneeded = () => r.result.createObjectStore('handles');
-  r.onsuccess = () => resolve(r.result);
-  r.onerror = () => reject(r.error);
-});
+/** The store, opened once and kept; a failed or lost opening is forgotten, so the next call tries again. */
+const open = (): Promise<IDBDatabase> => {
+  if (db) return db;
+  const p = new Promise<IDBDatabase>((resolve, reject) => {
+    let failed = false;
+    const r = indexedDB.open('chem-illustrator-recent', 1);
+    r.onupgradeneeded = () => r.result.createObjectStore('handles');
+    r.onsuccess = () => {
+      const d = r.result;
+      // (a late answer to an opening that was given up on is let go, and so is the store when another tab needs to upgrade it)
+      if (failed) { d.close(); return; }
+      d.onversionchange = () => { d.close(); if (db === p) db = null; };
+      d.onclose = () => { if (db === p) db = null; };
+      resolve(d);
+    };
+    r.onerror = () => { failed = true; reject(r.error ?? new Error('The recent files store could not be opened.')); };
+    r.onblocked = () => { failed = true; reject(new Error('The recent files store is in use by another tab.')); };
+  });
+  db = p;
+  p.catch(() => { if (db === p) db = null; });
+  return p;
+};
 const run = async <T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBRequest<T>): Promise<T> => {
   const s = (await open()).transaction('handles', mode).objectStore('handles');
   return new Promise((resolve, reject) => {
@@ -41,6 +57,11 @@ const run = async <T>(mode: IDBTransactionMode, f: (s: IDBObjectStore) => IDBReq
     r.onerror = () => reject(r.error);
   });
 };
+
+/** Handles just kept, by id and when: forgetHandles leaves them, as the list it is given may not hold their entries yet. */
+const fresh = new Map<string, number>();
+/** How long (ms) a handle just kept is spared by forgetHandles. */
+const GRACE_MS = 15_000;
 
 /**
  * Keep a handle and give its entry for the recent list. A file already in the list (`list`)
@@ -55,7 +76,10 @@ export async function keepHandle(handle: FileHandle, list: readonly string[]): P
     if (old && (await old.isSameEntry?.(h).catch(() => false))) return entry;
   }
   const id = Math.random().toString(36).slice(2, 10);
-  await run('readwrite', (s) => s.put(h, id));
+  // (spared by forgetHandles from now on, not only once stored: another file's forget can read the keys while this put is on its way,
+  // and not until the caller has had time to put its entry in the list)
+  fresh.set(id, Date.now());
+  try { await run('readwrite', (s) => s.put(h, id)); } catch (e) { fresh.delete(id); throw e; }
   return `${PREFIX}${id}:${h.name}`;
 }
 
@@ -72,6 +96,14 @@ export async function handleFor(entry: string): Promise<FileHandle | null> {
 /** Forget the handles no longer in the list. */
 export async function forgetHandles(list: readonly string[]): Promise<void> {
   const keep = new Set(list.map((x) => handleEntry(x)?.id).filter(Boolean));
+  const now = Date.now();
+  for (const [id, at] of fresh) {
+    if (now - at < GRACE_MS) keep.add(id); else fresh.delete(id);
+  }
   const keys = await run('readonly', (s) => s.getAllKeys());
-  for (const k of keys) if (!keep.has(String(k))) await run('readwrite', (s) => s.delete(k));
+  for (const k of keys) {
+    // (looked at again here: a file kept while the keys were being read is not forgotten)
+    const recent = fresh.get(String(k));
+    if (!keep.has(String(k)) && !(recent !== undefined && Date.now() - recent < GRACE_MS)) await run('readwrite', (s) => s.delete(k));
+  }
 }

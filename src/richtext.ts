@@ -429,7 +429,9 @@ const caseChar = (ch: string, up: boolean): string => {
 export function changeCase(runs: TextRun[], start: number, end: number, mode: CaseMode): TextRun[] {
   const text = plainText(runs);
   // where a sentence or a word starts (looking back before the selection, so a word half selected isn't capitalised in the middle)
-  const isLetter = (ch: string | undefined) => !!ch && /[\p{L}\p{N}'’]/u.test(ch);
+  const isLetter = (ch: string | undefined) => !!ch && /[\p{L}\p{N}]/u.test(ch);
+  // inside a word: after a letter, or after an apostrophe that follows a letter (don't), but not after an opening quote ('hello')
+  const inWord = (g: number): boolean => isLetter(text[g - 1]) || (/['’]/.test(text[g - 1] ?? '') && isLetter(text[g - 2]));
   const sentenceStart = (i: number): boolean => {
     let k = i - 1;
     while (k >= 0 && /[ \t"“'‘(]/.test(text[k])) k--;
@@ -449,10 +451,10 @@ export function changeCase(runs: TextRun[], start: number, end: number, mode: Ca
         case 'lower': t += caseChar(ch, false); break;
         case 'upper': t += caseChar(ch, true); break;
         case 'toggle': t += caseChar(ch, ch === ch.toLowerCase()); break;
-        case 'title': t += caseChar(ch, !isLetter(text[g - 1])); break;
+        case 'title': t += caseChar(ch, !inWord(g)); break;
         case 'sentence': {
           // the first letter of a sentence is a capital; the rest are as they were but lower case
-          const first = isLetter(ch) && !isLetter(text[g - 1]) && sentenceStart(g);
+          const first = isLetter(ch) && !inWord(g) && sentenceStart(g);
           t += caseChar(ch, first);
           break;
         }

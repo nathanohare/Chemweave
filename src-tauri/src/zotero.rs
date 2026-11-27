@@ -48,10 +48,10 @@ pub async fn zotero_post(endpoint: String, body: String) -> Result<ZoteroReply, 
         .await
         .map_err(|e| format!("Could not reach Zotero: {e}"))?;
     let status = res.status().as_u16();
-    let bytes = res.bytes().await.map_err(|e| format!("Could not read Zotero's answer: {e}"))?;
-    if bytes.len() > MAX_BYTES {
-        return Err("Zotero's answer is too large.".into());
-    }
+    let bytes = crate::web::read_capped(res, MAX_BYTES)
+        .await
+        .map_err(|e| format!("Could not read Zotero's answer: {e}"))?
+        .ok_or("Zotero's answer is too large.")?;
     Ok(ZoteroReply { status, body: String::from_utf8_lossy(&bytes).into_owned() })
 }
 

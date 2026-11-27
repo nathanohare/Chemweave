@@ -8,7 +8,7 @@
 import type { Value } from './values';
 import { ERR, isError, maxOf, minOf } from './values';
 import type { CellStyle } from './workbook';
-import type { Range } from './refs';
+import { quoteSheet, type Range } from './refs';
 
 export type PivotFn = 'sum' | 'count' | 'average' | 'max' | 'min' | 'product' | 'countNums' | 'stdDev' | 'stdDevp' | 'var' | 'varp';
 export type ShowAs = 'normal' | 'percentOfTotal' | 'percentOfRow' | 'percentOfCol';
@@ -417,7 +417,7 @@ export function newPivotName(used: string[]): string {
  * (again without totals) is a series. References are to cells, as Excel's PivotCharts keep them.
  */
 export function pivotChartSeries(rep: PivotReport, at: { row: number; col: number }, sheet: string, pt: PivotTable): { name: string; x: string; y: string }[] {
-  const q = /^[A-Za-z_][\w.]*$/.test(sheet) ? sheet : `'${sheet.replace(/'/g, "''")}'`;
+  const q = quoteSheet(sheet);
   const col = (c: number) => { let s = '', n = c + 1; while (n > 0) { const m = (n - 1) % 26; s = String.fromCharCode(65 + m) + s; n = Math.floor((n - 1) / 26); } return s; };
   // compact form: every line but the grand total, so an outer field's own line (Cu above its
   // solvents, in the same column) is a category too, where the item lines alone would start

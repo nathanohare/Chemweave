@@ -17,6 +17,9 @@ function load(url: string): Promise<ShiftNet | null> {
   if (!p) {
     p = fetch(url).then((r) => (r.ok ? r.arrayBuffer() : null)).then((b) => (b ? new ShiftNet(b) : null)).catch(() => null);
     nets.set(url, p);
+    // a failed download isn't kept: the next request tries again (offline at first, a server error)
+    const failed = p;
+    void p.then((n) => { if (!n && nets.get(url) === failed) nets.delete(url); });
   }
   return p;
 }

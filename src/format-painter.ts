@@ -43,6 +43,16 @@ function relook<T extends object>(o: T, keys: readonly string[], look: object): 
   return { ...out, ...look } as T;
 }
 
+/**
+ * A patch that gives each look key the look's value, or takes it off (undefined) where the look has none:
+ * painting something plain over something styled makes it plain, as in Office, not a patch of only what the source has.
+ */
+function wholeLook(keys: readonly string[], look: object): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  for (const k of keys) out[k] = (look as Record<string, unknown>)[k];
+  return out;
+}
+
 export const runLook = (s: rt.RunStyle): RunLook => pick(s as TextRun, RUN_LOOK_KEYS);
 export const paraLook = (p: ParaStyle): ParaLook => pick(p, PARA_LOOK_KEYS);
 
@@ -167,15 +177,15 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
   const colour = look.colour;
   for (const id of sel.atoms) {
     const p = look.atom ?? look.bond ?? colour;
-    if (p && doc.atoms.has(id)) { doc.updateAtom(id, relook({}, look.atom || look.bond ? ATOM_KEYS : ['color'], p)); n++; }
+    if (p && doc.atoms.has(id)) { doc.updateAtom(id, look.atom || look.bond ? wholeLook(ATOM_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.bonds) {
     const p = look.bond ?? look.atom ?? colour;
-    if (p && doc.bonds.has(id)) { doc.updateBond(id, relook({}, look.bond || look.atom ? BOND_KEYS : ['color'], p)); n++; }
+    if (p && doc.bonds.has(id)) { doc.updateBond(id, look.bond || look.atom ? wholeLook(BOND_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.arrows) {
     const p = look.arrow ?? colour;
-    if (p && doc.arrows.has(id)) { doc.updateArrow(id, relook({}, look.arrow ? ARROW_KEYS : ['color'], p)); n++; }
+    if (p && doc.arrows.has(id)) { doc.updateArrow(id, look.arrow ? wholeLook(ARROW_KEYS, p) : relook({}, ['color'], p)); n++; }
   }
   for (const id of sel.shapes) {
     const s = doc.shapes.get(id);
@@ -186,7 +196,7 @@ export function paintObjects(doc: Doc, sel: PickedThings, look: ObjectLook): num
     }
     if (!paintableShape(s)) continue;
     const p = look.shape ?? colour;
-    const patch: Partial<Shape> = p ? relook({}, look.shape ? SHAPE_KEYS : ['color'], p) : {};
+    const patch: Partial<Shape> = p ? (look.shape ? wholeLook(SHAPE_KEYS, p) : relook({}, ['color'], p)) : {};
     if (s.text?.runs.length && look.text) patch.text = paintAllText(s.text.runs, s.text.paras, look.text);
     if (Object.keys(patch).length) { doc.updateShape(id, patch); n++; }
   }

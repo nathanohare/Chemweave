@@ -290,7 +290,7 @@ export async function rememberAiKey(p: AiPrefs, remember: boolean): Promise<void
 /** Whether a key is kept for this service. */
 export async function hasAiKey(p: AiPrefs): Promise<boolean> {
   if (p.provider === 'none') return false;
-  if (isTauri()) return invoke<boolean>('ai_key_has', { provider: p.provider });
+  if (isTauri()) return invoke<boolean>('ai_key_has', { provider: p.provider, base: aiBase(p) });
   return !!webKey(p);
 }
 

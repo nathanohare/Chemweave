@@ -12,7 +12,7 @@ import { schemePrefs, spacing } from '../chem/scheme-layout';
 import { SINGLE } from '../text/layout';
 import { keepInRange } from './num-range';
 import { FONT_GROUPS } from '../fonts';
-import { STYLE_PRESETS, presetNamed, sameLook, scaleStyle, type RestyleHow } from '../drawing-styles';
+import { STYLE_PRESETS, presetLike, presetNamed, sameLook, scaleStyle, type RestyleHow } from '../drawing-styles';
 
 export interface StyleChoice {
   style: DocStyle;
@@ -427,7 +427,7 @@ export function editDrawingStyle(o: StyleDialogOptions): Promise<StyleChoice | n
 
     // start on whatever matches what is in use now
     const now = own.find((s) => s.name === o.current.name && sameLook(s, o.current)) ? 'own:' + o.current.name
-      : STYLE_PRESETS.find((p) => sameLook(p.style, o.current)) ? 'preset:' + STYLE_PRESETS.find((p) => sameLook(p.style, o.current))!.style.name
+      : presetLike(o.current) ? 'preset:' + presetLike(o.current)!.style.name
       : 'file:';
     fillPick(now);
     fill(o.current);
