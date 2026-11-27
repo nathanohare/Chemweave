@@ -380,14 +380,15 @@ type MoveRow = [number, number, Anim['start'], number, number, CameraMove, 0 | 1
 /**
  * A canvas as kept in a tag of its slide in a PowerPoint file, with its keyframe moves (which
  * move nothing in PowerPoint, so its animations can't hold them) and their places among the
- * slide's animations.
+ * slide's animations. `saved` says which of the animations are written to the file.
  */
-export function canvasTag(c: CanvasData, anims: Anim[] = []): string {
+export function canvasTag(c: CanvasData, anims: Anim[] = [], saved: (a: Anim) => boolean = () => true): string {
   const moves: MoveRow[] = [];
   let others = 0;
   for (const a of anims) {
     if (isCamera(a)) moves.push([others, a.target.id, a.start, a.delay, a.dur, a.move ?? 'pan', a.byDistance ? 1 : 0, a.back ? 1 : 0]);
-    else others++;
+    // (only the animations the file gets: one whose object or trigger was deleted is left out when saved, so it is not counted when the file is read)
+    else if (saved(a)) others++;
   }
   const keys = c.keys.map((k) => {
     // a spotlight and a detour in a seventh place

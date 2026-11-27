@@ -8,7 +8,7 @@
 // the first one the whole canvas, every one which canvas and keyframe it is and a print of what it
 // held, so slides changed in PowerPoint since can be told apart (Reader: collapseCanvases).
 
-import { Doc, type Contents } from '../model';
+import { Doc, type Contents, type TableData, type TextRun } from '../model';
 import { plainText } from '../richtext';
 import type { Selection } from '../editor/editor';
 import { units, POINTS } from '../editor/arrange';
@@ -127,7 +127,11 @@ function cutToView(d: Doc, view: Rect, size: SlideSize, drop: Part[]): void {
   for (const r of [...d.arrows.values()]) {
     d.updateArrow(r.id, {
       tail: at(r.tail.x, r.tail.y), head: at(r.head.x, r.head.y),
-      ...(scaled ? { headLength: r.headLength * k, headWidth: r.headWidth * k, ...(r.lineWidth !== undefined ? { lineWidth: r.lineWidth * k } : {}) } : {}),
+      ...(scaled ? {
+        headLength: r.headLength * k, headWidth: r.headWidth * k, ...(r.lineWidth !== undefined ? { lineWidth: r.lineWidth * k } : {}),
+        // (the gap between a retrosynthetic arrow's shafts, a bold shaft and a dashed one's dashes go with the window too)
+        ...(r.shaftSpacing !== undefined ? { shaftSpacing: r.shaftSpacing * k } : {}), ...(r.boldWidth !== undefined ? { boldWidth: r.boldWidth * k } : {}), ...(r.hashSpacing !== undefined ? { hashSpacing: r.hashSpacing * k } : {}),
+      } : {}),
     });
   }
   for (const s of [...d.shapes.values()]) {
@@ -137,8 +141,24 @@ function cutToView(d: Doc, view: Rect, size: SlideSize, drop: Part[]): void {
       ...(s.poly ? { poly: s.poly.map((q) => at(q.x, q.y)) } : {}),
       ...(scaled && s.lineWidth !== undefined ? { lineWidth: s.lineWidth * k } : {}),
       ...(scaled && s.text ? { text: { ...s.text, runs: s.text.runs.map((r) => (r.size !== undefined ? { ...r, size: r.size * k } : r)) } } : {}),
+      ...(scaled && s.table ? { table: scaleTable(s.table, k) } : {}),
     });
   }
+}
+
+/** A table as big as the window shows it, by k: its columns, lines and the size of its text. */
+function scaleTable(t: TableData, k: number): TableData {
+  const runs = (rs: TextRun[]): TextRun[] => rs.map((r) => (r.size !== undefined ? { ...r, size: r.size * k } : r));
+  return {
+    ...t,
+    cols: t.cols.map((w) => w * k),
+    rows: t.rows.map((row) => row.map((c) => ({ ...c, runs: runs(c.runs), ...(c.fig ? { fig: { w: c.fig.w * k, h: c.fig.h * k } } : {}) }))),
+    ...(t.size !== undefined ? { size: t.size * k } : {}),
+    ...(t.lineW !== undefined ? { lineW: t.lineW * k } : {}),
+    ...(t.edges ? { edges: t.edges.map((row) => row.map((e) => ({ left: e.left * k, top: e.top * k, bottom: e.bottom * k, right: e.right * k }))) } : {}),
+    ...(t.title ? { title: runs(t.title) } : {}),
+    ...(t.notes ? { notes: runs(t.notes) } : {}),
+  };
 }
 
 /** A stop of the show on a canvas slide: at keyframe `key`, got to by `move` (none for the first), playing `anims` there. */
@@ -172,25 +192,36 @@ export function compoundHomes(doc: Doc, views: Rect[]): Map<string, number> {
   return out;
 }
 
+/** Each animation's part, by the list of parts it was looked up in (see hiddenAt). */
+const ownerMemo = new WeakMap<Part[], Map<Anim, Part | undefined>>();
+
 /**
  * The parts not to put on keyframe j's slide: those not showing when the show gets there that
  * its own animations don't bring in (those not in yet, and those gone).
  */
 export function hiddenAt(parts: Part[], segs: Anim[][], j: number): Part[] {
+  // each animation's part, found once (finding it scans the parts) and kept for the next keyframe
+  let owners = ownerMemo.get(parts);
+  if (!owners) ownerMemo.set(parts, (owners = new Map()));
+  const ownerOf = (a: Anim): Part | undefined => {
+    if (!owners!.has(a)) owners!.set(a, partOf(parts, a.target));
+    return owners!.get(a);
+  };
   const before = segs.slice(0, j).flat();
-  const mine = new Set(segs[j].map((a) => partOf(parts, a.target)).filter((p): p is Part => !!p));
+  const played = new Set(before.map(ownerOf).filter((p): p is Part => !!p));
+  const mine = new Set(segs[j].map(ownerOf).filter((p): p is Part => !!p));
   const states = partStates(parts, before, buildSteps(mainAnims(before)).length, -1);
   // when each part first comes in or does anything, from here on
   const firstLater = new Map<Part, Anim>();
   for (const a of segs.slice(j).flat()) {
-    const p = partOf(parts, a.target);
+    const p = ownerOf(a);
     if (p && !firstLater.has(p)) firstLater.set(p, a);
   }
   return parts.filter((p) => {
     if (mine.has(p)) return false;
     const st = states.get(p);
     // played before: showing or not as it was left
-    if (before.some((a) => partOf(parts, a.target) === p)) return !(st?.visible ?? true);
+    if (played.has(p)) return !(st?.visible ?? true);
     // first animated later: not in yet when that is an entrance
     const f = firstLater.get(p);
     return !!f && !keepsShowing(f.effect) && !f.exit;
@@ -247,6 +278,11 @@ export function splitCanvas<S extends SplitSlide>(s: S, master: Master, size: Sl
     const drop = hiddenAt(parts, segs, j);
     const move = stop.move;
     const prev = j ? c.keys[stops[j - 1].key] : undefined;
+    // a move that starts by itself: the slide before it moves on by itself (before a fly-over's slide goes in between)
+    if (move && move.start !== 'click' && out.length) {
+      const last = out[out.length - 1];
+      last.transition = { ...(last.transition ?? { kind: 'none', dur: 0 }), advanceAfter: Math.max(AT_ONCE, move.delay) };
+    }
     // a fly-over: through a zoomed-out slide that moves on by itself
     if (move && prev && move.move === 'fly') {
       const view = viewBetween(prev, k, 0.5, 'fly', size);
@@ -261,11 +297,6 @@ export function splitCanvas<S extends SplitSlide>(s: S, master: Master, size: Sl
       : move.move === 'cut' ? undefined
         : move.move === 'fade' ? { kind: 'fade', dur: Math.max(0.1, move.dur) }
           : { kind: 'morph', dur: Math.max(0.1, move.move === 'fly' ? move.dur / 2 : move.dur) };
-    // a move that starts by itself: the slide before moves on by itself
-    if (move && move.start !== 'click' && out.length) {
-      const last = out[out.length - 1];
-      last.transition = { ...(last.transition ?? { kind: 'none', dur: 0 }), advanceAfter: Math.max(AT_ONCE, move.delay) };
-    }
     at.push(out.length);
     out.push({
       ...s,

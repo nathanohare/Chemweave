@@ -226,7 +226,8 @@ function drawArt(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   }
 }
 
-const itemDocs = new WeakMap<Contents, Doc>();
+/** The drawing of each set of items, and the master and layout whose styles it is set to. */
+const itemDocs = new WeakMap<Contents, { doc: Doc; master: unknown; layout: string }>();
 
 /** What is drawn on the master and on the slide's layout (Slide Master view), behind the slide's own things. */
 function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
@@ -234,14 +235,22 @@ function drawItems(ctx: CanvasRenderingContext2D, p: SlidePage): void {
   const layer = layoutDef(p.master, p.layout).items;
   for (const c of [p.master.items, layer]) {
     if (!c) continue;
-    let doc = itemDocs.get(c);
-    if (!doc) {
-      doc = new Doc();
-      doc.style = { ...p.master.drawing };
-      doc.textStyles = textStyles(p.master, p.layout);
-      doc.restoreContents(c);
-      itemDocs.set(c, doc);
+    let held = itemDocs.get(c);
+    if (!held) {
+      held = { doc: new Doc(), master: null, layout: '' };
+      held.doc.restoreContents(c);
+      itemDocs.set(c, held);
     }
+    // in the master's style and its layout's text styles as they are now (a change of the master keeps the items themselves, as the master's items are every layout's)
+    if (held.master !== p.master || held.layout !== p.layout) {
+      held.doc.style = { ...p.master.drawing };
+      held.doc.textStyles = textStyles(p.master, p.layout);
+      held.doc.allDirty = true;
+      held.doc.version++;
+      held.master = p.master;
+      held.layout = p.layout;
+    }
+    const doc = held.doc;
     const r = new Renderer(noCanvas, noCanvas);
     r.showWarnings = false;
     if ('picture' in ctx) r.makePath = () => new VecPath() as unknown as Path2D;

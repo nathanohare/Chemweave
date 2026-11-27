@@ -1976,6 +1976,8 @@ export class Doc {
     if (top && !this.tx) top.marks = { before, after };
   }
 
+  /** A step is still being made (a drag): Undo and Redo wait for it. */
+  get inStep(): boolean { return !!this.tx; }
   canUndo(): boolean { return this.undoStack.length > 0; }
   canRedo(): boolean { return this.redoStack.length > 0; }
   /** The name of the step Undo (or Redo) would take back, such as "Add Ring" ('' with none). */

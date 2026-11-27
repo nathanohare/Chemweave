@@ -70,8 +70,13 @@ export class FloatBox {
     first?.focus();
   }
 
+  /** Called when it is closed (the × button, Esc or `close`), so whoever owns it can let go of what it showed. */
+  onClose?: () => void;
+
   close(): void {
+    const was = !this.el.hidden;
     this.el.hidden = true;
+    if (was) this.onClose?.();
   }
 
   /**

@@ -226,6 +226,9 @@ export function tileOrigin(align: TileAlign, w: number, h: number, tw: number, t
   return { x, y };
 }
 
+/** A tiled picture and its mirror images in one canvas, kept for each picture, way of mirroring and size. */
+const mirrored = new WeakMap<object, Map<string, HTMLCanvasElement>>();
+
 const DEFAULT_TILE = { sx: 1, sy: 1, tx: 0, ty: 0, align: 'tl' as TileAlign, mirror: 'none' as TileMirror };
 
 function paintPicture(ctx: CanvasRenderingContext2D, bg: Extract<Background, { kind: 'picture' }>, w: number, h: number): void {
@@ -242,7 +245,9 @@ function paintPicture(ctx: CanvasRenderingContext2D, bg: Extract<Background, { k
     const tw = bg.px.w * PT_PER_PX * t.sx, th = bg.px.h * PT_PER_PX * t.sy;
     if (tw > 0.5 && th > 0.5) {
       let source: CanvasImageSource = img;
-      if (t.mirror !== 'none' && typeof document !== 'undefined') {
+      const kept = t.mirror !== 'none' ? mirrored.get(img)?.get(`${t.mirror}|${iw}x${ih}`) : undefined;
+      if (kept) source = kept;
+      else if (t.mirror !== 'none' && typeof document !== 'undefined') {
         // one tile and its mirror images, side by side and one above the other
         const mx = t.mirror === 'x' || t.mirror === 'xy', my = t.mirror === 'y' || t.mirror === 'xy';
         const c = document.createElement('canvas');
@@ -256,6 +261,10 @@ function paintPicture(ctx: CanvasRenderingContext2D, bg: Extract<Background, { k
             g.drawImage(img, 0, 0, iw, ih);
           }
           source = c;
+          // kept: this is drawn again on every redraw of the slide
+          let by = mirrored.get(img);
+          if (!by) mirrored.set(img, (by = new Map()));
+          by.set(`${t.mirror}|${iw}x${ih}`, c);
         }
       }
       const pat = ctx.createPattern(source, 'repeat');

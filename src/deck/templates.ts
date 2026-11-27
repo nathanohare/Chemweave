@@ -178,7 +178,7 @@ export function parseThemes(v: unknown): SlideTemplate[] {
       accent: col('accent', '#2f6fdf'), accent2: col('accent2', '#9aa5b1'),
       decor: DECORS.some((d) => d.id === r.decor) ? r.decor as Decor : 'none',
       titleBold: r.titleBold !== false,
-      ...(ts ? { titleSlide: { background: tcol('background', '#1d3557'), titleColor: tcol('titleColor', '#ffffff'), textColor: tcol('textColor', '#d9e2ec') } } : {}),
+      ...(ts ? { titleSlide: { background: tcol('background', '#1d3557'), titleColor: tcol('titleColor', '#ffffff'), textColor: tcol('textColor', '#d9e2ec'), ...(typeof ts?.footerColor === 'string' && HEX.test(ts.footerColor) ? { footerColor: ts.footerColor } : {}) } } : {}),
     });
   }
   return out;

@@ -214,7 +214,7 @@ export interface Master {
   /** The master's and layouts' items are on every slide as its own, to change there (Slide Master ▸ Lock Layout Items unticked); new slides get them too. */
   itemsUnlocked?: boolean;
   /** The rest of each kind of placeholder's look on the master (italic, paragraph spacing, bullets; see masterFmt). */
-  phFmt?: Partial<Record<Placeholder, Pick<PlaceholderFmt, 'italic' | 'lineSpacing' | 'spaceBefore' | 'spaceAfter' | 'bullet'>>>;
+  phFmt?: Partial<Record<Placeholder, Pick<PlaceholderFmt, 'bold' | 'italic' | 'lineSpacing' | 'spaceBefore' | 'spaceAfter' | 'bullet'>>>;
   /** Where the master's own title and text boxes are (Slide Master view); layouts whose boxes are there follow them. Title and Content's when not set. */
   phBoxes?: PlaceholderBox[];
   /** What is drawn on the master itself (Slide Master view): on every slide, behind its layout's things. */
@@ -528,7 +528,7 @@ export function masterFmt(m: Master, ph: Placeholder, layout?: LayoutId): Placeh
   const own = m.phFmt?.[ph] ?? {};
   const text: PlaceholderFmt = ph === 'title'
     ? { font: m.titleFont, size: m.titleSize, color: c.titleColor, bold: m.titleBold }
-    : { font: m.bodyFont, size: ph === 'subtitle' ? m.subtitleSize : m.bodySize, color: c.textColor, bold: false };
+    : { font: m.bodyFont, size: ph === 'subtitle' ? m.subtitleSize : m.bodySize, color: c.textColor, bold: !!own.bold };
   return { ...text, italic: !!own.italic, lineSpacing: own.lineSpacing ?? 1, spaceBefore: own.spaceBefore ?? 0, spaceAfter: own.spaceAfter ?? 0, bullet: own.bullet ?? usualBullet(ph) };
 }
 
@@ -1149,6 +1149,11 @@ export class Deck {
     return d;
   }
 
+  /** `ownItems` for a new slide of this layout: its master's and layout's items were copied onto its drawing (newSlideDoc), so they are not drawn behind it as well. */
+  private ownItemsFor(layout: LayoutId): { ownItems?: true } {
+    return this.master.itemsUnlocked && hasItems(this.master, layout) ? { ownItems: true } : {};
+  }
+
   /** Give a slide's drawing the master's drawing style and text styles (a title slide's in its own colours), and its background's colour. */
   private styleDoc(d: Doc, layout: LayoutId, own?: Background): void {
     styleWith(d, this.master, layout, own);
@@ -1273,6 +1278,25 @@ export class Deck {
     this.onChange();
   }
 
+  /**
+   * Make changes to the deck as one step of the history (Accept All in Compare): Undo takes them all
+   * back, Redo does them all again. Steps of a slide's own drawing are left as they are.
+   */
+  group(label: string, fn: () => void): void {
+    const start = this.undoList.length;
+    fn();
+    const made = this.undoList.slice(start);
+    if (made.length < 2 || made.some((e) => e.kind !== 'deck')) return;
+    const steps = made as Extract<HistoryEntry, { kind: 'deck' }>[];
+    this.undoList.splice(start, made.length, {
+      kind: 'deck', label,
+      undo: () => { for (let k = steps.length - 1; k >= 0; k--) steps[k].undo(); },
+      redo: () => { for (const e of steps) e.redo(); },
+      slide: steps[steps.length - 1].slide,
+    });
+    this.edits -= made.length - 1;
+  }
+
   canUndo(): boolean { return this.undoList.length > 0; }
   canRedo(): boolean { return this.redoList.length > 0; }
   /** The name of the step Undo (or Redo) would take back: a slide's own step, or the deck change. */
@@ -1295,7 +1319,12 @@ export class Deck {
       if (i < 0) return this.undo(); // the slide has gone (should not happen: its removal is undone first)
       this.go(i);
       // the drawing turns it down while a step is still being made (a drag): the step stays
-      if (!this.host.undo()) { this.undoList.push(e); return false; }
+      if (!this.host.undo()) {
+        // a slide keeps fewer steps of its own than the deck lists (500 against 2000): one the slide has let go is dropped, so Undo goes on to the older steps (F853)
+        if (!this.host.inStep && !this.host.canUndo()) return this.undo();
+        this.undoList.push(e);
+        return false;
+      }
     } else {
       this.showSlide(e.slide);
       e.undo();
@@ -1349,6 +1378,7 @@ export class Deck {
       useRefs(refs);
       this.detachKeep(() => this.slides.splice(at, 0, ...slides));
       also?.redo();
+      this.refreshCites();
       this.goFresh(at);
     };
     const undoIt = () => {
@@ -1356,6 +1386,7 @@ export class Deck {
       also?.undo();
       if (master) useMaster(beforeMaster);
       useRefs(beforeRefs);
+      this.refreshCites();
       this.goFresh(beforeIndex);
     };
     doIt();
@@ -1389,13 +1420,13 @@ export class Deck {
     // as in PowerPoint, a new slide after the title slide gets Title and Content, otherwise the current layout
     const cur = this.current?.layout;
     const lay = layout ?? (!cur || cur === 'title' ? 'title-content' : cur);
-    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '', ...(this.master.itemsUnlocked && hasItems(this.master, lay) ? { ownItems: true } : {}) };
+    const s: Slide = { id: this.nextSlideId++, layout: lay, doc: this.newSlideDoc(lay), notes: '', ...this.ownItemsFor(lay) };
     this.insert(this.index + 1, [s], 'New slide');
   }
 
   /** A new canvas slide after the current one: a blank slide with no edge and one keyframe where the slide would be. */
   addCanvasSlide(): void {
-    const s: Slide = { id: this.nextSlideId++, layout: 'blank', doc: this.newSlideDoc('blank'), notes: '', canvas: newCanvas() };
+    const s: Slide = { id: this.nextSlideId++, layout: 'blank', doc: this.newSlideDoc('blank'), notes: '', canvas: newCanvas(), ...this.ownItemsFor('blank') };
     this.insert(this.index + 1, [s], 'New canvas slide');
   }
 
@@ -1455,7 +1486,7 @@ export class Deck {
   insertSlide(at: number, layout: LayoutId, fill: (doc: Doc) => void, label = 'New slide'): Slide {
     const doc = this.newSlideDoc(layout);
     doc.bulk(() => fill(doc));
-    const s: Slide = { id: this.nextSlideId++, layout, doc, notes: '' };
+    const s: Slide = { id: this.nextSlideId++, layout, doc, notes: '', ...this.ownItemsFor(layout) };
     this.insert(Math.max(0, Math.min(this.slides.length, at)), [s], label);
     return s;
   }
@@ -1541,8 +1572,9 @@ export class Deck {
     const gone = new Set(sorted.map((i) => this.slides[i]));
     const after = before.filter((s) => !gone.has(s));
     const afterIndex = Math.min(sorted[0], after.length - 1);
-    const doIt = () => { this.detachKeep(() => { this.slides = after.slice(); }); this.goFresh(afterIndex); };
-    const undoIt = () => { this.detachKeep(() => { this.slides = before.slice(); }); this.goFresh(beforeIndex); };
+    // (with the references numbered through the presentation, the slides after the gap have new numbers)
+    const doIt = () => { this.detachKeep(() => { this.slides = after.slice(); }); this.refreshCites(); this.goFresh(afterIndex); };
+    const undoIt = () => { this.detachKeep(() => { this.slides = before.slice(); }); this.refreshCites(); this.goFresh(beforeIndex); };
     doIt();
     this.record(sorted.length > 1 ? 'Delete slides' : 'Delete slide', undoIt, doIt);
     return true;
@@ -1631,6 +1663,7 @@ export class Deck {
         this.slides.forEach((s, k) => { if (st.of[k] === undefined) delete s.section; else s.section = st.of[k]; });
         this.folded = new Set(st.folded);
       });
+      this.refreshCites();
       this.goFresh(Math.max(0, this.slides.indexOf(cur)));
     };
     put(after);
@@ -1946,8 +1979,26 @@ export class Deck {
     const keysBefore = canvases.map((s) => copyCanvas(s.canvas!));
     const keysAfter = keysBefore.map((c) => ({ ...c, keys: c.keys.map((x) => scaleKeyframe(x, old, size, k)) }));
     const putKeys = (cs: CanvasData[]) => canvases.forEach((s, j) => { s.canvas = copyCanvas(cs[j]); });
+    // what the master and its layouts draw (their items) and the guides go where the slides' own things go (F193)
+    const moved = (c: Contents | undefined): Contents | undefined => {
+      if (!c) return c;
+      const t = new Doc();
+      t.restoreContents(c);
+      t.bulk(() => scaleContents(t, old, size, k));
+      return t.contents();
+    };
+    const masterBefore = this.master;
+    const masterAfter: Master = { ...masterBefore };
+    if (masterBefore.items) masterAfter.items = moved(masterBefore.items);
+    if (masterBefore.layouts?.some((l) => l.items)) masterAfter.layouts = masterBefore.layouts.map((l) => (l.items ? { ...l, items: moved(l.items) } : l));
+    const viewBefore = this.settings.view;
+    const mapX = (x: number) => size.w / 2 + (x - old.w / 2) * k, mapY = (y: number) => size.h / 2 + (y - old.h / 2) * k;
+    const viewAfter = viewBefore ? { ...viewBefore, guides: { x: viewBefore.guides.x.map(mapX), y: viewBefore.guides.y.map(mapY) } } : undefined;
+    const putView = (v: typeof viewBefore) => { if (v) this.settings.view = v; else delete this.settings.view; };
     this.contentEdit('Change slide size', all, () => {
       putKeys(keysAfter);
+      this.master = masterAfter;
+      putView(viewAfter);
       this.size = { ...size };
       for (const i of all) {
         const d = this.docOf(i);
@@ -1956,7 +2007,7 @@ export class Deck {
           this.fitPlaceholders(d, this.slides[i].layout);
         });
       }
-    }, () => { this.size = old; putKeys(keysBefore); }, () => { this.size = { ...size }; putKeys(keysAfter); });
+    }, () => { this.size = old; this.master = masterBefore; putView(viewBefore); putKeys(keysBefore); }, () => { this.size = { ...size }; this.master = masterAfter; putView(viewAfter); putKeys(keysAfter); });
   }
 
   /**
@@ -2090,6 +2141,8 @@ export class Deck {
     const old = this.slides[i];
     if (!old || from.slides.length !== 1) return false;
     const { slides: [made], master } = this.adopt(from, false);
+    // it keeps the old slide's number: custom shows and links to the slide name it by that (F855)
+    made.id = old.id;
     if (old.section !== undefined) made.section = old.section;
     const beforeMaster = this.master;
     const beforeIndex = this.index;
@@ -2097,6 +2150,7 @@ export class Deck {
     const put = (s: Slide, m: Master, go: number) => {
       this.detachKeep(() => { const k = this.slides.indexOf(s === made ? old : made); if (k >= 0) this.slides[k] = s; });
       useMaster(m);
+      this.refreshCites();
       this.goFresh(go);
     };
     const doIt = () => put(made, master ?? beforeMaster, i);
